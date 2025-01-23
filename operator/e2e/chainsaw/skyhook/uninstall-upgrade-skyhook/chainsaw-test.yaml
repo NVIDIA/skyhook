@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: uninstall-upgrade-skyhook
+spec:
+  description: This test validates that the uninstall and upgrade mode is working as expected. This is asserted by applying some packages and making sure that those finish as expected.
+    Then one of the packages is removed from the SCR and the other two have the version changed which should uninstall one package and upgrade the other. The packages that have their 
+    versions changed also have configmaps which are changed to make sure that the version change overrides the config changes. It's asserted that the package that was removed is uninstalled. 
+    For the package with the version downgraded it's asserted that the old package is uninstalled and then the new package is applied as normal. For the package that is upgraded it's 
+    asserted that it runs in upgrade before finishing as normal. Then finally we assert that the uninstall still works when every package is removed from the SCR by removing the last package
+    and then making sure that it's uninstalled successfully.
+    Additionally we are assert pod resource requests and limits are set correctly from defaults.
+  concurrent: true
+  timeouts:
+    assert: 420s
+  catch: ## if errors, print the most important info
+    - get:
+        apiVersion: v1
+        kind: Node
+        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        format: yaml
+    - get:
+        apiVersion: skyhook.nvidia.com/v1alpha1
+        kind: Skyhook
+        name: uninstall-upgrade-skyhook
+        format: yaml
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation/labels from last run
+          ../rest_test.sh uninstall-upgrade-skyhook
+    - create:
+        file: skyhook.yaml
+    - assert:
+        file: assert.yaml
+  - try:
+    - update:
+        file: update.yaml
+    - assert:
+        file: assert-update.yaml
+  - try:
+    - sleep:
+        duration: 5s
+    - update:
+        file: update-no-packages.yaml
+    - assert:
+        file: assert-update-no-packages.yaml

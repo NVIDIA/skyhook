@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: pod-finalization
+spec:
+  concurrent: true ## TODO: fix this
+  timeouts:
+    assert: 60s
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          for node in $(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o name); do kubectl annotate ${node} skyhook.nvidia.com/nodeState_foobar-; done
+    - create:
+        file: pod.yaml
+    - assert:
+        file: node-assert.yaml
+    catch:
+      - get:
+          apiVersion: v1
+          kind: Node
+          selector: skyhook.nvidia.com/test-node=skyhooke2e
+          format: yaml

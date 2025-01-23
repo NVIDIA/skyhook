@@ -1,0 +1,32 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: demo
+spec:
+  nodeSelectors:
+    matchLabels:
+      eks.amazonaws.com/nodegroup: demo
+  interruptionBudget: 
+    percent: 100
+  podNonInterruptLabels:
+    matchLabels:
+      app: skyhook-demo-workload
+  packages:
+    baz:
+      version: 2024.8.10
+      image: nvcr.io/nvidian/swgpu-baseos/shellscript:1.3.1
+      interrupt:
+        type: reboot
+        # type: service
+        # services:
+        #   - cron
+      configMap:
+        config.yaml: |-
+          #!/bin/bash
+          sleep 100
+        config_check.yaml: |-
+          #!/bin/bash
+          sleep 100

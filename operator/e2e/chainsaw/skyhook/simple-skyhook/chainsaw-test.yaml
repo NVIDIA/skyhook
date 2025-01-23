@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: simple-skyhook
+spec:
+  concurrent: true 
+  skip: true ##  this test doesn't seem to be useful, just slows things down, leaving it for, should delete at some point if still skipped
+  timeouts:
+    assert: 180s
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../rest_test.sh simple-skyhook
+    - create:
+        file: skyhook.yaml
+    - assert:
+        file: assert.yaml

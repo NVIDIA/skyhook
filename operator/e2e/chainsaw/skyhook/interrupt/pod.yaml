@@ -1,0 +1,56 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: important-stuff
+  labels: 
+    dontmess: withme
+spec:
+  terminationGracePeriodSeconds: 5
+  restartPolicy: OnFailure
+  nodeSelector:
+    skyhook.nvidia.com/test-node: skyhooke2e
+  containers:
+  - name: workload
+    image: busybox:latest
+    command: ["sh", "-c", "sleep 20 && exit"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drain-on
+  labels: 
+    drain: me
+spec:
+  terminationGracePeriodSeconds: 5
+  restartPolicy: OnFailure
+  nodeSelector:
+    skyhook.nvidia.com/test-node: skyhooke2e
+  containers:
+  - name: workload
+    image: busybox:latest
+    command: ["sh", "-c", "sleep 100 && exit"]
+---
+## testing remove an old version that should, this pod is running from old version of of the SCR - this will be deleted
+apiVersion: v1
+kind: Pod
+metadata:
+  name: invalid-package
+  namespace: skyhook
+  labels:
+      skyhook.nvidia.com/package: invalid-1.2.3
+      skyhook.nvidia.com/name: interrupt
+  annotations:
+    skyhook.nvidia.com/package: '{"name":"invalid","version":"1.2.3","stage":"apply","skyhook":"interrupt","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test"}'
+spec:
+  terminationGracePeriodSeconds: 5
+  restartPolicy: OnFailure
+  nodeSelector:
+    skyhook.nvidia.com/test-node: skyhooke2e
+  initContainers:
+  - name: workload
+    image: busybox:latest
+    command: ["sh", "-c", "sleep 2 && exit 2"]
+  containers:
+    - name: pause
+      image: registry.k8s.io/pause:3.10

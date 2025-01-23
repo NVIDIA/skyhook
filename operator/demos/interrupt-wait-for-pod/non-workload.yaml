@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: skyhook-demo-non-workload
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: skyhook-demo-non-workload
+  template:
+    metadata:
+      labels:
+        app: skyhook-demo-non-workload
+    spec:
+      nodeSelector:
+        eks.amazonaws.com/nodegroup: demo
+      containers:
+      - name: debugger
+        image: ubuntu:22.04
+        command:
+          - sleep
+          - "infinity"
+        imagePullPolicy: IfNotPresent

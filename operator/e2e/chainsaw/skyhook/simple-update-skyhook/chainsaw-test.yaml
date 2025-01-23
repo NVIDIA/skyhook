@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: simple-update-skyhook
+spec:
+  concurrent: true
+  timeouts:
+    assert: 240s
+  catch: ## if errors, print the most important info
+  - get:
+      apiVersion: v1
+      kind: Node
+      selector: skyhook.nvidia.com/test-node=skyhooke2e
+      format: yaml
+  - get:
+      apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: simple-update-skyhook
+      format: yaml
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation/labels from last run
+          ../rest_test.sh simple-update-skyhook
+    - apply:
+        file: skyhook.yaml
+    - assert:
+        file: assert.yaml
+  - try:
+    - patch:
+        ## this test is very odd, it adds stuff... not makes it so
+        file: update.yaml
+    - assert:
+        file: assert-update.yaml

@@ -1,0 +1,32 @@
+{{ if ((.Values.rbac).createSkyhookEditorRole) }}
+# permissions for end users to edit skyhooks.
+## NOTE: not managed by helmify, needs to be manually updated, however, should not change much
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: skyhook-operator
+    app.kubernetes.io/part-of: skyhook-operator
+  {{- include "chart.labels" . | nindent 4 }}
+  name: skyhook-editor-role
+rules:
+- apiGroups:
+  - skyhook.nvidia.com
+  resources:
+  - skyhooks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - skyhook.nvidia.com
+  resources:
+  - skyhooks/status
+  verbs:
+  - get
+{{ end }}

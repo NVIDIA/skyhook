@@ -1,0 +1,14 @@
+controllerManager:
+  manager:
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 5m
+        memory: 64Mi
+    # telling the helm chart to use the test operator image
+    # for more info refer to the README
+    image:
+      repository: nvcr.io/nvidian/swgpu-baseos/skyhook-operator
+      tag: test

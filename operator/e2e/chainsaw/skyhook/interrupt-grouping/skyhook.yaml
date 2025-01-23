@@ -1,0 +1,37 @@
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: interrupt-grouping
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  additionalTolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+  packages:
+    spenser:
+    zeb:
+      version: "2.1.4"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: SLEEP_LEN
+          value: "2"
+      interrupt: 
+        type: service
+        services: [cron]
+    dax:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: SLEEP_LEN
+          value: "2"
+      interrupt: 
+        type: service
+        services: [containerd, foobar]
+      resources:
+        cpuLimit: 123m

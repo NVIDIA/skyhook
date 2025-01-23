@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_runtime-required: complete
+  annotations:
+    skyhook.nvidia.com/status_runtime-required: complete
+spec:
+  (!taints || length(taints)==`0` || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule'  && value == 'runtime-required'])==`0`): true

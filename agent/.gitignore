@@ -1,0 +1,12 @@
+venv
+root_mount
+root
+
+__pycache__
+.pytest_cache
+dist
+.coverage
+.coverage.*
+coverage.xml
+
+vendor/lock_file.bak

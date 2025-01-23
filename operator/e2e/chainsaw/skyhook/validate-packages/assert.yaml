@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_validate-packages: in_progress
+  annotations: 
+    ("skyhook.nvidia.com/nodeState_validate-packages" && parse_json("skyhook.nvidia.com/nodeState_validate-packages")): 
+      {
+        "invalid-env|5.4.3": {
+            "name": "invalid-env",
+            "version": "5.4.3",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "apply",
+            "state": "in_progress"
+        },
+        "invalid-image|3.2.3-bogus": {
+            "name": "invalid-image",
+            "version": "3.2.3-bogus",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "apply",
+            "state": "in_progress"
+        },
+        "invalid-resources|1.2.3": {
+            "name": "invalid-resources",
+            "version": "1.2.3",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "apply",
+            "state": "in_progress"
+        }
+      }
+    skyhook.nvidia.com/status_validate-packages: in_progress
+status:
+  (conditions[?type == 'skyhook.nvidia.com/validate-packages/NotReady']):
+  - reason: "Incomplete"
+    status: "True"
+  (conditions[?type == 'skyhook.nvidia.com/validate-packages/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: validate-packages
+status:
+  status: in_progress
+  nodeState:
+    (values(@)):
+    - invalid-env|5.4.3:
+        name: invalid-env
+        state: in_progress
+        version: '5.4.3'
+        image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        stage: apply
+      invalid-image|3.2.3-bogus:
+        name: invalid-image
+        state: in_progress
+        version: '3.2.3-bogus'
+        image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        stage: apply
+      invalid-resources|1.2.3:
+        name: invalid-resources
+        state: in_progress
+        version: '1.2.3'
+        image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        stage: apply
+  nodeStatus:
+    # grab values should be one and is erroring
+    (values(@)):
+    - in_progress

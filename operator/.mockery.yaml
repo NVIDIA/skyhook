@@ -1,0 +1,39 @@
+
+dir: "{{.InterfaceDir}}/mock"
+filename: "{{.InterfaceName }}.go"
+quiet: False
+with-expecter: true
+boilerplate-file: "boilerplate/boilerplate.go.txt"
+packages:
+## external packages
+    k8s.io/client-go/util/workqueue:
+        # place your package-specific config here
+        config:
+            dir: "internal/mocks/{{.PackageName}}"
+        interfaces:
+            # select the interfaces you want mocked
+            RateLimitingInterface:
+                # Modify package-level config for this specific interface (if applicable)
+                config:
+    
+    sigs.k8s.io/controller-runtime/pkg/client:
+        config:
+            dir: "internal/mocks/{{.PackageName}}"
+        interfaces:
+            Client:
+    k8s.io/client-go/tools/record:
+        config:
+            dir: "internal/mocks/{{.PackageName}}"
+        interfaces:
+            EventRecorder:
+## internal packages
+    gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/dal:
+        config:
+            all: True
+            boilerplate-file: "boilerplate/boilerplate.go.txt"
+    gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/controller:
+        config:
+            all: True
+            boilerplate-file: "boilerplate/boilerplate.go.txt"
+        interfaces:
+            SkyhookNodes:

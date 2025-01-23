@@ -1,0 +1,104 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  generateName: uninstall-upgrade-skyhook-dogs-1.2.5-uninstall-
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: uninstall-upgrade-skyhook
+    skyhook.nvidia.com/package: dogs-1.2.5
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "dogs",
+        "version": "1.2.5",
+        "skyhook": "uninstall-upgrade-skyhook",
+        "stage": "uninstall",
+        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: uninstall-upgrade-skyhook
+spec:
+  initContainers:
+    - name: dogs-init
+    - name: dogs-uninstall
+      args:
+        ([0]): uninstall
+        ([1]): /root
+        (length(@)): 3
+    - name: dogs-uninstallcheck
+      args:
+        ([0]): uninstall-check
+        ([1]): /root
+        (length(@)): 3
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  generateName: uninstall-upgrade-skyhook-nullptr-2.0.1-uninstall-
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: uninstall-upgrade-skyhook
+    skyhook.nvidia.com/package: nullptr-2.0.1
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "nullptr",
+        "version": "2.0.1",
+        "skyhook": "uninstall-upgrade-skyhook",
+        "stage": "uninstall",
+        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: uninstall-upgrade-skyhook
+spec:
+  initContainers:
+    - name: nullptr-init
+    - name: nullptr-uninstall
+      args:
+        ([0]): uninstall
+        ([1]): /root
+        (length(@)): 3
+    - name: nullptr-uninstallcheck
+      args:
+        ([0]): uninstall-check
+        ([1]): /root
+        (length(@)): 3
+---
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_uninstall-upgrade-skyhook: complete
+  annotations:
+    skyhook.nvidia.com/nodeState_uninstall-upgrade-skyhook: '{}'
+    skyhook.nvidia.com/status_uninstall-upgrade-skyhook: complete
+status:
+  (conditions[?type == 'skyhook.nvidia.com/uninstall-upgrade-skyhook/NotReady']):
+  - reason: "Complete"
+    status: "False"
+  (conditions[?type == 'skyhook.nvidia.com/uninstall-upgrade-skyhook/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: uninstall-upgrade-skyhook
+status:
+  status: complete
+  observedGeneration: 6
+  completeNodes: 1/1
+  packageList: ""
+  nodesInProgress: 0
+  nodeState: 
+    (values(@)): {}
+  nodeStatus:
+   # grab values should be one and is complete
+    (values(@)):
+      - complete

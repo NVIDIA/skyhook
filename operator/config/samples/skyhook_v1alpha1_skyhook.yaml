@@ -1,0 +1,50 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/name: skyhook
+    app.kubernetes.io/instance: skyhook-sample
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: skyhook-operator
+  name: skyhook-sample
+spec:
+  additionalTolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+  serial: true
+  podNonInterruptLabels:
+    matchLabels:
+      key: value
+  interruptionBudget: 
+    percent: 33
+  packages:
+    spenser:
+      version: "3.1.1"
+      configMap:
+        nvssh_vars.sh: |-
+          #!/bin/bash
+          nvssh_allowed_roles=access-azure-nv-ngc-prod-dgxc-admin
+          nvssh_allowed_sudo_roles=access-azure-nv-ngc-prod-dgxc-admin
+          echo $0
+      interrupt: 
+        type: reboot
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+    ssh:
+      version: "3.0"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+    phoenix:
+      version: "2.1.4"
+      env:
+        - key: foo
+          value: bar
+      interrupt: 
+        type: service
+        services: [cron]
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+    dax:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      dependsOn: 
+        spenser: "3.1.1"
+        ssh: "3.0"

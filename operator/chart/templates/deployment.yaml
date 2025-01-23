@@ -1,0 +1,155 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chart.fullname" . }}-controller-manager
+  labels:
+    app: {{ include "chart.fullname" . }}-controller-manager
+    app.kubernetes.io/component: manager
+    app.kubernetes.io/created-by: skyhook-operator
+    app.kubernetes.io/part-of: skyhook-operator
+    control-plane: controller-manager
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.controllerManager.replicas }}
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+    {{- include "chart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "chart.fullname" . }}-controller-manager
+        control-plane: controller-manager
+      {{- include "chart.selectorLabels" . | nindent 8 }}
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+      {{- with .Values.controllerManager.tolerations }}
+      tolerations: 
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.controllerManager.selectors }}
+      nodeSelector: 
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.useHostNetwork }}
+      hostNetwork: true
+      {{- end }}
+      containers:
+      - command:
+        - /manager
+        env:
+        - name: METRICS_PORT
+          value: {{ quote .Values.controllerManager.manager.env.metricsPort }}
+        - name: PROBE_PORT
+          value: {{ quote .Values.controllerManager.manager.env.probePort }}
+        - name: LEADER_ELECTION
+          value: {{ quote .Values.controllerManager.manager.env.leaderElection }}
+        - name: LOG_LEVEL
+          value: {{ quote .Values.controllerManager.manager.env.logLevel }}
+        - name: ENABLE_WEBHOOKS
+          value: {{ quote .Values.controllerManager.manager.env.enableWebhooks }}
+        - name: NAMESPACE
+          value: {{ .Release.Namespace }}
+        - name: IMAGE_PULL_SECRET
+          value: {{ quote .Values.imagePullSecret }}
+        - name: COPY_DIR_ROOT
+          value: {{ quote .Values.controllerManager.manager.env.copyDirRoot }}
+        - name: REAPPLY_ON_REBOOT
+          value: {{ quote .Values.controllerManager.manager.env.reapplyOnReboot }}
+        - name: RUNTIME_REQUIRED_TAINT
+          value: {{ quote .Values.controllerManager.manager.env.runtimeRequiredTaint }}
+        - name: PAUSE_IMAGE
+          value: {{ quote .Values.controllerManager.manager.env.pauseImage }}
+        - name: AGENT_IMAGE
+          value: {{ quote .Values.controllerManager.manager.env.agentImage }}
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag
+          | default .Chart.AppVersion }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources: {{ if .Values.controllerManager.manager.resources }}{{- toYaml .Values.controllerManager.manager.resources | nindent 10 }}{{ else }}
+          limits:
+            cpu: {{ maxf 1000 (mulf 1.6 .Values.estimatedNodeCount (maxf 1 (mulf 0.4 .Values.estimatedPackageCount))) | int }}m
+            memory: {{ maxf 512 (mulf 0.8 .Values.estimatedNodeCount (maxf 1 (mulf 0.4 .Values.estimatedPackageCount))) | int }}Mi
+          requests:
+            cpu: 200m
+            memory: {{ maxf 64 (mulf 0.45 .Values.estimatedNodeCount) | int }}Mi
+          {{- end }}
+        securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
+          | nindent 10 }}
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: cert
+          readOnly: true
+      - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
+        env:
+        - name: KUBERNETES_CLUSTER_DOMAIN
+          value: {{ quote .Values.kubernetesClusterDomain }}
+        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag
+          | default .Chart.AppVersion }}
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources: {{- toYaml .Values.controllerManager.kubeRbacProxy.resources | nindent 10 }}
+        securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
+          | nindent 10 }}
+      imagePullSecrets:
+        - name: {{ quote .Values.imagePullSecret }}
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: cert
+        secret:
+          defaultMode: 420
+          secretName: webhook-server-cert
+{{ if ((.Values.controllerManager.podDisruptionBudget).minAvailable) }}
+{{ if ge .Values.controllerManager.podDisruptionBudget.minAvailable .Values.controllerManager.replicas }}
+{{- $_ := required "minAvailable to be less than replicas" .nil }}
+{{ end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "chart.fullname" . }}-controller-manager-pdb
+spec:
+  minAvailable: {{ .Values.controllerManager.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ include "chart.fullname" . }}-controller-manager
+  unhealthyPodEvictionPolicy: AlwaysAllow
+{{ end }}

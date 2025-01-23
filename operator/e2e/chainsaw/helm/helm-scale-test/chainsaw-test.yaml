@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helm-chart
+spec:
+  description: This test asserts that the helm chart is working as expected. Specifically it asserts that the helm chart works when given a different
+    deployment name than skyhook-operator and that the tolerations that are given to the chart through a values file work as expected.
+  concurrent: false
+  timeouts:
+    assert: 120s
+    exec: 120s
+  steps:
+  - try:
+    - script:
+        content: |
+          ## install cert-manager (note this takes like 70+ seconds)
+          ../install-cert-manager.sh
+    - script:
+        content: |
+          ## Install helm chart
+          ../install-helm-chart.sh foobar values-scale.yaml
+    - assert:
+        file: assert-scaled-resources.yaml
+    - script:
+        content: |
+          ../install-helm-chart.sh foobar vaules-override-resources.yaml
+    - assert:
+        file: assert-override-resources.yaml
+    finally:
+    - script:
+        content: |
+          ## Remove helm chart and cert-manager
+          ../uninstall-helm-chart.sh foobar
+          ../uninstall-cert-manager.sh

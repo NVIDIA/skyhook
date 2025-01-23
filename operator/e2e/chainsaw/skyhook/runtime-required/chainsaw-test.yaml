@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: runtime-required
+spec:
+  concurrent: false 
+  timeouts:
+    assert: 180s
+  catch: ## if errors, print the most important info
+  - get:
+      apiVersion: v1
+      kind: Node
+      selector: skyhook.nvidia.com/test-node=skyhooke2e
+      format: yaml
+  - get:
+      apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: runtime-required
+      format: yaml
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../rest_test.sh runtime-required
+          ## add taints to nodes
+          ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/test-node=skyhooke2e
+    - create:
+        file: skyhook.yaml
+    - assert:
+        file: assert.yaml
+    finally:
+    - script:
+        content: |
+          ## remove taints from nodes
+          ../nodes_remove_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/test-node=skyhooke2e

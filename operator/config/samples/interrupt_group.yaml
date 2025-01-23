@@ -1,0 +1,28 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: grouping
+spec:
+  additionalTolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+  nodeSelectors:
+    matchLabels:
+      agentpool: blockwood
+      # skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    percent: 25
+  packages:
+    spenser:
+    zeb:
+      version: "2.1.4"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      interrupt: 
+        type: service
+        services: [cron]
+    dax:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      interrupt: 
+        type: service
+        services: [containerd, foobar]

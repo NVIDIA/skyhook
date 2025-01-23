@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_simple-skyhook: complete
+  annotations:
+    skyhook.nvidia.com/nodeState_simple-skyhook: '{"dexter|1.2.3":{"name":"dexter","version":"1.2.3","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"config","state":"complete"},"foobar|1.2":{"name":"foobar","version":"1.2","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"config","state":"complete"},"spencer|3.2.3":{"name":"spencer","version":"3.2.3","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"config","state":"complete"}}'
+    skyhook.nvidia.com/status_simple-skyhook: complete
+status:
+  (conditions[?type == 'skyhook.nvidia.com/simple-skyhook/NotReady']):
+  - reason: "Complete"
+    status: "False"
+  (conditions[?type == 'skyhook.nvidia.com/simple-skyhook/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: simple-skyhook
+status:
+  status: complete
+  observedGeneration: 2
+  nodeState:
+    (values(@)):
+      - dexter|1.2.3:
+          name: dexter
+          state: complete
+          version: '1.2.3'
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          stage: config
+        foobar|1.2:
+          name: foobar
+          state: complete
+          version: '1.2'
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          stage: config
+        spencer|3.2.3:
+          name: spencer
+          state: complete
+          version: '3.2.3'
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          stage: config
+  nodeStatus:
+   # grab values should be one and is complete
+    (values(@)):
+      - complete
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: simple-skyhook-dexter-1.2.3
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: simple-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: simple-skyhook
+data:
+  game.properties: |
+    enemies=aliens
+    lives=3
+    enemies.cheat=true
+    enemies.cheat.level=noGoodRotten
+  ui.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true
+    how.nice.to.look=fairlyNice
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/skyhook-node-meta: simple-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: simple-skyhook
+data:
+  (length(@)): 2
+  labels.json:
+    (contains(@, 'skyhook.nvidia.com/test-node')): true
+    (contains(@, 'skyhook.nvidia.com/status_simple-skyhook')): true
+  annotations.json:
+    (contains(@, 'skyhook.nvidia.com/status_simple-skyhook')): true
+    (contains(@, 'skyhook.nvidia.com/nodeState_simple-skyhook')): true
