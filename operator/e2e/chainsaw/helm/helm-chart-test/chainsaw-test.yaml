@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helm-chart
+spec:
+  description: This test asserts that the helm chart is working as expected. Specifcally it asserts that the helm chart works when given a different
+    deployment name than skyhook-operator and that the tolerations that are given to the chart through a values file work as expected.
+  concurrent: false
+  timeouts:
+    assert: 120s
+    exec: 120s
+  steps:
+  - try:
+    - script:
+        content: |
+          echo "Running test for helm chart"
+          ## install cert-manager (note this takes like 70+ seconds)
+          ../install-cert-manager.sh
+    - script:
+        content: |
+          ## Add not good taint to nodes
+          ../taint-nodes.sh dedicated=bogus:NoSchedule
+    - script:
+        content: |
+          ## Install helm chart
+          ../install-helm-chart.sh foobar
+    - assert:
+        file: assert-no-schedule.yaml
+    - script:
+        content: |
+          ## remove not good taint and add good taint on nodes
+          ../untaint-nodes.sh dedicated=bogus:NoSchedule
+          ../taint-nodes.sh dedicated=system-cpu:NoSchedule
+    - script:
+        content: |
+          # reinstall helm chart
+          ../uninstall-helm-chart.sh foobar
+          ../install-helm-chart.sh foobar
+    - assert:
+        file: assert-scheduled.yaml
+    finally:
+    - script:
+        content: |
+          ## Remove taint from nodes
+          ../untaint-nodes.sh dedicated=bogus:NoSchedule
+          ../untaint-nodes.sh dedicated=system-cpu:NoSchedule
+    - script:
+        content: |
+          ## Remove helm chart and cert-manager
+          ../uninstall-helm-chart.sh foobar
+          ../uninstall-cert-manager.sh

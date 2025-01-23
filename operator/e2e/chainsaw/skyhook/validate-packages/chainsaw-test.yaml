@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: validate-packages
+spec:
+  description: This test makes sure that the operator will validate that the pods it's created match the package's current spec in the SCR and if not it will kill them off. 
+    We assert this by creating some packages with an incorrect specification such as a bogus image, too much resources, and an env that causes the container to hang. 
+    We then fix this in the SCR with an update and assert that the pods were killed and that the operator allowed the packages to finish.
+  concurrent: true
+  timeouts:
+    assert: 90s
+  catch: ## if errors, print the most important info
+    - get:
+        apiVersion: v1
+        kind: Node
+        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        format: yaml
+    - get:
+        apiVersion: skyhook.nvidia.com/v1alpha1
+        kind: Skyhook
+        name: validate-packages
+        format: yaml
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation/labels from last run
+          ../rest_test.sh validate-packages
+    - apply:
+        file: skyhook.yaml
+    - sleep:
+        duration: 5s
+    - assert:
+        file: assert.yaml
+  - try:
+    - patch:
+        file: update.yaml
+    - assert:
+        file: assert-update.yaml

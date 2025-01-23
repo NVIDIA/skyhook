@@ -1,0 +1,31 @@
+# permissions for end users to edit skyhooks.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: skyhook-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: skyhook-operator
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: skyhook-editor-role
+rules:
+- apiGroups:
+  - skyhook.nvidia.com
+  resources:
+  - skyhooks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - skyhook.nvidia.com
+  resources:
+  - skyhooks/status
+  verbs:
+  - get

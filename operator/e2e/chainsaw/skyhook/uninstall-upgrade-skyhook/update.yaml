@@ -1,0 +1,35 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: uninstall-upgrade-skyhook
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    count: 1
+  packages:
+    dogs: 
+      version: "1.2.5" ## downgrade
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      interrupt:
+        type: reboot
+      configMap:  
+        game.properties: |
+          changed
+        ui.properties: |
+          changed
+    nullptr:
+      version: "2.0.1" ## upgrade
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      interrupt:
+        type: service
+        services: [cron, containerd]
+      configMap:  
+        game.properties: |
+          changed
+        ui.properties: |
+          changed

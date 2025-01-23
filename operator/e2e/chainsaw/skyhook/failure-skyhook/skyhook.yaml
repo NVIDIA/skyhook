@@ -1,0 +1,28 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: failure-skyhook
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    percent: 20
+  packages:
+    failure:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: EXIT_CODE
+          value: "2"
+      dependsOn:
+        dexter: "1.2.3"
+    dexter:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: SLEEP_LEN
+          value: "1" ## making faster

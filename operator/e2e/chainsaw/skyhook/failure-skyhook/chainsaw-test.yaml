@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: failure-skyhook
+spec:
+  concurrent: true 
+  timeouts:
+    assert: 120s
+  catch: ## if errors, print the most important info
+  - get:
+      apiVersion: v1
+      kind: Node
+      selector: skyhook.nvidia.com/test-node=skyhooke2e
+      format: yaml
+  - get:
+      apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: failure-skyhook
+      format: yaml
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../rest_test.sh failure-skyhook
+    - create:
+        file: skyhook.yaml
+    - assert:
+        file: node-assert.yaml

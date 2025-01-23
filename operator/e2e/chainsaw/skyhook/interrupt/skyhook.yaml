@@ -1,0 +1,70 @@
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: interrupt
+spec:
+  podNonInterruptLabels:
+    matchLabels:
+      dontmess: withme
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    count: 1
+  packages:
+    jason:
+      version: "1.3.2"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      agentImageOverride: nvcr.io/nvidian/swgpu-baseos/agentless-test:3.2.3
+      env: 
+        - name: SLEEP_LEN
+          value: "8" ## making slow
+    spencer:
+      version: "3.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: SLEEP_LEN
+          value: "3" ## making faster
+      dependsOn:
+        dexter: "1.2.3"
+    foobar:
+      version: "1.2"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      dependsOn:
+        dexter: "1.2.3"
+        baxter: "3.3"
+    baxter: 
+      version: "3.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: SLEEP_LEN
+          value: "3" ## making faster
+      interrupt: 
+        type: service
+        services: [rsyslog]
+      dependsOn:
+        spencer: "3.2.3"
+    dexter:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      interrupt: 
+        type: service
+        services: [cron]
+      env: 
+        - name: SLEEP_LEN
+          value: "3" ## making faster
+      configMap:
+        game.properties: |
+          enemies=aliens
+          lives=3
+          enemies.cheat=true
+          enemies.cheat.level=noGoodRotten
+        ui.properties: |
+          color.good=purple
+          color.bad=yellow
+          allow.textmode=true
+          how.nice.to.look=fairlyNice

@@ -1,0 +1,7 @@
+## Append samples of your project ##
+resources:
+- skyhook_v1alpha1_skyhook.yaml
+- skyhook_testing.yaml
+- bcp_examples.yaml
+- interrupt_group.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples

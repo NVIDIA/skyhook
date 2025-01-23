@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+  annotations:
+    ("skyhook.nvidia.com/nodeState_foobar" && parse_json("skyhook.nvidia.com/nodeState_foobar")):
+      {
+        "foobar|1.2.3": {
+            "name": "foobar",
+            "version": "1.2.3",
+            "image": "",
+            "stage": "apply",
+            "state": "complete"
+        }
+      } 

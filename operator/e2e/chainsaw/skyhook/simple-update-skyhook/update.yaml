@@ -1,0 +1,34 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: simple-update-skyhook
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    count: 1
+  packages:
+    baxter:
+      version: 2.3.1-test
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      configMap:
+        game.properties: |
+          enemies=aliens
+          lives=5
+          enemies.cheat=true
+          enemies.cheat.level=noGoodRotten
+        ui.properties: |
+          color.good=purple
+          color.bad=yellow
+          allow.textmode=true
+          how.nice.to.look=fairlyNice
+    jackie-chan: ## TODO: need to handle bad naming, because this are pod names, so can have issues depending on the chars
+      version: "2024.7.7-test"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: SLEEP_LEN
+          value: "3" ## making faster so the test works for asserting node condition

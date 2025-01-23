@@ -1,0 +1,13 @@
+controllerManager:
+  # setting a toleration on the manager for testing purposes
+  tolerations:
+  - key: dedicated
+    operator: "Equal"
+    value: system-cpu
+    effect: NoSchedule
+  manager:
+    # telling the helm chart to use the test operator image
+    # for more info refer to the README
+    image:
+      repository: nvcr.io/nvidian/swgpu-baseos/skyhook-operator
+      tag: test

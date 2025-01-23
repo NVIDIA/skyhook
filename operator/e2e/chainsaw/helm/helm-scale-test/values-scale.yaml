@@ -1,0 +1,9 @@
+controllerManager:
+  manager:
+    # telling the helm chart to use the test operator image
+    # for more info refer to the README
+    image:
+      repository: nvcr.io/nvidian/swgpu-baseos/skyhook-operator
+      tag: test
+estimatedNodeCount: 400
+estimatedPackageCount: 5

@@ -1,0 +1,31 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: validate-packages
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    count: 1
+  packages:
+    invalid-image:
+      version: "3.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+    invalid-resources:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      resources:
+        cpuRequest: 50m
+        cpuLimit: 250m
+        memoryRequest: 64Mi
+        memoryLimit: 256Mi
+    invalid-env:
+      version: "5.4.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      env: 
+        - name: SLEEP_LEN
+          value: "3"

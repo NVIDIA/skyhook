@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_uninstall-upgrade-skyhook: complete
+  annotations:
+    ("skyhook.nvidia.com/nodeState_uninstall-upgrade-skyhook" && parse_json("skyhook.nvidia.com/nodeState_uninstall-upgrade-skyhook")):
+      {
+        "cats|6.2.0": {
+            "name": "cats",
+            "version": "6.2.0",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        },
+        "dogs|1.2.6": {
+            "name": "dogs",
+            "version": "1.2.6",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "post-interrupt",
+            "state": "complete"
+        },
+        "nullptr|2.0.0": {
+            "name": "nullptr",
+            "version": "2.0.0",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "post-interrupt",
+            "state": "complete"
+        }
+      }
+    skyhook.nvidia.com/status_uninstall-upgrade-skyhook: complete
+status:
+  (conditions[?type == 'skyhook.nvidia.com/uninstall-upgrade-skyhook/NotReady']):
+  - reason: "Complete"
+    status: "False"
+  (conditions[?type == 'skyhook.nvidia.com/uninstall-upgrade-skyhook/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: uninstall-upgrade-skyhook
+status:
+  status: complete
+  completeNodes: 1/1
+  packageList: cats:6.2.0,dogs:1.2.6,nullptr:2.0.0
+  nodesInProgress: 0
+  observedGeneration: 2
+  nodeState:
+    (values(@)):
+      - dogs|1.2.6:
+          name: dogs
+          state: complete
+          version: '1.2.6'
+          stage: post-interrupt
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        nullptr|2.0.0:
+          name: nullptr
+          state: complete
+          version: '2.0.0'
+          stage: post-interrupt
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        cats|6.2.0:
+          name: cats
+          state: complete
+          version: '6.2.0'
+          stage: config
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+  nodeStatus:
+   # grab values should be one and is complete
+    (values(@)):
+      - complete
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: uninstall-upgrade-skyhook-nullptr-2.0.0
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: uninstall-upgrade-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: uninstall-upgrade-skyhook
+data:
+  game.properties: |
+    enemies=aliens
+    lives=3
+    enemies.cheat=true
+    enemies.cheat.level=noGoodRotten
+  ui.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true
+    how.nice.to.look=fairlyNice
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: uninstall-upgrade-skyhook-dogs-1.2.6
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: uninstall-upgrade-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: uninstall-upgrade-skyhook
+data:
+  game.properties: |
+    enemies=aliens
+    lives=3
+    enemies.cheat=true
+    enemies.cheat.level=noGoodRotten
+  ui.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true
+    how.nice.to.look=fairlyNice

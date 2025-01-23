@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: skyhook-demo-workload
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: skyhook-demo-workload
+  template:
+    metadata:
+      labels:
+        app: skyhook-demo-workload
+    spec:
+      nodeSelector:
+        demo: user-workload
+      containers:
+      - name: debugger
+        image: ubuntu:22.04
+        command:
+          - sleep
+          - "infinity"
+        imagePullPolicy: IfNotPresent

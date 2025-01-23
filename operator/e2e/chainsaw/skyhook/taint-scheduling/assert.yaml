@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_taint-scheduling: unknown
+  annotations:
+    skyhook.nvidia.com/status_taint-scheduling: unknown
+spec:
+  taints:
+  - effect: NoSchedule
+    key: nvidia.com/gpu
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: taint-scheduling
+status:
+  status: unknown
+  nodeStatus:
+   # grab values should be one and is unknown
+    (values(@)):
+      - unknown
+  (conditions[?reason == 'TaintNotTolerable']):
+  - reason: TaintNotTolerable
+    status: "True"
+    type: skyhook.nvidia.com/TaintNotTolerable

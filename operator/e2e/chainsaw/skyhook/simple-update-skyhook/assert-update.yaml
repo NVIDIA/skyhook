@@ -1,0 +1,144 @@
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: simple-update-skyhook-baxter-2.3.1-test
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: simple-update-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: simple-update-skyhook
+data:
+  game.properties: |
+    enemies=aliens
+    lives=5
+    enemies.cheat=true
+    enemies.cheat.level=noGoodRotten
+  ui.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true
+    how.nice.to.look=fairlyNice
+---
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_simple-update-skyhook: complete
+  annotations:
+    ("skyhook.nvidia.com/nodeState_simple-update-skyhook" && parse_json("skyhook.nvidia.com/nodeState_simple-update-skyhook")):
+      {
+        "baxter|2.3.1-test": {
+            "name": "baxter",
+            "version": "2.3.1-test",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        },
+        "dexter|1.2.3": {
+            "name": "dexter",
+            "version": "1.2.3",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        },
+        "foobar|1.2": {
+            "name": "foobar",
+            "version": "1.2",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        },
+        "jackie-chan|2024.7.7-test": {
+            "name": "jackie-chan",
+            "version": "2024.7.7-test",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        },
+        "spencer|3.2.3": {
+            "name": "spencer",
+            "version": "3.2.3",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        }
+      }
+    skyhook.nvidia.com/status_simple-update-skyhook: complete
+status:
+  (conditions[?type == 'skyhook.nvidia.com/simple-update-skyhook/NotReady']):
+  - reason: "Complete"
+    status: "False"
+  (conditions[?type == 'skyhook.nvidia.com/simple-update-skyhook/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: simple-update-skyhook
+status:
+  status: complete
+  observedGeneration: 3
+  nodeState:
+    (values(@)):
+      - baxter|2.3.1-test:
+          name: baxter
+          stage: config
+          state: complete
+          version: 2.3.1-test
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        dexter|1.2.3:
+          name: dexter
+          stage: config
+          state: complete
+          version: 1.2.3
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        foobar|1.2:
+          name: foobar
+          stage: config
+          state: complete
+          version: '1.2'
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        jackie-chan|2024.7.7-test:
+          name: jackie-chan
+          stage: config
+          state: complete
+          version: '2024.7.7-test'
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        spencer|3.2.3:
+          name: spencer
+          stage: config
+          state: complete
+          version: 3.2.3
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+  nodeStatus:
+   # grab values should be one and is complete
+    (values(@)):
+      - complete
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/skyhook-node-meta: simple-update-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: simple-update-skyhook
+data:
+  (length(@)): 2
+  labels.json:
+    (contains(@, 'skyhook.nvidia.com/test-node')): true
+    (contains(@, 'skyhook.nvidia.com/status_simple-update-skyhook')): true
+  annotations.json:
+    (contains(@, 'skyhook.nvidia.com/status_simple-update-skyhook')): true
+    (contains(@, 'skyhook.nvidia.com/nodeState_simple-update-skyhook')): true

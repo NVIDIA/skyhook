@@ -1,0 +1,29 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "chart.fullname" . }}-validating-webhook-configuration
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "chart.fullname" . }}-serving-cert
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: skyhook-operator-webhook-service
+      namespace: '{{ .Release.Namespace }}'
+      path: /validate-skyhook-nvidia-com-v1alpha1-skyhook
+  failurePolicy: Fail
+  name: vskyhook.kb.io
+  rules:
+  - apiGroups:
+    - skyhook.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - skyhooks
+  sideEffects: None

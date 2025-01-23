@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/default-container: manager
+  labels:
+    app: foobar-skyhook-operator-controller-manager
+    app.kubernetes.io/instance: foobar
+    app.kubernetes.io/name: skyhook-operator
+    control-plane: controller-manager
+  namespace: skyhook
+spec:
+  containers:
+  - command:
+    - /manager
+    resources:
+      limits:
+        cpu: 200m
+        memory: 128Mi
+      requests:
+        cpu: 5m
+        memory: 64Mi
+  - name: kube-rbac-proxy
+    resources:
+      limits:
+        cpu: 500m
+        memory: 128Mi
+      requests:
+        cpu: 5m
+        memory: 64Mi

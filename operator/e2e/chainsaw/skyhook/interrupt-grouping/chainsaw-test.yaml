@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: interrupt-grouping
+spec:
+  description: |
+    This tests the grouping of interrupts around services or reboots assuring that we have one interrupt for a group
+    and the priority is correct.
+  catch:
+      ## if errors, print the most important info
+    - get:
+        apiVersion: v1
+        kind: Node
+        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        format: yaml
+    - get:
+        apiVersion: skyhook.nvidia.com/v1alpha1
+        kind: Skyhook
+        name: interrupt-grouping
+        format: yaml
+  timeouts:
+    assert: 360s ## needs to be long to run at the same time as the other interrupt test, they we fight each other to cordon nodes
+  # skip: true
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../rest_test.sh interrupt-grouping
+    - create:
+        file: skyhook.yaml
+    - assert:
+        file: assert.yaml

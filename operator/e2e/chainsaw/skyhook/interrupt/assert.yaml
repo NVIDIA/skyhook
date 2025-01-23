@@ -1,0 +1,246 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  generateName: interrupt-invalid-1.2.3-uninstall-
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: interrupt
+    skyhook.nvidia.com/package: invalid-1.2.3
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")): 
+      {
+        "name": "invalid",
+        "version": "1.2.3",
+        "skyhook": "interrupt",
+        "stage": "uninstall",
+        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: interrupt
+spec:
+  initContainers:
+    - name: invalid-init
+    - name: invalid-uninstall
+      args:
+        ([0]): uninstall
+        ([1]): /root
+        (length(@)): 3
+    - name: invalid-uninstallcheck
+      args:
+        ([0]): uninstall-check
+        ([1]): /root
+        (length(@)): 3
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  generateName: interrupt-jason-1.3.2-apply-
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: interrupt
+    skyhook.nvidia.com/package: jason-1.3.2
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")): 
+      {
+        "name": "jason",
+        "version": "1.3.2",
+        "skyhook": "interrupt",
+        "stage": "apply",
+        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: interrupt
+spec:
+  initContainers:
+    - name: jason-init
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:1.3.2
+    - name: jason-apply
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:3.2.3
+      args:
+        ([0]): apply
+        ([1]): /root
+        (length(@)): 3
+    - name: jason-applycheck
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:3.2.3
+      args:
+        ([0]): apply-check
+        ([1]): /root
+        (length(@)): 3
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: interrupt-dexter-1.2.3
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: interrupt
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: interrupt
+data:
+  game.properties: |
+    enemies=aliens
+    lives=3
+    enemies.cheat=true
+    enemies.cheat.level=noGoodRotten
+  ui.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true
+    how.nice.to.look=fairlyNice
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  generateName: interrupt-interrupt-service-
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: interrupt
+    skyhook.nvidia.com/package: dexter-1.2.3 
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")): 
+      {
+          "name": "dexter",
+          "version": "1.2.3",
+          "skyhook": "interrupt",
+          "stage": "interrupt",
+          "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: interrupt
+spec:
+  initContainers:
+    - name: interrupt
+      args:
+        ([0]): interrupt
+        ([1]): /root
+        (parse_json(base64_decode([3]))):
+          {
+            "type": "service_restart",
+            "services": ["cron"]
+          }
+        (length(@)): 4
+---
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_interrupt: complete
+  annotations:
+    ("skyhook.nvidia.com/nodeState_interrupt" && parse_json("skyhook.nvidia.com/nodeState_interrupt")): 
+      {
+        "baxter|3.3": {
+            "name": "baxter",
+            "version": "3.3",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "post-interrupt",
+            "state": "complete"
+        },
+        "dexter|1.2.3": {
+            "name": "dexter",
+            "version": "1.2.3",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "post-interrupt",
+            "state": "complete"
+        },
+        "foobar|1.2": {
+            "name": "foobar",
+            "version": "1.2",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        },
+        "jason|1.3.2": {
+            "name": "jason",
+            "version": "1.3.2",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        },
+        "spencer|3.2.3": {
+            "name": "spencer",
+            "version": "3.2.3",
+            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "stage": "config",
+            "state": "complete"
+        }
+      }
+    skyhook.nvidia.com/status_interrupt: complete
+  (!taints || length(taints)==`0` || (taints && !not_null(taints))): true ## taints should be empty or not exist
+status:
+  (conditions[?type == 'skyhook.nvidia.com/interrupt/NotReady']):
+  - reason: "Complete"
+    status: "False"
+  (conditions[?type == 'skyhook.nvidia.com/interrupt/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: interrupt
+status:
+  status: complete
+  observedGeneration: 2
+  nodeState:
+    (values(@)):
+      - baxter|3.3:
+          name: baxter
+          stage: post-interrupt
+          state: complete
+          version: "3.3"
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        dexter|1.2.3:
+          name: dexter
+          stage: post-interrupt
+          state: complete
+          version: 1.2.3
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        foobar|1.2:
+          name: foobar
+          stage: config
+          state: complete
+          version: "1.2"
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        spencer|3.2.3:
+          name: spencer
+          stage: config
+          state: complete
+          version: 3.2.3
+          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+  nodeStatus:
+   # grab values should be one and is complete
+    (values(@)):
+      - complete
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/skyhook-node-meta: interrupt
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: interrupt
+data:
+  (length(@)): 2
+  labels.json:
+    (contains(@, 'skyhook.nvidia.com/test-node')): true
+    (contains(@, 'skyhook.nvidia.com/status_interrupt')): true
+  annotations.json:
+    (contains(@, 'skyhook.nvidia.com/status_interrupt')): true
+    (contains(@, 'skyhook.nvidia.com/nodeState_interrupt')): true

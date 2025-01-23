@@ -1,0 +1,44 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: simple-skyhook
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    count: 1
+  additionalTolerations:
+    - key: nvidia.com/gpu
+      effect: NoSchedule
+  packages:
+    spencer:
+      version: "3.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      dependsOn:
+        dexter: "1.2.3"
+    foobar:
+      version: "1.2"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      dependsOn:
+        dexter: "1.2.3"
+      env: 
+        - name: SLEEP_LEN
+          value: "3" ## making faster so the test works for asserting node condition
+    dexter:
+      version: "1.2.3"
+      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:bogus ## testing that the image tag is replaced with the version by giving bad image tag
+      configMap:
+        game.properties: |
+          enemies=aliens
+          lives=3
+          enemies.cheat=true
+          enemies.cheat.level=noGoodRotten
+        ui.properties: |
+          color.good=purple
+          color.bad=yellow
+          allow.textmode=true
+          how.nice.to.look=fairlyNice

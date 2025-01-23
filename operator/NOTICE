@@ -1,0 +1,18 @@
+Skyhook Open Source Software
+Copyright (c) 2024, NVIDIA CORPORATION.
+
+This product includes software developed at
+NVIDIA CORPORATION (https://www.nvidia.com/).
+
+This software make use of code with licenses:
+ * go-logr/logr: Apache 2.0 https://github.com/go-logr/logr/blob/master/LICENSE
+ * onsi/ginkgo: MIT https://github.com/onsi/ginkgo/blob/master/LICENSE
+ * onsi/gomega: MIT https://github.com/onsi/gomega/blob/master/LICENSE
+ * sethvargo/go-envconfig: Apache 2.0 https://github.com/sethvargo/go-envconfig/blob/main/LICENSE
+ * strechr/testify: MIT https://github.com/stretchr/testify/blob/master/LICENSE
+ * uber-go/zap: MIT https://github.com/uber-go/zap/blob/v1.26.0/LICENSE.txt
+ * k8s.io/api: Apache 2.0 https://pkg.go.dev/k8s.io/api?tab=licenses
+ * k8s.io/apimachinery: Apache 2.0 https://pkg.go.dev/k8s.io/apimachinery?tab=licenses
+ * k8s.io/client-go: Apache 2.0 https://pkg.go.dev/k8s.io/client-go?tab=licenses
+ * k8s.io/kubernetes: Apache 2.0 https://pkg.go.dev/k8s.io/kubernetes?tab=licenses
+ * sigs.k8s.io/controller-runtime: Apache 2.0 https://pkg.go.dev/sigs.k8s.io/controller-runtime?tab=licenses
