@@ -27,7 +27,7 @@ help: ## Display this help.
 venv: ## Sets up a python venv at `./venv`
 	python3 -m venv venv
 	$(VENV)pip install hatch coverage
-	$(VENV)hatch config set dirs.project "[\"${PWD}\"]"
+	$(VENV)hatch config set dirs.project "[\"$(shell pwd)\"]"
 
 ##@ Test
 .PHONY: test
@@ -46,8 +46,8 @@ format:
 
 ##@ Build
 .PHONY: build
-build: ## Builds using hatch to `skyhook-agent/dist`
-	$(VENV)hatch -p skyhook-agent version ${1:unkown}
+build: ## Builds using hatch to `dist`
+	$(VENV)hatch -p skyhook-agent version $(build_version)
 	$(VENV)hatch -p skyhook-agent build -c
 
 ##@ Publish
@@ -55,6 +55,7 @@ build: ## Builds using hatch to `skyhook-agent/dist`
 publish: ## Publishes using hatch
 	$(VENV)hatch -p skyhook-agent publish
 
+DOCKER_CMD ?= docker
 BUILD_ARGS ?= 
 ifndef GITLAB_CI
 BUILD_ARGS = --push
@@ -62,27 +63,32 @@ COMMIT_SHORT_SHA := $(shell git rev-parse --short HEAD)
 endif
 
 docker-setup:
-	test ! $(docker context ls | grep builder) || docker context create builder;
-	docker buildx create --platform linux/amd64,linux/arm64 --use builder
-	docker run --privileged --rm tonistiigi/binfmt --install amd64,arm64
+	test ! $($(DOCKER_CMD) context ls | grep builder) || $(DOCKER_CMD) context create builder;
+	$(DOCKER_CMD) buildx create --platform linux/amd64,linux/arm64 --use builder
+	$(DOCKER_CMD) run --privileged --rm tonistiigi/binfmt --install amd64,arm64
+
+ACTUAL_TAGS=$(shell echo "-t $(REGISTRY)/$(AGENT_IMAGE):$(shell date +%y.%m.%d-%H%M%S)-$(COMMIT_SHORT_SHA) $(TAGS)" | tr A-Z a-z)
+.PHONY: docker-build-only
+docker-build-only:
+	@echo "Building skyhook-agent $(DOCKER_CMD) image with tags: $(ACTUAL_TAGS)"
+	$(DOCKER_CMD) buildx build $(BUILD_ARGS) --build-arg AGENT_VERSION=$(AGENT_VERSION) --platform linux/amd64,linux/arm64 $(ACTUAL_TAGS) --metadata-file=metadata.json -f docker/Dockerfile .
 
 ##@ Docker Build
 .PHONY: docker-build
-docker-build docker-setup ## Builds skyhook-agent docker image using docker buildx.
-	@TAGS="-t $(REGISTRY)/$(AGENT_IMAGE):$(shell date +%y.%m.%d-%H%M%S)-$(COMMIT_SHORT_SHA)"
-	docker buildx build $(BUILD_ARGS) --platform linux/amd64,linux/arm64 $(TAGS) -f docker/Dockerfile .
+docker-build: docker-build-only docker-setup ## Builds skyhook-agent docker image using docker buildx.
+	@echo "Built skyhook-agent $(DOCKER_CMD) image."
 
 ##@ Vendor
 .PHONY: vendor
 vendor: ## Uses Unearth to vendor all dependencies locally.
-    python3 -m venv ./venv_vendor
-    ./venv_vendor/bin/pip install unearth toml
-    dependencies=$(shell python -c 'import toml; print(" ".join(toml.loads(open("skyhook-agent/pyproject.toml","r").read())["project"]["dependencies"]))')
-    rm -rf vendor
-    mkdir -p vendor
-    for dep in $(dependencies); do \
-        ./venv_vendor/bin/unearth --no-binary -d ./vendor $(dep) >> vendor/lock_file; \
-    done
+	python3 -m venv ./venv_vendor
+	./venv_vendor/bin/pip install unearth toml
+	dependencies=$(shell python -c 'import toml; print(" ".join(toml.loads(open("skyhook-agent/pyproject.toml","r").read())["project"]["dependencies"]))')
+	rm -rf vendor
+	mkdir -p vendor
+	for dep in $(dependencies); do \
+		./venv_vendor/bin/unearth --no-binary -d ./vendor $(dep) >> vendor/lock_file; \
+	done
 
 ##@ Clean
 .PHONY: clean

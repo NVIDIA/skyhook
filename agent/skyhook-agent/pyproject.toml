@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
@@ -34,6 +34,7 @@ Source = "https://github.com/nvidia.com/skyhook"
 [project.scripts]
 controller = "skyhook_agent.controller:cli"
 
+
 [tool.hatch.version]
 path = "src/skyhook_agent/__about__.py"
 
@@ -61,8 +62,8 @@ omit = [
 ]
 
 [tool.coverage.paths]
-skyhook_agent = ["src/skyhook_agent", "*/skyhook-agent/src/skyhook_agent"]
-tests = ["tests", "*/skyhook-agent/tests"]
+skyhook_agent = ["src/skyhook_agent", "*/src/skyhook_agent"]
+tests = ["tests", "*/tests"]
 
 [tool.coverage.report]
 exclude_lines = [
