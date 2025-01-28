@@ -1,14 +1,17 @@
-FROM python:3.10-alpine as builder
+FROM python:3.12-alpine AS builder
 
-ARG CI_COMMIT_TAG:-0.0.0
+ARG AGENT_VERSION
 
 COPY . /code
 WORKDIR /code
-RUN apk add bash
-RUN USE_VENV=false /code/cmds.sh setup
-RUN USE_VENV=false /code/cmds.sh build ${CI_COMMIT_TAG}
+RUN echo "AGENT_VERSION=${AGENT_VERSION}"
+RUN apk update && apk add bash make build-base gcc python3-dev musl-dev linux-headers
+RUN make test
+RUN make clean
+RUN make venv
+RUN make build build_version=${AGENT_VERSION}
 
-FROM python:3.10-alpine
+FROM python:3.12-alpine
 
 RUN mkdir -p /skyhook-agent-wheels
 COPY --from=builder /code/skyhook-agent/dist/* /skyhook-agent-wheels
