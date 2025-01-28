@@ -12,7 +12,7 @@ Due to some limitatations it can be hard to test circumstances where a node will
 1. Run `make create-kind-cluster`, and wait for local cluster to be brought up.
 2. Run `make install` to install the skyhook CRD into the cluster.
 3. Use vscode's debugger in order to run the operator with your local cluster.
-4. Use `kubectl apply -f e2e/chainsaw/simple-skyhook/skyhook.yaml` to define a skyhook.
+4. Use `kubectl apply -f k8s-tests/chainsaw/simple-skyhook/skyhook.yaml` to define a skyhook.
 5. You can then use `kubectl` or `k9s` in order to overview the state of the skyhook as well as it's resources. In this instance we are looking for the configmap named `{skyhook.Name}-{node.Name}-metadata`. 
 6. Now that we can see that the configmap exists we can remove the node to see if the configmap will be deleted accordingly. We'll do so with the command `kubectl delete node {node.Name}`.
 7. Now check to see whether the configmap named `{skyhook.Name}-{node.Name}-metadata` still exists and if it doesn't then everything is working.
