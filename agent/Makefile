@@ -34,7 +34,7 @@ venv: ## Sets up a python venv at `./venv`
 test: venv ## Test using hatch, prints coverage and outputs a report to coverage.xml
 	$(VENV)hatch -p skyhook-agent test --cover-quiet 
 	$(VENV)coverage report --show-missing --data-file=skyhook-agent/.coverage
-##	$(VENV)coverage xml --data-file=skyhook-agent/.coverage
+	$(VENV)coverage xml --data-file=skyhook-agent/.coverage
 
 .PHONY: format
 format:
