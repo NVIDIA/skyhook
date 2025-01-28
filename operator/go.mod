@@ -1,4 +1,4 @@
-module gitlab-master.nvidia.com/dgx/infra/skyhook-operator
+module github.com/NVIDIA/skyhook
 
 go 1.23
 

@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
 	"github.com/go-logr/logr"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
 )
 
 func migrateNodeTo_0_5_0(node *skyhookNode, logger logr.Logger) error {

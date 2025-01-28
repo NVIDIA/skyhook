@@ -22,10 +22,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/internal/version"
+	"github.com/NVIDIA/skyhook/internal/wrapper"
 	"github.com/go-logr/logr"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/wrapper"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"

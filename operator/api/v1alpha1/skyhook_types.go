@@ -25,7 +25,7 @@ import (
 	"sort"
 	"strings"
 
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/graph"
+	"github.com/NVIDIA/skyhook/internal/graph"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

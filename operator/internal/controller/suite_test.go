@@ -23,10 +23,10 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sethvargo/go-envconfig"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"

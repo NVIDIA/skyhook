@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 

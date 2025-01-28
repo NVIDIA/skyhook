@@ -21,8 +21,8 @@ import (
 	"errors"
 	"fmt"
 
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/wrapper"
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/internal/wrapper"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"

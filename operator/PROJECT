@@ -6,7 +6,7 @@ domain: nvidia.com
 layout:
 - go.kubebuilder.io/v4
 projectName: skyhook-operator
-repo: gitlab-master.nvidia.com/dgx/infra/skyhook-operator
+repo: github.com/NVIDIA/skyhook
 resources:
 - api:
     crdVersion: v1
@@ -15,7 +15,7 @@ resources:
   domain: nvidia.com
   group: skyhook
   kind: Skyhook
-  path: gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1
+  path: github.com/NVIDIA/skyhook/api/v1alpha1
   version: v1alpha1
   webhooks:
     defaulting: true

@@ -22,10 +22,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/internal/graph"
+	"github.com/NVIDIA/skyhook/internal/version"
 	"github.com/go-logr/logr"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/graph"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
