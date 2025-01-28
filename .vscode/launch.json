@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceRoot}/cmd/main.go",
-            "buildFlags": "--ldflags '-X gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version.GIT_SHA=foobars -X gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version.VERSION=v0.5.0'",
+            "buildFlags": "--ldflags '-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=foobars -X github.com/NVIDIA/skyhook/internal/version.VERSION=v0.5.0'",
             "env": {
                 "ENABLE_WEBHOOKS": "false",
                 "LOG_ENCODER": "console",

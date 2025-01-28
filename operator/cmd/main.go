@@ -38,9 +38,9 @@ import (
 	kzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/controller"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version"
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/internal/controller"
+	"github.com/NVIDIA/skyhook/internal/version"
 	//+kubebuilder:scaffold:imports
 )
 

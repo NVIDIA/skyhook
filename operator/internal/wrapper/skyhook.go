@@ -19,9 +19,9 @@ package wrapper
 import (
 	"fmt"
 
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/internal/version"
 	"github.com/go-logr/logr"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/api/v1alpha1"
-	"gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

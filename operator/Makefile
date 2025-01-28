@@ -19,10 +19,11 @@ include deps.mk
 VERSION ?= $(GIT_TAG_LAST)
 
 # Image URL to use all building/pushing image targets
+## TODO: update this to the correct image location
 IMG ?= nvcr.io/nvidian/swgpu-baseos/skyhook-operator:latest
 
-# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION := 1.30.0
+## default version of kind to use
+KIND_VERSION?=1.30.8
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook
@@ -39,8 +40,8 @@ GIT_TAG 		:= $(shell git describe --exact-match --tags)
 GIT_TAG_LAST 	:= $(shell git describe --tags --abbrev=0)
 
 ## GO Flags
-GO_LDFLAGS  := -ldflags "-X gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version.GIT_SHA=$(GIT_SHA) \
-	-X gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/version.VERSION=$(VERSION)"
+GO_LDFLAGS  := -ldflags "-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=$(GIT_SHA) \
+	-X github.com/NVIDIA/skyhook/internal/version.VERSION=$(VERSION)"
 GOFLAGS 	:= -mod=vendor
 
 # CONTAINER_TOOL defines the container tool to be used for building images.
@@ -177,7 +178,6 @@ helm-tests: helm chainsaw
 
 	$(CHAINSAW) test --test-dir e2e/chainsaw/helm $(CHAINSAW_ARGS)
 
-KIND_VERSION?=1.29.4
 create-kind-cluster: ## deletes and creates a new kind cluster. versions is set via KIND_VERSION
 	kind delete cluster && kind create cluster --image=kindest/node:v$(KIND_VERSION) --config config/local-dev/kind-config.yaml
 	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e

@@ -27,11 +27,11 @@ packages:
         interfaces:
             EventRecorder:
 ## internal packages
-    gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/dal:
+    github.com/NVIDIA/skyhook/internal/dal:
         config:
             all: True
             boilerplate-file: "boilerplate/boilerplate.go.txt"
-    gitlab-master.nvidia.com/dgx/infra/skyhook-operator/internal/controller:
+    github.com/NVIDIA/skyhook/internal/controller:
         config:
             all: True
             boilerplate-file: "boilerplate/boilerplate.go.txt"
