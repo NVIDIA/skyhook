@@ -35,8 +35,6 @@ The stages are applied in this order:
 **Semantic versioning is strictly enforced in the operator** in order to support upgrade and uninstall. Semantic versioning allows the 
 operator to know which way the package is going while also enforcing best versioning practices.
 
-***NOTE:*** The stages that are actually applied can change depending on the configuration of the package and current state. See [Skyhook 2.0](https://docs.google.com/document/d/1rnU0fs4MoWi9NfD2ff1hZMWRJKNQ58HeKob34EjS92M/) for more info.
-
 ## Packages
 Part of how the operator works is the [skyhook-agent](agent/README.md). Packages have to be created in way so the operator knows how to use them. This is where the agent comes into play, more on that later. A package is a container that meets these requirements:
 
