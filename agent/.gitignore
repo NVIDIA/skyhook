@@ -8,5 +8,6 @@ dist
 .coverage
 .coverage.*
 coverage.xml
+test-results.xml
 
 vendor/lock_file.bak
