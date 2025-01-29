@@ -23,4 +23,4 @@ jobs:
         if: always()
         with:
           files: |
-            agent/coverage.xml
+            agent/*coverage.xml
