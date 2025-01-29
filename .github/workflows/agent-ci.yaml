@@ -1,23 +1,30 @@
 name: Agent Unittest
 on:
-  pull_request: {}
-  push:
-    tags: [ "v/*" ]
+  pull_request:
+    paths:
+      - agent/**
 jobs:
   test:
     name: Run tests & display coverage
     runs-on: ubuntu-latest
     permissions:
-      # Gives the action the necessary permissions for publishing new
-      # comments in pull requests.
+      contents: read
+      issues: read
+      checks: write
       pull-requests: write
-      # Gives the action the necessary permissions for pushing data to the
-      # python-coverage-comment-action branch, and for editing existing
-      # comments (to avoid publishing multiple comments in the same PR)
-      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Install everything, run the tests, produce the .coverage file and coverage.xml report
+      - name: Run unittests
         run: |
           cd agent
           make test
+      - name: Generate Summary
+        uses: test-summary/action@v2
+        if: always()
+        with:
+          paths: "agent/skyhook-agent/test-results.xml"
+          output: test-summary.md
+      - name: Display Summary
+        if: always()
+        run: |
+          cat test-summary.md >> $GITHUB_STEP_SUMMARY
