@@ -5,7 +5,7 @@ on:
       - agent/**
 jobs:
   test:
-    name: Run tests & display coverage
+    name: Skyhook Agent Unit Tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
