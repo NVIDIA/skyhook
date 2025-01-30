@@ -14,7 +14,6 @@
 
 include deps.mk
 
-
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
 
@@ -36,8 +35,8 @@ GOBIN := $(shell go env GOBIN)
 endif
 
 GIT_SHA 		:= $(shell git rev-parse --short HEAD)
-GIT_TAG 		:= $(shell git describe --exact-match --tags)
-GIT_TAG_LAST 	:= $(shell git describe --tags --abbrev=0)
+GIT_TAG 		:= $(shell git describe --exact-match --tags 2>/dev/null)
+GIT_TAG_LAST 	:= $(shell git describe --tags --abbrev=0 2>/dev/null)
 
 ## GO Flags
 GO_LDFLAGS  := -ldflags "-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=$(GIT_SHA) \
@@ -130,8 +129,10 @@ vet: ## Run go vet against code.
 	go vet $(GOFLAGS) ./...
 
 REPORTING ?= $(shell pwd)/reporting
-reporting:
-	mkdir -p $(REPORTING)
+.PHONY: reporting
+reporting: $(REPORTING)
+$(REPORTING):
+	mkdir -p $@
 
 .PHONY: test
 test:: reporting manifests generate fmt vet lint helm-tests e2e-tests unit-tests ## Run all tests.
@@ -152,7 +153,7 @@ watch-tests: ## watch unit tests and auto run on changes.
 	$(GINKGO) watch $(GOFLAGS) -p -vv ./...
 
 .PHONY: unit-test
-unit-tests: envtest ginkgo kill ## Run unit tests.
+unit-tests: reporting envtest ginkgo kill ## Run unit tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) $(GOFLAGS)  --coverprofile=$(REPORTING)/unit.coverprofile -vv --trace --junit-report=$(REPORTING)/unit.xml --keep-going --timeout=90s ./...
 
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
