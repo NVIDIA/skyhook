@@ -2064,6 +2064,10 @@ func (r *SkyhookReconciler) HandleRuntimeRequired(ctx context.Context, clusterSt
 	taint_to_remove := r.opts.GetRuntimeRequiredTaint()
 	errs := make([]error, 0)
 	for _, node := range to_remove {
+		// check before removing taint that it even exists to begin with
+		if !taints.TaintExists(node.Spec.Taints, &taint_to_remove) {
+			continue
+		}
 		// RemoveTaint will ALWAYS return nil for its error so no need to check it
 		new_node, updated, _ := taints.RemoveTaint(node, &taint_to_remove)
 		if updated {

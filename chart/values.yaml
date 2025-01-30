@@ -1,13 +1,18 @@
 controllerManager:
+  ## tolerations: add tolerations to the controller manager pod
+  ## Example below is for a system-cpu tainted node
   # tolerations:
   # - key: dedicated
   #   operator: "Equal"
   #   value: system-cpu
   #   effect: NoSchedule
   tolerations: []
+  ## selectors: add node selectors to the controller manager pod
+  ## Example below is for a system-workload node selector
   # selectors:
   #   dedicated: system-workload
   selectors: {}
+  ## config for kube-rbac-proxy used for webhooks
   kubeRbacProxy:
     args:
     - --secure-listen-address=0.0.0.0:8443
@@ -36,20 +41,34 @@ controllerManager:
         drop:
         - ALL
     env:
+      ## copyDirRoot is the directory for which the operator will work from on the host. 
+      ## Some environments may require this to be set to a specific directory.
       copyDirRoot: /tmp
+      ## enableWebhooks: "true" will enable the webhook setup in the operator controller. 
+      ## Default is "true" and is required for production.
       enableWebhooks: "true"
+      ## leaderElection: "true" will enable leader election for the operator controller
+      ## Default is "true" and is required for production.
       leaderElection: "true"
+      ## logLevel: "info" is the log level for the operator controller. 
+      ## If you want more or less logs, change this value to "debug" or "error".
       logLevel: info
       metricsPort: :8080
       probePort: :8081
+      ## reapplyOnReboot: "true" will reapply the packages on reboot. This is useful for systems that are read-only.
       reapplyOnReboot: "false"
+      ## runtimeRequiredTaint: This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag.
+      ## This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete.
+      ## NOTE: If your systems nodes have this taint make sure to add the toleration to the controllerManager.tolerations
       runtimeRequiredTaint: skyhook.nvidia.com=runtime-required:NoSchedule
+      ## puaseImage: is the image used for the pause container in the operator controller.
       pauseImage: registry.k8s.io/pause:3.10
+      ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
       agentImage: nvcr.io/nvidian/swgpu-baseos/skyhook-agent:latest
     image:
       repository: nvcr.io/nvidian/swgpu-baseos/skyhook-operator
       tag: latest
-    # If this is defined it will override the default calculation for resources
+    # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
     # what will be calculated until nodes > 1000 and packages 1-2 or nodes > 500 and packages >= 4
     # resources:
@@ -59,7 +78,9 @@ controllerManager:
     #   requests:
     #     cpu: 200m
     #     memory: 64Mi
+  ## replicas: number of the operator controller instances to run. This should be set to 2 or more for production.
   replicas: 2 ## more than 1 need to make sure leaderElection is on
+  ## podDisruptionBudget: pod disruption budget for the operator controller, this should be left as is for production deployments.
   podDisruptionBudget:
     minAvailable: 1 ## need to be in sync with replicas, but less than
   serviceAccount:
@@ -81,7 +102,12 @@ webhookService:
 rbac:
   createSkyhookViewerRole: false
   createSkyhookEditorRole: false
+## imagePullSecret: is the secret used to pull the operator controller image, agent image, and package images.
 imagePullSecret: node-init-secret
 useHostNetwork: false
+## estimatedPackageCount: estimated number of packages to be installed on the cluster
+## this is used to calculate the resources for the operator controller
 estimatedPackageCount: 1
+## estimatedNodeCount: estimated number of nodes in the cluster
+## this is used to calculate the resources for the operator controller
 estimatedNodeCount: 1
