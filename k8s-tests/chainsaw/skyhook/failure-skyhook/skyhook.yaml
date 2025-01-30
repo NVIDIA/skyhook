@@ -14,7 +14,7 @@ spec:
   packages:
     failure:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: EXIT_CODE
           value: "2"
@@ -22,7 +22,7 @@ spec:
         dexter: "1.2.3"
     dexter:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
           value: "1" ## making faster

@@ -14,7 +14,7 @@ spec:
   packages:
     dogs: 
       version: "1.2.5" ## downgrade
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       interrupt:
         type: reboot
       configMap:  
@@ -24,7 +24,7 @@ spec:
           changed
     nullptr:
       version: "2.0.1" ## upgrade
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       interrupt:
         type: service
         services: [cron, containerd]

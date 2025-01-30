@@ -16,13 +16,13 @@ spec:
     spenser:
     zeb:
       version: "2.1.4"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      image: ghcr.io/nvidia/skyhook/agentless:latest
       interrupt: 
         type: service
         services: [cron]
     dax:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      image: ghcr.io/nvidia/skyhook/agentless:latest
       interrupt: 
         type: service
         services: [containerd, foobar]

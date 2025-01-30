@@ -17,7 +17,7 @@ spec:
     spenser:
     zeb:
       version: "2.1.4"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
           value: "2"
@@ -26,7 +26,7 @@ spec:
         services: [cron]
     dax:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
           value: "2"

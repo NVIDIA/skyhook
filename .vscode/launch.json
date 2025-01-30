@@ -17,12 +17,12 @@
                 "LOG_LEVEL": "info",
                 "REAPPLY_ON_REBOOT": "false",
                 // "AGENT_IMAGE": "nvcr.io/nvidian/swgpu-baseos/skyhook-agent:25.01.02-233800-38d9732d", 
-                "AGENT_IMAGE": "nvcr.io/nvidian/swgpu-baseos/agentless-test:6.2.0", // this is the mock image, if you need to test for real, use the real image.
+                "AGENT_IMAGE": "ghcr.io/nvidia/skyhook/agentless:6.2.0", // this is the mock image, if you need to test for real, use the real image.
                 // "COPY_DIR_ROOT": "/var/lib/google/skyhook"
             },
             "args": [],
             "showLog": true
-        },   
+        },
         {
             "name": "Test Current File",
             "type": "go",
@@ -32,6 +32,6 @@
             "env": {},
             "args": [],
             "showLog": true
-        }   
+        }
     ]
 }

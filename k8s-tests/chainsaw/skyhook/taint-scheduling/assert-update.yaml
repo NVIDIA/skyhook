@@ -10,7 +10,7 @@ metadata:
         "spencer|3.2.3": {
             "name": "spencer",
             "version": "3.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         }
