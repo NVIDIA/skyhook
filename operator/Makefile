@@ -101,7 +101,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object paths="./..."
-	$(MAKE) fmt ## fix up license headers
+	$(MAKE) license-fmt ## fix up license headers
 
 .PHONY: generate-mocks 
 generate-mocks: mockery ## Generate code for interface mocking
