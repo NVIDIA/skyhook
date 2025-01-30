@@ -40,6 +40,8 @@ GOLANGCI_LINT_VERSION ?= v1.63.4
 KUSTOMIZE_VERSION ?= v5.4.1
 CONTROLLER_TOOLS_VERSION ?= v0.15.0
 ENVTEST_K8S_VERSION ?= 1.30.0
+GOCOVER_VERSION ?= v1.3.0
+GINKGO_VERSION ?= v2.22.2
 MOCKERY_VERSION ?= v2.42.3
 CHAINSAW_VERSION ?= v0.2.10
 HELM_VERSION ?= v3.15.0
@@ -95,11 +97,11 @@ $(ENVTEST): $(LOCALBIN)
 
 .PHONY: gocover-cobertura
 gocover-cobertura: ## Download gocover-cobertura locally if necessary.
-	test -s $(LOCALBIN)/gocover-cobertura || GOBIN=$(LOCALBIN) go install github.com/boumenot/gocover-cobertura@latest
+	test -s $(LOCALBIN)/gocover-cobertura || GOBIN=$(LOCALBIN) go install github.com/boumenot/gocover-cobertura@$(GOCOVER_VERSION)
 
 .PHONY: ginkgo
 ginkgo: ## Download ginkgo locally if necessary.
-	test -s $(LOCALBIN)/ginkgo || GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@latest
+	test -s $(LOCALBIN)/ginkgo || GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
 
 .PHONY: mockery
 mockery: ## Download mockery locally if necessary.
