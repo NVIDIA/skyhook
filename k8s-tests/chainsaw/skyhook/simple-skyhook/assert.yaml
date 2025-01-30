@@ -5,7 +5,7 @@ metadata:
     skyhook.nvidia.com/test-node: skyhooke2e
     skyhook.nvidia.com/status_simple-skyhook: complete
   annotations:
-    skyhook.nvidia.com/nodeState_simple-skyhook: '{"dexter|1.2.3":{"name":"dexter","version":"1.2.3","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"config","state":"complete"},"foobar|1.2":{"name":"foobar","version":"1.2","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"config","state":"complete"},"spencer|3.2.3":{"name":"spencer","version":"3.2.3","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"config","state":"complete"}}'
+    skyhook.nvidia.com/nodeState_simple-skyhook: '{"dexter|1.2.3":{"name":"dexter","version":"1.2.3","image":"ghcr.io/nvidia/skyhook/agentless","stage":"config","state":"complete"},"foobar|1.2":{"name":"foobar","version":"1.2","image":"ghcr.io/nvidia/skyhook/agentless","stage":"config","state":"complete"},"spencer|3.2.3":{"name":"spencer","version":"3.2.3","image":"ghcr.io/nvidia/skyhook/agentless","stage":"config","state":"complete"}}'
     skyhook.nvidia.com/status_simple-skyhook: complete
 status:
   (conditions[?type == 'skyhook.nvidia.com/simple-skyhook/NotReady']):
@@ -28,19 +28,19 @@ status:
           name: dexter
           state: complete
           version: '1.2.3'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
           stage: config
         foobar|1.2:
           name: foobar
           state: complete
           version: '1.2'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
           stage: config
         spencer|3.2.3:
           name: spencer
           state: complete
           version: '3.2.3'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
           stage: config
   nodeStatus:
    # grab values should be one and is complete

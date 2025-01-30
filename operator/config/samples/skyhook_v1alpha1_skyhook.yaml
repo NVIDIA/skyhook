@@ -29,10 +29,10 @@ spec:
           echo $0
       interrupt: 
         type: reboot
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      image: ghcr.io/nvidia/skyhook/agentless:latest
     ssh:
       version: "3.0"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      image: ghcr.io/nvidia/skyhook/agentless:latest
     phoenix:
       version: "2.1.4"
       env:
@@ -41,10 +41,10 @@ spec:
       interrupt: 
         type: service
         services: [cron]
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      image: ghcr.io/nvidia/skyhook/agentless:latest
     dax:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:latest
+      image: ghcr.io/nvidia/skyhook/agentless:latest
       dependsOn: 
         spenser: "3.1.1"
         ssh: "3.0"

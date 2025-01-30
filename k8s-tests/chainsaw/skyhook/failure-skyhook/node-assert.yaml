@@ -10,14 +10,14 @@ metadata:
         "dexter|1.2.3": {
             "name": "dexter",
             "version": "1.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "failure|1.2.3": {
             "name": "failure",
             "version": "1.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "apply",
             "state": "erroring",
             (!restarts || restarts == `1`): true

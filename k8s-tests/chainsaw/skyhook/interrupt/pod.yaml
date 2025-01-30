@@ -41,7 +41,7 @@ metadata:
       skyhook.nvidia.com/package: invalid-1.2.3
       skyhook.nvidia.com/name: interrupt
   annotations:
-    skyhook.nvidia.com/package: '{"name":"invalid","version":"1.2.3","stage":"apply","skyhook":"interrupt","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test"}'
+    skyhook.nvidia.com/package: '{"name":"invalid","version":"1.2.3","stage":"apply","skyhook":"interrupt","image":"ghcr.io/nvidia/skyhook/agentless"}'
 spec:
   terminationGracePeriodSeconds: 5
   restartPolicy: OnFailure

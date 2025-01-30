@@ -10,21 +10,21 @@ metadata:
         "cats|6.2.0": {
             "name": "cats",
             "version": "6.2.0",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "dogs|1.2.6": {
             "name": "dogs",
             "version": "1.2.6",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "post-interrupt",
             "state": "complete"
         },
         "nullptr|2.0.0": {
             "name": "nullptr",
             "version": "2.0.0",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "post-interrupt",
             "state": "complete"
         }
@@ -55,19 +55,19 @@ status:
           state: complete
           version: '1.2.6'
           stage: post-interrupt
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         nullptr|2.0.0:
           name: nullptr
           state: complete
           version: '2.0.0'
           stage: post-interrupt
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         cats|6.2.0:
           name: cats
           state: complete
           version: '6.2.0'
           stage: config
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
   nodeStatus:
    # grab values should be one and is complete
     (values(@)):

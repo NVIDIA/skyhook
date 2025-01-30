@@ -10,21 +10,21 @@ metadata:
         "invalid-env|5.4.3": {
             "name": "invalid-env",
             "version": "5.4.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "invalid-image|3.2.3": {
             "name": "invalid-image",
             "version": "3.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "invalid-resources|1.2.3": {
             "name": "invalid-resources",
             "version": "1.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         }
@@ -51,19 +51,19 @@ status:
         name: invalid-image
         state: complete
         version: '3.2.3'
-        image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        image: ghcr.io/nvidia/skyhook/agentless
         stage: config
       invalid-resources|1.2.3:
         name: invalid-resources
         state: complete
         version: '1.2.3'
-        image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        image: ghcr.io/nvidia/skyhook/agentless
         stage: config
       invalid-env|5.4.3:
         name: invalid-env
         state: complete
         version: '5.4.3'
-        image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+        image: ghcr.io/nvidia/skyhook/agentless
         stage: config
   nodeStatus:
    # grab values should be one and is complete

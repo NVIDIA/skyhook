@@ -14,7 +14,7 @@ spec:
   packages:
     dogs:
       version: "1.2.6"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       interrupt:
         type: reboot
       configMap:  
@@ -30,7 +30,7 @@ spec:
           how.nice.to.look=fairlyNice
     nullptr:
       version: "2.0.0"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       interrupt:
         type: service
         services: [cron, containerd]
@@ -47,4 +47,4 @@ spec:
           how.nice.to.look=fairlyNice
     cats:
       version: "6.2.0"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless

@@ -14,12 +14,12 @@ spec:
   packages:
     spencer:
       version: "3.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       dependsOn:
         dexter: "1.2.3"
     foobar:
       version: "1.2"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
           value: "3" ## making faster so the test works for asserting node condition
@@ -27,7 +27,7 @@ spec:
         dexter: "1.2.3"
     dexter:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:bogus ## testing that the image tag is cut off
+      image: ghcr.io/nvidia/skyhook/agentless:bogus ## testing that the image tag is cut off
       configMap:
         game.properties: |
           enemies=aliens

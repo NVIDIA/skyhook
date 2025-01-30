@@ -8,7 +8,7 @@ metadata:
     skyhook.nvidia.com/package: dax-1.2.3
   annotations:
     skyhook.nvidia.com/package: >-
-      {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"apply","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test"}
+      {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"apply","image":"ghcr.io/nvidia/skyhook/agentless"}
   ownerReferences:
     - apiVersion: skyhook.nvidia.com/v1alpha1
       kind: Skyhook
@@ -16,15 +16,15 @@ metadata:
 spec:
   initContainers:
     - name: dax-init
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:1.2.3
+      image: ghcr.io/nvidia/skyhook/agentless:1.2.3
     - name: dax-apply
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:6.2.0
+      image: ghcr.io/nvidia/skyhook/agentless:6.2.0
       args:
         ([0]): apply
         ([1]): /root
         (length(@)): 3
     - name: dax-applycheck
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:6.2.0
+      image: ghcr.io/nvidia/skyhook/agentless:6.2.0
       args:
         ([0]): apply-check
         ([1]): /root
@@ -42,7 +42,7 @@ metadata:
     skyhook.nvidia.com/package: dax-1.2.3
   annotations:
     skyhook.nvidia.com/package: >-
-      {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"config","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test"}
+      {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"config","image":"ghcr.io/nvidia/skyhook/agentless"}
   ownerReferences:
     - apiVersion: skyhook.nvidia.com/v1alpha1
       kind: Skyhook
@@ -78,7 +78,7 @@ metadata:
         "version": "1.2.3",
         "skyhook": "interrupt-grouping",
         "stage": "interrupt",
-        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+        "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
     - apiVersion: skyhook.nvidia.com/v1alpha1
@@ -113,7 +113,7 @@ metadata:
     skyhook.nvidia.com/package: dax-1.2.3
   annotations:
     skyhook.nvidia.com/package: >-
-      {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"post-interrupt","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test"}
+      {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"post-interrupt","image":"ghcr.io/nvidia/skyhook/agentless"}
   ownerReferences:
     - apiVersion: skyhook.nvidia.com/v1alpha1
       kind: Skyhook
@@ -143,7 +143,7 @@ metadata:
   annotations:
     (length("skyhook.nvidia.com/version_interrupt-grouping") >= `6`): true
     skyhook.nvidia.com/nodeState_interrupt-grouping: >-
-      {"dax|1.2.3":{"name":"dax","version":"1.2.3","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"post-interrupt","state":"complete"},"zeb|2.1.4":{"name":"zeb","version":"2.1.4","image":"nvcr.io/nvidian/swgpu-baseos/agentless-test","stage":"post-interrupt","state":"complete"}}
+      {"dax|1.2.3":{"name":"dax","version":"1.2.3","image":"ghcr.io/nvidia/skyhook/agentless","stage":"post-interrupt","state":"complete"},"zeb|2.1.4":{"name":"zeb","version":"2.1.4","image":"ghcr.io/nvidia/skyhook/agentless","stage":"post-interrupt","state":"complete"}}
     skyhook.nvidia.com/status_interrupt-grouping: complete
   (!taints || length(taints)==`0` || (taints && !not_null(taints))): true ## taints should be empty or not exist
 status:
@@ -172,13 +172,13 @@ status:
           stage: post-interrupt
           state: complete
           version: 1.2.3
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         zeb|2.1.4:
           name: zeb
           stage: post-interrupt
           state: complete
           version: 2.1.4
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
   nodeStatus:
    # grab values should be one and is complete
     (values(@)):

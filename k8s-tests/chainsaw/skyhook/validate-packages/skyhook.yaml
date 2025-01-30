@@ -14,10 +14,10 @@ spec:
   packages:
     invalid-image:
       version: "3.2.3-bogus"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
     invalid-resources:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       resources:
         cpuRequest: 10000m
         cpuLimit: 10000m
@@ -25,7 +25,7 @@ spec:
         memoryLimit: 10000Mi
     invalid-env:
       version: "5.4.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       env:
         - name: SLEEP_LEN
           value: "1000"

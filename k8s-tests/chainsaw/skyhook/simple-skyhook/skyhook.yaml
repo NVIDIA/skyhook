@@ -17,12 +17,12 @@ spec:
   packages:
     spencer:
       version: "3.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       dependsOn:
         dexter: "1.2.3"
     foobar:
       version: "1.2"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       dependsOn:
         dexter: "1.2.3"
       env: 
@@ -30,7 +30,7 @@ spec:
           value: "3" ## making faster so the test works for asserting node condition
     dexter:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test:bogus ## testing that the image tag is replaced with the version by giving bad image tag
+      image: ghcr.io/nvidia/skyhook/agentless:bogus ## testing that the image tag is replaced with the version by giving bad image tag
       configMap:
         game.properties: |
           enemies=aliens

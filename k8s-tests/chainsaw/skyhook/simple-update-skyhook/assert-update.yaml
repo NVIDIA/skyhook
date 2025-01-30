@@ -36,35 +36,35 @@ metadata:
         "baxter|2.3.1-test": {
             "name": "baxter",
             "version": "2.3.1-test",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "dexter|1.2.3": {
             "name": "dexter",
             "version": "1.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "foobar|1.2": {
             "name": "foobar",
             "version": "1.2",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "jackie-chan|2024.7.7-test": {
             "name": "jackie-chan",
             "version": "2024.7.7-test",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "spencer|3.2.3": {
             "name": "spencer",
             "version": "3.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         }
@@ -92,31 +92,31 @@ status:
           stage: config
           state: complete
           version: 2.3.1-test
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         dexter|1.2.3:
           name: dexter
           stage: config
           state: complete
           version: 1.2.3
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         foobar|1.2:
           name: foobar
           stage: config
           state: complete
           version: '1.2'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         jackie-chan|2024.7.7-test:
           name: jackie-chan
           stage: config
           state: complete
           version: '2024.7.7-test'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         spencer|3.2.3:
           name: spencer
           stage: config
           state: complete
           version: 3.2.3
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
   nodeStatus:
    # grab values should be one and is complete
     (values(@)):

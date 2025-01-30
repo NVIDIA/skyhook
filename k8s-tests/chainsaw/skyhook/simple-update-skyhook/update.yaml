@@ -14,7 +14,7 @@ spec:
   packages:
     baxter:
       version: 2.3.1-test
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       configMap:
         game.properties: |
           enemies=aliens
@@ -28,7 +28,7 @@ spec:
           how.nice.to.look=fairlyNice
     jackie-chan: ## TODO: need to handle bad naming, because this are pod names, so can have issues depending on the chars
       version: "2024.7.7-test"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
           value: "3" ## making faster so the test works for asserting node condition

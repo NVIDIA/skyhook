@@ -14,13 +14,13 @@ spec:
   packages:
     spencer:
       version: "3.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       interrupt: 
         type: service
         services: [cron]
     dexter:
       version: "1.2.3"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       interrupt:
         type: reboot
       configInterrupts:
@@ -40,7 +40,7 @@ spec:
           how.nice.to.look=fairlyNice
     baxter:
       version: "3.2.1"
-      image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+      image: ghcr.io/nvidia/skyhook/agentless
       configInterrupts:
         game.properties:
           type: service

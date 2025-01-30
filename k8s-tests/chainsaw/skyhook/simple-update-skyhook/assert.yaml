@@ -11,21 +11,21 @@ metadata:
         "dexter|1.2.3": {
             "name": "dexter",
             "version": "1.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "foobar|1.2": {
             "name": "foobar",
             "version": "1.2",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         },
         "spencer|3.2.3": {
             "name": "spencer",
             "version": "3.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "config",
             "state": "complete"
         }
@@ -56,19 +56,19 @@ status:
           name: dexter
           state: complete
           version: '1.2.3'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
           stage: config
         foobar|1.2:
           name: foobar
           state: complete
           version: '1.2'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
           stage: config
         spencer|3.2.3:
           name: spencer
           state: complete
           version: '3.2.3'
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
           stage: config
   nodeStatus:
    # grab values should be one and is complete

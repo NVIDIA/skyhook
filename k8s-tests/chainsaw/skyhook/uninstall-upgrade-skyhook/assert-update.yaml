@@ -14,7 +14,7 @@ metadata:
         "version": "6.2.0",
         "skyhook": "uninstall-upgrade-skyhook",
         "stage": "uninstall",
-        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+        "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
     - apiVersion: skyhook.nvidia.com/v1alpha1
@@ -63,7 +63,7 @@ metadata:
         "version": "1.2.6",
         "skyhook": "uninstall-upgrade-skyhook",
         "stage": "uninstall",
-        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+        "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
     - apiVersion: skyhook.nvidia.com/v1alpha1
@@ -98,7 +98,7 @@ metadata:
         "version": "2.0.1",
         "skyhook": "uninstall-upgrade-skyhook",
         "stage": "upgrade",
-        "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test"
+        "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
     - apiVersion: skyhook.nvidia.com/v1alpha1
@@ -130,14 +130,14 @@ metadata:
         "dogs|1.2.5": {
             "name": "dogs",
             "version": "1.2.5",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "post-interrupt",
             "state": "complete"
         },
         "nullptr|2.0.1": {
             "name": "nullptr",
             "version": "2.0.1",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "post-interrupt",
             "state": "complete"
         }
@@ -168,13 +168,13 @@ status:
           state: complete
           version: '1.2.5'
           stage: post-interrupt
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         nullptr|2.0.1:
           name: nullptr
           state: complete
           version: '2.0.1'
           stage: post-interrupt
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
   nodeStatus:
    # grab values should be one and is complete
     (values(@)):

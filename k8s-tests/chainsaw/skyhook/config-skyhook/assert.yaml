@@ -10,21 +10,21 @@ metadata:
         "baxter|3.2.1": {
             "name": "baxter",
             "version": "3.2.1",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "apply",
             "state": "in_progress"
         },
         "dexter|1.2.3": {
             "name": "dexter",
             "version": "1.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "apply",
             "state": "in_progress"
         },
         "spencer|3.2.3": {
             "name": "spencer",
             "version": "3.2.3",
-            "image": "nvcr.io/nvidian/swgpu-baseos/agentless-test",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "apply",
             "state": "in_progress"
         }
@@ -51,19 +51,19 @@ status:
           state: in_progress
           version: '1.2.3'
           stage: apply
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         baxter|3.2.1:
           name: baxter
           state: in_progress
           version: '3.2.1'
           stage: apply
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
         spencer|3.2.3:
           name: spencer
           state: in_progress
           version: '3.2.3'
           stage: apply
-          image: nvcr.io/nvidian/swgpu-baseos/agentless-test
+          image: ghcr.io/nvidia/skyhook/agentless
   nodeStatus:
    # grab values should be one and is complete
     (values(@)):
