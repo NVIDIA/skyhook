@@ -15,6 +15,7 @@
 VENV := ./venv/bin/
 REGISTRY ?= nvcr.io
 AGENT_IMAGE ?= nvidian/swgpu-baseos/skyhook-agent
+DOCKER_CMD ?= docker
 
 .PHONY: all
 all: venv test

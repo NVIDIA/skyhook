@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - agent/**
+      - .github/workflows/agent-ci.yaml
 jobs:
   test:
     name: Skyhook Agent Unit Tests
