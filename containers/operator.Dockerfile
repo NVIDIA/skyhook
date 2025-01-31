@@ -43,6 +43,7 @@ FROM gcr.io/distroless/static:nonroot
 
 ARG VERSION
 ARG GIT_SHA
+ARG GO_VERSION
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/static:nonroot" \
