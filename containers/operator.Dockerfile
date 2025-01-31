@@ -13,7 +13,9 @@
 # limitations under the License.
 
 # Build the manager binary
-FROM gitlab-master.nvidia.com:5005/dgx/infra/skyhook-operator/ci:latest as builder
+ARG GO_VERSION
+
+FROM golang:${GO_VERSION}-bookworm as builder
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -41,7 +43,6 @@ FROM gcr.io/distroless/static:nonroot
 
 ARG VERSION
 ARG GIT_SHA
-ARG GO_VERSION
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.base.name="gcr.io/distroless/static:nonroot" \
