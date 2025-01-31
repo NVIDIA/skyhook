@@ -80,15 +80,14 @@ jobs:
                 exit 1
                 ;;
           esac
-          export TAGS=${TAGS@L}
-          export REGISTRY=${REGISTRY@L}
+          set -x
           export BUILD_ARGS="--push"
           docker buildx build \
             --build-arg GIT_SHA=$${{ github.sha }} \
             --build-arg VERSION=${OPERATOR_VERSION} \
             --build-arg GO_VERSION=${GO_VERSION} \
             --platform linux/amd64,linux/arm64 \
-            ${TAGS} \
+            ${TAGS@L} \
             --metadata-file=metadata.json \
             -f ../containers/operator.Dockerfile .
           cat metadata.json
