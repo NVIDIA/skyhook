@@ -55,6 +55,7 @@ jobs:
           for version in $TEST_VERSIONS; do
             TAGS+="-t ${{ env.REGISTRY }}/${{env.IMAGE_NAME}}/agentless:$version "
           done
+          TAGS=$(echo $TAGS | tr '[:upper:]' '[:lower:]')
 
           docker buildx build --push --platform linux/amd64,linux/arm64 $TAGS --metadata-file=metadata.json -f ../containers/agentless/Dockerfile ../containers/agentless
 
