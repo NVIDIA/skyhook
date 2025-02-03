@@ -13,7 +13,9 @@
 # limitations under the License.
 
 # Build the manager binary
-FROM gitlab-master.nvidia.com:5005/dgx/infra/skyhook-operator/ci:latest as builder
+ARG GO_VERSION
+
+FROM golang:${GO_VERSION}-bookworm as builder
 
 ARG TARGETOS
 ARG TARGETARCH
