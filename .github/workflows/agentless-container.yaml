@@ -62,10 +62,11 @@ jobs:
             TAGS+="-t ${{ env.REGISTRY }}/${{env.IMAGE_NAME}}/agentless:$version "
           done
           TAGS=$(echo $TAGS | tr '[:upper:]' '[:lower:]')
-
+          echo "======== Tags: ========\n $TAGS"
           # GITHUB_BASE_REF is only set when the action source event is a pull request.
           # in that case don't push.
-          export PUSH=$(if [ -z ${GITHUB_BASE_REF+x} ]; then echo "--push"; else echo ""; fi)
+          export PUSH=$(if [ ${{ github.event_name }} != 'pull_request' ]; then echo "--push"; else echo ""; fi)
+          
           docker buildx build $PUSH --platform linux/amd64,linux/arm64 $TAGS --metadata-file=metadata.json -f ../containers/agentless/Dockerfile ../containers/agentless
 
           cat metadata.json
@@ -75,7 +76,7 @@ jobs:
       # This step generates an artifact attestation for the image, which is an unforgeable statement about where and how it was built. It increases supply chain security for people who consume the image. For more information, see [AUTOTITLE](/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds). 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
-        if: ${{ env.GITHUB_BASE_REF != '' }}
+        if: ${{ github.event_name != 'pull_request' }}
         with:
           subject-name: ${{ env.REGISTRY }}/${{env.IMAGE_NAME}}/agentless
           subject-digest: ${{ steps.build.outputs.digest }}
