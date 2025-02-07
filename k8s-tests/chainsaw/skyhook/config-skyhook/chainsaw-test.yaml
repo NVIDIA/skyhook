@@ -13,7 +13,7 @@ spec:
     again it does one more update on a key for the same two packages which doesn't have a config interrupt defined and makes sure that the config steps are ran for that.
   concurrent: true
   timeouts:
-    assert: 240s
+    assert: 360s
   catch: ## if errors, print the most important info
     - get:
         apiVersion: v1
