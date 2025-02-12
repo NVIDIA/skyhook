@@ -190,7 +190,7 @@ create-kind-cluster: ## deletes and creates a new kind cluster. versions is set 
 
 podman-create-machine: ## creates a podman machine
 	podman machine stop podman-machine-default || true
-	podman machine rm podman-machine-default || true
+	podman machine rm -f podman-machine-default || true
 	podman machine init --cpus=6 -m=12288 --disk-size=300 podman-machine-default
 	podman machine start podman-machine-default
 
@@ -271,10 +271,29 @@ ifndef ignore-not-found
   ignore-not-found = false
 endif
 
-.PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
+create-namespace: ## Create the namespace in the K8s cluster specified in ~/.kube/config.
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+
+.PHONY: install
+install: manifests kustomize create-namespace ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
+
+cert-manager-yaml-url=https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+.PHONY: install-cert-manager
+install-cert-manager: ## Install cert-manager into the K8s cluster specified in ~/.kube/config.
+	kubectl apply -f $(cert-manager-yaml-url)
+	sleep 30 ## wait for cert-manager to be ready
+
+.PHONY: install-helm-chart
+install-helm-chart: helm create-namespace install-cert-manager ## Install helm chart into the K8s cluster specified in ~/.kube/config.
+	$(HELM) install skyhook-operator ../chart -n $(SKYHOOK_NAMESPACE) 
+
+.PHONY: uninstall-helm-chart
+uninstall-helm-chart: helm ## Uninstall helm chart from the K8s cluster specified in ~/.kube/config.
+	$(HELM) uninstall skyhook-operator -n $(SKYHOOK_NAMESPACE)
+
+uninstall-cert-manager: ## Uninstall cert-manager from the K8s cluster specified in ~/.kube/config.
+	kubectl delete -f $(cert-manager-yaml-url)
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

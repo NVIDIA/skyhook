@@ -84,7 +84,7 @@ spec:
           - name: IMAGE_PULL_SECRET
             value: node-init-secret
           - name: COPY_DIR_ROOT
-            value: /tmp
+            value: /var/lib/skyhook
           - name: REAPPLY_ON_REBOOT
             value: "false"
           - name: RUNTIME_REQUIRED_TAINT_KEY
