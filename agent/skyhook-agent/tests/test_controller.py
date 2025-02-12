@@ -1088,13 +1088,18 @@ class TestUseCases(unittest.TestCase):
             ],
         }
         with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir):
-            controller.main(
-                Mode.INTERRUPT,
-                root_dir,
-                "copy_dir",
-                interrupts.ServiceRestart(["containerd",]).make_controller_input()
-            )
+            with set_env(SKYHOOK_RESOURCE_ID="scr-id-1_package_version"):
+                controller.main(
+                    Mode.INTERRUPT,
+                    root_dir,
+                    "copy_dir",
+                    interrupts.ServiceRestart(["containerd",]).make_controller_input()
+                )
 
+        config_data = {
+            "package_name": "package",
+            "package_version": "version"
+        }
         run_mock.assert_has_calls([
             mock.call(["systemctl", "daemon-reload"], controller.get_log_file(root_dir, "interrupts/service_restart_0", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True),
             mock.call(["systemctl", "restart", "containerd"], controller.get_log_file(root_dir, "interrupts/service_restart_1", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True)
@@ -1103,25 +1108,25 @@ class TestUseCases(unittest.TestCase):
     @mock.patch("skyhook_agent.controller._run")
     def test_interrupt_isnt_run_when_skyhook_resource_id_flag_is_there(self, run_mock):
         run_mock.return_value = 0
-        SKYHOOK_RESOURCE_ID="foo"
+        SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
         with (tempfile.TemporaryDirectory() as dir,
               set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
             os.makedirs(f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}", exist_ok=True)
             with open(f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}/node_restart_0.complete", 'w') as f:
                 f.write("")
-            controller.do_interrupt(interrupts.NodeRestart().make_controller_input(), dir, "copy_dir", on_host=False, config_data=self.config_data)
+            controller.do_interrupt(interrupts.NodeRestart().make_controller_input(), dir, "copy_dir", on_host=False)
 
             run_mock.assert_not_called()
 
     @mock.patch("skyhook_agent.controller._run")
     def test_interrupt_create_flags_per_cmd(self, run_mock):
         run_mock.return_value = 0
-        SKYHOOK_RESOURCE_ID="foo"
+        SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
         with (tempfile.TemporaryDirectory() as dir,
               set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
             interrupt_dir = f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
             interrupt = interrupts.ServiceRestart(["foo", "bar"])
-            controller.do_interrupt(interrupt.make_controller_input(), dir, "copy_dir", on_host=False, config_data=self.config_data)
+            controller.do_interrupt(interrupt.make_controller_input(), dir, "copy_dir", on_host=False)
 
             for i in range(len(interrupt.interrupt_cmd)):
                 self.assertTrue(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_{i}.complete"))
@@ -1129,12 +1134,12 @@ class TestUseCases(unittest.TestCase):
     @mock.patch("skyhook_agent.controller._run")
     def test_interrupt_failures_remove_flag(self, run_mock):
         run_mock.side_effect = [0,1,0]
-        SKYHOOK_RESOURCE_ID="foo"
+        SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
         with (tempfile.TemporaryDirectory() as dir,
               set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
             interrupt_dir = f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
             interrupt = interrupts.ServiceRestart(["foo", "bar"])
-            controller.do_interrupt(interrupt.make_controller_input(), dir, "copy_dir", on_host=False, config_data=self.config_data)
+            controller.do_interrupt(interrupt.make_controller_input(), dir, "copy_dir", on_host=False)
 
             self.assertTrue(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_0.complete"))
             self.assertFalse(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_1.complete"))
@@ -1156,50 +1161,85 @@ class TestUseCases(unittest.TestCase):
             ],
         }
         with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir):
-            result = controller.main(
-                Mode.INTERRUPT,
-                root_dir,
-                "/tmp",
-                interrupts.ServiceRestart("containerd").make_controller_input()
-            )
-
+            with set_env(SKYHOOK_RESOURCE_ID="scr-id-1_package_version"):
+                result = controller.main(
+                    Mode.INTERRUPT,
+                    root_dir,
+                    "/tmp",
+                    interrupts.ServiceRestart("containerd").make_controller_input()
+                )
+        config_data = {
+            "package_name": "package",
+            "package_version": "version"
+        }
         run_mock.assert_has_calls([
             mock.call(["systemctl", "daemon-reload"], controller.get_log_file(root_dir, "interrupts/service_restart_0", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True)
         ])
 
         self.assertEqual(result, True)
 
+    @mock.patch("skyhook_agent.controller.datetime")
+    @mock.patch("skyhook_agent.controller._run")
+    def test_interrupt_makes_config_from_skyhook_resource_id(self, run_mock, datetime_mock):
+        now_mock = mock.MagicMock()
+        datetime_mock.now.return_value = now_mock
+        now_mock.strftime.return_value = "12345"
+        run_mock.return_value = 0
+        steps = {
+            Mode.APPLY: [
+                Step("foo.sh", arguments=[]),
+            ],
+            Mode.APPLY_CHECK: [
+                Step("foo_check.sh", arguments=[]),
+            ],
+        }
+        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir):
+            with set_env(SKYHOOK_RESOURCE_ID="scr-id-1_package_version"):
+                result = controller.main(
+                    Mode.INTERRUPT,
+                    root_dir,
+                    "/tmp",
+                    interrupts.ServiceRestart("containerd").make_controller_input()
+                )
+        config_data = {
+            "package_name": "package",
+            "package_version": "version"
+        }
+        run_mock.assert_has_calls([
+            mock.call(["systemctl", "daemon-reload"], controller.get_log_file(root_dir, "interrupts/service_restart_0", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True)
+        ])
+
     @mock.patch("skyhook_agent.controller.main")
     def test_interrupt_mode_reads_extra_argument(self, main_mock):
         argv = ["controller.py", str(Mode.INTERRUPT), "root_mount", "copy_dir", "interrupt_data"]
-        with set_env(COPY_RESOLVE="false"):
+        with set_env(COPY_RESOLV="false"):
             controller.cli(argv)
         
         main_mock.assert_called_once_with(str(Mode.INTERRUPT), "root_mount", "copy_dir", "interrupt_data", False)
 
     @mock.patch("skyhook_agent.controller.main")
     def test_cli_overlay_always_run_step_is_correct(self, main_mock):
-        with set_env(OVERLAY_ALWAYS_RUN_STEP="true", COPY_RESOLVE="false"):
+        with set_env(OVERLAY_ALWAYS_RUN_STEP="true", COPY_RESOLV="false"):
             controller.cli(["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"])
 
         main_mock.assert_called_once_with(str(Mode.APPLY), "root_mount", "copy_dir", None, True)
         main_mock.reset_mock()
 
-        with set_env(OVERLAY_ALWAYS_RUN_STEP="false", COPY_RESOLVE="false"):
+        with set_env(OVERLAY_ALWAYS_RUN_STEP="false", COPY_RESOLV="false"):
             controller.cli(["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"])
         main_mock.assert_called_once_with(str(Mode.APPLY), "root_mount", "copy_dir", None, False)
 
     @mock.patch("skyhook_agent.controller.main")
     @mock.patch("skyhook_agent.controller.shutil")
-    def test_cli_copy_resolve(self, shutil_mock, main_mock):
+    def test_cli_COPY_RESOLV(self, shutil_mock, main_mock):
         argv = ["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"]
-        with set_env(COPY_RESOLVE="true"):
+        with set_env(COPY_RESOLV="true"):
             controller.cli(argv)
         
         shutil_mock.copyfile.assert_called_once()
         shutil_mock.copyfile.reset_mock()
 
-        with set_env(COPY_RESOLVE="false"):
+        with set_env(COPY_RESOLV="false"):
             controller.cli(argv)
         
         shutil_mock.copyfile.assert_not_called()

@@ -339,13 +339,21 @@ def summarize_check_results(results: list[bool], step_data: dict[Mode, list[Step
 
     return False
 
-def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str, on_host: bool, config_data: dict) -> bool:
+def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str, on_host: bool) -> bool:
     """
     Run an interrupt if there hasn't been an interrupt already for the skyhook ID.
     """
     
-    
     SKYHOOK_RESOURCE_ID, _ = _get_env_config()
+
+    # Interrupts don't really have config data we can read from the Package as it is run standalone.
+    # So read it off of SKYHOOK_RESOURCE_ID  instead
+    # customer-f5a1d42e-74e5-4606-8bbc-b504fbe0074d-1_tuning_2.0.2
+    _, package, version = SKYHOOK_RESOURCE_ID.split("_")
+    config_data = {
+        "package_name": package,
+        "package_version": version,
+    }
 
     interrupt = interrupts.inflate(interrupt_data)
 
@@ -392,6 +400,9 @@ def main(mode: Mode, root_mount: str, copy_dir: str, interrupt_data: None|str, a
         logger.warning(f"This version of the Agent doesn't support the {mode} mode. Options are: {','.join(map(str, Mode))}.")
         return False
     
+    if mode == Mode.INTERRUPT:
+        return do_interrupt(interrupt_data, root_mount, copy_dir, True)
+    
     _, SKYHOOK_DATA_DIR = _get_env_config()
 
     # Check to see if the directory has already been copied down. If it hasn't assume that we
@@ -421,9 +432,6 @@ def main(mode: Mode, root_mount: str, copy_dir: str, interrupt_data: None|str, a
     return agent_main(mode, root_mount, copy_dir, config_data, interrupt_data, always_run_step)
 
 def agent_main(mode: Mode, root_mount: str, copy_dir: str, config_data: dict, interrupt_data: None|str, always_run_step=False):
-
-    if mode == Mode.INTERRUPT:
-        return do_interrupt(interrupt_data, root_mount, copy_dir, True, config_data)
             
     # Pull out step_data so it matches with existing code
     step_data = config_data["modes"]
@@ -506,7 +514,7 @@ def cli(sys_argv: list[str]=sys.argv):
         # new way with interrupt data
         mode, root_mount, copy_dir, interrupt_data = args
 
-    if os.getenv("COPY_RESOLVE", "true").lower() == "true":
+    if os.getenv("COPY_RESOLV", "true").lower() == "true":
         shutil.copyfile("/etc/resolv.conf", f"{root_mount}/etc/resolv.conf")
 
     always_run_step = os.getenv("OVERLAY_ALWAYS_RUN_STEP", "false").lower() == "true"
