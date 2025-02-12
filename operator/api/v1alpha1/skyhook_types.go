@@ -146,11 +146,6 @@ type InterruptionBudget struct {
 	//+kubebuilder:validation:Minimum=0
 	//+nullable
 	Count *int `json:"count,omitempty"`
-
-	// Timeout is how long we wait before we assume something bad happened to a give node, and are going to move forward.
-	//+kubebuilder:validation:Format=duration
-	//+kubebuilder:default="15m"
-	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }
 
 func (i *InterruptionBudget) Validate() error {

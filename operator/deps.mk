@@ -73,6 +73,7 @@ GINKGO ?= $(LOCALBIN)/ginkgo
 MOCKERY ?= $(LOCALBIN)/mockery
 CHAINSAW ?= $(LOCALBIN)/chainsaw
 HELMIFY ?= $(LOCALBIN)/helmify
+HELM ?= $(LOCALBIN)/helm
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary. If wrong version is installed, it will be removed before downloading.

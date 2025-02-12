@@ -113,12 +113,6 @@ spec:
                     minimum: 0
                     nullable: true
                     type: integer
-                  timeout:
-                    default: 15m
-                    description: Timeout is how long we wait before we assume something
-                      bad happened to a give node, and are going to move forward.
-                    format: duration
-                    type: string
                 type: object
               nodeSelectors:
                 description: NodeSelector are a set of labels we want to monitor nodes

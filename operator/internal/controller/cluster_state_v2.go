@@ -265,23 +265,18 @@ func NewNodePicker(runtimeRequiredToleration corev1.Toleration) *NodePicker {
 }
 
 // primeAndPruneNodes add current priority from skyhook status, and check time removing old ones
-func (s *NodePicker) primeAndPruneNodes(skyhook *wrapper.Skyhook) {
+func (s *NodePicker) primeAndPruneNodes(skyhook *skyhookNodes) {
 
-	now := time.Now()
-	for n, t := range skyhook.Status.NodePriority {
-		if now.Sub(t.Time) > skyhook.Spec.InterruptionBudget.Timeout.Duration {
-			// prune
-			// was not cleaned up before now, so it has timed out...
-			// this could cause issues if the node is still in the cluster api,
-			// but is bad, but seems like if that is true, there might be bigger problems
-			// so removing from status
-			delete(skyhook.Status.NodePriority, n)
-			skyhook.Updated = true
+	for n, t := range skyhook.skyhook.Status.NodePriority {
+		// prune
+		// if the node is complete, remove it from the priority list
+		if nodeStatus, _ := skyhook.GetNode(n); nodeStatus == v1alpha1.StatusComplete {
+			delete(skyhook.skyhook.Status.NodePriority, n)
+			skyhook.skyhook.Updated = true
 		} else {
 			s.priorityNodes[n] = t.Time
 		}
 	}
-
 }
 
 // upsertPick updates or inserts the node priority for a given name in the Skyhook object.
@@ -328,7 +323,7 @@ func CheckTaintToleration(tolerations []corev1.Toleration, taints []corev1.Taint
 
 func (np *NodePicker) SelectNodes(s *skyhookNodes) []wrapper.SkyhookNode {
 
-	np.primeAndPruneNodes(s.skyhook)
+	np.primeAndPruneNodes(s)
 
 	nodes := make([]wrapper.SkyhookNode, 0)
 

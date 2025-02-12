@@ -71,7 +71,7 @@ type SkyhookOperatorOptions struct {
 	Namespace            string        `env:"NAMESPACE, default=skyhook"`
 	MaxInterval          time.Duration `env:"DEFAULT_INTERVAL, default=10m"`
 	ImagePullSecret      string        `env:"IMAGE_PULL_SECRET, default=node-init-secret"` //TODO: should this be defaulted?
-	CopyDirRoot          string        `env:"COPY_DIR_ROOT, default=/tmp"`
+	CopyDirRoot          string        `env:"COPY_DIR_ROOT, default=/var/lib/skyhook"`
 	ReapplyOnReboot      bool          `env:"REAPPLY_ON_REBOOT, default=false"`
 	RuntimeRequiredTaint string        `env:"RUNTIME_REQUIRED_TAINT, default=skyhook.nvidia.com=runtime-required:NoSchedule"`
 	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
