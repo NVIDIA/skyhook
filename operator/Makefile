@@ -43,11 +43,15 @@ GO_LDFLAGS  := -ldflags "-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=$
 	-X github.com/NVIDIA/skyhook/internal/version.VERSION=$(VERSION)"
 GOFLAGS 	:= -mod=vendor
 
-# CONTAINER_TOOL defines the container tool to be used for building images.
+# DOCKER_CMD defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
-CONTAINER_TOOL ?= podman
+DOCKER_CMD ?= podman
+
+ifdef CI
+	DOCKER_CMD = docker
+endif
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -137,7 +141,7 @@ $(REPORTING):
 .PHONY: test
 test:: reporting manifests generate fmt vet lint helm-tests e2e-tests unit-tests ## Run all tests.
 
-ifndef GITLAB_CI
+ifndef CI
 ## we double define test so we can do thing different if in ci vs local
 test:: merge-coverage
 	echo "Total Code Coverage: $(shell go tool cover -func $(REPORTING)/cover.out | grep total | awk '{print $$NF}')"
@@ -153,19 +157,19 @@ watch-tests: ## watch unit tests and auto run on changes.
 	$(GINKGO) watch $(GOFLAGS) -p -vv ./...
 
 .PHONY: unit-test
-unit-tests: reporting envtest ginkgo kill ## Run unit tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) $(GOFLAGS)  --coverprofile=$(REPORTING)/unit.coverprofile -vv --trace --junit-report=$(REPORTING)/unit.xml --keep-going --timeout=90s ./...
+unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) $(GOFLAGS)  --coverprofile=$(REPORTING)/unit.coverprofile -vv --trace --junit-report=$(REPORTING)/unit.xml --keep-going --timeout=180s ./...
 
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
 ## https://kyverno.github.io/chainsaw/latest/reference/commands/chainsaw_test/
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
-CHAINSAW_ARGS:=--exec-timeout 30s
+CHAINSAW_ARGS:=--exec-timeout 30s --parallel 2
 
 e2e-tests: chainsaw run ## Run end to end tests.
 	## requires a cluster to be running with access
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
-	$(CHAINSAW) test --test-dir e2e/chainsaw/skyhook $(CHAINSAW_ARGS)
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook $(CHAINSAW_ARGS)
 	$(MAKE) kill 
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
@@ -176,17 +180,26 @@ helm-tests: helm chainsaw
 	$(MAKE) run
 	$(MAKE) uninstall ignore-not-found=true
 	$(MAKE) kill
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/helm $(CHAINSAW_ARGS)
 
-	$(CHAINSAW) test --test-dir e2e/chainsaw/helm $(CHAINSAW_ARGS)
+
+ifeq ($(DOCKER_CMD),docker)
+DOCKER_AUTH_FILE=${HOME}/.docker/config.json
+else
+DOCKER_AUTH_FILE=${HOME}/.config/containers/auth.json
+endif
 
 create-kind-cluster: ## deletes and creates a new kind cluster. versions is set via KIND_VERSION
+ifdef CI
+	@echo $(GITHUB_TOKEN) | docker login ghcr.io -u $(GITHUB_ACTOR) --password-stdin
+endif
 	kind delete cluster && kind create cluster --image=kindest/node:v$(KIND_VERSION) --config config/local-dev/kind-config.yaml
 	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e
 	
-	## sets you local podman creds into a secret in kind in the skyhook namespace
+	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	$(KUBECTL) create secret generic node-init-secret --type=kubernetes.io/dockerconfigjson -n $(SKYHOOK_NAMESPACE) \
-		--from-file=.dockerconfigjson=${HOME}/.config/containers/auth.json 
+		--from-file=.dockerconfigjson=$(DOCKER_AUTH_FILE)
 
 podman-create-machine: ## creates a podman machine
 	podman machine stop podman-machine-default || true
@@ -240,7 +253,7 @@ build: manifests generate fmt vet lint ## Build manager binary.
 .PHONY: run
 ENABLE_WEBHOOKS?=false
 BACKGROUND?=true
-AGENT_IMAGE?=nvcr.io/nvidian/swgpu-baseos/agentless-test:6.2.0
+AGENT_IMAGE?=ghcr.io/nvidia/skyhook/agentless:6.2.0
 LOG_LEVEL?=info
 run: manifests generate fmt vet lint reporting install kill ## Run a controller from your host.
 	mkdir -p $(REPORTING)/int
@@ -263,7 +276,7 @@ kill:
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -f containers/operator.Dockerfile -t ${IMG} .
+	$(DOCKER_CMD) build -f ../containers/operator.Dockerfile -t ${IMG} .
 
 ##@ Deployment
 
