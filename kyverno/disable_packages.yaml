@@ -1,0 +1,38 @@
+# This is an example to show how to restrict the images that can be used in a Skyhook package.
+# It is not a complete policy and it is expected end users will alter rules to fit their security needs.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-skyhook-images
+  annotations:
+    policies.kyverno.io/title: Restrict Skyhook Package Images
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      This policy prevents the creation of Skyhook resources that contain packages with
+      restricted image patterns. Specifically, it blocks images containing 'shellscript'
+      and images coming from docker hub.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: validate-package-images
+      match:
+        any:
+        - resources:
+            kinds:
+              - Skyhook
+            operations:
+              - CREATE
+              - UPDATE
+      validate:
+        message: "Package image matches restricted pattern. Images containing 'shellscript' or starting with 'docker.io/' are not allowed."
+        deny:
+          conditions:
+            any:
+              - key: "{{ regex_match('nvcr.io/nvidian/swgpu-baseos/shellscript', '{{request.object.spec.packages.*.image}}' ) }}"
+                operator: Equals
+                value: true
+              - key: "{{ regex_match('docker.io/.*', '{{request.object.spec.packages.*.image}}' ) }}"
+                operator: Equals
+                value: true

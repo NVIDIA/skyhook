@@ -48,6 +48,30 @@ Part of how the operator works is the [skyhook-agent](agent/README.md). Packages
 └── config.json
 ```
 
+## Example Kyverno Policy
+
+This repository includes an example Kyverno policy that demonstrates how to restrict the images that can be used in Skyhook packages. While this is not a complete policy, it serves as a template that end users can modify to fit their security needs.
+
+The policy prevents the creation of Skyhook resources that contain packages with restricted image patterns. Specifically, it blocks:
+- Images containing 'shellscript:' anywhere in the image name
+- Images from Docker Hub (matching 'docker.io/*')
+
+If you are going to use kyverno make sure to turn on the creation of the skyhook-viewer-role in the values file for the operator. (rbac.createSkyhookViewerRole: true) and then bind kyverno to that role. Example policy:
+```
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kyverno-skyhook-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: skyhook-viewer-role
+subjects:
+- kind: ServiceAccount
+  name: kyverno-reports-controller
+  namespace: kyverno
+```
+
 ## [Skyhook-Operator](operator/README.md)
 The operator is a kbuernetes operator that monitors cluster events and coordinates the installation and lifecycle of Skyhook packages.
 
