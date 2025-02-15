@@ -30,11 +30,11 @@ spec:
         (length(@)): 3
       resources: ## including these to tests defaults are working
         limits:
-          cpu: 250m
+          cpu: 500m
           memory: 256Mi
         requests:
-          cpu: 50m
-          memory: 64Mi
+          cpu: 500m
+          memory: 256Mi
     - name: cats-uninstallcheck
       args:
         ([0]): uninstall-check
@@ -42,11 +42,11 @@ spec:
         (length(@)): 3
       resources: ## including these to tests defaults are working
         limits:
-          cpu: 250m
+          cpu: 500m
           memory: 256Mi
         requests:
-          cpu: 50m
-          memory: 64Mi
+          cpu: 500m
+          memory: 256Mi
 ---
 kind: Pod
 apiVersion: v1
