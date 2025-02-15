@@ -390,14 +390,14 @@ spec:
                           anyOf:
                           - type: integer
                           - type: string
-                          default: 250m
+                          default: 500m
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         cpuRequest:
                           anyOf:
                           - type: integer
                           - type: string
-                          default: 50m
+                          default: 500m
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         memoryLimit:
@@ -411,7 +411,7 @@ spec:
                           anyOf:
                           - type: integer
                           - type: string
-                          default: 64Mi
+                          default: 256Mi
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                       type: object

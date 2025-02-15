@@ -1467,12 +1467,12 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 					VolumeMounts: volumeMounts,
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("100m"),
-							corev1.ResourceMemory: resource.MustParse("20Mi"),
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("256Mi"),
 						},
 						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("100m"),
-							corev1.ResourceMemory: resource.MustParse("20Mi"),
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("256Mi"),
 						},
 					},
 				},
@@ -1633,14 +1633,14 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 						Privileged: ptr(true),
 					},
 					VolumeMounts: volumeMounts,
-					Resources: corev1.ResourceRequirements{ // setting this
+					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("100m"),
-							corev1.ResourceMemory: resource.MustParse("20Mi"),
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("256Mi"),
 						},
 						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("100m"),
-							corev1.ResourceMemory: resource.MustParse("20Mi"),
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("256Mi"),
 						},
 					},
 				},
@@ -1894,6 +1894,17 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 	status, found := skyhookNode.PackageStatus(_package.GetUniqueName())
 	if found && status.State == v1alpha1.StateSkipped {
 		return false, nil
+	}
+
+	// Theres is a race condition when a node reboots and api might clean up the interrupt pod
+	// so we need to check if the pod exists and if it does, we need to recreate it
+	if status != nil && (status.State == v1alpha1.StateInProgress || status.State == v1alpha1.StateErroring) && status.Stage == v1alpha1.StageInterrupt {
+		// call interrupt to recreate the pod if missing
+		// this is safe because the ageent is idempotent
+		err = r.Interrupt(ctx, skyhookNode, _package, interrupt)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	if nextStage != nil && *nextStage == v1alpha1.StageInterrupt && runInterrupt { // time to do the interrupt

@@ -171,11 +171,11 @@ func (p *PackageRef) GetUniqueName() string {
 }
 
 type ResourceRequirements struct {
-	// +kubebuilder:default="50m"
+	// +kubebuilder:default="500m"
 	CPURequest resource.Quantity `json:"cpuRequest,omitempty"`
-	// +kubebuilder:default="250m"
+	// +kubebuilder:default="500m"
 	CPULimit resource.Quantity `json:"cpuLimit,omitempty"`
-	// +kubebuilder:default="64Mi"
+	// +kubebuilder:default="256Mi"
 	MemoryRequest resource.Quantity `json:"memoryRequest,omitempty"`
 	// +kubebuilder:default="256Mi"
 	MemoryLimit resource.Quantity `json:"memoryLimit,omitempty"`

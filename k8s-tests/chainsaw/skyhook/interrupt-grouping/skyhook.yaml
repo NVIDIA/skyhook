@@ -34,4 +34,4 @@ spec:
         type: service
         services: [containerd, foobar]
       resources:
-        cpuLimit: 123m
+        cpuLimit: 523m
