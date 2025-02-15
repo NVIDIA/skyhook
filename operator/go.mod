@@ -9,11 +9,11 @@ require (
 	github.com/sethvargo/go-envconfig v1.0.0
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.26.0
-	k8s.io/api v0.30.5
-	k8s.io/apimachinery v0.30.5
-	k8s.io/client-go v0.30.5
-	k8s.io/kubernetes v1.30.5
-	sigs.k8s.io/controller-runtime v0.18.5
+	k8s.io/api v0.30.10
+	k8s.io/apimachinery v0.30.10
+	k8s.io/client-go v0.30.10
+	k8s.io/kubernetes v1.30.10
+	sigs.k8s.io/controller-runtime v0.18.7
 )
 
 require (
