@@ -1,0 +1,13 @@
+name: Commit Linting
+on: pull_request
+jobs:
+  commit-linting:
+    name: Git commit linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: check-for-cc
+        id: check-for-cc
+        uses: agenthunt/conventional-commit-checker-action@v1.0.0
+        with:
+          pr-title-regex: "^(.+)(?:(([^)s]+)))?: (.+)" # title must follow <type>(<subtype>): short description
+          pr-body-regex: "(.*)" # body must not be empty
