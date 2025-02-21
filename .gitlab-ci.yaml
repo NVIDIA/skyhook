@@ -9,6 +9,7 @@ variables:
   KUBERNETES_MEMORY_LIMIT: "6Gi"
   KUBERNETES_MEMORY_REQUEST: "3Gi"
   GO_VERSION: 1.23.4
+  ARCH_LIST: "linux/amd64"
 
 workflow:
   rules:
@@ -35,7 +36,7 @@ bootstrap:
     - export pypi_user=$(vault kv get -field=username $ARTIFACTORY_TOKEN)
     - export pypi_password=$(vault kv get -field=password $ARTIFACTORY_TOKEN)
     - echo "PIP_EXTRA_INDEX_URL=https://${pypi_user}:${pypi_password}@$ARTIFACTORY_URL" >> build.env
-    - echo "NVCR_REGISTRY_PASSWORD=$(vault read -field=token $NVCR_TOKEN)" >> build.env
+    - echo "NVCR_REGISTRY_PASSWORD=$(vault read -field=password ${NVCR_TOKEN})" >> build.env
     - echo "GHCR_REGISTRY_PASSWORD=$(vault read -field=pat ${GHCR_TOKEN})" >> build.env
   artifacts:
     access: none
@@ -57,7 +58,7 @@ mirror-operator-image:
     GHCR_REGISTRY: ghcr.io
     NVCR_REGISTRY: nvcr.io
     GHCR_REGISTRY_IMAGE: "${GHCR_REGISTRY}/nvidia/skyhook/operator"
-    NVCR_REGISTRY_IMAGE: "${NVCR_REGISTRY}/nv-ngc-devops/skyhook-operator"
+    NVCR_REGISTRY_IMAGE: "${NVCR_REGISTRY}/skyhook/operator"
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_TLS_VERIFY: 1
@@ -65,12 +66,19 @@ mirror-operator-image:
   before_script:
     - echo "{\"auths\":{\"${NVCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${NVCR_REGISTRY_USER}" "${NVCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"${GHCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${GHCR_REGISTRY_USER}" "${GHCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > config.json
   script:
-    - export IMG_TAG=$(echo ${CI_COMMIT_TAG}|sed 's/operator\// /') # remove `operator/` from the tag
     - until docker info >/dev/null 2>&1; do sleep 1; done # docker is not always fully ready immediately, sleep until it's online
-    - docker --config . pull ${GHCR_REGISTRY_IMAGE}:${IMG_TAG}
-    - docker --config . tag ${GHCR_REGISTRY_IMAGE}:${IMG_TAG} ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}
-    - docker --config . push ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}
-
+    - export IMG_TAG=$(echo ${CI_COMMIT_TAG}|sed 's/operator\// /') # remove `operator/` from the tag
+    - | # fetch the platform-specific image
+      export IMAGE_TARGETS=""
+      for ARCH in ${ARCH_LIST//,/ }; do 
+        docker --config . pull ${GHCR_REGISTRY_IMAGE}:${IMG_TAG} --platform $ARCH # fetch the image from ghcr.io
+        docker --config . tag ${GHCR_REGISTRY_IMAGE}:${IMG_TAG} ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}-$(echo $ARCH|sed 's;linux/;;') # retag the image using the arch
+        docker --config . push ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}-$(echo ${ARCH}|sed 's;linux/;;') # push the new image up to nvcr.io
+        export IMAGE_TARGETS=$IMAGE_TARGETS"--amend ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}-$(echo $ARCH|sed 's;linux/;;') " # add the image to the manifest's `--amend` list
+      done
+    - docker --config . manifest create ${NVCR_REGISTRY_IMAGE}:${IMG_TAG} ${IMAGE_TARGETS} # create the new manifest using the two images we just pushed
+    - docker --config . manifest push ${NVCR_REGISTRY_IMAGE}:${IMG_TAG} # push the manifest
+    
 mirror-agent-image:
   stage: deploy
   rules: 
@@ -84,18 +92,27 @@ mirror-agent-image:
         HEALTHCHECK_TCP_PORT: "2376"
   variables:
     GHCR_REGISTRY: ghcr.io
-    NVCR_REGISTRY: nvcr.io
     GHCR_REGISTRY_IMAGE: "${GHCR_REGISTRY}/nvidia/skyhook/agent"
-    NVCR_REGISTRY_IMAGE: "${NVCR_REGISTRY}/nv-ngc-devops/skyhook-agent"
+    NVCR_REGISTRY_IMAGE: "${NVCR_REGISTRY}/skyhook/agent"
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    ARCH_LIST: "linux/amd64,linux/arm64" # TODO: until operator has both archs override agent to use both
   before_script:
     - echo "{\"auths\":{\"${NVCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${NVCR_REGISTRY_USER}" "${NVCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"${GHCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${GHCR_REGISTRY_USER}" "${GHCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > config.json
   script:
-    - export IMG_TAG=$(echo ${CI_COMMIT_TAG}|sed 's/agent\// /') # remove `agent/` from the tag
     - until docker info >/dev/null 2>&1; do sleep 1; done # docker is not always fully ready immediately, sleep until it's online
-    - docker --config . pull ${GHCR_REGISTRY_IMAGE}:${IMG_TAG}
-    - docker --config . tag ${GHCR_REGISTRY_IMAGE}:${IMG_TAG} ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}
-    - docker --config . push ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}
+    - export IMG_TAG=$(echo ${CI_COMMIT_TAG}|sed 's/agent\// /') # remove `agent/` from the tag
+    - | # fetch the platform-specific image
+      export IMAGE_TARGETS=""
+      for ARCH in ${ARCH_LIST//,/ }; do 
+        docker --config . pull ${GHCR_REGISTRY_IMAGE}:${IMG_TAG} --platform $ARCH # fetch the image from ghcr.io
+        docker --config . tag ${GHCR_REGISTRY_IMAGE}:${IMG_TAG} ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}-$(echo $ARCH|sed 's;linux/;;') # retag the image using the arch
+        docker --config . push ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}-$(echo ${ARCH}|sed 's;linux/;;') # push the new image up to nvcr.io
+        export IMAGE_TARGETS=$IMAGE_TARGETS"--amend ${NVCR_REGISTRY_IMAGE}:${IMG_TAG}-$(echo $ARCH|sed 's;linux/;;') " # add the image to the manifest's `--amend` list
+      done
+    - docker --config . manifest create ${NVCR_REGISTRY_IMAGE}:${IMG_TAG} ${IMAGE_TARGETS} # create the new manifest using the two images we just pushed
+    - docker --config . manifest push ${NVCR_REGISTRY_IMAGE}:${IMG_TAG} # push the manifest
+    
+      
