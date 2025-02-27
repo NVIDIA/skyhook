@@ -736,9 +736,9 @@ func HandleVersionChange(skyhook *skyhookNodes) ([]*v1alpha1.Package, error) {
 					PackageRef: packageStatusRef,
 					Image:      packageStatus.Image,
 					Resources: v1alpha1.ResourceRequirements{
-						CPURequest:    resource.MustParse("50m"),
+						CPURequest:    resource.MustParse("250m"),
 						CPULimit:      resource.MustParse("250m"),
-						MemoryRequest: resource.MustParse("64Mi"),
+						MemoryRequest: resource.MustParse("256Mi"),
 						MemoryLimit:   resource.MustParse("256Mi"),
 					},
 				}
@@ -1468,11 +1468,11 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
+							corev1.ResourceMemory: resource.MustParse("64Mi"),
 						},
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
+							corev1.ResourceMemory: resource.MustParse("64Mi"),
 						},
 					},
 				},
@@ -1635,12 +1635,12 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 					VolumeMounts: volumeMounts,
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
+							corev1.ResourceCPU:    _package.Resources.CPULimit,
+							corev1.ResourceMemory: _package.Resources.MemoryLimit,
 						},
 						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("256Mi"),
+							corev1.ResourceCPU:    _package.Resources.CPURequest,
+							corev1.ResourceMemory: _package.Resources.MemoryRequest,
 						},
 					},
 				},
@@ -1896,11 +1896,10 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 		return false, nil
 	}
 
-	// Theres is a race condition when a node reboots and api might clean up the interrupt pod
+	// Theres is a race condition when a node reboots and api cleans up the interrupt pod
 	// so we need to check if the pod exists and if it does, we need to recreate it
 	if status != nil && (status.State == v1alpha1.StateInProgress || status.State == v1alpha1.StateErroring) && status.Stage == v1alpha1.StageInterrupt {
 		// call interrupt to recreate the pod if missing
-		// this is safe because the ageent is idempotent
 		err = r.Interrupt(ctx, skyhookNode, _package, interrupt)
 		if err != nil {
 			return false, err

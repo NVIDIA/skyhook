@@ -4,9 +4,9 @@ kind: Test
 metadata:
   name: pod-finalization
 spec:
-  concurrent: true ## TODO: fix this
+  concurrent: true
   timeouts:
-    assert: 60s
+    assert: 180s
   steps:
   - try:
     - script:

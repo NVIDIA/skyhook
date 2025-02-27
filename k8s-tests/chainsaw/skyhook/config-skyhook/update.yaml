@@ -18,6 +18,11 @@ spec:
       interrupt: 
         type: service
         services: [cron]
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     dexter:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -35,6 +40,11 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     baxter:
       version: "3.2.1"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -50,3 +60,8 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi

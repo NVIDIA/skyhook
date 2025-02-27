@@ -228,11 +228,15 @@ func (node *skyhookNode) Migrate(logger logr.Logger) error {
 	from := node.GetVersion()
 	to := version.VERSION
 
-	if from == to {
+	if from == to { // already migrated
 		return nil
 	}
 
-	if from == "" { // from before versioning, so is empty
+	mm := version.MajorMinor(from)
+	switch mm {
+	// because there was a bug in versioning, this same migration needs to be run for more then just the v0.5 releases
+	// empty string is for before versioning was added
+	case "", "v0.5", "v0.6", "v0.7":
 		err := migrateNodeTo_0_5_0(node, logger)
 		if err != nil {
 			return err

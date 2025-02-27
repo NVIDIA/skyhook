@@ -22,6 +22,11 @@ spec:
           changed
         ui.properties: |
           changed
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     nullptr:
       version: "2.0.1" ## upgrade
       image: ghcr.io/nvidia/skyhook/agentless
@@ -33,3 +38,8 @@ spec:
           changed
         ui.properties: |
           changed
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi

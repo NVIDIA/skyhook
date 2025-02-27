@@ -43,3 +43,13 @@ func Compare(version1, version2 string) int {
 	}
 	return semver.Compare(version1, version2)
 }
+
+func MajorMinor(version string) string {
+	if version == "" {
+		return ""
+	}
+	if version[0] != 'v' {
+		version = "v" + version
+	}
+	return semver.MajorMinor(version)
+}

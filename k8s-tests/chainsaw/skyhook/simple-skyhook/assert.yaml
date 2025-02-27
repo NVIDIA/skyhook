@@ -1,3 +1,53 @@
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  generateName: simple-skyhook-spencer-3.2.3-apply-
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: simple-skyhook
+    skyhook.nvidia.com/package: spencer-3.2.3
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "spencer",
+        "version": "3.2.3",
+        "skyhook": "simple-skyhook",
+        "stage": "apply",
+        "image": "ghcr.io/nvidia/skyhook/agentless"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: simple-skyhook
+spec:
+  initContainers:
+    - name: spencer-init
+    - name: spencer-apply
+      args:
+        ([0]): apply
+        ([1]): /root
+        (length(@)): 3
+      resources: ## including these to tests defaults are working
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 500m
+          memory: 256Mi
+    - name: spencer-applycheck
+      args:
+        ([0]): apply-check
+        ([1]): /root
+        (length(@)): 3
+      resources: ## including these to tests defaults are working
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 500m
+          memory: 256Mi
+---
 apiVersion: v1
 kind: Node
 metadata:
@@ -5,7 +55,30 @@ metadata:
     skyhook.nvidia.com/test-node: skyhooke2e
     skyhook.nvidia.com/status_simple-skyhook: complete
   annotations:
-    skyhook.nvidia.com/nodeState_simple-skyhook: '{"dexter|1.2.3":{"name":"dexter","version":"1.2.3","image":"ghcr.io/nvidia/skyhook/agentless","stage":"config","state":"complete"},"foobar|1.2":{"name":"foobar","version":"1.2","image":"ghcr.io/nvidia/skyhook/agentless","stage":"config","state":"complete"},"spencer|3.2.3":{"name":"spencer","version":"3.2.3","image":"ghcr.io/nvidia/skyhook/agentless","stage":"config","state":"complete"}}'
+    ("skyhook.nvidia.com/nodeState_simple-skyhook" && parse_json("skyhook.nvidia.com/nodeState_simple-skyhook")):
+      {
+        "dexter|1.2.3": {
+            "name": "dexter",
+            "version": "1.2.3",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "config",
+            "state": "complete"
+        },
+        "foobar|1.2": {
+            "name": "foobar",
+            "version": "1.2",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "config",
+            "state": "complete"
+        },
+        "spencer|3.2.3": {
+            "name": "spencer",
+            "version": "3.2.3",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "config",
+            "state": "complete"
+        }
+      }    
     skyhook.nvidia.com/status_simple-skyhook: complete
 status:
   (conditions[?type == 'skyhook.nvidia.com/simple-skyhook/NotReady']):

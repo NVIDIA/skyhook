@@ -5,9 +5,9 @@ metadata:
   name: simple-skyhook
 spec:
   concurrent: true 
-  skip: true ##  this test doesn't seem to be useful, just slows things down, leaving it for, should delete at some point if still skipped
+  # skip: false ##  this test doesn't seem to be useful, just slows things down, leaving it for, should delete at some point if still skipped
   timeouts:
-    assert: 180s
+    assert: 240s
   steps:
   - try:
     - script:

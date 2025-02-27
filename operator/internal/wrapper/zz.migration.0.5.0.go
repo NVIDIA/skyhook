@@ -38,6 +38,8 @@ func migrateNodeTo_0_5_0(node *skyhookNode, logger logr.Logger) error {
 		if packageStatus.Image == "" {
 			_package, exists := node.skyhook.Spec.Packages[packageStatus.Name]
 			if exists && packageStatus.Version == _package.Version {
+
+				// upsert to migrate
 				err := node.Upsert(packageStatusRef, _package.Image, packageStatus.State, packageStatus.Stage, packageStatus.Restarts)
 				if err != nil {
 					return err
@@ -51,12 +53,29 @@ func migrateNodeTo_0_5_0(node *skyhookNode, logger logr.Logger) error {
 				node.updated = true
 			} else {
 				logger.Info("node state %s for package %s:%s on %s removed: unable to resolve image", node.Name, packageStatus.Name, packageStatus.Version, node.skyhook.Name)
-				err := node.RemoveState(packageStatusRef)
-				if err != nil {
-					return err
+
+				updated := false
+
+				// check if the package is versioned
+				if node.nodeState.Get(packageStatusRef.GetUniqueName()) != nil {
+					delete(node.nodeState, packageStatusRef.GetUniqueName()) // remove old state, for versioned package
+					updated = true
 				}
 
-				node.updated = true
+				// in previous versions, the package name was not versioned, so we need to remove the old state for that
+				if node.nodeState.Get(_package.Name) != nil {
+					delete(node.nodeState, _package.Name) // remove old state, for none versioned package
+					updated = true
+				}
+
+				// update the node state if we removed any old state
+				if updated {
+					if err := node.SetState(node.nodeState); err != nil {
+						return err
+					}
+					node.skyhook.SetNodeState(node.Node.Name, node.nodeState)
+					node.updated = true
+				}
 			}
 		}
 	}

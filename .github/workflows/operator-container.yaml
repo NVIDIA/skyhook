@@ -27,7 +27,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: 1.23.4
+  GO_VERSION: 1.23.6
 
 # There is a single job in this workflow. It's configured to run on the latest available version of Ubuntu.
 jobs:

@@ -14,4 +14,9 @@ spec:
     spencer:
       version: "3.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
 
