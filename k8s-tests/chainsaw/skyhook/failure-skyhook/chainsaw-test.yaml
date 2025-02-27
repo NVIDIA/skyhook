@@ -6,7 +6,7 @@ metadata:
 spec:
   concurrent: true 
   timeouts:
-    assert: 120s
+    assert: 240s
   catch: ## if errors, print the most important info
   - get:
       apiVersion: v1

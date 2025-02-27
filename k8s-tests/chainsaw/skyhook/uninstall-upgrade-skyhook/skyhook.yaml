@@ -28,6 +28,11 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     nullptr:
       version: "2.0.0"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -45,6 +50,11 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     cats:
       version: "6.2.0"
       image: ghcr.io/nvidia/skyhook/agentless

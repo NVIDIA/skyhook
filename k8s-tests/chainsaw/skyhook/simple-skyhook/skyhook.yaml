@@ -28,6 +28,11 @@ spec:
       env: 
         - name: SLEEP_LEN
           value: "3" ## making faster so the test works for asserting node condition
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     dexter:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless:bogus ## testing that the image tag is replaced with the version by giving bad image tag
@@ -42,3 +47,8 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi

@@ -19,10 +19,10 @@ spec:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
       resources:
-        cpuRequest: 500m
-        cpuLimit: 500m
-        memoryRequest: 256Mi
-        memoryLimit: 256Mi
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     invalid-env:
       version: "5.4.3"
       image: ghcr.io/nvidia/skyhook/agentless

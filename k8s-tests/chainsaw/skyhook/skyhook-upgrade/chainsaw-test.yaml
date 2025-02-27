@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: skyhook-upgrade
+spec:
+  concurrent: true 
+  skip: true ## skipping because this test current requires manual updating of the version
+  description: |
+    This test is skipped because it is because its not automated to change versions while its running.
+    This is a manual test that should be run when the operator is updated to a new version.
+
+    This test creates bad state on the node before the migration during the upgrade. 
+    This will trigger an infinite reconciliation loop between upgrade -> config -> upgrade -> config -> etc.
+    Once you update the version the migration will fix the state and the loop will stop.
+  timeouts:
+    assert: 300s
+  steps:
+  - try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../rest_test.sh skyhook-upgrade
+    - script:
+        content: |
+          ## Set up old format annotation to test migration
+          kubectl annotate node --selector=skyhook.nvidia.com/test-node=skyhooke2e \
+            skyhook.nvidia.com/nodeState_skyhook-upgrade='{"foobar":{"name":"foobar","version":"1.1","stage":"config","state":"complete"},"foobar|1.2":{"name":"foobar","version":"1.2","image":"ghcr.io/nvidia/skyhook/agentless","stage":"config","state":"complete"}}'\
+            skyhook.nvidia.com/status_skyhook-upgrade=complete\
+            skyhook.nvidia.com/version_skyhook-upgrade=v0.5.0
+    - create:
+        file: skyhook.yaml
+    - assert:
+        file: assert.yaml

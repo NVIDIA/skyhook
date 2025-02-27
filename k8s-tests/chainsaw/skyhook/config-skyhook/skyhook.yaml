@@ -18,6 +18,11 @@ spec:
       interrupt: 
         type: service
         services: [cron]
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
     dexter:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -27,6 +32,11 @@ spec:
         game.properties:
           type: service
           services: [rsyslog]
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
       configMap:
         game.properties: |
           enemies=aliens
@@ -56,3 +66,8 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi

@@ -1,42 +1,24 @@
----
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
-  name: interrupt-grouping
+  name: skyhook-upgrade
 spec:
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
   additionalTolerations:
     - key: nvidia.com/gpu
-      operator: Exists
+      effect: NoSchedule
   packages:
-    zeb:
-      version: "2.1.4"
+    foobar:
+      version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "2"
-      interrupt: 
-        type: service
-        services: [cron]
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
-    dax:
-      version: "1.2.3"
-      image: ghcr.io/nvidia/skyhook/agentless
-      env: 
-        - name: SLEEP_LEN
-          value: "2"
-      interrupt: 
-        type: service
-        services: [containerd, foobar]
+          value: "3" ## making faster so the test works for asserting node condition
       resources:
         cpuLimit: 50m
         cpuRequest: 50m

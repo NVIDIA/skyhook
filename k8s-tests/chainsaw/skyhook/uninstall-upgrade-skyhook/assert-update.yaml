@@ -28,24 +28,24 @@ spec:
         ([0]): uninstall
         ([1]): /root
         (length(@)): 3
-      resources: ## including these to tests defaults are working
+      resources: ## including these to tests defaults are working for uninstall
         limits:
-          cpu: 500m
+          cpu: 250m
           memory: 256Mi
         requests:
-          cpu: 500m
+          cpu: 250m
           memory: 256Mi
     - name: cats-uninstallcheck
       args:
         ([0]): uninstall-check
         ([1]): /root
         (length(@)): 3
-      resources: ## including these to tests defaults are working
+      resources: ## including these to tests defaults are working for uninstall
         limits:
-          cpu: 500m
+          cpu: 250m
           memory: 256Mi
         requests:
-          cpu: 500m
+          cpu: 250m
           memory: 256Mi
 ---
 kind: Pod
