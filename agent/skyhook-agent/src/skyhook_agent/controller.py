@@ -339,11 +339,7 @@ def summarize_check_results(results: list[bool], step_data: dict[Mode, list[Step
 
     return False
 
-def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str, on_host: bool) -> bool:
-    """
-    Run an interrupt if there hasn't been an interrupt already for the skyhook ID.
-    """
-    
+def make_config_data_from_resource_id() -> dict:
     SKYHOOK_RESOURCE_ID, _ = _get_env_config()
 
     # Interrupts don't really have config data we can read from the Package as it is run standalone.
@@ -354,6 +350,16 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str, on_host: b
         "package_name": package,
         "package_version": version,
     }
+    return config_data
+
+def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str, on_host: bool) -> bool:
+    """
+    Run an interrupt if there hasn't been an interrupt already for the skyhook ID.
+    """
+    
+    SKYHOOK_RESOURCE_ID, _ = _get_env_config()
+
+    config_data = make_config_data_from_resource_id()
 
     interrupt = interrupts.inflate(interrupt_data)
 
@@ -514,10 +520,35 @@ def cli(sys_argv: list[str]=sys.argv):
         # new way with interrupt data
         mode, root_mount, copy_dir, interrupt_data = args
 
-    if os.getenv("COPY_RESOLV", "true").lower() == "true":
+    copy_resolv = os.getenv("COPY_RESOLV", "true").lower() == "true"
+    if copy_resolv:
         shutil.copyfile("/etc/resolv.conf", f"{root_mount}/etc/resolv.conf")
 
     always_run_step = os.getenv("OVERLAY_ALWAYS_RUN_STEP", "false").lower() == "true"
+
+    # Print all of the configuration flags as a separate line
+    print("-" * 20)
+    print(str.center("CLI CONFIGURATION", 20, "-"))
+    print(f"mode: {mode}")
+    print(f"root_mount: {root_mount}")
+    print(f"copy_dir: {copy_dir}")
+    print(f"interrupt_data: {interrupt_data}")
+    print(f"always_run_step: {always_run_step}")
+    print(str.center("ENV CONFIGURATION", 20, "-"))
+    print(f"COPY_RESOLV: {copy_resolv}")
+    print(f"OVERLAY_ALWAYS_RUN_STEP: {always_run_step}")
+    SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR = _get_env_config()
+    print(f"SKYHOOK_RESOURCE_ID: {SKYHOOK_RESOURCE_ID}")
+    print(f"SKYHOOK_DATA_DIR: {SKYHOOK_DATA_DIR}")
+    print(f"SKYHOOK_AGENT_BUFFER_LIMIT: {buff_size}")
+    print(str.center("Directory CONFIGURATION", 20, "-"))
+    # print flag dir and log dir
+    config_data = make_config_data_from_resource_id()
+    print(f"flag_dir: {get_flag_dir(root_mount)}/{config_data['package_name']}/{config_data['package_version']}")
+    log_dir = '/'.join(get_log_file(root_mount, 'step',copy_dir, config_data, timestamp='timestamp').split('/')[:-1])
+    print(f"log_dir: {log_dir}")
+    print(f"history_file: {get_history_dir(root_mount)}/{config_data['package_name']}.json")
+    print("-" * 20)
 
     return main(mode, root_mount, copy_dir, interrupt_data, always_run_step)
 

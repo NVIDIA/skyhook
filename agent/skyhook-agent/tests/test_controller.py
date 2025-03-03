@@ -1212,20 +1212,22 @@ class TestUseCases(unittest.TestCase):
     @mock.patch("skyhook_agent.controller.main")
     def test_interrupt_mode_reads_extra_argument(self, main_mock):
         argv = ["controller.py", str(Mode.INTERRUPT), "root_mount", "copy_dir", "interrupt_data"]
-        with set_env(COPY_RESOLV="false"):
+        with set_env(COPY_RESOLV="false", SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(argv)
         
         main_mock.assert_called_once_with(str(Mode.INTERRUPT), "root_mount", "copy_dir", "interrupt_data", False)
 
     @mock.patch("skyhook_agent.controller.main")
     def test_cli_overlay_always_run_step_is_correct(self, main_mock):
-        with set_env(OVERLAY_ALWAYS_RUN_STEP="true", COPY_RESOLV="false"):
+        with set_env(OVERLAY_ALWAYS_RUN_STEP="true", COPY_RESOLV="false", 
+                    SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"])
 
         main_mock.assert_called_once_with(str(Mode.APPLY), "root_mount", "copy_dir", None, True)
         main_mock.reset_mock()
 
-        with set_env(OVERLAY_ALWAYS_RUN_STEP="false", COPY_RESOLV="false"):
+        with set_env(OVERLAY_ALWAYS_RUN_STEP="false", COPY_RESOLV="false",
+                    SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"])
         main_mock.assert_called_once_with(str(Mode.APPLY), "root_mount", "copy_dir", None, False)
 
@@ -1233,13 +1235,13 @@ class TestUseCases(unittest.TestCase):
     @mock.patch("skyhook_agent.controller.shutil")
     def test_cli_COPY_RESOLV(self, shutil_mock, main_mock):
         argv = ["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"]
-        with set_env(COPY_RESOLV="true"):
+        with set_env(COPY_RESOLV="true", SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(argv)
         
         shutil_mock.copyfile.assert_called_once()
         shutil_mock.copyfile.reset_mock()
 
-        with set_env(COPY_RESOLV="false"):
+        with set_env(COPY_RESOLV="false", SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(argv)
         
         shutil_mock.copyfile.assert_not_called()
