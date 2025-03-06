@@ -56,7 +56,7 @@ spec:
         config.sh: |-
           #!/bin/bash
           echo "hello"
-      image: shellscript
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
       version: 1.3.2
 
  # This will be blocked by the policy

@@ -1,7 +1,68 @@
 # skyhook
 
-Skyhook was developed for modifying the underlying host OS in Kubernetes clusters. Think of it as a package manager like apt/yum for linux but for whole cluster management. The package manager (Skyhook Operator) manages the lifecycle (install/configure/uninstall/upgrade) of the packages (Skyhook Custom Resource, often SCR for short). It is Kubernetes aware, making cluster modifications easy. This enables Skyhook to schedule updates around important workloads and do rolling updates. It can be used in any cluster environment: self-managed clusters, on-prem clusters, cloud clusters, etc. 
+Skyhook was developed for modifying the underlying host OS in Kubernetes clusters. Think of it as a package manager like apt/yum for linux but for whole cluster management. The package manager (Skyhook Operator) manages the lifecycle (install/configure/uninstall/upgrade) of the packages (Skyhook Custom Resource, often SCR for short). It is Kubernetes aware, making cluster modifications easy. This enables Skyhook to schedule updates around important workloads and do rolling updates. It can be used in any cluster environment: self-managed clusters, on-prem clusters, cloud clusters, etc.
 
+## Quick Start
+
+### Install the operator
+  1. Install cert-manager `kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.2/cert-manager.yaml`
+  1. Create a secret for the operator to pull images `kubectl create secret generic node-init-secret --from-file=.dockerconfigjson=${HOME}/.config/containers/auth.json --type=kubernetes.io/dockerconfigjson -n  skyhook`
+  1. Install the operator `helm install skyhook ./chart --namespace skyhook`
+
+### Install a package
+Example package using shellscript, put this in a file called `demo.yaml` and apply it with `kubectl apply -f demo.yaml`
+```
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: demo
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: demo
+  packages:
+    tuning:
+      version: 1.1.0
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
+      configMap:
+        apply.sh: |-
+            #!/bin/bash
+            echo "hello world" > /skyhook-hello-world
+            sleep 5
+        apply_check.sh: |-
+            #!/bin/bash
+            cat /skyhook-hello-world
+            sleep 5
+        config.sh: |-
+            #!/bin/bash
+            echo "a config is run" >> /skyhook-hello-world
+            sleep 5
+        config_check.sh: |-
+            #!/bin/bash
+            grep "config" /skyhook-hello-world
+            sleep 5
+```
+
+### Watch Skyhook apply the package
+```
+kubectl get pods -w -n skyhook
+```
+There will a pod for each lifecycle stage (apply, config) in this case.
+
+### Check the package
+```
+kubectl describe skyhooks.skyhook.nvidia.com/demo
+```
+The Status will show the overall package status as well as the status of each node
+
+### Check the annotations on the node using the label
+```
+kubectl get nodes -o jsonpath='{range .items[?(@.metadata.labels.skyhook\.nvidia\.com/test-node=="demo")]}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_demo}{"\n"}{end}'
+```
+  
 ## Benefits
  - The requested changes (the Packages) are native Kubernetes resources they can be combined and applied with common tools like ArgoCD, Helm, Flux etc. This means that all the tooling to manage applications can package customizations right alongside them to get applied, removed and upgraded as the applications themselves are.
  - Autoscaling, with skyhook if you want to enable autoscaling on your cluster but need to modify all Nodes added to a cluster, you need something that is kubernetes aware. Skyhook as feature to make sure you nodes are ready before then enter the cluster.

@@ -13,8 +13,7 @@ A basic example of using a container overlay
 1. Do code changes
 1. Write unit tests for code changes
 1. Run `make test` to run the tests
-1. Run `make format` to make sure formatting is correct
-    1. Adds license header to any python files
+1. Run `make fmt` to format the code
 1. Push code to and make an MR
 
 ### Container Image Build 

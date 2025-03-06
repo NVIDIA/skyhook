@@ -13,8 +13,8 @@
 # limitations under the License.
 
 VENV := ./venv/bin/
-REGISTRY ?= nvcr.io
-AGENT_IMAGE ?= nvidian/swgpu-baseos/skyhook-agent
+REGISTRY ?= ghcr.io
+AGENT_IMAGE ?= nvidia/skyhook/agent
 DOCKER_CMD ?= docker
 
 .PHONY: all
@@ -37,13 +37,13 @@ test: venv ## Test using hatch, prints coverage and outputs a report to coverage
 	$(VENV)coverage report --show-missing --data-file=skyhook-agent/.coverage
 	$(VENV)coverage xml --data-file=skyhook-agent/.coverage
 
-.PHONY: format
-format:
-	for file in $(find . -name "*.py" | grep -v venv | grep -v pycache); do \
-		echo $(file); \
-		python3 tools/license_formatter.py boilerplate/license_header.py.txt $(file) > $(file).tmp; \
-		mv $(file).tmp $(file); \
-	done
+.PHONY: license-fmt
+license-fmt: ## Run add license header to code.
+	python3 ../scripts/format_license.py --root-dir . --license-file ../LICENSE
+
+.PHONY: fmt
+fmt: license-fmt ## Run go fmt against code.
+	@echo "formattted"
 
 ##@ Build
 .PHONY: build
