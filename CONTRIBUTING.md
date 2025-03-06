@@ -59,3 +59,30 @@ Use your real name (sorry, no pseudonyms or anonymous contributions.)
 
 If you set your `user.name` and `user.email` git configs, you can sign your
 commit automatically with `git commit -s`.
+
+## Code Style
+
+We use [Conventional Commits](https://www.conventionalcommits.org/) for our commit messages.
+
+## Python
+
+We use [Black](https://github.com/psf/black) for Python code style.
+For testing, we use [pytest](https://docs.pytest.org/en/stable/).
+
+## Golang
+
+We use [gofmt](https://pkg.go.dev/cmd/gofmt) for Golang code style.
+For testing, we use [Ginkgo](https://github.com/onsi/ginkgo) and [Gomega](https://github.com/onsi/gomega).
+
+## License Header
+
+We use our scripts/format_license.py to add the license header to the code.
+
+```
+./scripts/format_license.py
+```
+
+It will add the license header based on the LICENSE file to the code and remove/replace the existing license header. Note: both agent and operator automatically run this script when you run `make fmt`.
+
+
+

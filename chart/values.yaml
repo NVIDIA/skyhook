@@ -64,9 +64,9 @@ controllerManager:
       ## puaseImage: is the image used for the pause container in the operator controller.
       pauseImage: registry.k8s.io/pause:3.10
       ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
-      agentImage: nvcr.io/nvidian/swgpu-baseos/skyhook-agent:latest
+      agentImage: ghcr.io/nvidia/skyhook/agent:latest
     image:
-      repository: nvcr.io/nvidian/swgpu-baseos/skyhook-operator
+      repository: ghcr.io/nvidia/skyhook/operator
       tag: latest
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
@@ -104,6 +104,7 @@ rbac:
   createSkyhookEditorRole: false
 ## imagePullSecret: is the secret used to pull the operator controller image, agent image, and package images.
 imagePullSecret: node-init-secret
+## useHostNetwork: Whether the Operator pods should use hostNetwork: true or false
 useHostNetwork: false
 ## estimatedPackageCount: estimated number of packages to be installed on the cluster
 ## this is used to calculate the resources for the operator controller

@@ -130,7 +130,6 @@ Development
   generate-mocks   Generate code for interface mocking
   license-report   Run run license report
   license-check    Run go-licenses check against code.
-  license-fmt      Run add license header to code.
   fmt              Run go fmt against code.
   vet              Run go vet against code.
   test             Run all tests.
@@ -174,13 +173,10 @@ Build Dependencies
 
 # Deployment
 
-The helm repos are here:
-- [Prod - https://helm.ngc.nvidia.com/nv-ngc-devops/skyhook-operator](https://helm.ngc.nvidia.com/nv-ngc-devops/skyhook-operator)
-- [Dev - https://helm.ngc.nvidia.com/nvidian/swgpu-baseos/skyhook-operator](https://helm.ngc.nvidia.com/nvidian/swgpu-baseos/skyhook-operator)
+The helm repos are currently being migrated. Please use the chart directly in this repo.
 
 Operator containers:
-- [Prod - nvcr.io/nv-ngc-devops/skyhook-operator](https://nvcr.io/nv-ngc-devops/skyhook-operator)
-- [Dev - nvcr.io/nvidian/swgpu-baseos/skyhook-operator](https://nvcr.io/nvidian/swgpu-baseos/skyhook-operator)
+- ghcr.io/nvidia/skyhook/operator
 
 ## Deploy from main
 

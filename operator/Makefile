@@ -121,12 +121,13 @@ license-check: go-licenses ## Run go-licenses check against code.
 	$(LOCALBIN)/go-licenses check  ./... --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib
 
 .PHONY: license-fmt
-license-fmt: go-license ## Run add license header to code.
-	$(LOCALBIN)/go-license --config license.yml $$(find "$$PWD" -name *.go | sed "s;$$PWD/;;g")
+license-fmt: ## Run add license header to code.
+	python3 ../scripts/format_license.py --root-dir . --license-file ../LICENSE
 
 .PHONY: fmt
 fmt: license-fmt ## Run go fmt against code.
 	go fmt $(GOFLAGS) ./...
+
 
 .PHONY: vet
 vet: ## Run go vet against code.

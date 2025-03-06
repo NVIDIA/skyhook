@@ -20,4 +20,4 @@ version: 0.7.0
 # It is recommended to use it with quotes.
 appVersion: "0.7.0"
 ## TODO: not sure how we want to manage this version
-kubeVersion: ">=1.28.0"
+#kubeVersion: ">=1.28.0"
