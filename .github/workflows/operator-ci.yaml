@@ -19,7 +19,7 @@
 # 
 
 # Build when operator code changes
-name: Build and push operator container image
+name: Operator CI
 
 on:
   pull_request:
