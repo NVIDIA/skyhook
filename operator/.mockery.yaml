@@ -18,18 +18,10 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
-
 dir: "{{.InterfaceDir}}/mock"
 filename: "{{.InterfaceName }}.go"
 quiet: False
 with-expecter: true
-boilerplate-file: "../boilerplate/boilerplate.go.txt"
 packages:
 ## external packages
     k8s.io/client-go/util/workqueue:
@@ -56,10 +48,8 @@ packages:
     github.com/NVIDIA/skyhook/internal/dal:
         config:
             all: True
-            boilerplate-file: "../boilerplate/boilerplate.go.txt"
     github.com/NVIDIA/skyhook/internal/controller:
         config:
             all: True
-            boilerplate-file: "../boilerplate/boilerplate.go.txt"
         interfaces:
             SkyhookNodes:

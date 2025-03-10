@@ -46,11 +46,10 @@ MOCKERY_VERSION ?= v2.42.3
 CHAINSAW_VERSION ?= v0.2.10
 HELM_VERSION ?= v3.15.0
 HELMIFY_VERSION ?= v0.4.12
-GO_LICENSE_VERSION ?= v1.39.0
 GO_LICENSES_VERSION ?= v1.6.0
 
 .PHONY: install-deps
-install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-license ## Install all dependencies
+install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify ## Install all dependencies
 
 ## Location to install dependencies to
 LOCALBIN ?= $(shell pwd)/bin
@@ -121,10 +120,6 @@ helm: ## Download helm locally if necessary.
 .PHONY: helmify
 helmify: ## Download helmify locally if necessary.
 	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/arttor/helmify/cmd/helmify@$(HELMIFY_VERSION)
-
-.PHONY: go-license
-go-license: ## Download  go-license locally if necessary.
-	test -s $(LOCALBIN)/go-license || GOBIN=$(LOCALBIN) go install github.com/palantir/go-license@$(GO_LICENSE_VERSION)
 
 .PHONY: go-licenses
 go-licenses: ## Download  go-licenses locally if necessary.
