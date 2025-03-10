@@ -169,6 +169,12 @@ def insert_license(file_path: str, formatted_license: str) -> None:
     
     lines = content.split('\n')
     if start_line != -1 and end_line != -1:
+        # Check if the found license is the same as the formatted license
+        existing_license = "\n".join(lines[start_line:end_line])
+        if existing_license == formatted_license:
+            print(f"License is already formatted in {file_path}")
+            return
+
         # Remove existing license
         print(f"Replacing existing license in {file_path}")
         lines = lines[:start_line] + lines[end_line:]
@@ -178,11 +184,11 @@ def insert_license(file_path: str, formatted_license: str) -> None:
     if file_path.endswith(('.py', '.sh')):
         lines = content.split('\n')
         if lines and lines[0].startswith('#!'):
-            content = lines[0] + '\n\n' + formatted_license + '\n\n' + '\n'.join(lines[1:])
+            content = lines[0] + '\n\n' + formatted_license + '\n' + '\n'.join(lines[1:])
         else:
-            content = formatted_license + '\n\n' + content
+            content = formatted_license + '\n' + content
     else:
-        content = formatted_license + '\n\n' + content
+        content = formatted_license + '\n' + content
     
     with open(file_path, 'w') as f:
         f.write(content)
