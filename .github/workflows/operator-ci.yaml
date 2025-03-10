@@ -18,20 +18,38 @@
 # LICENSE END
 # 
 
+# Build when operator code changes
+name: Build and push operator container image
 
-
-
-
-
-
-name: Operator unit and functional tests
-on: 
+on:
   pull_request:
-    paths: 
-    - operator/**
-    - .github/workflows/operator-ci.yaml
+    branches:
+      - main
+    paths:
+      - operator/**
+      - containers/operator.Dockerfile
+      - .github/workflows/operator-container.yaml
+  push:
+    branches:
+      - main
+    tags:
+      - operator/*
+    paths:
+      - operator/**/*.go
+      - containers/operator.Dockerfile
+      - .github/workflows/operator-container.yaml
+
+# NOTE: we may want to switch to matrix build for multi-platform support if this is taking too long
+# https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
+
+
+# Defines two custom environment variables for the workflow. These are used for the Container registry domain, and a name for the Docker image that this workflow builds.
 env:
   REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: 1.23.6
+
+# There is a single job in this workflow. It's configured to run on the latest available version of Ubuntu.
 jobs:
   unit-test:
     runs-on: ubuntu-latest
@@ -47,6 +65,7 @@ jobs:
           make unit-tests
   k8s-tests:
     runs-on: ubuntu-latest
+    needs: [unit-test] # Don't run the k8s tests if the unit tests fail
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,3 +92,75 @@ jobs:
           cd operator
           GITHUB_TOKEN=${{ secrets.github_token }} make create-kind-cluster
           make e2e-tests
+  build-and-push-operator:
+    runs-on: ubuntu-latest
+    needs: [k8s-tests] # Don't run the build and push if the k8s tests fail
+    # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      # 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      # Uses the `docker/login-action` action to log in to the Container registry using the account and password that will publish the packages. Once published, the packages are scoped to the account defined here.
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Setup for multi-platform
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the operator container image
+        id: build
+        run: |
+          apt-get update && apt-get install -y make git jq
+          cd operator
+          # if this is a tag build, use the tag as the version, otherwise use the sha
+          TAGS="-t ${REGISTRY@L}/${{env.IMAGE_NAME}}/operator:${{ github.sha }}"
+          case ${{ github.ref_type }} in
+            branch)
+                # The last tag + current git sha
+                export OPERATOR_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")+${{ github.sha }}
+                ;;
+            tag)
+                # The version part of the tag
+                export OPERATOR_VERSION=$(echo "${{ github.ref_name }}" | cut -f 2 -d /)
+                TAGS="$TAGS -t ${REGISTRY@L}/${{env.IMAGE_NAME}}/operator:${OPERATOR_VERSION} -t ${REGISTRY@L}/${{env.IMAGE_NAME}}/operator:latest"
+                ;;
+            *)
+                echo "Unkown type ${{ github.ref_type }}"
+                exit 1
+                ;;
+          esac
+          set -x
+          docker buildx build \
+            --build-arg GIT_SHA=$${{ github.sha }} \
+            --build-arg VERSION=${OPERATOR_VERSION} \
+            --build-arg GO_VERSION=${GO_VERSION} \
+            --push \
+            --platform linux/amd64 \
+            ${TAGS@L} \
+            --metadata-file=metadata.json \
+            -f ../containers/operator.Dockerfile .
+          cat metadata.json
+          echo "digest=$(cat metadata.json | jq -r .\"containerimage.digest\")" >> $GITHUB_OUTPUT
+          cat $GITHUB_OUTPUT
+      
+      # This step generates an artifact attestation for the image, which is an unforgeable statement about where and how it was built. It increases supply chain security for people who consume the image. For more information, see [AUTOTITLE](/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds). 
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{env.IMAGE_NAME}}/operator
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      
