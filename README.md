@@ -2,6 +2,10 @@
 
 Skyhook was developed for modifying the underlying host OS in Kubernetes clusters. Think of it as a package manager like apt/yum for linux but for whole cluster management. The package manager (Skyhook Operator) manages the lifecycle (install/configure/uninstall/upgrade) of the packages (Skyhook Custom Resource, often SCR for short). It is Kubernetes aware, making cluster modifications easy. This enables Skyhook to schedule updates around important workloads and do rolling updates. It can be used in any cluster environment: self-managed clusters, on-prem clusters, cloud clusters, etc.
 
+## Pre-built Packages
+
+There are a few pre-built generalist packages available at [NVIDIA/skyhook-packages](https://github.com/NVIDIA/skyhook-packages)
+
 ## Quick Start
 
 ### Install the operator
