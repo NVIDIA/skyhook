@@ -123,8 +123,6 @@ jobs:
 
       - name: Build the operator container image
         id: build
-        with:
-          platforms: ${{ env.PLATFORMS }}
         run: |
           apt-get update && apt-get install -y make git jq
           cd operator
@@ -151,7 +149,7 @@ jobs:
             --build-arg VERSION=${OPERATOR_VERSION} \
             --build-arg GO_VERSION=${GO_VERSION} \
             --push \
-            --platform ${{ env.platforms }} \
+            --platform ${{ env.PLATFORMS }} \
             ${TAGS@L} \
             --metadata-file=metadata.json \
             -f ../containers/operator.Dockerfile .
