@@ -18,9 +18,6 @@
  * LICENSE END
  */
 
-
-
-
 package wrapper_test
 
 import (
