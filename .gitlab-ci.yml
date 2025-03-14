@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 default:
   tags:
      - baseos-infra
@@ -35,7 +29,7 @@ variables:
   KUBERNETES_MEMORY_LIMIT: "6Gi"
   KUBERNETES_MEMORY_REQUEST: "3Gi"
   GO_VERSION: 1.23.4
-  ARCH_LIST: "linux/amd64"
+  ARCH_LIST: "linux/amd64,linux/arm64"
 
 workflow:
   rules:
@@ -125,7 +119,6 @@ mirror-agent-image:
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
-    ARCH_LIST: "linux/amd64,linux/arm64" # TODO: until operator has both archs override agent to use both
   before_script:
     - echo "{\"auths\":{\"${NVCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${NVCR_REGISTRY_USER}" "${NVCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"${GHCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${GHCR_REGISTRY_USER}" "${GHCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > config.json
   script:

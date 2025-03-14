@@ -48,6 +48,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   GO_VERSION: 1.23.6
+  PLATFORMS: linux/amd64,linux/arm64
 
 # There is a single job in this workflow. It's configured to run on the latest available version of Ubuntu.
 jobs:
@@ -122,6 +123,8 @@ jobs:
 
       - name: Build the operator container image
         id: build
+        with:
+          platforms: ${{ env.PLATFORMS }}
         run: |
           apt-get update && apt-get install -y make git jq
           cd operator
@@ -148,7 +151,7 @@ jobs:
             --build-arg VERSION=${OPERATOR_VERSION} \
             --build-arg GO_VERSION=${GO_VERSION} \
             --push \
-            --platform linux/amd64 \
+            --platform ${{ env.platforms }} \
             ${TAGS@L} \
             --metadata-file=metadata.json \
             -f ../containers/operator.Dockerfile .
