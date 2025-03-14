@@ -28,7 +28,7 @@ on:
     paths:
       - operator/**
       - containers/operator.Dockerfile
-      - .github/workflows/operator-container.yaml
+      - .github/workflows/operator-ci.yaml
   push:
     branches:
       - main
@@ -37,7 +37,7 @@ on:
     paths:
       - operator/**/*.go
       - containers/operator.Dockerfile
-      - .github/workflows/operator-container.yaml
+      - .github/workflows/operator-ci.yaml
 
 # NOTE: we may want to switch to matrix build for multi-platform support if this is taking too long
 # https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
