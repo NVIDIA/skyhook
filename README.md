@@ -1,6 +1,47 @@
 # skyhook
 
-Skyhook was developed for modifying the underlying host OS in Kubernetes clusters. Think of it as a package manager like apt/yum for linux but for whole cluster management. The package manager (Skyhook Operator) manages the lifecycle (install/configure/uninstall/upgrade) of the packages (Skyhook Custom Resource, often SCR for short). It is Kubernetes aware, making cluster modifications easy. This enables Skyhook to schedule updates around important workloads and do rolling updates. It can be used in any cluster environment: self-managed clusters, on-prem clusters, cloud clusters, etc.
+**Skyhook** is a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying host declaratively at scale.
+
+## Why Skyhook?
+
+Managing and updating Kubernetes clusters is challenging. While Kubernetes advocates treating compute as disposable, but certain scenarios make this difficult:
+
+- **Updating hosts without re-imaging:**
+  - Limited excess hardware/capacity for rolling replacements
+  - Long node replacement times (example can be hours in some cloud providers)
+- **OS image management:**
+  - Maintain a common base image with workload-specific overlays instead of multiple OS images
+- **Workload sensitivity:**
+  - Some workloads can't be moved, are difficult to move, or take a long time to migrate
+
+## What is Skyhook?
+
+Skyhook functions like a package manager but for your entire Kubernetes cluster, with three main components:
+
+1. **Skyhook Operator** - Manages installing, updating, and removing packages
+2. **Skyhook Custom Resource (SCR)** - Declarative definitions of changes to apply
+3. **Packages** - The actual modifications you want to implement
+
+## Where and When to use Skyhook
+
+Skyhook works in any Kubernetes environment (self-managed, on-prem, cloud) and shines when you need:
+
+- Kubernetes-aware scheduling that protects important workloads
+- Rolling or simultaneous updates across your cluster
+- Declarative configuration management for host-level changes
+
+## Benefits
+ - **Native Kubernetes integration** - Packages are standard Kubernetes resources compatible with GitOps tools like ArgoCD, Helm, and Flux
+ - **Autoscaling support** - Ensure newly created nodes are properly configured before schedulable
+ - **First-class upgrades** - Deploys changes with minimal disruption, waiting for running workloads to complete when needed
+
+## Key Features
+- **Interruption Budget:** percent of nodes or count
+- **Node Selectors:** selectors for which nodes to apply too (node labels)
+- **Pod Non Interrupt Labels:**  labels for pods to **never** interrupt
+- **Package Interrupt:** service (containerd, cron, any thing systemd), or reboot
+- **Additional Tolerations:**  are tolerations added to the packages
+- [**Runtime Required**](docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
 
 ## Pre-built Packages
 
@@ -67,22 +108,6 @@ The Status will show the overall package status as well as the status of each no
 kubectl get nodes -o jsonpath='{range .items[?(@.metadata.labels.skyhook\.nvidia\.com/test-node=="demo")]}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_demo}{"\n"}{end}'
 ```
   
-## Benefits
- - The requested changes (the Packages) are native Kubernetes resources they can be combined and applied with common tools like ArgoCD, Helm, Flux etc. This means that all the tooling to manage applications can package customizations right alongside them to get applied, removed and upgraded as the applications themselves are.
- - Autoscaling, with skyhook if you want to enable autoscaling on your cluster but need to modify all Nodes added to a cluster, you need something that is kubernetes aware. Skyhook as feature to make sure you nodes are ready before then enter the cluster.
- - Upgrades are first class, with skyhook you can make deploy changes to your cluster and can wait for running workloads to finish before applying changes.
-
-## Key Features
-- **interruptionBudget:** percent of nodes or count
-- **nodeSelectors:** selectors for which nodes to apply too (node labels)
-- **podNonInterruptLabels:**  labels for pods to **never** interrupt
-- **package interrupt:** service (containerd, cron, any thing systemd), or reboot
-- **config interrupt:** service, or reboot when a certain key's value changes in the configmap
-- **configMap:** per package
-- **env vars:** per package
-- **additionalTolerations:**  are tolerations added to the packages
-- [**runtimeRequired**](docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
-
 ### Stages
 The operator will apply steps in a package throughout different lifecycle stages. This ensures that the right steps are applied in the right situations and in the correct order.
 - Upgrade: This stage will be ran whenever a package's version is upgraded in the SCR.
