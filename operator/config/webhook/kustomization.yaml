@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 resources:
 - manifests.yaml
 - service.yaml

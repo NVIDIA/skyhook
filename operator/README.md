@@ -27,45 +27,70 @@ spec:
   interruptionBudget: 
     percent: 33
   packages:
-    nvssh:
-      version: 2024.05.10
-      image: nvcr.io/nvidian/swgpu-baseos/nvssh:2024.05.10
-      configInterrupts:
-        nvssh_vars.sh:
-          type: service
-          services: [cron]
+    something_important:
+      version: 1.0.0
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
+      depends_on:
+        tuning: 1.0.0
       configMap:
-        nvssh_vars.sh: |-
+        apply.sh: |-
           #!/bin/bash
-          nvssh_allowed_roles=access-azure-nv-ngc-prod-dgxc-admin
-          nvssh_allowed_sudo_roles=access-azure-nv-ngc-prod-dgxc-admin
-          echo $0
-    bcp:
-      version: 2024.05.13
-      image: nvcr.io/nvidian/swgpu-baseos/bcp:2024.05.13
-      env:
-        - name: CSP
-          value: azure
-      interrupt: 
-        type: service
-        services: [containerd]
+          echo "hello world" > /skyhook-hello-world
+          sleep 60
+        apply_check.sh: |-
+          #!/bin/bash
+          cat /skyhook-hello-world
+          sleep 30
+        config.sh: |-
+          #!/bin/bash
+          echo "a config is run" >> /skyhook-hello-world
+          sleep 60
+        config_check.sh: |-
+          #!/bin/bash
+          grep "config" /skyhook-hello-world
+          sleep 30
+    tuning:
+      version: 1.0.0
+      image: ghcr.io/nvidia/skyhook-packages/tuning
+      interrupt:
+          type: reboot
+      configInterrupts:
+        grub.conf:
+          type: reboot
+        sysctl.conf:
+          type: restart_all_services
+      configMap:
+        grub.conf: |-
+            hugepagesz=1G
+            hugepages=2
+            hugepagesz=2M
+            hugepages=5128
+        sysctl.conf: |-
+            fs.inotify.max_user_instances=65535
+            fs.inotify.max_user_watches=524288
+            kernel.threads-max=16512444
+            vm.max_map_count=262144
+            vm.min_free_kbytes=65536
+        ulimit.conf: |-
+            memlock: 128
+            fsize: 1000
 ```
 
-Packages can depend on each other, so if you needed bcp to be installed before nvssh you can define that like this:
+Packages can depend on each other, so if you needed `something_important` to be installed after `tuning` you can define that like this:
 
 ```yaml
-    nvssh:
+    something_important:
       ...
       dependsOn: 
-        bcp: "3.0"
-    bcp:
+        tuning: "1.0.0"
+    tuning:
       ...
 ```
 
 ## Development
 
 ### Prerequisites
-- go version v1.23.4+
+- go version v1.23.7+
 - docker version 17.03+ or podman 4.9.4+ (project makefile kind of assumes podman)
 - kubectl version v1.27.3+.
 - Access to a Kubernetes v1.27+ cluster. (we test on 1.27, should work on older if needed, just not tested.)
@@ -130,6 +155,7 @@ Development
   generate-mocks   Generate code for interface mocking
   license-report   Run run license report
   license-check    Run go-licenses check against code.
+  license-fmt      Run add license header to code.
   fmt              Run go fmt against code.
   vet              Run go vet against code.
   test             Run all tests.
@@ -149,7 +175,12 @@ Build
   docker-build     Build docker image with the manager.
 
 Deployment
+  create-namespace  Create the namespace in the K8s cluster specified in ~/.kube/config.
   install          Install CRDs into the K8s cluster specified in ~/.kube/config.
+  install-cert-manager  Install cert-manager into the K8s cluster specified in ~/.kube/config.
+  install-helm-chart  Install helm chart into the K8s cluster specified in ~/.kube/config.
+  uninstall-helm-chart  Uninstall helm chart from the K8s cluster specified in ~/.kube/config.
+  uninstall-cert-manager  Uninstall cert-manager from the K8s cluster specified in ~/.kube/config.
   uninstall        Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
   deploy           Deploy controller to the K8s cluster specified in ~/.kube/config.
   generate-helm    Generates new helm chart using helmify. Be-careful, this can break things, it overwrites files, make sure to look at you git diff.
@@ -167,7 +198,6 @@ Build Dependencies
   chainsaw         Download chainsaw locally if necessary.
   helm             Download helm locally if necessary.
   helmify          Download helmify locally if necessary.
-  go-license       Download  go-license locally if necessary.
   go-licenses      Download  go-licenses locally if necessary.
 ```
 

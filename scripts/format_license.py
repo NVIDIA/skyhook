@@ -22,37 +22,22 @@
 
 import os
 import argparse
+import re
 from typing import Dict, List, Tuple
 import fnmatch
-import re
 
-# Comment style definitions for different file types
+# Comment style definitions for different file types with regex patterns
 COMMENT_STYLES = {
-    '.py': {
+    r'.*\.py$|.*\.sh$|.*\.ya?ml$|.*\.Dockerfile$|^Dockerfile$': {
         'start': '# ',
         'line': '# ',
         'end': '# '
     },
-    '.sh': {
-        'start': '# ',
-        'line': '# ',
-        'end': '# '
-    },
-    '.go': {
+    r'.*\.go$': {
         'start': '/*',
         'line': ' * ',
         'end': ' */'
     },
-    '.yml': {
-        'start': '# ',
-        'line': '# ',
-        'end': '# '
-    },
-    '.yaml': {
-        'start': '# ',
-        'line': '# ',
-        'end': '# '
-    }
 }
 
 # Built-in ignore patterns
@@ -121,8 +106,8 @@ def format_license(license_text: str, comment_style: Dict[str, str]) -> str:
     ])
     return '\n'.join(formatted)
 
-def find_files(root_dir: str, extensions: List[str], ignore_patterns: List[str]) -> List[str]:
-    """Find all files with the given extensions recursively, respecting ignore patterns."""
+def find_files(root_dir: str, patterns: List[str], ignore_patterns: List[str]) -> List[str]:
+    """Find all files matching the regex patterns recursively, respecting ignore patterns."""
     matches = []
     for root, _, filenames in os.walk(root_dir):
         # Get relative path from root_dir
@@ -132,15 +117,19 @@ def find_files(root_dir: str, extensions: List[str], ignore_patterns: List[str])
         if should_ignore(rel_root, ignore_patterns):
             continue
             
-        for ext in extensions:
-            for filename in fnmatch.filter(filenames, f'*{ext}'):
-                rel_path = os.path.join(rel_root, filename)
+        for filename in filenames:
+            rel_path = os.path.join(rel_root, filename)
+            
+            # Skip if the file should be ignored
+            if should_ignore(rel_path, ignore_patterns):
+                continue
                 
-                # Skip if the file should be ignored
-                if should_ignore(rel_path, ignore_patterns):
-                    continue
+            # Check if the file matches any of our patterns
+            for pattern in patterns:
+                if re.match(pattern, filename):
+                    matches.append(os.path.join(root, filename))
+                    break  # No need to check other patterns once we have a match
                     
-                matches.append(os.path.join(root, filename))
     return matches
 
 def find_existing_license(content: str) -> Tuple[int, int]:
@@ -159,7 +148,7 @@ def find_existing_license(content: str) -> Tuple[int, int]:
     
     return start_line, end_line
 
-def insert_license(file_path: str, formatted_license: str) -> None:
+def insert_license(file_path: str, formatted_license: str, verbose: bool = False) -> None:
     """Insert the formatted license at the beginning of the file."""
     with open(file_path, 'r') as f:
         content = f.read()
@@ -172,7 +161,8 @@ def insert_license(file_path: str, formatted_license: str) -> None:
         # Check if the found license is the same as the formatted license
         existing_license = "\n".join(lines[start_line:end_line])
         if existing_license == formatted_license:
-            print(f"License is already formatted in {file_path}")
+            if verbose:
+                print(f"License is already formatted in {file_path}")
             return
 
         # Remove existing license
@@ -198,45 +188,45 @@ def main():
     """License Header Formatting Tool for Multiple File Types.
 
     This script formats and applies NVIDIA's Apache 2.0 license headers to source code files.
-    It supports multiple file types (Python, Shell, Go, YAML) and handles each with appropriate
-    comment styles. The script will:
+    It supports multiple file types and handles each with appropriate comment styles.
+    The script will:
 
     1. Add license headers to files that don't have them
     2. Replace existing license headers with the standardized format
     3. Preserve shebang lines in scripts
-    4. Skip vendor directories and files matching .gitignore patterns
+    4. Skip vendor directories and files matching ignore patterns
     5. Add LICENSE START/END markers for easier detection and replacement
 
     Supported file types:
-    - Python (.py)  : Uses # comments
-    - Shell (.sh)   : Uses # comments
-    - Go (.go)      : Uses /* */ block comments
-    - YAML (.yml)   : Uses # comments
-    - YAML (.yaml)  : Uses # comments
+    - Python (.py)       : Uses # comments
+    - Shell (.sh)        : Uses # comments
+    - Go (.go)           : Uses /* */ block comments
+    - YAML (.yml/.yaml)  : Uses # comments
+    - Dockerfile         : Uses # comments (includes both "Dockerfile" and files ending in ".Dockerfile")
 
     Usage:
-        ./format_license.py [--license-file PATH] [--root-dir PATH]
+        ./format_license.py [--license-file PATH] [--root-dir PATH] [--verbose]
 
     Arguments:
         --license-file : Path to the Apache 2.0 license file (default: LICENSE)
-        --root-dir    : Root directory to search for files (default: current directory)
+        --root-dir     : Root directory to search for files (default: current directory)
+        --verbose      : Show detailed messages, including when licenses are already formatted
 
     Example:
         # Format all supported files in the current directory
         ./format_license.py
 
-        # Format files using a specific license file and directory
-        ./format_license.py --license-file /path/to/LICENSE --root-dir /path/to/project
+        # Format files using a specific license file and directory with verbose output
+        ./format_license.py --license-file /path/to/LICENSE --root-dir /path/to/project --verbose
 
     Note:
         The script automatically ignores common vendor directories.
         The chart/ directory is also ignored by default. See BUILT_IN_IGNORE_PATTERNS for more details.
     """
     parser = argparse.ArgumentParser(description='Format and apply license headers to source files')
-    parser.add_argument('--license-file', default='LICENSE',
-                       help='Path to the license template file')
-    parser.add_argument('--root-dir', default='.',
-                       help='Root directory to search for files')
+    parser.add_argument('--license-file', default='LICENSE',  help='Path to the license template file')
+    parser.add_argument('--root-dir', default='.',  help='Root directory to search for files')
+    parser.add_argument('--verbose', action='store_true', help='Show detailed messages, including when licenses are already formatted')
     args = parser.parse_args()
 
     # Read the license template
@@ -258,15 +248,15 @@ def main():
     # Read .gitignore patterns
     ignore_patterns = BUILT_IN_IGNORE_PATTERNS
 
-    # Process each file type
-    for ext, comment_style in COMMENT_STYLES.items():
+    # Process each file pattern
+    for pattern, comment_style in COMMENT_STYLES.items():
         # Format the license for this file type
         formatted_license = format_license(license_text, comment_style)
         
-        # Find and process all files of this type
-        files = find_files(args.root_dir, [ext], ignore_patterns)
+        # Find and process all files matching this pattern
+        files = find_files(args.root_dir, [pattern], ignore_patterns)
         for file_path in files:
-            insert_license(file_path, formatted_license)
+            insert_license(file_path, formatted_license, args.verbose)
 
 if __name__ == '__main__':
     main() 

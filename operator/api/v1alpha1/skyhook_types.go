@@ -18,9 +18,6 @@
  * LICENSE END
  */
 
-
-
-
 package v1alpha1
 
 import (

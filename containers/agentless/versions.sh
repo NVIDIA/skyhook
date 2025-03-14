@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 ## This is the list of versions that will be tagged for the test container so it can be
 ## used in the e2e tests. 
 ##
