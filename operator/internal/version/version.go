@@ -18,9 +18,6 @@
  * LICENSE END
  */
 
-
-
-
 package version
 
 import "golang.org/x/mod/semver"

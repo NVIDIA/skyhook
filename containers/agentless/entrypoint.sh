@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 SLEEP_LEN=${SLEEP_LEN:-$(($RANDOM % 5 + 5))}
 
 echo "agentless ["$@"] sleep for ${SLEEP_LEN} and exit with ${EXIT_CODE}"

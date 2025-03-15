@@ -18,9 +18,6 @@
  * LICENSE END
  */
 
-
-
-
 // Package v1alpha1 contains API Schema definitions for the skyhook v1alpha1 API group
 // +kubebuilder:object:generate=true
 // +groupName=skyhook.nvidia.com

@@ -18,9 +18,6 @@
  * LICENSE END
  */
 
-
-
-
 package controller
 
 import "github.com/go-logr/logr"

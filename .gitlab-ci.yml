@@ -21,7 +21,7 @@
 default:
   tags:
      - baseos-infra
-  image: gitlab-master.nvidia.com:5005/dgx/infra/skyhook-operator/ci:latest
+  image: gitlab-master.nvidia.com:5005/dgx/infra/skyhook-operator/ci:latest ## TODO: this is no longer getting updated, we need to address this
 
 variables:
   KUBERNETES_CPU_LIMIT: "4"
@@ -35,10 +35,6 @@ workflow:
   rules:
     - if: $CI_COMMIT_TAG
 
-include:
-  - project: dgx/infra/gitlint-ci
-    ref: main
-    file: gitlint.yml
 
 ## setup vault creds
 bootstrap:
