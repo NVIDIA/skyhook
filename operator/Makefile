@@ -223,7 +223,7 @@ merge-coverage:
 	echo "mode: set" > $(REPORTING)/cover.out
 	## skip first line with +2
 	tail -n +2 $(REPORTING)/temp-cover.out | sed  '/mode: set/d' >> $(REPORTING)/cover.out
-	$(sedrp) 's/^\/.*(\/skyhook\/operator.*)/github\.com\/NVIDIA\1/g' $(REPORTING)/cover.out ## TODO: need to test more
+	$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/\1|g' $(REPORTING)/cover.out
 
 .PHONY: lint
 lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
