@@ -54,8 +54,21 @@ env:
 
 # There is a single job in this workflow. It's configured to run on the latest available version of Ubuntu.
 jobs:
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go 1.23
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
+      - name: Unit tests
+        run: |
+          cd operator
+          make unit-tests
   k8s-tests:
     runs-on: ubuntu-latest
+    needs: [unit-test] # Don't run the k8s tests if the unit tests fail
     steps:
       - uses: actions/checkout@v4
         with:
@@ -81,7 +94,7 @@ jobs:
         run: |
           cd operator
           GITHUB_TOKEN=${{ secrets.github_token }} make create-kind-cluster
-          make test
+          make e2e-tests
   build-and-push-operator:
     runs-on: ubuntu-latest
     needs: [k8s-tests] # Don't run the build and push if the k8s tests fail
@@ -112,6 +125,8 @@ jobs:
 
       - name: Build the operator container image
         id: build
+        env:
+          platforms: ${{ env.PLATFORMS }}
         run: |
           apt-get update && apt-get install -y make git jq
           cd operator
