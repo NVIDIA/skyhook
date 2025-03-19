@@ -166,7 +166,7 @@ create-operator-json:
       artifacts: true
   script:
     - |
-      export CI_COMMIT_TAG="operator/v1.0.0"
+      export version="${CI_COMMIT_TAG#operator/}"
       cat > operator.json << EOF
       {
         "skyhook": {
@@ -181,7 +181,7 @@ create-operator-json:
           "artifacts": [
             {
               "name": "operator",
-              "version": "${CI_COMMIT_TAG#operator/}",
+              "version": "${version}",
               "type": "container"
             }
           ]
@@ -200,7 +200,7 @@ create-agent-json:
       artifacts: true
   script:
     - |
-      export CI_COMMIT_TAG="agent/v1.0.0"
+      export version="${CI_COMMIT_TAG#agent/}"
       cat > agent.json << EOF
       {
         "skyhook": {
@@ -215,7 +215,7 @@ create-agent-json:
           "artifacts": [
             {
               "name": "agent",
-              "version": "${CI_COMMIT_TAG#agent/}",
+              "version": "${version}",
               "type": "container"
             }
           ]
