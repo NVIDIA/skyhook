@@ -35,6 +35,29 @@ workflow:
   rules:
     - if: $CI_COMMIT_TAG
 
+include:
+  - project: dgx/infra/gitlint-ci
+    ref: main
+    file: gitlint.yml
+  - project: dgx/infra/ngc-publishing-automation
+    ref: main
+    file: ngc-publishing-automation.yml
+    rules:
+      - if: $CI_COMMIT_TAG
+    inputs:
+      git_user: ${GITLAB_USER}
+      git_email: ${GITLAB_USER}@exchange.nvidia.com
+      team: skyhook
+      artifact_map: artifacts.json
+      email: ${NOTIFY_EMAIL}
+      action: FULL
+      nspect_id: ${NSPECT_ID}
+      public: True
+      needs:
+      - job: bootstrap
+        artifacts: true
+      - job: assemble-artifacts
+        artifacts: true
 
 ## setup vault creds
 bootstrap:
@@ -54,6 +77,9 @@ bootstrap:
     - echo "PIP_EXTRA_INDEX_URL=https://${pypi_user}:${pypi_password}@$ARTIFACTORY_URL" >> build.env
     - echo "NVCR_REGISTRY_PASSWORD=$(vault read -field=password "${NVCR_TOKEN}")" >> build.env
     - echo "GHCR_REGISTRY_PASSWORD=$(vault read -field=pat "${GHCR_TOKEN}")" >> build.env
+    - echo "GITLAB_USER=${GITLAB_USER}" >> build.env
+    - echo "GITLAB_EMAIL=${GITLAB_USER}@exchange.nvidia.com" >> build.env
+    - echo "GITLAB_TOKEN=$(vault kv get -field=password ${GITLAB_TOKEN_LOCATION})" >> build.env
   artifacts:
     access: none
     reports:
@@ -131,5 +157,101 @@ mirror-agent-image:
       done
     - docker --config . manifest create "${NVCR_REGISTRY_IMAGE}:${IMG_TAG}" ${IMAGE_TARGETS}
     - docker --config . manifest push "${NVCR_REGISTRY_IMAGE}:${IMG_TAG}"
-    
-      
+
+create-operator-json:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^operator\/v\d+\.\d+\.\d+$/'
+  needs: 
+    - job: bootstrap
+      artifacts: true
+  script:
+    - |
+      export CI_COMMIT_TAG="operator/v1.0.0"
+      cat > operator.json << EOF
+      {
+        "skyhook": {
+          "source": {
+            "org": "nvstaging",
+            "team": "skyhook"
+          },
+          "target": {
+            "org": "nvidia",
+            "team": "skyhook"
+          },
+          "artifacts": [
+            {
+              "name": "operator",
+              "version": "${CI_COMMIT_TAG#operator/}",
+              "type": "container"
+            }
+          ]
+        }
+      }
+      EOF
+  artifacts:
+    paths:
+      - operator.json
+
+create-agent-json:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^agent\/v\d+\.\d+\.\d+$/'
+  needs: 
+    - job: bootstrap
+      artifacts: true
+  script:
+    - |
+      export CI_COMMIT_TAG="agent/v1.0.0"
+      cat > agent.json << EOF
+      {
+        "skyhook": {
+          "source": {
+            "org": "${NGC_PRIVATE_ORG}",
+            "team": "skyhook"
+          },
+          "target": {
+            "org": "nvidia",
+            "team": "skyhook"
+          },
+          "artifacts": [
+            {
+              "name": "agent",
+              "version": "${CI_COMMIT_TAG#agent/}",
+              "type": "container"
+            }
+          ]
+        }
+      }
+      EOF
+  artifacts:
+    paths:
+      - agent.json
+
+assemble-artifacts:
+  needs:
+    - job: create-operator-json
+      optional: true
+      artifacts: true
+    - job: create-agent-json
+      optional: true
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^(operator|agent)\/v\d+\.\d+\.\d+$/'
+  before_script:
+    - apt update
+    - apt install -y jq
+  script:
+    - |
+      if [ -f operator.json ] && [ -f agent.json ]; then
+        # Merge both JSON files
+        jq -s '.[0].skyhook.artifacts += .[1].skyhook.artifacts | .[0]' operator.json agent.json > artifacts.json
+      elif [ -f operator.json ]; then
+        cp operator.json artifacts.json
+      elif [ -f agent.json ]; then
+        cp agent.json artifacts.json
+      else
+        echo "No JSON files found"
+        exit 1
+      fi
+  artifacts:
+    paths:
+      - artifacts.json
