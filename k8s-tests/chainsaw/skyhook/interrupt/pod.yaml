@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 ---
 apiVersion: v1
 kind: Pod
@@ -64,8 +58,8 @@ metadata:
   name: invalid-package
   namespace: skyhook
   labels:
-      skyhook.nvidia.com/package: invalid-1.2.3
-      skyhook.nvidia.com/name: interrupt
+    skyhook.nvidia.com/package: invalid-1.2.3
+    skyhook.nvidia.com/name: interrupt
   annotations:
     skyhook.nvidia.com/package: '{"name":"invalid","version":"1.2.3","stage":"apply","skyhook":"interrupt","image":"ghcr.io/nvidia/skyhook/agentless"}'
 spec:

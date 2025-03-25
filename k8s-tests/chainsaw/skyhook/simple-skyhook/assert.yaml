@@ -18,17 +18,10 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 ---
 kind: Pod
 apiVersion: v1
 metadata:
-  generateName: simple-skyhook-spencer-3.2.3-apply-
   namespace: skyhook
   labels:
     skyhook.nvidia.com/name: simple-skyhook

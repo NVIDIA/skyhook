@@ -18,16 +18,9 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 kind: Pod
 apiVersion: v1
 metadata:
-  generateName: interrupt-grouping-dax-1.2.3-apply-
   namespace: skyhook
   labels:
     skyhook.nvidia.com/name: interrupt-grouping
@@ -61,7 +54,6 @@ spec:
 kind: Pod
 apiVersion: v1
 metadata:
-  generateName: interrupt-grouping-dax-1.2.3-config-
   namespace: skyhook
   labels:
     skyhook.nvidia.com/name: interrupt-grouping
@@ -92,7 +84,6 @@ spec:
 kind: Pod
 apiVersion: v1
 metadata:
-  generateName: interrupt-grouping-interrupt-service-
   namespace: skyhook
   labels:
     skyhook.nvidia.com/name: interrupt-grouping
@@ -132,7 +123,6 @@ spec:
 kind: Pod
 apiVersion: v1
 metadata:
-  generateName: interrupt-grouping-dax-1.2.3-post-interrupt-
   namespace: skyhook
   labels:
     skyhook.nvidia.com/name: interrupt-grouping

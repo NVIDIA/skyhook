@@ -18,17 +18,10 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 ---
 kind: Pod
 apiVersion: v1
 metadata:
-  generateName: uninstall-upgrade-skyhook-dogs-1.2.5-uninstall-
   namespace: skyhook
   labels:
     skyhook.nvidia.com/name: uninstall-upgrade-skyhook
@@ -63,7 +56,6 @@ spec:
 kind: Pod
 apiVersion: v1
 metadata:
-  generateName: uninstall-upgrade-skyhook-nullptr-2.0.1-uninstall-
   namespace: skyhook
   labels:
     skyhook.nvidia.com/name: uninstall-upgrade-skyhook

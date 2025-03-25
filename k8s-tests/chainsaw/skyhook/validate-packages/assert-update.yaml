@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 apiVersion: v1
 kind: Node
 metadata:
@@ -73,24 +67,24 @@ status:
   observedGeneration: 3
   nodeState:
     (values(@)):
-    - invalid-image|3.2.3:
-        name: invalid-image
-        state: complete
-        version: '3.2.3'
+    - invalid-env|5.4.3:
         image: ghcr.io/nvidia/skyhook/agentless
-        stage: config
-      invalid-resources|1.2.3:
-        name: invalid-resources
-        state: complete
-        version: '1.2.3'
-        image: ghcr.io/nvidia/skyhook/agentless
-        stage: config
-      invalid-env|5.4.3:
         name: invalid-env
-        state: complete
-        version: '5.4.3'
-        image: ghcr.io/nvidia/skyhook/agentless
         stage: config
+        state: complete
+        version: 5.4.3
+      invalid-image|3.2.3:
+        image: ghcr.io/nvidia/skyhook/agentless
+        name: invalid-image
+        stage: config
+        state: complete
+        version: 3.2.3
+      invalid-resources|1.2.3:
+        image: ghcr.io/nvidia/skyhook/agentless
+        name: invalid-resources
+        stage: config
+        state: complete
+        version: 1.2.3
   nodeStatus:
    # grab values should be one and is complete
     (values(@)):
