@@ -23,6 +23,8 @@ package controller
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1127,7 +1129,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook *skyhoo
 // HasNonInterruptWork returns true if pods are running on the node that are either packages, or matches the SCR selector
 func (r *SkyhookReconciler) HasNonInterruptWork(ctx context.Context, skyhookNode wrapper.SkyhookNode) (bool, error) {
 
-	selector, err := metav1.LabelSelectorAsSelector(&skyhookNode.GetSkyhook().Spec.PodNonInteruptLabels)
+	selector, err := metav1.LabelSelectorAsSelector(&skyhookNode.GetSkyhook().Spec.PodNonInterruptLabels)
 	if err != nil {
 		return false, fmt.Errorf("error creating selector: %w", err)
 	}
@@ -1439,8 +1441,8 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: strings.ToLower(fmt.Sprintf("%s-interrupt-%s-", skyhook.Name, _interrupt.Type)), //TODO - RFC 1123 subdomain must consist of lower case alphanumeric
-			Namespace:    r.opts.Namespace,
+			Name:      generatePodName(fmt.Sprintf("%s-interrupt-%s", skyhook.Name, _interrupt.Type), nodeName),
+			Namespace: r.opts.Namespace,
 			Labels: map[string]string{
 				fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):      skyhook.Name,
 				fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX):   fmt.Sprintf("%s-%s", _package.Name, _package.Version),
@@ -1537,6 +1539,23 @@ func getAgentImage(opts SkyhookOperatorOptions, _package *v1alpha1.Package) stri
 	return opts.AgentImage
 }
 
+// generatePodName generates a pod name that is unique for a given node, skyhook, package, and stage
+// namePrefix is the prefix of the pod name (should be unique)
+func generatePodName(namePrefix, nodeName string) string {
+	// max name of pod is 63 characters
+	// so we need to truncate the name if it's too long
+
+	unique := sha256.Sum256([]byte(namePrefix + nodeName))
+	uniqueStr := hex.EncodeToString(unique[:])[:8]
+
+	maxlen := 63 - len(uniqueStr) - 1
+	if len(namePrefix) > maxlen {
+		namePrefix = namePrefix[:maxlen]
+	}
+
+	return strings.ToLower(fmt.Sprintf("%s-%s", namePrefix, uniqueStr))
+}
+
 // CreatePodFromPackage creates a pod spec for a skyhook pod for a given package
 func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string, stage v1alpha1.Stage) *corev1.Pod {
 	volumes := []corev1.Volume{
@@ -1607,8 +1626,8 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: strings.ToLower(fmt.Sprintf("%s-%s-%s-%s-", skyhook.Name, _package.Name, _package.Version, stage)),
-			Namespace:    r.opts.Namespace,
+			Name:      generatePodName(fmt.Sprintf("%s-%s-%s-%s", skyhook.Name, _package.Name, _package.Version, stage), nodeName),
+			Namespace: r.opts.Namespace,
 			Labels: map[string]string{
 				fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhook.Name,
 				fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX): fmt.Sprintf("%s-%s", _package.Name, _package.Version),

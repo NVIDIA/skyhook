@@ -31,6 +31,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -843,5 +844,144 @@ var _ = Describe("skyhook controller tests", func() {
 			}
 		}
 		Expect(found_toleration).To(BeTrue())
+	})
+
+	It("should generate deterministic pod names", func() {
+		// Setup basic test data
+		skyhook := &wrapper.Skyhook{
+			Skyhook: &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-skyhook",
+				},
+			},
+		}
+
+		package1 := &v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "test-package",
+				Version: "1.2.3",
+			},
+		}
+
+		package2 := &v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "test-package",
+				Version: "1.2.4",
+			},
+		}
+
+		nodeName := "test-node"
+		nodeName2 := "test-node-2"
+
+		// Create a function to generate the namePrefix in the same way the controller does
+		createNamePrefix := func(skyhookName, pkgName, pkgVersion, stage string) string {
+			return fmt.Sprintf("%s-%s-%s-%s", skyhookName, pkgName, pkgVersion, stage)
+		}
+
+		// Test 1: Deterministic behavior (same inputs = same output)
+		prefix1 := createNamePrefix(skyhook.Name, package1.Name, package1.Version, string(v1alpha1.StageApply))
+		name1 := generatePodName(prefix1, nodeName)
+		name2 := generatePodName(prefix1, nodeName)
+		Expect(name1).To(Equal(name2), "Generated pod names should be deterministic")
+
+		// Test 2: Uniqueness with different inputs
+		// Different stage
+		prefixApply := createNamePrefix(skyhook.Name, package1.Name, package1.Version, string(v1alpha1.StageApply))
+		prefixConfig := createNamePrefix(skyhook.Name, package1.Name, package1.Version, string(v1alpha1.StageConfig))
+		nameApply := generatePodName(prefixApply, nodeName)
+		nameConfig := generatePodName(prefixConfig, nodeName)
+		Expect(nameApply).NotTo(Equal(nameConfig), "Different stages should produce different pod names")
+
+		// Different package version
+		prefix2 := createNamePrefix(skyhook.Name, package2.Name, package2.Version, string(v1alpha1.StageApply))
+		nameVersion1 := generatePodName(prefix1, nodeName)
+		nameVersion2 := generatePodName(prefix2, nodeName)
+		Expect(nameVersion1).NotTo(Equal(nameVersion2), "Different package versions should produce different pod names")
+
+		// Different node
+		nameNode1 := generatePodName(prefix1, nodeName)
+		nameNode2 := generatePodName(prefix1, nodeName2)
+		Expect(nameNode1).NotTo(Equal(nameNode2), "Different nodes should produce different pod names")
+
+		// Test for uninstall pods with timestamp
+		uninstallPrefix1 := fmt.Sprintf("%s-uninstall-123456789", prefixApply)
+		uninstallPrefix2 := fmt.Sprintf("%s-uninstall-987654321", prefixApply)
+		uninstallName1 := generatePodName(uninstallPrefix1, nodeName)
+		uninstallName2 := generatePodName(uninstallPrefix2, nodeName)
+		Expect(uninstallName1).NotTo(Equal(uninstallName2), "Uninstall pods with different timestamps should have different names")
+		Expect(uninstallName1).NotTo(Equal(nameApply), "Uninstall pod name should be different from regular pod name")
+
+		// Test 3: Length constraints
+		longSkyhookName := "this-is-a-very-long-skyhook-name-that-exceeds-kubernetes-naming-limits-by-a-significant-margin"
+		longPackageName := "this-is-a-very-long-package-name-that-also-exceeds-kubernetes-naming-limits"
+		longPackageVersion := "1.2.3.4.5.6.7.8.9.10"
+		longPrefix := createNamePrefix(longSkyhookName, longPackageName, longPackageVersion, string(v1alpha1.StageApply))
+		longName := generatePodName(longPrefix, "node1")
+		Expect(len(longName)).To(BeNumerically("<=", 63), "Pod name should not exceed Kubernetes 63 character limit")
+		Expect(longName).To(MatchRegexp(`-[0-9a-f]+$`), "Pod name should end with a hash component")
+	})
+
+	It("should correctly identify if a pod matches a package", func() {
+
+		// Create a test package
+		testPackage := &v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "test-package",
+				Version: "1.2.3",
+			},
+			Image: "test-image:1.2.3",
+			Resources: v1alpha1.ResourceRequirements{
+				CPURequest:    resource.MustParse("100m"),
+				CPULimit:      resource.MustParse("200m"),
+				MemoryRequest: resource.MustParse("64Mi"),
+				MemoryLimit:   resource.MustParse("128Mi"),
+			},
+		}
+
+		// Create a test skyhook
+		testSkyhook := &wrapper.Skyhook{
+			Skyhook: &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-skyhook",
+				},
+			},
+		}
+
+		// Stage to test
+		testStage := v1alpha1.StageApply
+
+		// Create actual pods that would be created by the operator functions
+		// First using CreatePodFromPackage
+		actualPod := operator.CreatePodFromPackage(testPackage, testSkyhook, "test-node", testStage)
+
+		// Verify that the pod matches the package according to PodMatchesPackage
+		matches := operator.PodMatchesPackage(testPackage, *actualPod, testSkyhook, testStage)
+		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the pod it created")
+
+		// Now let's modify the package version and see if it correctly identifies non-matches
+		modifiedPackage := testPackage.DeepCopy()
+		modifiedPackage.Version = "1.2.4"
+
+		matches = operator.PodMatchesPackage(modifiedPackage, *actualPod, testSkyhook, testStage)
+		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when package version changed")
+
+		// Test with different stage
+		matches = operator.PodMatchesPackage(testPackage, *actualPod, testSkyhook, v1alpha1.StageConfig)
+		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when stage changed")
+
+		// Test with interrupt pods
+		interruptPod := operator.CreateInterruptPodForPackage(
+			&v1alpha1.Interrupt{
+				Type: v1alpha1.REBOOT,
+			},
+			"argEncode",
+			testPackage,
+			testSkyhook,
+			"test-node",
+		)
+
+		// Verify that the interrupt pod matches the package
+		matches = operator.PodMatchesPackage(testPackage, *interruptPod, testSkyhook, testStage)
+		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the interrupt pod it created")
 	})
 })

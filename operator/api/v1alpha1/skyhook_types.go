@@ -52,8 +52,8 @@ type SkyhookSpec struct {
 	//+kubebuilder:default=false
 	Pause bool `json:"pause,omitempty"`
 
-	// PodNonInteruptLabels are a set of labels we want to monitor pods for whether they Interruptible
-	PodNonInteruptLabels metav1.LabelSelector `json:"podNonInterruptLabels,omitempty"`
+	// PodNonInterruptLabels are a set of labels we want to monitor pods for whether they Interruptible
+	PodNonInterruptLabels metav1.LabelSelector `json:"podNonInterruptLabels,omitempty"`
 
 	// NodeSelector are a set of labels we want to monitor nodes for applying packages too
 	NodeSelector metav1.LabelSelector `json:"nodeSelectors,omitempty"`
@@ -466,6 +466,7 @@ func (left *NodeState) Equal(right *NodeState) bool {
 	return reflect.DeepEqual(left, right)
 }
 
+// GetComplete returns a list of packages that are complete
 func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Interrupt, config map[string][]string) []string {
 
 	ret := make([]string, 0)
@@ -488,6 +489,7 @@ func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Inte
 	return ret
 }
 
+// IsPackageComplete checks if a package is complete
 func (ns *NodeState) IsPackageComplete(_package Package, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 
 	packageStatus, found := (*ns)[_package.GetUniqueName()]
@@ -504,6 +506,7 @@ func (ns *NodeState) IsPackageComplete(_package Package, interrupt map[string][]
 	return false
 }
 
+// ProgressSkipped checks if a package is skipped and should be progressed to complete
 func (ns *NodeState) ProgressSkipped(packages Packages, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 	ret := false
 	for _, s := range *ns {
@@ -574,8 +577,8 @@ type State string
 const (
 	METADATA_PREFIX string = "skyhook.nvidia.com"
 	StateComplete   State  = "complete"
-	StateInProgress State  = "in_progress"
-	StateSkipped    State  = "skipped"
+	StateInProgress State  = "in_progress" // this means its actually running, pod started
+	StateSkipped    State  = "skipped"     // this means this package, stage are skipped mostly for some parts of the lifecycle
 	StateErroring   State  = "erroring"
 	StateUnknown    State  = "unknown"
 )

@@ -431,8 +431,8 @@ spec:
                   concert without needing to delete to ad in discovery of the issue.
                 type: boolean
               podNonInterruptLabels:
-                description: PodNonInteruptLabels are a set of labels we want to monitor
-                  pods for whether they Interruptible
+                description: PodNonInterruptLabels are a set of labels we want to
+                  monitor pods for whether they Interruptible
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.

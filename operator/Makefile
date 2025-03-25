@@ -140,7 +140,7 @@ $(REPORTING):
 	mkdir -p $@
 
 .PHONY: test
-test:: reporting manifests generate fmt vet lint helm-tests e2e-tests unit-tests ## Run all tests.
+test:: reporting manifests generate fmt vet lint unit-tests e2e-tests helm-tests ## Run all tests.
 
 ifndef CI
 ## we double define test so we can do thing different if in ci vs local
@@ -166,7 +166,7 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
 CHAINSAW_ARGS:=--exec-timeout 30s --parallel 2
 
-e2e-tests: chainsaw run ## Run end to end tests.
+e2e-tests: chainsaw install run ## Run end to end tests.
 	## requires a cluster to be running with access
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
