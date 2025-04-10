@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 name: Build and push agentless container image
 
 # Configures this workflow to run every time a tag is created

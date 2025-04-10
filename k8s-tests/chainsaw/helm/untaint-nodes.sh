@@ -22,18 +22,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 set -x -e -o pipefail
 
 TAINT=$1

@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 OPERATOR_NAME=$1
 
 ## need to specify different paths for the helm binary

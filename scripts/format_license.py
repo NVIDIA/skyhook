@@ -170,15 +170,21 @@ def insert_license(file_path: str, formatted_license: str, verbose: bool = False
         lines = lines[:start_line] + lines[end_line:]
         content = '\n'.join(lines)
     
+    # Strip any leading/trailing whitespace from content
+    content = content.strip()
+    
     # For Python/Shell files, preserve any shebang line
     if file_path.endswith(('.py', '.sh')):
         lines = content.split('\n')
         if lines and lines[0].startswith('#!'):
-            content = lines[0] + '\n\n' + formatted_license + '\n' + '\n'.join(lines[1:])
+            content = lines[0] + '\n\n' + formatted_license + '\n\n' + '\n'.join(lines[1:])
         else:
-            content = formatted_license + '\n' + content
+            content = formatted_license + '\n\n' + content
     else:
-        content = formatted_license + '\n' + content
+        content = formatted_license + '\n\n' + content
+    
+    # Ensure file ends with exactly one newline
+    content = content.rstrip('\n') + '\n'
     
     with open(file_path, 'w') as f:
         f.write(content)

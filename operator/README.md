@@ -166,8 +166,6 @@ Development
   podman-create-machine  creates a podman machine
   lint             Run golangci-lint linter & yamllint
   lint-fix         Run golangci-lint linter and perform fixes
-  create-dashboard  create kubernetes dashboard for local testing
-  access-dashboard  portforwards and gets token for dashboard for local testing
 
 Build
   build            Build manager binary.

@@ -18,13 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
-
 from enum import Enum
 
 class SortableEnum(Enum):

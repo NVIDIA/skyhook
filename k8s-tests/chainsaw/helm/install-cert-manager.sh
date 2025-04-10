@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 ## need to specify different paths for the helm binary
 ## depending on whether or not this is being ran in CI
 if [ -n "$GITLAB_CI" ]; then

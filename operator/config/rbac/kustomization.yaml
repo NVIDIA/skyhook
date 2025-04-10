@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 resources:
 # All RBAC will be applied under this service account in
 # the deployment namespace. You may comment out this resource

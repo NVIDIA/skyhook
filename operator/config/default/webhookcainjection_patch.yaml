@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 # This patch add annotation to admission webhook config and
 # CERTIFICATE_NAMESPACE and CERTIFICATE_NAME will be substituted by kustomize
 apiVersion: admissionregistration.k8s.io/v1

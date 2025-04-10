@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 # This configuration is for teaching kustomize how to update name ref substitution
 nameReference:
 - kind: Issuer

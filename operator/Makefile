@@ -233,18 +233,6 @@ lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
-create-dashboard: ## create kubernetes dashboard for local testing
-	helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
-	helm upgrade --install kubernetes-dashboard kubernetes-dashboard/kubernetes-dashboard --create-namespace --namespace dashboard
-	$(KUBECTL) apply -f config/local-dev/dashboard.yaml
-
-access-dashboard: ## portforwards and gets token for dashboard for local testing
-	token=$$($(KUBECTL) get secret admin-user -n dashboard -o jsonpath={".data.token"} | base64 -d); echo ""; echo "$$token"
-	$(KUBECTL) -n dashboard port-forward svc/kubernetes-dashboard-kong-proxy 8443:443
-
-remove-dashboard:
-	$(KUBECTL) delete namespace/dashboard
-
 ##@ Build
 
 .PHONY: build

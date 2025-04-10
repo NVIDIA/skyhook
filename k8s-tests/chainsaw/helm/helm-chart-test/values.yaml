@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 controllerManager:
   # setting a toleration on the manager for testing purposes
   tolerations:

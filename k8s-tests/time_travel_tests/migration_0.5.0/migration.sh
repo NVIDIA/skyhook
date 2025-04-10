@@ -20,19 +20,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## this test is to verify the migration from 0.4.0 to 0.5.0 works as expected
 
 ## NOTE: making this a script to be more reproducible, but today making this work in CI, might be hard

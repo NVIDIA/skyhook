@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 ## helper script
 ## clears labels and annotate from nodes with the prefix for tests
 

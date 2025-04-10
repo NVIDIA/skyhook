@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 # Adds namespace to all resources.
 namespace: skyhook-operator-system
 
