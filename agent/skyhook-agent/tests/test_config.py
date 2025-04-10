@@ -18,13 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
-
 import unittest
 from tempfile import TemporaryDirectory
 

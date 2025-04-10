@@ -20,19 +20,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 OPERATOR_NAME=$1
 VALUES_FILE_NAME=${2:-values.yaml}
 

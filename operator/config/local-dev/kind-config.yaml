@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 # three node (two workers) local kind cluster config for testing
 # makefile references this to create this cluster
 kind: Cluster

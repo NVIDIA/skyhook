@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 TAINT=$1
 
 for node in $(kubectl get nodes -o name); do

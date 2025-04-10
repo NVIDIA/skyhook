@@ -19,12 +19,6 @@
 # 
 
 
-
-
-
-
-
-
 import unittest
 
 from skyhook_agent.enums import SortableEnum, get_latest_schema

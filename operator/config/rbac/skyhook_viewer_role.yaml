@@ -18,12 +18,6 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
 # permissions for end users to view skyhooks.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 n_to_taint=$1
 taint=$2
 label_match=${3}

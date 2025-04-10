@@ -21,18 +21,6 @@
 # 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 ## helper script
 ## clears labels and annotate from nodes with the prefix "skyhook.nvidia.com"
 ## note, a lot of tests have a label setup to target, so you might need to put that back
