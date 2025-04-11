@@ -30,7 +30,7 @@ RUN make clean
 RUN make venv
 RUN make build build_version=${AGENT_VERSION}
 
-FROM python:3.12-alpine
+FROM nvcr.io/nvidia/distroless/python:3.12-v3.4.10
 
 RUN mkdir -p /skyhook-agent-wheels
 COPY --from=builder /code/skyhook-agent/dist/* /skyhook-agent-wheels

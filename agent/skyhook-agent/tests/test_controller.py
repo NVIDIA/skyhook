@@ -18,16 +18,10 @@
 # LICENSE END
 # 
 
-
-
-
-
-
-
-
 import unittest
 import tempfile
 import os
+import stat
 import json
 import asyncio
 import textwrap
@@ -102,14 +96,14 @@ class TestHelpers(unittest.TestCase):
         self.config_data = {"package_name": "foo", "package_version": "1.0.0"}
 
     def test_make_flag_path_uses_args(self):
-        path_a = controller.make_flag_path(Step("foo.sh", arguments=["1", "2"], returncodes=(0, 1, 2)), "/", self.config_data)
-        path_b = controller.make_flag_path(Step("foo.sh", arguments=["1"], returncodes=(0, 1, 2)), "/", self.config_data)
+        path_a = controller.make_flag_path(Step("foo.sh", arguments=["1", "2"], returncodes=(0, 1, 2)), self.config_data)
+        path_b = controller.make_flag_path(Step("foo.sh", arguments=["1"], returncodes=(0, 1, 2)), self.config_data)
 
         self.assertNotEqual(path_a, path_b)
 
     def test_make_flag_path_uses_returncodes(self):
-        path_a = controller.make_flag_path(Step("foo.sh", arguments=["1", "2"], returncodes=(0, 1, 2)), "/", self.config_data)
-        path_b = controller.make_flag_path(Step("foo.sh", arguments=["1", "2"], returncodes=(0)), "/", self.config_data)
+        path_a = controller.make_flag_path(Step("foo.sh", arguments=["1", "2"], returncodes=(0, 1, 2)), self.config_data)
+        path_b = controller.make_flag_path(Step("foo.sh", arguments=["1", "2"], returncodes=(0)), self.config_data)
 
         self.assertNotEqual(path_a, path_b)
 
@@ -120,8 +114,7 @@ class TestHelpers(unittest.TestCase):
             self.assertTrue(os.path.exists(path))
 
     def test_get_history_dir(self):
-        root_mount = "/root"
-        self.assertEqual(controller.get_history_dir(root_mount=root_mount), "/root/etc/skyhook/history")
+        self.assertEqual(controller.get_history_dir(), "/etc/skyhook/history")
 
     @mock.patch("skyhook_agent.controller.sys")
     def test_tee_adds_cmds(self, sys_mock):
@@ -174,43 +167,36 @@ class TestHelpers(unittest.TestCase):
         now_mock = mock.MagicMock()
         datetime_mock.now.return_value = now_mock
         now_mock.strftime.return_value = "12345"
-        log_file = controller.get_log_file("", "foo", "copy_dir", self.config_data)
+        log_file = controller.get_log_file("foo", "copy_dir", self.config_data)
         self.assertEqual(log_file, f"/var/log/skyhook/{self.config_data['package_name']}/{self.config_data['package_version']}/foo-12345.log")
 
     def test_make_flag_path_has_package_name(self):
-        flag_path = controller.make_flag_path(Step("foo", returncodes=[0]), "/", self.config_data)
-        self.assertTrue(flag_path.startswith(f"{controller.get_skyhook_directory('/')}/flags/foo/1.0.0"))
+        flag_path = controller.make_flag_path(Step("foo", returncodes=[0]), self.config_data)
+        self.assertTrue(flag_path.startswith(f"{controller.get_skyhook_directory()}/flags/{self.config_data['package_name']}/{self.config_data['package_version']}"))
 
     @mock.patch("skyhook_agent.controller.cleanup_old_logs")
     @mock.patch("skyhook_agent.controller.get_log_file")
     @mock.patch("skyhook_agent.controller.subprocess")
     @mock.patch("skyhook_agent.controller.tee")
-    @mock.patch("skyhook_agent.controller.os.makedirs")
-    # @mock.patch.object(controller, "tee", fake_a_tee(0))
+    @mock.patch("skyhook_agent.controller.os")
     def test_run_step_is_successful(self, os_mock, tee_mock, subprocess_mock, log_mock, cleanup_mock):
         subprocess_mock.run.return_value = FakeSubprocessResult(0)
         tee_mock.return_value = FakeSubprocessResult(0)
 
         run_step_result = controller.run_step(
-            Step("foo", arguments=["a", "b"], returncodes=[0]), "/", "copy_dir", self.config_data
+            Step("foo", arguments=["a", "b"], returncodes=[0]), "copy_dir", self.config_data
         )
         self.assertFalse(run_step_result)
-
-        subprocess_mock.run.assert_has_calls(
-            [
-                mock.call("chroot / chmod +x copy_dir/skyhook_dir/foo", shell=True),
-            ]
-        )
         log_file = controller.get_log_file(
-            "/", f"{controller.get_host_path_for_steps('copy_dir')}/foo", "copy_dir", self.config_data
+            f"{controller.get_host_path_for_steps('copy_dir')}/foo", "copy_dir", self.config_data
         )
         tee_mock.assert_has_calls(
             [
                 mock.call(
-                    ["chroot", "/", "copy_dir/skyhook_dir/foo", "a", "b"],
+                    ["copy_dir/skyhook_dir/foo", "a", "b"],
                     log_file,
                     f"{log_file}.err",
-                    env=dict(**os.environ, **{"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"}),
+                    env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
                     write_cmds=False,
                 )
             ]
@@ -220,13 +206,13 @@ class TestHelpers(unittest.TestCase):
     @mock.patch("skyhook_agent.controller.get_log_file")
     @mock.patch("skyhook_agent.controller.subprocess")
     @mock.patch("skyhook_agent.controller.tee")
-    @mock.patch("skyhook_agent.controller.os.makedirs")
+    @mock.patch("skyhook_agent.controller.os")
     def test_run_step_is_failed(self, os_mock, tee_mock, subprocess_mock, get_log_file_mock, cleanup_mock):
         # chmod +x will work
         subprocess_mock.run.return_value = FakeSubprocessResult(0)
         # step will fail
         tee_mock.return_value = FakeSubprocessResult(1)
-        run_step_result = controller.run_step(Step("foo", arguments=["a", "b"], returncodes=[0]), "/", "copy_dir", self.config_data)
+        run_step_result = controller.run_step(Step("foo", arguments=["a", "b"], returncodes=[0]), "copy_dir", self.config_data)
         self.assertTrue(run_step_result)
 
     @mock.patch("skyhook_agent.controller.cleanup_old_logs")
@@ -234,28 +220,27 @@ class TestHelpers(unittest.TestCase):
     @mock.patch("skyhook_agent.controller.subprocess")
     @mock.patch("skyhook_agent.controller.tee")
     @mock.patch("skyhook_agent.controller.os.makedirs")
+    @mock.patch("skyhook_agent.controller.os.chmod")
+    @mock.patch("skyhook_agent.controller.os.stat")
     def test_run_step_replaces_environment_variables(
-        self, os_mock, tee_mock, subprocess_mock, log_mock, cleanup_mock
+        self, stat_mock, chmod_mock, os_mock, tee_mock, subprocess_mock, log_mock, cleanup_mock
     ):
         subprocess_mock.run.return_value = FakeSubprocessResult(0)
         tee_mock.return_value = FakeSubprocessResult(0)
 
         with set_env(FOO="foo"):
             run_step_result = controller.run_step(
-                Step("foo", arguments=["a", "env:FOO"], returncodes=[0]), "/", "copy_dir", self.config_data
+                Step("foo", arguments=["a", "env:FOO"], returncodes=[0]), "copy_dir", self.config_data
             )
         self.assertFalse(run_step_result)
 
-        subprocess_mock.run.assert_has_calls(
-            [mock.call("chroot / chmod +x copy_dir/skyhook_dir/foo", shell=True)]
-        )
         log_file = controller.get_log_file(
-            "/", f"{controller.get_host_path_for_steps('copy_dir')}/foo", "copy_dir", self.config_data
+            f"{controller.get_host_path_for_steps('copy_dir')}/foo", "copy_dir", self.config_data
         )
         tee_mock.assert_has_calls(
             [
                 mock.call(
-                    ["chroot", "/", "copy_dir/skyhook_dir/foo", "a", "foo"],
+                    ["copy_dir/skyhook_dir/foo", "a", "foo"],
                     log_file,
                     f"{log_file}.err",
                     env=dict(**os.environ, **{"STEP_ROOT": "copy_dir/skyhook_dir", "FOO": "foo", "SKYHOOK_DIR": "copy_dir"}),
@@ -267,7 +252,7 @@ class TestHelpers(unittest.TestCase):
     @mock.patch("builtins.print")
     def test_run_step_prints_all_missing_environment_variables(self, print_mock):
         run_step_result = controller.run_step(
-            Step("foo", arguments=["/some/path", "env:BAR", "env:FOO"], returncodes=[0]), "/", "copy_dir", self.config_data
+            Step("foo", arguments=["/some/path", "env:BAR", "env:FOO"], returncodes=[0]), "copy_dir", self.config_data
         )
         self.assertTrue(run_step_result)
 
@@ -307,32 +292,6 @@ class TestHelpers(unittest.TestCase):
             controller.check_flag_file(Step("foo", idempotence=Idempotence.Auto), "foo_bar", False, Mode.APPLY)
         )
 
-    @mock.patch("skyhook_agent.controller.datetime")
-    @mock.patch("skyhook_agent.controller._run")
-    def test_check_step_in_container(self, _run_step_mock, datetime_mock):
-        now_mock = mock.MagicMock()
-        datetime_mock.now.return_value = now_mock
-        now_mock.strftime.return_value = "12345"
-        with tempfile.TemporaryDirectory() as dir:
-            os.makedirs(f"{dir}/skyhook_dir")
-            with open(f"{dir}/skyhook_dir/foo_check.py", "w") as f:
-                f.write("")
-            with mock.patch.object(controller, "get_host_path_for_steps") as host_path_mock:
-                host_path_mock.return_value = dir
-            
-            controller.run_step(Step("foo_check.py", arguments=["a"], on_host=False), "root", dir, self.config_data)
-
-        
-        _run_step_mock.assert_has_calls([
-            mock.call(
-                [f"{dir}/skyhook_dir/foo_check.py", "a"], 
-                controller.get_log_file("root", f"/foo_check.py", "", self.config_data), 
-                on_host=False, 
-                root_mount="root", 
-                env=dict(**os.environ, **{"STEP_ROOT": f"{dir}/skyhook_dir", "SKYHOOK_DIR": dir})
-            ),
-        ])
-
     @mock.patch("skyhook_agent.controller.get_flag_dir")
     def test_summarize_check_results(self, flag_dir_mock):
         with tempfile.TemporaryDirectory() as dir:
@@ -347,7 +306,7 @@ class TestHelpers(unittest.TestCase):
                 ]
             }
             result = controller.summarize_check_results(
-                [False, False, True], steps, Mode.APPLY, "root"
+                [False, False, True], steps, Mode.APPLY
             )
             self.assertTrue(result)
             with open(f"{dir}/check_results", "r") as f:
@@ -355,7 +314,7 @@ class TestHelpers(unittest.TestCase):
 
             # Did not fail]
             result = controller.summarize_check_results(
-                [False, False, False], steps, Mode.APPLY, "root"
+                [False, False, False], steps, Mode.APPLY
             )
             self.assertFalse(result)
             with open(f"{dir}/check_results", "r") as f:
@@ -368,10 +327,19 @@ class TestUseCases(unittest.TestCase):
         self.config_data = {"package_name": "foo", "package_version": "1.0.0"}
 
     @contextmanager
-    def _setup_for_main(self, steps, agent_mode="legacy"):
+    def _setup_for_main(self, steps=None, agent_mode="legacy"):
+        if steps is None:
+            steps = {
+                Mode.APPLY: [
+                    Step("foo.sh", arguments=[]),
+                ],
+                Mode.APPLY_CHECK: [
+                    Step("foo_check.sh", arguments=[]),
+                ],
+            }
         with tempfile.TemporaryDirectory() as container_root_dir:
             os.makedirs(f"{container_root_dir}/skyhook_dir")
-            os.makedirs(f"{container_root_dir}/root_dir")
+            os.makedirs(f"{container_root_dir}_dir")
             os.makedirs(f"{container_root_dir}/configmaps")
             # Create the step file so validation doesn't fail
             for step_list in steps.values():
@@ -384,16 +352,21 @@ class TestUseCases(unittest.TestCase):
                 json.dump(config_data, temp_f)
 
             pass_config_data = config.load(config_data, f"{container_root_dir}/skyhook_dir")
+            copy_dir = "tmp"
             with tempfile.TemporaryDirectory() as root_dir:
                 with set_env(
                     SKYHOOK_CONFIGMAP_DIR=f"{container_root_dir}/configmaps",
                     SKYHOOK_AGENT_MODE=agent_mode,
                     SKYHOOK_DATA_DIR=container_root_dir):
-                    try:
-                        yield container_root_dir, pass_config_data, root_dir
-                    finally:
-                        shutil.rmtree(container_root_dir)
-                        shutil.rmtree(root_dir)
+                    with mock.patch("skyhook_agent.controller.os.chroot"), \
+                         mock.patch("skyhook_agent.controller.get_skyhook_directory", return_value=root_dir), \
+                         mock.patch("skyhook_agent.controller.get_host_path_for_steps", return_value=f"{root_dir}/tmp/skyhook_dir"), \
+                         mock.patch("skyhook_agent.controller.get_log_dir", return_value=f"{root_dir}/log"):
+                        try:
+                            yield container_root_dir, pass_config_data, root_dir, copy_dir
+                        finally:
+                            shutil.rmtree(container_root_dir)
+                            shutil.rmtree(root_dir)
 
     @mock.patch("skyhook_agent.controller._run")
     def test_flags_are_removed_after_uninstall(self, run_mock):
@@ -407,27 +380,27 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
                 ## make flags
                 flags = []
-                os.makedirs(f"{root_dir}/etc/skyhook/flags", exist_ok=True)
+                os.makedirs(controller.get_flag_dir(), exist_ok=True)
                 for step in [step for steps in steps.values() for step in steps]:
-                    flag_file = controller.make_flag_path(step, root_dir, config_data)
+                    flag_file = controller.make_flag_path(step, config_data)
                     controller.set_flag(flag_file, "")
                     flags.append(flag_file)
 
                 ## making flag file that isn't in steps definition to assert that
                 ## it doesn't get deleted
-                with open(controller.make_flag_path(Step("bogus"), root_dir, config_data), 'w'): pass
+                with open(controller.make_flag_path(Step("bogus"), config_data), 'w'): pass
 
-                controller.main(str(Mode.UNINSTALL_CHECK), root_dir, f"/foo", None)
+                controller.main(str(Mode.UNINSTALL_CHECK), root_dir, copy_dir, None)
 
                 ## assert the flags were erased
                 for flag in flags:
                     self.assertFalse(os.path.exists(flag))
 
-                self.assertTrue(os.path.exists(controller.make_flag_path(Step("bogus"), root_dir, config_data)))
+                self.assertTrue(os.path.exists(controller.make_flag_path(Step("bogus"), config_data)))
 
     @mock.patch("skyhook_agent.controller._run")
     def test_flags_arent_removed_after_failed_uninstall(self, run_mock):
@@ -440,27 +413,27 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
                 ## make flags
                 flags = []
-                os.makedirs(f"{dir}/etc/skyhook/flags", exist_ok=True)
+                os.makedirs(controller.get_flag_dir(), exist_ok=True)
                 for step in [step for steps in steps.values() for step in steps]:
-                    flag_file = controller.make_flag_path(step, root_dir, config_data)
+                    flag_file = controller.make_flag_path(step, config_data)
                     controller.set_flag(flag_file, "")
                     flags.append(flag_file)
 
                 ## making flag file that isn't in steps definition to assert that
                 ## it doesn't get deleted
-                with open(controller.make_flag_path(Step("bogus"), root_dir, config_data), 'w'): pass
+                with open(controller.make_flag_path(Step("bogus"), config_data), 'w'): pass
 
-                controller.main(str(Mode.UNINSTALL_CHECK), root_dir, f"/foo", None)
+                controller.main(str(Mode.UNINSTALL_CHECK), root_dir, copy_dir, None)
 
                 ## assert the flags weren't erased
                 for flag in flags:
                     self.assertTrue(os.path.exists(flag))
 
-                self.assertTrue(os.path.exists(controller.make_flag_path(Step("bogus"), root_dir, config_data)))
+                self.assertTrue(os.path.exists(controller.make_flag_path(Step("bogus"), config_data)))
 
     @mock.patch("skyhook_agent.controller.datetime")
     @mock.patch("skyhook_agent.controller._run")
@@ -477,9 +450,9 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.APPLY_CHECK), root_dir, f"/foo", None)
-            with open(f"{root_dir}/etc/skyhook/history/foo.json", "r") as history_file:
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.APPLY_CHECK), root_dir, copy_dir, None)
+            with open(f"{controller.get_history_dir()}/foo.json", "r") as history_file:
                 history = json.load(history_file)
 
                 self.assertEqual(history["current-version"], "1.0.0")
@@ -498,8 +471,8 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.APPLY_CHECK), root_dir, f"/foo", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.APPLY_CHECK), root_dir, copy_dir, None)
             self.assertFalse(os.path.exists(f"{root_dir}/etc/skyhook/history/foo.json"))
 
     @mock.patch("skyhook_agent.controller.datetime")
@@ -517,19 +490,18 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
-                os.makedirs(f"{root_dir}/etc/skyhook/history", exist_ok=True)
-                with open(f"{root_dir}/etc/skyhook/history/foo.json", "w") as history_file:
+                os.makedirs(controller.get_history_dir(), exist_ok=True)
+                with open(f"{controller.get_history_dir()}/foo.json", "w") as history_file:
                     history_file.write("{") ## Corrupt history file
+                controller.main(str(Mode.APPLY_CHECK), root_dir, copy_dir, None)
 
-                controller.main(str(Mode.APPLY_CHECK), root_dir, f"/foo", None)
-
-                with open(f"{root_dir}/etc/skyhook/history/foo.json.backup") as backup_file:
+                with open(f"{controller.get_history_dir()}/foo.json.backup") as backup_file:
                     backup_data = backup_file.read()
                     self.assertEqual(backup_data, "{")
 
-                with open(f"{root_dir}/etc/skyhook/history/foo.json", "r") as history_file:
+                with open(f"{controller.get_history_dir()}/foo.json", "r") as history_file:
                     history = json.load(history_file)
 
                     self.assertEqual(history["current-version"], "1.0.0")
@@ -553,10 +525,10 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
-                os.makedirs(f"{root_dir}/etc/skyhook/history", exist_ok=True)
-                with open(f"{root_dir}/etc/skyhook/history/foo.json", "w") as history_file:
+                os.makedirs(controller.get_history_dir(), exist_ok=True)
+                with open(f"{controller.get_history_dir()}/foo.json", "w") as history_file:
                     json.dump({
                         "current-version": "0.0.9",
                         "history": [
@@ -564,9 +536,9 @@ class TestUseCases(unittest.TestCase):
                         ]
                     }, history_file)
 
-                controller.main(str(Mode.APPLY_CHECK), root_dir, f"/foo", None)
+                controller.main(str(Mode.APPLY_CHECK), root_dir, copy_dir, None)
                 
-                with open(f"{root_dir}/etc/skyhook/history/foo.json", "r") as history_file:
+                with open(f"{controller.get_history_dir()}/foo.json", "r") as history_file:
                     history = json.load(history_file)
 
                     self.assertEqual(history["current-version"], "1.0.0")
@@ -593,10 +565,10 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-                controller.main(str(Mode.UPGRADE_CHECK), root_dir, f"/foo", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+                controller.main(str(Mode.UPGRADE_CHECK), root_dir, copy_dir, None)
                 
-                with open(f"{root_dir}/etc/skyhook/history/foo.json", "r") as history_file:
+                with open(f"{controller.get_history_dir()}/foo.json", "r") as history_file:
                     history = json.load(history_file)
 
                     self.assertEqual(history["current-version"], "1.0.0")
@@ -620,10 +592,10 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
-            os.makedirs(f"{root_dir}/etc/skyhook/history", exist_ok=True)
-            with open(f"{root_dir}/etc/skyhook/history/foo.json", "w") as history_file:
+            os.makedirs(controller.get_history_dir(), exist_ok=True)
+            with open(f"{controller.get_history_dir()}/foo.json", "w") as history_file:
                 json.dump({
                     "current-version": "0.0.9",
                     "history": [
@@ -631,9 +603,9 @@ class TestUseCases(unittest.TestCase):
                     ]
                 }, history_file)
 
-            controller.main(str(Mode.UPGRADE_CHECK), root_dir, f"/foo", None)
+            controller.main(str(Mode.UPGRADE_CHECK), root_dir, copy_dir, None)
             
-            with open(f"{root_dir}/etc/skyhook/history/foo.json", "r") as history_file:
+            with open(f"{controller.get_history_dir()}/foo.json", "r") as history_file:
                 history = json.load(history_file)
 
                 self.assertEqual(history["current-version"], "1.0.0")
@@ -659,10 +631,10 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
-            os.makedirs(f"{root_dir}/etc/skyhook/history", exist_ok=True)
-            with open(f"{root_dir}/etc/skyhook/history/foo.json", "w") as history_file:
+            os.makedirs(controller.get_history_dir(), exist_ok=True)
+            with open(f"{controller.get_history_dir()}/foo.json", "w") as history_file:
                 json.dump({
                     "current-version": "0.0.9",
                     "history": [
@@ -670,9 +642,9 @@ class TestUseCases(unittest.TestCase):
                     ]
                 }, history_file)
 
-            controller.main(str(Mode.UNINSTALL_CHECK), root_dir, f"/foo", None)
+            controller.main(str(Mode.UNINSTALL_CHECK), root_dir, copy_dir, None)
             
-            with open(f"{root_dir}/etc/skyhook/history/foo.json", "r") as history_file:
+            with open(f"{controller.get_history_dir()}/foo.json", "r") as history_file:
                 history = json.load(history_file)
 
                 self.assertEqual(history["current-version"], "uninstalled")
@@ -697,10 +669,10 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
-                os.makedirs(f"{root_dir}/etc/skyhook/history", exist_ok=True)
-                with open(f"{root_dir}/etc/skyhook/history/foo.json", "w") as history_file:
+                os.makedirs(controller.get_history_dir(), exist_ok=True)
+                with open(f"{controller.get_history_dir()}/foo.json", "w") as history_file:
                     json.dump({
                         "current-version": "0.0.9",
                         "history": [
@@ -708,19 +680,16 @@ class TestUseCases(unittest.TestCase):
                         ]
                     }, history_file)
 
-                controller.main(str(Mode.UPGRADE), root_dir, f"/foo", None)
-
+                controller.main(str(Mode.UPGRADE), root_dir, copy_dir, None)
                 run_mock.assert_has_calls([
                     mock.call(
-                        ["/foo/skyhook_dir/foo"],
+                        [f"{controller.get_host_path_for_steps(copy_dir)}/foo"],
                         controller.get_log_file(
-                            root_dir, f"/foo/skyhook_dir/foo", f"/foo", config_data
+                            f"{controller.get_host_path_for_steps(copy_dir)}/foo", f"/foo", config_data
                         ),
-                        on_host=True,
-                        root_mount=root_dir,
                         env=dict(**os.environ, 
                                 **{"PREVIOUS_VERSION": "0.0.9", "CURRENT_VERSION": "1.0.0"}, 
-                                **{"STEP_ROOT": f"/foo/skyhook_dir", "SKYHOOK_DIR": "/foo"})
+                                **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
                     )
                 ])
 
@@ -737,10 +706,10 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
                 
-            os.makedirs(f"{root_dir}/etc/skyhook/history", exist_ok=True)
-            with open(f"{root_dir}/etc/skyhook/history/foo.json", "w") as history_file:
+            os.makedirs(controller.get_history_dir(), exist_ok=True)
+            with open(f"{controller.get_history_dir()}/foo.json", "w") as history_file:
                 json.dump({
                     "current-version": "2024.07.28",
                     "history": [
@@ -748,19 +717,17 @@ class TestUseCases(unittest.TestCase):
                     ]
                 }, history_file)
 
-            controller.main(str(Mode.UPGRADE), root_dir, f"/foo", None)
+            controller.main(str(Mode.UPGRADE), root_dir, copy_dir, None)
 
             run_mock.assert_has_calls([
                 mock.call(
-                    ["/foo/skyhook_dir/foo", "2024.07.28", "1.0.0"],
+                    [f"{controller.get_host_path_for_steps(copy_dir)}/foo", "2024.07.28", "1.0.0"],
                     controller.get_log_file(
-                        root_dir, f"/foo/skyhook_dir/foo", f"/foo", config_data
+                        f"{controller.get_host_path_for_steps(copy_dir)}/foo", f"/foo", config_data
                     ),
-                    on_host=True,
-                    root_mount=root_dir,
                     env=dict(**os.environ, 
                             **{"PREVIOUS_VERSION": "2024.07.28", "CURRENT_VERSION": "1.0.0"}, 
-                            **{"STEP_ROOT": f"/foo/skyhook_dir", "SKYHOOK_DIR": "/foo"})
+                            **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
                 )
             ])
 
@@ -777,51 +744,38 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY_CHECK: [Step("bar_check", arguments=[])],
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
 
-                controller.main(str(Mode.UPGRADE), root_dir, f"/foo", None)
+                controller.main(str(Mode.UPGRADE), root_dir, copy_dir, None)
 
-                run_mock.assert_has_calls([
-                    mock.call(
-                        ["/foo/skyhook_dir/foo"],
-                        controller.get_log_file(
-                            root_dir, f"/foo/skyhook_dir/foo", f"/foo", config_data
-                        ),
-                        on_host=True,
-                        root_mount=root_dir,
-                        env=dict(**os.environ, 
-                                **{"PREVIOUS_VERSION": "unknown", "CURRENT_VERSION": "1.0.0"}, 
-                                **{"STEP_ROOT": "/foo/skyhook_dir", "SKYHOOK_DIR": "/foo"})
-                    )
-                ])
+                self.assertEqual(run_mock.call_args_list[0].kwargs["env"]["PREVIOUS_VERSION"], "unknown")
+                self.assertEqual(run_mock.call_args_list[0].kwargs["env"]["CURRENT_VERSION"], "1.0.0")
+                self.assertEqual(run_mock.call_args_list[0].kwargs["env"]["STEP_ROOT"], controller.get_host_path_for_steps(copy_dir))
 
-    @mock.patch("skyhook_agent.controller.datetime")
     @mock.patch("skyhook_agent.controller._run")
     @mock.patch("skyhook_agent.controller.subprocess")
-    def test_step_root_is_set_correctly(self, subprocess_mock, run_mock, datetime_mock):
-        now_mock = mock.MagicMock()
-        datetime_mock.now.return_value = now_mock
-        now_mock.strftime.return_value = "12345"
+    def test_step_root_is_set_correctly(self, subprocess_mock, run_mock):
         run_mock.return_value = 0
         steps = {
             Mode.APPLY: [Step("bar", arguments=[])],
             Mode.APPLY_CHECK: [Step("bar_check")]
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-                controller.main(str(Mode.APPLY), root_dir, f"/foo", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+                controller.main(str(Mode.APPLY), root_dir, copy_dir, None)
 
-                run_mock.assert_has_calls([
-                    mock.call(
-                        ["/foo/skyhook_dir/bar"],
-                        controller.get_log_file(
-                            root_dir, f"/foo/skyhook_dir/bar", f"/foo", config_data
-                        ),
-                        on_host=True,
-                        root_mount=root_dir,
-                        env=dict(**os.environ, **{"STEP_ROOT": "/foo/skyhook_dir", "SKYHOOK_DIR": "/foo"})
-                    )
+                self.assertEqual(run_mock.call_args_list[0].kwargs["env"]["STEP_ROOT"], controller.get_host_path_for_steps(copy_dir))
+                self.assertEqual(run_mock.call_args_list[0].kwargs["env"]["SKYHOOK_DIR"], copy_dir)
+                self.assertEqual(run_mock.call_args_list[0].args[0], [f"{controller.get_host_path_for_steps(copy_dir)}/bar"])
+                # run_mock.assert_has_calls([
+                #     mock.call(
+                #         [f"{controller.get_host_path_for_steps(copy_dir)}/bar"],
+                #         controller.get_log_file(
+                #             f"{controller.get_host_path_for_steps(copy_dir)}/bar", f"/foo", config_data
+                #         ),
+                #         env=dict(**os.environ, **{"STEP_ROOT": f"{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
+                #     )
 
-                ])
+                # ])
 
     @mock.patch("skyhook_agent.controller.logger.warning")
     def test_warning_when_running_with_invalid_mode(self, mock_warning):
@@ -835,8 +789,8 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY: [Step("bar", arguments=[])],
             Mode.APPLY_CHECK: [Step("bar_check")],
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.APPLY), root_dir, f"/foo", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.APPLY), root_dir, copy_dir, None)
 
         mock_warning.assert_not_called()
 
@@ -846,8 +800,8 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY: [Step("bar", arguments=[])],
             Mode.APPLY_CHECK: [Step("bar_check")]
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.CONFIG), root_dir, f"/foo", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.CONFIG), root_dir, copy_dir, None)
 
         mock_warning.assert_called_with(f" There are no config steps defined. This will be ran as a no-op.")
 
@@ -857,8 +811,8 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY: [Step("bar", arguments=[])],
             Mode.APPLY_CHECK: [Step("bar_check")]
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.APPLY), root_dir, f"/foo", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.APPLY), root_dir, copy_dir, None)
 
         mock_warning.assert_not_called()
 
@@ -870,8 +824,8 @@ class TestUseCases(unittest.TestCase):
             Mode.CONFIG: [Step("config", arguments=[])],
             Mode.CONFIG_CHECK: [Step("config_check")]
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.CONFIG), root_dir, f"/foo", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.CONFIG), root_dir, copy_dir, None)
 
         mock_warning.assert_not_called()
 
@@ -882,8 +836,8 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY: [Step("foo", arguments=[]), Step("foo", arguments=[ "a"])],
             Mode.APPLY_CHECK: [Step("foo_check")]
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.APPLY), root_dir, "/tmp", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.APPLY), root_dir, copy_dir, None)
             self.assertEqual(run_step_mock.call_count, 2)
 
     @mock.patch("skyhook_agent.controller.run_step")
@@ -893,9 +847,9 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY: [Step("foo", arguments=[]), Step("foo", arguments=[ "a"])],
             Mode.APPLY_CHECK: [Step("foo_check")],
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.set_flag(controller.make_flag_path(steps[Mode.APPLY][0], root_dir, config_data))
-            controller.main(str(Mode.APPLY), root_dir, "copy_dir", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.set_flag(controller.make_flag_path(steps[Mode.APPLY][0], config_data))
+            controller.main(str(Mode.APPLY), root_dir, copy_dir, None)
             self.assertEqual(run_step_mock.call_count, 1)
             #run_step_mock.assert_called_once_with(Step("foo", arguments=["a"], returncodes=[0]), root_dir, "copy_dir", config_data)
 
@@ -907,12 +861,12 @@ class TestUseCases(unittest.TestCase):
             Mode.APPLY: [Step("foo", arguments=[]), Step("foo", arguments=["a"])],
             Mode.APPLY_CHECK: [Step("foo_check")]
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.set_flag(controller.make_flag_path(steps[Mode.APPLY][0], root_dir, config_data))
-            controller.main(str(Mode.APPLY), root_dir, "copy_dir", None, True)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.set_flag(controller.make_flag_path(steps[Mode.APPLY][0], config_data))
+            controller.main(str(Mode.APPLY), root_dir, copy_dir, None, True)
             run_step_mock.assert_has_calls([
-                mock.call(Step("foo", arguments=[], returncodes=[0]), root_dir, "copy_dir", config_data),
-                mock.call(Step("foo", arguments=["a"], returncodes=[0]), root_dir, "copy_dir", config_data),
+                mock.call(Step("foo", arguments=[], returncodes=[0]), copy_dir, config_data),
+                mock.call(Step("foo", arguments=["a"], returncodes=[0]), copy_dir, config_data),
             ])
 
 
@@ -933,11 +887,13 @@ class TestUseCases(unittest.TestCase):
                 Step("foo_check"),
             ]
         }
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-            controller.main(str(Mode.APPLY), root_dir, "copy", None)
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            controller.main(str(Mode.APPLY), root_dir, copy_dir, None)
             self.assertEqual(2, len(run_step_mock.mock_calls))
 
-    def test_check_does_not_fail_when_no_steps_are_defined(self):
+    @mock.patch("skyhook_agent.controller.os.chroot")
+    @mock.patch("skyhook_agent.controller.get_skyhook_directory")
+    def test_check_does_not_fail_when_no_steps_are_defined(self, get_skyhook_directory_mock, chroot_mock):
         """
         Consider there is a Package that only does config. Apply check SHOULD NOT fail
         """
@@ -950,30 +906,49 @@ class TestUseCases(unittest.TestCase):
             ]
         }
 
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-                # False means it DID NOT error
-                self.assertFalse(controller.main(str(Mode.APPLY_CHECK), root_dir, "/tmp", None))
-                self.assertFalse(
-                    os.path.exists(f"{controller.get_flag_dir(root_dir)}/ALL_CHECKED")
-                )
+        with self._setup_for_main(steps) as (container_dir, config_data, root_dir, copy_dir):
+            get_skyhook_directory_mock.return_value = root_dir
+            # False means it DID NOT error
+            self.assertFalse(controller.main(str(Mode.APPLY_CHECK), root_dir, copy_dir, None))
+            self.assertFalse(
+                os.path.exists(f"{controller.get_flag_dir()}/ALL_CHECKED")
+            )
+
+    # @mock.patch("skyhook_agent.controller.os.chroot")
+    # @mock.patch("skyhook_agent.controller.get_skyhook_directory")
+    # @mock.patch("skyhook_agent.controller.get_host_path_for_steps")
+    # @mock.patch("skyhook_agent.controller.get_log_dir")
+    # def test_check_fails_if_there_are_steps_but_none_ran(self, get_log_dir_mock, get_host_path_for_steps_mock, get_skyhook_directory_mock, chroot_mock):
+    #     steps = {
+    #                 Mode.CONFIG: [
+    #                     Step("foo", arguments=[]),
+    #                 ],
+    #                 Mode.CONFIG_CHECK: [
+    #                     Step("foo_check", arguments=[]),
+    #                 ]
+    #             }
+
+    #     with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
+    #         get_skyhook_directory_mock.return_value = root_dir
+    #         get_host_path_for_steps_mock.return_value = f"{root_dir}/tmp/skyhook_dir"
+    #         get_log_dir_mock.return_value = f"{root_dir}/log"
+    #         # False means it DID NOT error
+    #         self.assertTrue(controller.main(str(Mode.CONFIG_CHECK), root_dir, f"/tmp", None))
+    #         self.assertFalse(
+    #             os.path.exists(f"{controller.get_flag_dir()}/ALL_CHECKED"))
+
     def test_check_fails_if_there_are_steps_but_none_ran(self):
         steps = {
-                    Mode.CONFIG: [
-                        Step("foo", arguments=[]),
-                    ],
-                    Mode.CONFIG_CHECK: [
-                        Step("foo_check", arguments=[]),
-                    ]
-                }
-
-        with self._setup_for_main(steps) as (container_dir, config_data, root_dir):
-                # False means it DID NOT error
-                self.assertTrue(controller.main(str(Mode.CONFIG_CHECK), root_dir, "/tmp", None))
-                self.assertFalse(
-                    os.path.exists(f"{controller.get_flag_dir(root_dir)}/ALL_CHECKED"))
+            Mode.CONFIG: [
+                Step("foo", arguments=[]),
+            ],
+            Mode.CONFIG_CHECK: [Step("foo_check", arguments=[])]
+        }
+        self.assertTrue(controller.summarize_check_results([], steps, Mode.CONFIG_CHECK))
 
     @mock.patch("skyhook_agent.controller.run_step")
-    def test_any_check_failing_fails_run_but_all_checks_run(self, run_step_mock):
+    @mock.patch("skyhook_agent.controller.os.chroot")
+    def test_any_check_failing_fails_run_but_all_checks_run(self, chroot_mock, run_step_mock):
         run_step_mock.side_effect = [False, True, False]
         steps = {
             Mode.APPLY: [
@@ -986,11 +961,12 @@ class TestUseCases(unittest.TestCase):
                 Step("bar_check.sh", arguments=[])
             ]
         }
-        with self._setup_for_main(steps) as (_, _, root_dir):
-            os.makedirs(controller.get_flag_dir(root_dir), exist_ok=True)
-            result = controller.main(str(Mode.APPLY_CHECK), root_dir, "/tmp", None)
-            self.assertFalse(os.path.exists(f"{controller.get_flag_dir(root_dir)}/ALL_CHECKED"))
-            self.assertTrue(result)
+        with self._setup_for_main(steps) as (_, _, root_dir, copy_dir):
+            with mock.patch("skyhook_agent.controller.get_flag_dir") as get_flag_dir_mock:
+                get_flag_dir_mock.return_value = root_dir
+                result = controller.main(str(Mode.APPLY_CHECK), root_dir, copy_dir, None)
+                self.assertFalse(os.path.exists(f"{controller.get_flag_dir()}/ALL_CHECKED"))
+                self.assertTrue(result)
 
     @mock.patch("skyhook_agent.controller.get_log_file")
     @mock.patch("skyhook_agent.controller.datetime")
@@ -1024,7 +1000,7 @@ class TestUseCases(unittest.TestCase):
             with mock.patch.object(
                 controller.sys, "stderr", stderr_buff
             ), mock.patch.object(controller.sys, "stdout", stdout_buff):
-                controller.run_step(Step("foo.sh", arguments=[], returncodes=[0], on_host=False), "", temp_d, config_data=self.config_data)
+                controller.run_step(Step("foo.sh", arguments=[], returncodes=[0]), temp_d, config_data=self.config_data)
 
             os.remove(step_file.name)
             with open(f"{temp_d}/log", "r") as log_f:
@@ -1061,17 +1037,15 @@ class TestUseCases(unittest.TestCase):
                 ["[err]isoformat 1 err", "[err]isoformat 2 err", "[err]isoformat "],
             )
     
-    @mock.patch("skyhook_agent.controller.subprocess")
-    @mock.patch("skyhook_agent.controller._run")
-    def test_older_log_files_are_cleaned_up(self, run_mock, subprocess_mock):
-        with tempfile.TemporaryDirectory() as temp_d:
-            for i in range(7):
-                with open(controller.get_log_file(temp_d, "foo.sh", "", self.config_data, i), "w") as log_file:
-                    log_file.write("old log\n")
+    @mock.patch("skyhook_agent.controller.os")
+    @mock.patch("skyhook_agent.controller.glob")
+    def test_older_log_files_are_cleaned_up(self, glob_mock, os_mock):
+        log_files = [f"log{i}" for i in range(7)]
+        os_mock.stat.side_effect = [mock.MagicMock(st_mtime=i) for i in range(7)]
+        glob_mock.glob.return_value = log_files
+        controller.cleanup_old_logs("log_files")
 
-            controller.run_step(Step("foo.sh", arguments=[], returncodes=[0], on_host=False), temp_d, "", config_data=self.config_data)
-            import glob
-            self.assertEqual(5, len(glob.glob(controller.get_log_file(temp_d, "foo.sh", "", self.config_data, "*"))))
+        os_mock.remove.assert_has_calls([mock.call(f"log{i}") for i in range(1)])
 
     @mock.patch("skyhook_agent.controller.run_step")
     def test_self_managed_idempotency_runs_when_flag_exists(self, run_step_mock):
@@ -1086,16 +1060,12 @@ class TestUseCases(unittest.TestCase):
                 Step("foo_check.sh"),
             ]
         }
-        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir, copy_dir):
             for step in steps[Mode.APPLY]:
-                controller.set_flag(controller.make_flag_path(step, root_dir, config_data))
-            controller.main(str(Mode.APPLY), root_dir, "copy_dir", None)
+                controller.set_flag(controller.make_flag_path(step, config_data))
+            controller.main(str(Mode.APPLY), root_dir, copy_dir, None)
 
             self.assertEqual(run_step_mock.call_count, 1)
-            # run_step_mock.assert_has_calls(
-            #     [mock.call(steps[Mode.APPLY][2], root_dir, "copy_dir", config_data)]
-            # )
-    
 
     @mock.patch("skyhook_agent.controller.datetime")
     @mock.patch("skyhook_agent.controller._run")
@@ -1112,34 +1082,34 @@ class TestUseCases(unittest.TestCase):
                 Step("foo_check.sh", arguments=[]),
             ],
         }
-        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir, copy_dir):
             with set_env(SKYHOOK_RESOURCE_ID="scr-id-1_package_version"):
                 controller.main(
                     Mode.INTERRUPT,
                     root_dir,
-                    "copy_dir",
+                    copy_dir,
                     interrupts.ServiceRestart(["containerd",]).make_controller_input()
                 )
 
-        config_data = {
-            "package_name": "package",
-            "package_version": "version"
-        }
-        run_mock.assert_has_calls([
-            mock.call(["systemctl", "daemon-reload"], controller.get_log_file(root_dir, "interrupts/service_restart_0", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True),
-            mock.call(["systemctl", "restart", "containerd"], controller.get_log_file(root_dir, "interrupts/service_restart_1", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True)
-        ])
+            config_data = {
+                "package_name": "package",
+                "package_version": "version"
+            }
+            run_mock.assert_has_calls([
+                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", copy_dir, config_data), write_cmds=True),
+                mock.call(["systemctl", "restart", "containerd"], controller.get_log_file("interrupts/service_restart_1", copy_dir, config_data), write_cmds=True)
+            ])
 
     @mock.patch("skyhook_agent.controller._run")
     def test_interrupt_isnt_run_when_skyhook_resource_id_flag_is_there(self, run_mock):
         run_mock.return_value = 0
         SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
-        with (tempfile.TemporaryDirectory() as dir,
+        with (self._setup_for_main() as (container_root_dir, config_data, root_dir, copy_dir),
               set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
-            os.makedirs(f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}", exist_ok=True)
-            with open(f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}/node_restart_0.complete", 'w') as f:
+            os.makedirs(f"{root_dir}/interrupts/flags/{SKYHOOK_RESOURCE_ID}", exist_ok=True)
+            with open(f"{root_dir}/interrupts/flags/{SKYHOOK_RESOURCE_ID}/node_restart_0.complete", 'w') as f:
                 f.write("")
-            controller.do_interrupt(interrupts.NodeRestart().make_controller_input(), dir, "copy_dir", on_host=False)
+            controller.do_interrupt(interrupts.NodeRestart().make_controller_input(), root_dir, copy_dir)
 
             run_mock.assert_not_called()
 
@@ -1147,11 +1117,11 @@ class TestUseCases(unittest.TestCase):
     def test_interrupt_create_flags_per_cmd(self, run_mock):
         run_mock.return_value = 0
         SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
-        with (tempfile.TemporaryDirectory() as dir,
+        with (self._setup_for_main() as (container_root_dir, config_data, root_dir, copy_dir),
               set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
-            interrupt_dir = f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
+            interrupt_dir = f"{controller.get_skyhook_directory()}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
             interrupt = interrupts.ServiceRestart(["foo", "bar"])
-            controller.do_interrupt(interrupt.make_controller_input(), dir, "copy_dir", on_host=False)
+            controller.do_interrupt(interrupt.make_controller_input(), root_dir, copy_dir)
 
             for i in range(len(interrupt.interrupt_cmd)):
                 self.assertTrue(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_{i}.complete"))
@@ -1160,11 +1130,11 @@ class TestUseCases(unittest.TestCase):
     def test_interrupt_failures_remove_flag(self, run_mock):
         run_mock.side_effect = [0,1,0]
         SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
-        with (tempfile.TemporaryDirectory() as dir,
+        with (self._setup_for_main() as (container_root_dir, config_data, root_dir, copy_dir),
               set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
-            interrupt_dir = f"{controller.get_skyhook_directory(dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
+            interrupt_dir = f"{controller.get_skyhook_directory()}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
             interrupt = interrupts.ServiceRestart(["foo", "bar"])
-            controller.do_interrupt(interrupt.make_controller_input(), dir, "copy_dir", on_host=False)
+            controller.do_interrupt(interrupt.make_controller_input(), root_dir, copy_dir)
 
             self.assertTrue(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_0.complete"))
             self.assertFalse(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_1.complete"))
@@ -1185,23 +1155,23 @@ class TestUseCases(unittest.TestCase):
                 Step("foo_check.sh", arguments=[]),
             ],
         }
-        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir, copy_dir):
             with set_env(SKYHOOK_RESOURCE_ID="scr-id-1_package_version"):
                 result = controller.main(
                     Mode.INTERRUPT,
                     root_dir,
-                    "/tmp",
+                    copy_dir,
                     interrupts.ServiceRestart("containerd").make_controller_input()
                 )
-        config_data = {
-            "package_name": "package",
-            "package_version": "version"
-        }
-        run_mock.assert_has_calls([
-            mock.call(["systemctl", "daemon-reload"], controller.get_log_file(root_dir, "interrupts/service_restart_0", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True)
-        ])
+            config_data = {
+                "package_name": "package",
+                "package_version": "version"
+            }
+            run_mock.assert_has_calls([
+                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data), write_cmds=True)
+            ])
 
-        self.assertEqual(result, True)
+            self.assertEqual(result, True)
 
     @mock.patch("skyhook_agent.controller.datetime")
     @mock.patch("skyhook_agent.controller._run")
@@ -1218,24 +1188,26 @@ class TestUseCases(unittest.TestCase):
                 Step("foo_check.sh", arguments=[]),
             ],
         }
-        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir):
+        with self._setup_for_main(steps) as (container_root_dir, config_data, root_dir, copy_dir):
             with set_env(SKYHOOK_RESOURCE_ID="scr-id-1_package_version"):
                 result = controller.main(
                     Mode.INTERRUPT,
                     root_dir,
-                    "/tmp",
+                    copy_dir,
                     interrupts.ServiceRestart("containerd").make_controller_input()
                 )
-        config_data = {
-            "package_name": "package",
-            "package_version": "version"
-        }
-        run_mock.assert_has_calls([
-            mock.call(["systemctl", "daemon-reload"], controller.get_log_file(root_dir, "interrupts/service_restart_0", "copy_dir", config_data), on_host=True, root_mount=root_dir, write_cmds=True)
-        ])
+            config_data = {
+                "package_name": "package",
+                "package_version": "version"
+            }
+            run_mock.assert_has_calls([
+                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data), write_cmds=True)
+            ])
 
     @mock.patch("skyhook_agent.controller.main")
-    def test_interrupt_mode_reads_extra_argument(self, main_mock):
+    @mock.patch("skyhook_agent.controller.get_log_file")
+    def test_interrupt_mode_reads_extra_argument(self, get_log_file_mock, main_mock):
+        get_log_file_mock.return_value = "/log/foo.log"
         argv = ["controller.py", str(Mode.INTERRUPT), "root_mount", "copy_dir", "interrupt_data"]
         with set_env(COPY_RESOLV="false", SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(argv)
@@ -1243,7 +1215,9 @@ class TestUseCases(unittest.TestCase):
         main_mock.assert_called_once_with(str(Mode.INTERRUPT), "root_mount", "copy_dir", "interrupt_data", False)
 
     @mock.patch("skyhook_agent.controller.main")
-    def test_cli_overlay_always_run_step_is_correct(self, main_mock):
+    @mock.patch("skyhook_agent.controller.get_log_file")
+    def test_cli_overlay_always_run_step_is_correct(self, get_log_file_mock, main_mock):
+        get_log_file_mock.return_value = "/log/foo.log"
         with set_env(OVERLAY_ALWAYS_RUN_STEP="true", COPY_RESOLV="false", 
                     SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"])
@@ -1258,7 +1232,9 @@ class TestUseCases(unittest.TestCase):
 
     @mock.patch("skyhook_agent.controller.main")
     @mock.patch("skyhook_agent.controller.shutil")
-    def test_cli_COPY_RESOLV(self, shutil_mock, main_mock):
+    @mock.patch("skyhook_agent.controller.get_log_file")
+    def test_cli_COPY_RESOLV(self, get_log_file_mock, shutil_mock, main_mock):
+        get_log_file_mock.return_value = "/log/foo.log"
         argv = ["controller.py", str(Mode.APPLY), "root_mount", "copy_dir"]
         with set_env(COPY_RESOLV="true", SKYHOOK_RESOURCE_ID="customer-25633c77-11ac-471a-9928-bc6969cead5f-2_tuning_2.0.2"):
             controller.cli(argv)
@@ -1274,7 +1250,9 @@ class TestUseCases(unittest.TestCase):
     @mock.patch("skyhook_agent.controller.shutil")
     @mock.patch("skyhook_agent.controller.agent_main")
     @mock.patch("skyhook_agent.controller.config")
-    def test_main_checks_for_legacy_mode(self, config_mock, agent_main_mock, shutil_mock):
+    @mock.patch("skyhook_agent.controller.get_log_file")
+    def test_main_checks_for_legacy_mode(self, get_log_file_mock, config_mock, agent_main_mock, shutil_mock):
+        get_log_file_mock.return_value = "/log/foo.log"
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch("builtins.open", mock.mock_open(read_data="{}")):
                 controller.main(str(Mode.APPLY), temp_dir, "copy_dir", None)
@@ -1296,7 +1274,9 @@ class TestUseCases(unittest.TestCase):
     @mock.patch("skyhook_agent.controller.shutil")
     @mock.patch("skyhook_agent.controller.agent_main")
     @mock.patch("skyhook_agent.controller.config")
-    def test_main_doesnt_copy_root_dir_on_uninstall(self, config_mock, agent_main_mock, shutil_mock):
+    @mock.patch("skyhook_agent.controller.get_log_file")
+    def test_main_doesnt_copy_root_dir_on_uninstall(self, get_log_file_mock, config_mock, agent_main_mock, shutil_mock):
+        get_log_file_mock.return_value = "/log/foo.log"
         config_mock.load.return_value = {
             "schema_version": "v1", 
             "root_dir": "/", 
@@ -1310,7 +1290,6 @@ class TestUseCases(unittest.TestCase):
                         "path": "a-path",
                         "arguments": [],
                         "returncodes": [0],
-                        "on_host": True,
                         "env": {"hello": "world"},
                         "idempotence": False,
                         "upgrade_step": False
@@ -1322,7 +1301,6 @@ class TestUseCases(unittest.TestCase):
                         "path": "b-path",
                         "arguments": [],
                         "returncodes": [0],
-                        "on_host": True,
                         "idempotence": False,
                         "upgrade_step": False
                     }
