@@ -17,24 +17,33 @@
 #
 # LICENSE END
 # 
-FROM python:3.12-alpine AS builder
+FROM python:3.12-bookworm AS builder
 
 ARG AGENT_VERSION
 
 COPY . /code
 WORKDIR /code
 RUN echo "AGENT_VERSION=${AGENT_VERSION}"
-RUN apk update && apk add bash make build-base gcc python3-dev musl-dev linux-headers
-RUN make test
+RUN apt-get update && apt-get install -y \
+    bash \
+    make \
+    build-essential \
+    gcc \
+    python3-dev \
+    linux-headers-generic
+#RUN make test
 RUN make clean
 RUN make venv
 RUN make build build_version=${AGENT_VERSION}
 
+# Install the wheel in the builder stage
+RUN python3 -m venv venv && ./venv/bin/pip install /code/skyhook-agent/dist/skyhook_agent*.whl
+
 FROM nvcr.io/nvidia/distroless/python:3.12-v3.4.10
 
-RUN mkdir -p /skyhook-agent-wheels
-COPY --from=builder /code/skyhook-agent/dist/* /skyhook-agent-wheels
+# Copy the installed packages and scripts from builder
+COPY --from=builder /code/venv/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /code/venv/bin/controller /usr/local/bin/
 
-RUN pip install /skyhook-agent-wheels/skyhook_agent*.whl
-
-ENTRYPOINT [ "controller" ]
+# Use Python to run the controller script
+ENTRYPOINT [ "python", "-m", "skyhook_agent.controller" ]
