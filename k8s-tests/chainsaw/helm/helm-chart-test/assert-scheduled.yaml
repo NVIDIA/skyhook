@@ -53,7 +53,6 @@ spec:
   - command:
     - /manager
     ((env[?name == 'RUNTIME_REQUIRED_TAINT'].value)[0] == 'skyhook.nvidia.com=runtime-required:NoSchedule'): true
-    imagePullPolicy: IfNotPresent
     livenessProbe:
       failureThreshold: 3
       httpGet:
@@ -102,7 +101,6 @@ spec:
     - name: KUBERNETES_CLUSTER_DOMAIN
       value: cluster.local
     image: quay.io/brancz/kube-rbac-proxy:v0.15.0
-    imagePullPolicy: IfNotPresent
     name: kube-rbac-proxy
     ports:
     - containerPort: 8443

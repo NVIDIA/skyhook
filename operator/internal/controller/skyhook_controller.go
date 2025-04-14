@@ -81,7 +81,7 @@ type SkyhookOperatorOptions struct {
 	ReapplyOnReboot      bool          `env:"REAPPLY_ON_REBOOT, default=false"`
 	RuntimeRequiredTaint string        `env:"RUNTIME_REQUIRED_TAINT, default=skyhook.nvidia.com=runtime-required:NoSchedule"`
 	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
-	AgentImage           string        `env:"AGENT_IMAGE, default=nvcr.io/nvidian/swgpu-baseos/skyhook-agent:latest"` // TODO: this needs to be updated with a working default
+	AgentImage           string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/skyhook/agent:latest"` // TODO: this needs to be updated with a working default
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {

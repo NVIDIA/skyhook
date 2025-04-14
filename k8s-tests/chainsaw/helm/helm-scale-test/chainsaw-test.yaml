@@ -22,7 +22,7 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: helm-chart
+  name: helm-scale
 spec:
   description: This test asserts that the helm chart is working as expected. Specifically it asserts that the helm chart works when given a different
     deployment name than skyhook-operator and that the tolerations that are given to the chart through a values file work as expected.

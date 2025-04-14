@@ -30,5 +30,5 @@ controllerManager:
     # telling the helm chart to use the test operator image
     # for more info refer to the README
     image:
-      repository: nvcr.io/nvidian/swgpu-baseos/skyhook-operator
+      repository: ghcr.io/nvidia/skyhook/operator
       tag: test
