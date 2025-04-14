@@ -44,15 +44,15 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -mod=ven
     -a -o manager cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+# Refer to https://github.com/GoogleContainerTools/distroless/tree/main/base for more 
+FROM nvcr.io/nvidia/distroless/go:v3.1.7
 
 ARG VERSION
 ARG GIT_SHA
 ARG GO_VERSION
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.base.name="gcr.io/distroless/static:nonroot" \
+LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/go:v3.1.7" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="skyhook-operator" \
       org.opencontainers.image.version="${VERSION}" \
