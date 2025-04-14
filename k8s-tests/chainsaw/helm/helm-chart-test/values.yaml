@@ -29,5 +29,5 @@ controllerManager:
     # telling the helm chart to use the test operator image
     # for more info refer to the README
     image:
-      repository: nvcr.io/nvidian/swgpu-baseos/skyhook-operator
-      tag: test
+      repository: ghcr.io/nvidia/skyhook/operator
+      tag: latest ## THIS should change to be like a tag so it can point at a specific commit

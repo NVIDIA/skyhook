@@ -112,7 +112,7 @@ spec:
           - name: PAUSE_IMAGE
             value: registry.k8s.io/pause:3.10
           - name: AGENT_IMAGE
-            value: nvcr.io/nvidian/swgpu-baseos/skyhook-agent:latest
+            value: ghcr.io/nvidia/skyhook/agent:latest
         image: controller:latest
         name: manager
         securityContext:

@@ -29,7 +29,7 @@ else
     HELM=$(which helm)
 fi
 
-VERSION=${1:-v1.16.2}
+VERSION=${1:-v1.17.0}
 
 ## add chart repo
 $HELM repo add jetstack https://charts.jetstack.io --force-update
