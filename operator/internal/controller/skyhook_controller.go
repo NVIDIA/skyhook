@@ -296,12 +296,14 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	nodePicker := NewNodePicker(r.opts.GetRuntimeRequiredToleration())
 
 	errs := make([]error, 0)
-	// requeueNeeded := false
 	var result *ctrl.Result
 	for _, skyhook := range clusterState.skyhooks {
-
 		if yes, result, err := shouldReturn(r.HandleFinalizer(ctx, skyhook)); yes {
 			return result, err
+		}
+
+		if skyhook.skyhook.Spec.Pause {
+			continue
 		}
 
 		if yes, result, err := shouldReturn(r.ValidateRunningPackages(ctx, skyhook)); yes {
@@ -533,11 +535,6 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 
 	logger := log.FromContext(ctx)
 	requeue := false
-
-	if skyhook.skyhook.Spec.Pause {
-		// continue, paused
-		return nil, nil
-	}
 
 	toUninstall, err := HandleVersionChange(skyhook)
 	if err != nil {
@@ -1760,6 +1757,9 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 			}, skyhook.Spec.AdditionalTolerations...),
 		},
 	}
+	if _package.GracefulShutdown != nil {
+		pod.Spec.TerminationGracePeriodSeconds = ptr(int64(_package.GracefulShutdown.Duration.Seconds()))
+	}
 
 	return pod
 }
@@ -1821,7 +1821,7 @@ func (r *SkyhookReconciler) PodMatchesPackage(_package *v1alpha1.Package, pod co
 		// compare the containers env vars except for the ones that are inserted
 		// by the operator by default as the SKYHOOK_RESOURCE_ID will change every
 		// time the skyhook is updated and would cause every pod to be removed
-		excludeEnvs := []string{"SKYHOOK_RESOURCE_ID", "NODEOS_DO_NOT_UPDATE_LABEL", "COPY_RESOLV"}
+		excludeEnvs := []string{"SKYHOOK_RESOURCE_ID", "NODEOS_DO_NOT_UPDATE_LABEL", "COPY_RESOLV", "SKYHOOK_DIR"}
 		expectedFilteredEnv := FilterEnv(expectedContainer.Env, excludeEnvs...)
 		actualFilteredEnv := FilterEnv(actualContainer.Env, excludeEnvs...)
 		if !reflect.DeepEqual(expectedFilteredEnv, actualFilteredEnv) {
@@ -1837,9 +1837,13 @@ func (r *SkyhookReconciler) PodMatchesPackage(_package *v1alpha1.Package, pod co
 	return true
 }
 
-// ValidateRunningPackages deletes pods that don't match the current spec
+// ValidateRunningPackages deletes pods that don't match the current spec and checks if there are pods running
+// that don't match the node state and removes them if they exist
 func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook *skyhookNodes) (bool, error) {
 
+	update := false
+	errs := make([]error, 0)
+	// get all pods for this skyhook packages
 	pods, err := r.dal.GetPods(ctx,
 		client.MatchingLabels{
 			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.skyhook.Name,
@@ -1852,38 +1856,92 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 		return false, nil // nothing running for this skyhook on this node
 	}
 
-	errs := make([]error, 0)
-	update := false
-
+	// group pods by node
+	podsbyNode := make(map[string][]corev1.Pod)
 	for _, pod := range pods.Items {
-		found := false
+		podsbyNode[pod.Spec.NodeName] = append(podsbyNode[pod.Spec.NodeName], pod)
+	}
 
-		f, err := GetPackage(&pod)
+	for _, node := range skyhook.nodes {
+		nodeState, err := node.State()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("error getting package from pod [%s:%s] while validating packages: %w", pod.Namespace, pod.Name, err))
+			return false, fmt.Errorf("error getting node state: %w", err)
 		}
 
-		for _, v := range skyhook.skyhook.Spec.Packages {
-			if r.PodMatchesPackage(&v, pod, skyhook.skyhook, f.Stage) {
+		for _, pod := range podsbyNode[node.GetNode().Name] {
+			found := false
+
+			runningPackage, err := GetPackage(&pod)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("error getting package from pod [%s:%s] while validating packages: %w", pod.Namespace, pod.Name, err))
+			}
+
+			// check if the package is part of the skyhook spec, if not we need to delete it
+			for _, v := range skyhook.skyhook.Spec.Packages {
+				if r.PodMatchesPackage(&v, pod, skyhook.skyhook, runningPackage.Stage) {
+					found = true
+				}
+			}
+
+			// uninstall is by definition not part of the skyhook spec, so we cant delete it (because it used to be but was removed, hence uninstalling it)
+			if runningPackage.Stage == v1alpha1.StageUninstall {
 				found = true
 			}
-		}
 
-		if f.Stage == v1alpha1.StageUninstall {
-			found = true
-		}
+			if !found {
+				update = true
 
-		if !found {
-			update = true
+				err := r.InvalidPackage(ctx, &pod)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("error invalidating package: %w", err))
+				}
+				continue
+			}
 
-			err = r.Delete(ctx, &pod)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("error deleting invalid pod [%s:%s] while validating packages: %w", pod.Namespace, pod.Name, err))
+			// Check if package exists in node state, ie a package running that the node state doesn't know about
+			// something that is often done to try to fix bad node state is to clear the node state completely
+			// which if a package is running, we want to terminate it gracefully. Ofthen what leads to this is
+			// the package is in a crashloop and the operator want to restart it the whole package.
+			// when we apply a package it just check if there is a running package on the node for the state of the package
+			// this can cause to leave a pod running in say config mode, and it there is a depends on you might not correctly
+			// run thins in the correct order.
+			deleteMe := false
+			packageStatus, exists := nodeState[runningPackage.GetUniqueName()]
+			if !exists { // package not in node state, so we need to delete it
+				deleteMe = true
+			} else { // package in node state, so we need to check if it's running
+				// need check if the stats match, if not we need to delete it
+				if packageStatus.Stage != runningPackage.Stage {
+					deleteMe = true
+				}
+			}
+
+			if deleteMe {
+				update = true
+				err := r.InvalidPackage(ctx, &pod)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("error invalidating package: %w", err))
+				}
 			}
 		}
 	}
 
 	return update, utilerrors.NewAggregate(errs)
+}
+
+// InvalidPackage invalidates a package and updates the pod, which will trigger the pod to be deleted
+func (r *SkyhookReconciler) InvalidPackage(ctx context.Context, pod *corev1.Pod) error {
+	err := InvalidatePackage(pod)
+	if err != nil {
+		return fmt.Errorf("error invalidating package: %w", err)
+	}
+
+	err = r.Update(ctx, pod)
+	if err != nil {
+		return fmt.Errorf("error updating pod: %w", err)
+	}
+
+	return nil
 }
 
 // ProcessInterrupt will check and do the interrupt if need, and returns
@@ -2019,6 +2077,20 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 			stage = v1alpha1.StageUninstall
 		}
 	}
+
+	// if stage != v1alpha1.StageApply {
+	// 	// If a node gets rest by a user, the about method will return the wrong node state. Above sources it from the skyhook status.
+	// 	// check if the node has nothing, reset it then apply the package.
+	// 	nodeState, err := skyhookNode.State()
+	// 	if err != nil {
+	// 		return fmt.Errorf("error getting node state: %w", err)
+	// 	}
+
+	// 	_, found := nodeState[_package.GetUniqueName()]
+	// 	if !found {
+	// 		stage = v1alpha1.StageApply
+	// 	}
+	// }
 
 	nextStage := skyhookNode.NextStage(_package)
 	if nextStage != nil {

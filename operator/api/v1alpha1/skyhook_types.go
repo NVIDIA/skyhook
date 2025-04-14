@@ -227,6 +227,10 @@ type Package struct {
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
 	// +kubebuilder:default={}
 	Resources ResourceRequirements `json:"resources,omitempty"`
+
+	// GracefulShutdown is the graceful shutdown timeout for the package, if not set, uses k8s default
+	//+optional
+	GracefulShutdown *metav1.Duration `json:"gracefulShutdown,omitempty"`
 }
 
 func (f *Package) HasInterrupt() bool {
@@ -652,6 +656,6 @@ func init() {
 }
 
 // WasUpdated returns true if this instance of skyhook has been updated
-// func (s *Skyhook) WasUpdated() bool {
-// 	return s.Generation > 1 && s.Generation > s.Status.ObservedGeneration
-// }
+func (s *Skyhook) WasUpdated() bool {
+	return s.Generation > 1 && s.Generation > s.Status.ObservedGeneration
+}

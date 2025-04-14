@@ -356,6 +356,10 @@ spec:
                         - name
                         type: object
                       type: array
+                    gracefulShutdown:
+                      description: GracefulShutdown is the graceful shutdown timeout
+                        for the package, if not set, uses k8s default
+                      type: string
                     image:
                       description: Image is the container image to run. Do not included
                         the tag, that is set in the version.

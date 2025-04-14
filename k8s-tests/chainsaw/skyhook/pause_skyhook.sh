@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash -x
 
 # 
 # LICENSE START
@@ -20,17 +20,13 @@
 # LICENSE END
 # 
 
-# Handle SIGTERM gracefully
-cleanup() {
-    echo "Received SIGTERM signal, shutting down gracefully..."
-    sleep 3
-    exit 0
-}
-trap cleanup SIGTERM
+skyhook="$1"
+pause="$2"
 
-SLEEP_LEN=${SLEEP_LEN:-$(($RANDOM % 5 + 5))}
+## assert is true or false
+if [[ "$pause" != "true" && "$pause" != "false" ]]; then
+    echo "pause must be true or false"
+    exit 1
+fi
 
-echo "agentless ["$@"] sleep for ${SLEEP_LEN} and exit with ${EXIT_CODE}"
-
-sleep ${SLEEP_LEN}
-exit ${EXIT_CODE}
+kubectl patch skyhook ${skyhook} -p '{"spec":{"pause":'$pause'}}' --type=merge

@@ -22,7 +22,7 @@ VERSION ?= $(GIT_TAG_LAST)
 IMG ?= nvcr.io/nvidian/swgpu-baseos/skyhook-operator:latest
 
 ## default version of kind to use
-KIND_VERSION?=1.30.8
+KIND_VERSION?=1.30.10
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook
@@ -277,7 +277,7 @@ create-namespace: ## Create the namespace in the K8s cluster specified in ~/.kub
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 
 .PHONY: install
-install: manifests kustomize create-namespace ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: manifests kustomize create-namespace license-fmt ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
 cert-manager-yaml-url=https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml

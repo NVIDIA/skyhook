@@ -36,6 +36,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+// this is a sudo controller, it used to be one, but now are just functions of the skyhook controller
+// the reason for this was to less issues around race conditions since they would be handled by one controller
+// not sure that actually helped to be honest, but was the reason its acts like one.
+
 // moved here for easier testing, vs being anonymous inline
 func podHandlerFunc(ctx context.Context, o client.Object) []reconcile.Request {
 	// logger := log.FromContext(ctx)
@@ -66,6 +70,14 @@ func podHandlerFunc(ctx context.Context, o client.Object) []reconcile.Request {
 
 func (r *SkyhookReconciler) PodReconcile(ctx context.Context, pod *corev1.Pod) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("pod-reconcile")
+
+	// check if the package is invalid, if it is then delete the pod and return
+	if invalid, err := r.HandleInvalidPackage(ctx, pod); invalid || err != nil {
+		if err != nil {
+			logger.Error(err, "error handling invalid package", "pod", pod.Name)
+		}
+		return ctrl.Result{}, err
+	}
 
 	containerName, state, restarts := containerExitedSuccessfully(pod)
 	switch state {
@@ -102,6 +114,24 @@ func (r *SkyhookReconciler) PodReconcile(ctx context.Context, pod *corev1.Pod) (
 		// logger.Info("nothing to do yet", "state", state, "pod", pod.Name)
 	}
 	return ctrl.Result{}, nil
+}
+
+// HandleInvalidPackage deletes invalid packages
+func (r *SkyhookReconciler) HandleInvalidPackage(ctx context.Context, pod *corev1.Pod) (bool, error) {
+	invalid, err := IsInvalidPackage(pod)
+	if err != nil {
+		return false, err
+	}
+
+	if invalid {
+		err := r.Delete(ctx, pod)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // UpdateNodeState returns error and if to requeue, not all errors should be requeued, and some times there is no error but should be requeued
@@ -157,6 +187,8 @@ func (r *SkyhookReconciler) UpdateNodeState(ctx context.Context, pod *corev1.Pod
 	return false, nil
 }
 
+// HandleCompletePod handles the complete pod, this is called when the pod has exited successfully
+// and we need to update the node state to complete and handles special cases like interrupts, upgrades, and uninstalls
 func (r *SkyhookReconciler) HandleCompletePod(ctx context.Context, skyhookNode wrapper.SkyhookNodeOnly, packagePtr *PackageSkyhook, containerName string) (bool, error) {
 	updated := false
 

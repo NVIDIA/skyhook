@@ -1,0 +1,82 @@
+# 
+# LICENSE START
+#
+#    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+# LICENSE END
+# 
+
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: cleanup-pods
+    skyhook.nvidia.com/package: bb-1.2
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "bb",
+        "version": "1.2",
+        "skyhook": "cleanup-pods",
+        "stage": "config",
+        "image": "ghcr.io/nvidia/skyhook/agentless"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: cleanup-pods
+spec:
+  terminationGracePeriodSeconds: 46
+  initContainers:
+    - name: bb-init
+    - name: bb-config
+      args:
+        ([0]): config
+        ([1]): /root
+        (length(@)): 3
+    - name: bb-configcheck
+      args:
+        ([0]): config-check
+        ([1]): /root
+        (length(@)): 3
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: cleanup-pods
+status:
+  status: complete
+  observedGeneration: 4
+  nodeState:
+    (values(@)):
+    - aa|1.2.3:
+        image: ghcr.io/nvidia/skyhook/agentless
+        name: aa
+        stage: config
+        state: complete
+        version: 1.2.3
+    - bb|1.2:
+        image: ghcr.io/nvidia/skyhook/agentless
+        name: bb
+        stage: config
+        state: complete
+        version: "1.2"
+  nodeStatus:
+   # grab values should be one and is complete
+    (values(@)):
+      - complete
+      - complete

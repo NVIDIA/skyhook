@@ -33,12 +33,25 @@ import json
 import os
 import shutil
 import glob
+import signal
 
 from skyhook_agent.step import Step, UpgradeStep, Idempotence, Mode, CHECK_TO_APPLY
 from skyhook_agent import interrupts, config
 from typing import List
 
 import logging as logger
+
+# Global flag to track if we received SIGTERM
+received_sigterm = False
+
+def sigterm_handler(signum, frame):
+    """Handle SIGTERM by setting a global flag and logging the event"""
+    global received_sigterm
+    received_sigterm = True
+    logger.info("Received SIGTERM signal - initiating graceful shutdown")
+
+# Register the SIGTERM handler
+signal.signal(signal.SIGTERM, sigterm_handler)
 
 class SkyhookValidationError(Exception):
     pass
@@ -414,7 +427,11 @@ def remove_flags(step_data: dict[Mode, list[Step|UpgradeStep]], config_data: dic
         if os.path.exists(flag_file):  # Check if the file exists before trying to remove it
             os.remove(flag_file)
 
-def main(mode: Mode, root_mount: str, copy_dir: str, interrupt_data: None|str, always_run_step=False):
+def main(mode: Mode, root_mount: str, copy_dir: str, interrupt_data: None|str, always_run_step=False) -> bool:
+    '''
+    returns True if the there is a failure in the steps, otherwise returns False
+    '''
+
     if mode not in set(map(str, Mode)):
         logger.warning(f"This version of the Agent doesn't support the {mode} mode. Options are: {','.join(map(str, Mode))}.")
         return False
@@ -448,9 +465,19 @@ def main(mode: Mode, root_mount: str, copy_dir: str, interrupt_data: None|str, a
             if not os.path.exists(f"{root_mount}/{copy_dir}/configmaps/{f}"):
                 raise SkyhookValidationError(f"Expected config file {f} not found in configmaps directory.")
 
-    return agent_main(mode, root_mount, copy_dir, config_data, interrupt_data, always_run_step)
+    try:
+        return agent_main(mode, root_mount, copy_dir, config_data, interrupt_data, always_run_step)
+    except Exception as e:
+        if received_sigterm:
+            logger.info("Gracefully shutting down due to SIGTERM")
+            # Perform any cleanup if needed
+            return True
+        raise
 
-def agent_main(mode: Mode, root_mount: str, copy_dir: str, config_data: dict, interrupt_data: None|str, always_run_step=False):
+def agent_main(mode: Mode, root_mount: str, copy_dir: str, config_data: dict, interrupt_data: None|str, always_run_step=False) -> bool:
+    '''
+    returns True if the there is a failure in the steps, otherwise returns False
+    '''
             
     # Pull out step_data so it matches with existing code
     step_data = config_data["modes"]
@@ -464,6 +491,11 @@ def agent_main(mode: Mode, root_mount: str, copy_dir: str, config_data: dict, in
         logger.warning(f" There are no {mode} steps defined. This will be ran as a no-op.")
 
     for step in step_data.get(mode, []):
+        # Check for SIGTERM
+        if received_sigterm:
+            logger.info("SIGTERM received, stopping step execution")
+            return True
+
         # Make the flag file without the host path argument (first one). This is because in operator world
         # the host path is going to change every time the Skyhook Custom Resource changes so it would
         # look like a step hasn't been run when it fact it had.
