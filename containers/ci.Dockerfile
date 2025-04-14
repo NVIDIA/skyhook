@@ -18,6 +18,10 @@
 # LICENSE END
 # 
 
+## this container is not used in github CI, was from before before we open sourced this project.
+## should move to doing something like this in the github actions workflow to save time not installing all the deps all the time
+## but for now this is just for when we got to that
+
 ARG GO_VERSION
 
 FROM golang:${GO_VERSION}-bookworm as builder

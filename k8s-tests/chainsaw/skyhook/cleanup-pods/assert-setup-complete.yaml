@@ -1,5 +1,3 @@
-#!/bin/sh
-
 # 
 # LICENSE START
 #
@@ -20,17 +18,31 @@
 # LICENSE END
 # 
 
-# Handle SIGTERM gracefully
-cleanup() {
-    echo "Received SIGTERM signal, shutting down gracefully..."
-    sleep 3
-    exit 0
-}
-trap cleanup SIGTERM
-
-SLEEP_LEN=${SLEEP_LEN:-$(($RANDOM % 5 + 5))}
-
-echo "agentless ["$@"] sleep for ${SLEEP_LEN} and exit with ${EXIT_CODE}"
-
-sleep ${SLEEP_LEN}
-exit ${EXIT_CODE}
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: cleanup-pods
+status:
+  status: complete
+  nodesInProgress: 0
+  observedGeneration: 2
+  packageList: aa:1.2.3,bb:1.2
+  nodeState:
+    (values(@)):
+    - aa|1.2.3:
+        image: ghcr.io/nvidia/skyhook/agentless
+        name: aa
+        stage: config
+        state: complete
+        version: 1.2.3
+    - bb|1.2:
+        image: ghcr.io/nvidia/skyhook/agentless
+        name: bb
+        stage: config
+        state: complete
+        version: "1.2"
+  nodeStatus:
+   # grab values should be one and is complete
+    (values(@)):
+      - complete
+      - complete

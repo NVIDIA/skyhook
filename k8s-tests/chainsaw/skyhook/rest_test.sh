@@ -20,14 +20,23 @@
 # LICENSE END
 # 
 
-
 ## helper script
 ## clears labels and annotate from nodes with the prefix for tests
 
-skyhook="$1"
-label="${2:-skyhook.nvidia.com/test-node=skyhooke2e}"
+## Usage:
+## ./rest_test.sh <skyhook-name> [selector]
+## Examples:
+##   ./rest_test.sh my-skyhook                                              # uses default selector
+##   ./rest_test.sh my-skyhook "skyhook.nvidia.com/test-node=skyhooke2e"   # label selector
+##   ./rest_test.sh my-skyhook "node-role.kubernetes.io/control-plane notin ()"  # expression selector
 
-for node in $(kubectl get nodes -l $label -o name); do
+## the name of the skyhook to reset
+skyhook="$1"
+
+## the selector to use for finding nodes (defaults to test node selector)
+selector="${2:-skyhook.nvidia.com/test-node=skyhooke2e}"
+
+for node in $(kubectl get nodes -l "$selector" -o name); do
     kubectl annotate ${node} skyhook.nvidia.com/nodeState_${skyhook}-
     kubectl annotate ${node} skyhook.nvidia.com/status_${skyhook}-
     kubectl annotate ${node} skyhook.nvidia.com/cordon_${skyhook}-

@@ -1,0 +1,62 @@
+# 
+# LICENSE START
+#
+#    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+# LICENSE END
+# 
+
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: cleanup-pods
+spec:
+  nodeSelectors:
+    matchExpressions:
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist  ## all worker nodes
+  packages:
+    aa:
+      version: "1.2.3"
+      image: ghcr.io/nvidia/skyhook/agentless:bogus 
+      env: 
+        - name: SLEEP_LEN
+          value: "3"
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
+    bb:
+      version: "1.2"
+      gracefulShutdown: 46s
+      image: ghcr.io/nvidia/skyhook/agentless
+      dependsOn:
+        aa: "1.2.3"
+      env: 
+        - name: EXIT_CODE
+          value: "2"
+        - name: SLEEP_LEN
+          value: "2"
+      resources:
+        cpuLimit: 50m
+        cpuRequest: 50m
+        memoryLimit: 32Mi
+        memoryRequest: 32Mi
+      configMap:
+        foo: bur

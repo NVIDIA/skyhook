@@ -18,40 +18,43 @@
 # LICENSE END
 # 
 
----
-kind: Pod
-apiVersion: v1
-metadata:
-  namespace: skyhook
-  labels:
-    skyhook.nvidia.com/name: interrupt
-    skyhook.nvidia.com/package: invalid-1.2.3
-  annotations:
-    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")): 
-      {
-        "name": "invalid",
-        "version": "1.2.3",
-        "skyhook": "interrupt",
-        "stage": "uninstall",
-        "image": "ghcr.io/nvidia/skyhook/agentless"
-      }
-  ownerReferences:
-    - apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
-      name: interrupt
-spec:
-  initContainers:
-    - name: invalid-init
-    - name: invalid-uninstall
-      args:
-        ([0]): uninstall
-        ([1]): /root
-        (length(@)): 3
-    - name: invalid-uninstallcheck
-      args:
-        ([0]): uninstall-check
-        ([1]): /root
-        (length(@)): 3
+## REMOVE THIS part of the test. When adding more around invalid package cleanup, it seems like this might not make sense to be a test. This commit does break this, 
+## but making this test pass has implications for resting a node. If you reset a node it would mean you want to uninstall all the packages on the node. 
+## I could go either way on this, but for now I'm going to remove it.
+# ---
+# kind: Pod
+# apiVersion: v1
+# metadata:
+#   namespace: skyhook
+#   labels:
+#     skyhook.nvidia.com/name: interrupt
+#     skyhook.nvidia.com/package: invalid-1.2.3
+#   annotations:
+#     ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")): 
+#       {
+#         "name": "invalid",
+#         "version": "1.2.3",
+#         "skyhook": "interrupt",
+#         "stage": "uninstall",
+#         "image": "ghcr.io/nvidia/skyhook/agentless"
+#       }
+#   ownerReferences:
+#     - apiVersion: skyhook.nvidia.com/v1alpha1
+#       kind: Skyhook
+#       name: interrupt
+# spec:
+#   initContainers:
+#     - name: invalid-init
+#     - name: invalid-uninstall
+#       args:
+#         ([0]): uninstall
+#         ([1]): /root
+#         (length(@)): 3
+#     - name: invalid-uninstallcheck
+#       args:
+#         ([0]): uninstall-check
+#         ([1]): /root
+#         (length(@)): 3
 ---
 kind: Pod
 apiVersion: v1

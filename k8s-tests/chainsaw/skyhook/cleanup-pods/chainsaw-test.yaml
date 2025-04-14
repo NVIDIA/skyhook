@@ -1,0 +1,65 @@
+# 
+# LICENSE START
+#
+#    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+# LICENSE END
+# 
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cleanup-pods
+spec:
+  concurrent: true 
+  description: |
+    This test runs a simple skyhook with dependsOn. We wait tell completed, then trigger update to force config cycle on package B. Once config
+    is complete, we update again to make the package error, and at the same clear out the node annotation to trigger cleanup.
+    The cleanup should remove pods that are running that should not be running because the node was "Reset".
+  timeouts:
+    assert: 240s
+  steps:
+  - try:
+    ## setup step, skyhook to complete
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../rest_test.sh cleanup-pods "node-role.kubernetes.io/control-plane notin ()"
+          
+    - create:
+        file: setup.yaml
+    - assert:
+        file: assert-setup-complete.yaml
+    - sleep:
+        ## there is a race between pods marking the node complete, i think it will trigger eventually, but the event is missed
+        duration: 2s 
+    - update:
+        file: force-config.yaml ## trigger config cycle
+    - assert:
+        file: assert-config-complete.yaml
+    - sleep:
+        ## there is a race between pods marking the node complete, i think it will trigger eventually, but the event is missed
+        duration: 2s 
+  - try:
+    - update:
+        file: muck_up.yaml
+          ## wack node annotation to rest node
+    - script:
+        content: |
+          ## delete the node annotation on one node to trigger cleanup
+          kubectl annotate node/kind-worker skyhook.nvidia.com/nodeState_cleanup-pods-
+    - assert:
+        file: assert-cleaned-pods.yaml
