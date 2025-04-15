@@ -45,5 +45,8 @@ FROM nvcr.io/nvidia/distroless/python:3.12-v3.4.10
 COPY --from=builder /code/venv/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /code/venv/bin/controller /usr/local/bin/
 
+# Run as root so we can chroot
+USER 0:0
+
 # Use Python to run the controller script
 ENTRYPOINT [ "python", "-m", "skyhook_agent.controller" ]
