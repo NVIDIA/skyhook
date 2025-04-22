@@ -200,4 +200,19 @@ var _ = Describe("DAG tests", func() {
 		Expect(err).ToNot(BeNil())
 
 	})
+
+	It("should not return duplicates of the same from next", func() {
+		d := New[*string]()
+		Expect(d.Add("A", nil)).Should(Succeed())
+		Expect(d.Add("B", nil)).Should(Succeed())
+		Expect(d.Add("C", nil, "A", "B")).Should(Succeed())
+
+		step, err := d.Next()
+		Expect(err).To(BeNil())
+		Expect(step).To(BeEquivalentTo([]string{"A", "B"}))
+
+		step, err = d.Next(step...)
+		Expect(err).To(BeNil())
+		Expect(step).To(BeEquivalentTo([]string{"C"}))
+	})
 })

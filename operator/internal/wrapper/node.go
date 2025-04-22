@@ -23,6 +23,7 @@ package wrapper
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -318,33 +319,19 @@ func (node *skyhookNode) ProgressSkipped() {
 
 func (node *skyhookNode) RunNext() ([]*v1alpha1.Package, error) {
 	complete := node.GetComplete()
+	fnext, err := node.graph.Next()
+	next := make([]string, 0)
 
-	var next []string
-	var err error
-	if len(complete) == 0 { // base case, start from leaves
-		next, err = node.graph.Next()
-	} else {
-		next, err = node.graph.Next(complete...)
+	// check that all of the current batch are complete
+	for _, item := range fnext {
+		if !slices.Contains(complete, item) {
+			// remove it from the list
+			next = append(next, item)
+		}
 	}
 
-	// this case is if we updated the SCR, and we have new leafs that are getting skipped because we have some complete
-	if !node.IsComplete() && len(next) == 0 {
-		next, err = node.graph.Next()
-
-		// now might have some completed ones, so remove those
-		temp := next[:0]
-		for _, item := range next {
-			completed := false
-			for _, done := range complete {
-				if done == item {
-					completed = true
-				}
-			}
-			if !completed {
-				temp = append(temp, item)
-			}
-		}
-		next = temp
+	if len(next) == 0 {
+		next, err = node.graph.Next(complete...)
 	}
 
 	if err != nil {
