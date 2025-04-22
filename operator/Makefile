@@ -165,7 +165,7 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
 ## https://kyverno.github.io/chainsaw/latest/reference/commands/chainsaw_test/
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
-CHAINSAW_ARGS:=--exec-timeout 30s --parallel 2
+CHAINSAW_ARGS:=--exec-timeout 30s --parallel 3
 
 e2e-tests: chainsaw install run ## Run end to end tests.
 	## requires a cluster to be running with access

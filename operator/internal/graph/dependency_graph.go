@@ -108,7 +108,6 @@ func (d *dag[T]) Add(name string, object T, dependencies ...string) error {
 }
 
 func (d *dag[T]) Next(from ...string) ([]string, error) {
-
 	if err := d.Valid(); err != nil {
 		return nil, err
 	}
@@ -116,25 +115,24 @@ func (d *dag[T]) Next(from ...string) ([]string, error) {
 	if len(from) == 0 { // base staring case
 		return getNames(flat(d.leafs)), nil
 	}
-	root := make([]*vertex[T], 0)
 
+	// Use a map to deduplicate edges
+	seen := make(map[string]*vertex[T])
 	for _, f := range from {
 		vert := d.vertices[f]
-		// if _, ok := d.vertices[f]; !ok {
-		// 	// verts := make([]string, 0)
-		// 	// for k := range d.vertices {
-		// 	// 	verts = append(verts, k)
-		// 	// }
-		// 	// return nil, fmt.Errorf("error [%s] does not exist in the graph. Possible vertices %v", f, verts)
-		// 	continue // not a thing, well ignore it
-		// }
 		for _, edge := range d.vertices[f].edges {
 			// search the path before adding it, if the path is longer than 1 then we don't want to add it
 			// this aids in walking the graph later because erroneous paths have been pre pruned
 			if len(d.find_longest_path(vert.name, edge.name)) <= 1 {
-				root = append(root, edge)
+				seen[edge.name] = edge
 			}
 		}
+	}
+
+	// Convert map to slice
+	root := make([]*vertex[T], 0, len(seen))
+	for _, v := range seen {
+		root = append(root, v)
 	}
 
 	// remove matching from input
