@@ -68,7 +68,7 @@ var _ = Describe("SkyhookNode", func() {
 						"f-package": {
 							PackageRef: v1alpha1.PackageRef{Name: "f-package", Version: "1.0"},
 							Image:      "f-image",
-							DependsOn:  map[string]string{"c-package": "1.0", "e-package": "1.0"},
+							DependsOn:  map[string]string{"d-package": "1.0", "e-package": "1.0"},
 						},
 					},
 				},
@@ -116,17 +116,7 @@ var _ = Describe("SkyhookNode", func() {
 			// Complete e-package
 			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "e-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
 			Expect(err).NotTo(HaveOccurred())
-			// Now should get f-package since d and e are complete
-			pkgs, err = skyhookNode.RunNext()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(pkgs).To(HaveLen(2))
-			Expect(pkgs[0].Name).To(Equal("d-package"))
-			Expect(pkgs[1].Name).To(Equal("f-package"))
-
-			// Complete f-package
-			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "f-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
-			Expect(err).NotTo(HaveOccurred())
-			// Now should get nothing since all packages are complete
+			// Now should get d-package since c-package and e-package are complete
 			pkgs, err = skyhookNode.RunNext()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pkgs).To(HaveLen(1))
@@ -134,6 +124,15 @@ var _ = Describe("SkyhookNode", func() {
 
 			// Complete d-package
 			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "d-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
+			Expect(err).NotTo(HaveOccurred())
+			// Now should get f-package since both d-package and e-package are complete
+			pkgs, err = skyhookNode.RunNext()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pkgs).To(HaveLen(1))
+			Expect(pkgs[0].Name).To(Equal("f-package"))
+
+			// Complete f-package
+			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "f-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
 			Expect(err).NotTo(HaveOccurred())
 			// Now should get nothing since all packages are complete
 			pkgs, err = skyhookNode.RunNext()

@@ -23,6 +23,7 @@ package graph
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 )
 
@@ -60,9 +61,10 @@ type dag[T any] struct {
 }
 
 type vertex[T any] struct {
-	edges  []*vertex[T]
-	name   string
-	object T
+	edges   []*vertex[T]
+	parents []string
+	name    string
+	object  T
 }
 
 func (v *vertex[T]) IsRoot() bool {
@@ -79,7 +81,7 @@ func (d *dag[T]) Add(name string, object T, dependencies ...string) error {
 	vert, ok := d.placeholders[name]
 	delete(d.placeholders, name)
 	if !ok {
-		vert = &vertex[T]{name: name, object: object}
+		vert = &vertex[T]{name: name, object: object, parents: dependencies}
 	} else {
 		// set object on placeholder
 		vert.object = object
@@ -107,23 +109,62 @@ func (d *dag[T]) Add(name string, object T, dependencies ...string) error {
 	return nil
 }
 
+// leaves handle edge cases where there are more then one leaf, and from is a subset of the leaves not in the from
+func (d *dag[T]) leaves(from []string) []string {
+	leaves := make([]string, 0)
+	for _, f := range d.leafs {
+		leaves = append(leaves, f.name)
+	}
+	if len(from) > len(leaves) {
+		return nil
+	}
+	dif := diff(leaves, from)
+	return dif
+}
+
+// diff returns the elements in a that are not in b
+func diff(a, b []string) []string {
+	ret := make([]string, 0)
+	for _, v := range a {
+		if !slices.Contains(b, v) {
+			ret = append(ret, v)
+		}
+	}
+	return ret
+}
+
 func (d *dag[T]) Next(from ...string) ([]string, error) {
 	if err := d.Valid(); err != nil {
 		return nil, err
 	}
 
-	if len(from) == 0 { // base staring case
+	if len(from) == 0 { // base starting case
 		return getNames(flat(d.leafs)), nil
+	}
+	leaves := d.leaves(from)
+	if len(leaves) > 0 {
+		return leaves, nil
 	}
 
 	// Use a map to deduplicate edges
 	seen := make(map[string]*vertex[T])
 	for _, f := range from {
 		vert := d.vertices[f]
-		for _, edge := range d.vertices[f].edges {
-			// search the path before adding it, if the path is longer than 1 then we don't want to add it
-			// this aids in walking the graph later because erroneous paths have been pre pruned
-			if len(d.find_longest_path(vert.name, edge.name)) <= 1 {
+		for _, edge := range vert.edges {
+			// Skip if already processed
+			if slices.Contains(from, edge.name) {
+				continue
+			}
+
+			// Check if all parents are in the completed set
+			allParentsSatisfied := true
+			for _, parent := range edge.parents {
+				if !slices.Contains(from, parent) {
+					allParentsSatisfied = false
+					break
+				}
+			}
+			if allParentsSatisfied {
 				seen[edge.name] = edge
 			}
 		}
@@ -135,22 +176,7 @@ func (d *dag[T]) Next(from ...string) ([]string, error) {
 		root = append(root, v)
 	}
 
-	// remove matching from input
-	in := make(map[string]struct{})
-	for _, f := range from {
-		in[f] = struct{}{}
-	}
-
-	temp := root[:0]
-	for _, out := range root {
-		if _, ok := in[out.name]; !ok {
-			temp = append(temp, out)
-		}
-	}
-	root = temp
-
 	sortEdges(root)
-
 	return getNames(root), nil
 }
 
@@ -197,44 +223,18 @@ func getNames[T any](vs []*vertex[T]) []string {
 	return ret
 }
 
-// search dag for longest common path
-func (d *dag[T]) find_longest_path(start, end string) []string {
-
-	from := d.vertices[start]
-	if from.IsRoot() {
-		return nil
-	}
-
-	paths := make(map[string][]string)
-	for _, vert := range from.edges {
-		if vert.name == end {
-			paths[vert.name] = []string{end}
-		}
-		path := d.find_longest_path(vert.name, end)
-		if path != nil {
-			paths[vert.name] = append([]string{vert.name}, path...)
-		}
-	}
-	var ret []string
-	for _, v := range paths {
-		if len(v) > len(ret) {
-			ret = v
-		}
-	}
-	return ret
-}
-
 // PrintGraph is helper function for print out a DependencyGraph graph,
 // or any thing that implements the Walk interface
 func PrintGraph[T any](out io.Writer, d Walk[T]) error {
-	step := make([]string, 0)
 	ret := make([][]string, 0)
+	completed := make([]string, 0)
 	for {
-		step, _ = d.Next(step...)
+		step, _ := d.Next(completed...)
 		if len(step) == 0 {
-			break // end
+			break // end of graph
 		}
 		ret = append(ret, step)
+		completed = append(completed, step...)
 	}
 
 	for i := range ret {
