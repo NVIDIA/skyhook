@@ -23,7 +23,6 @@ package wrapper
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -319,28 +318,16 @@ func (node *skyhookNode) ProgressSkipped() {
 
 func (node *skyhookNode) RunNext() ([]*v1alpha1.Package, error) {
 	complete := node.GetComplete()
-	fnext, err := node.graph.Next()
-	next := make([]string, 0)
 
-	// check that all of the current batch are complete
-	for _, item := range fnext {
-		if !slices.Contains(complete, item) {
-			// remove it from the list
-			next = append(next, item)
-		}
-	}
-
-	if len(next) == 0 {
-		next, err = node.graph.Next(complete...)
-	}
-
+	// Get next available nodes based on completed dependencies
+	next, err := node.graph.Next(complete...)
 	if err != nil {
 		return nil, err
 	}
 
 	toRun := node.graph.Get(next...)
 
-	// make sure they are always in the same order, make things deterministic
+	// Sort for deterministic ordering
 	sort.Slice(toRun, func(i, j int) bool {
 		return toRun[i].Name < toRun[j].Name
 	})
