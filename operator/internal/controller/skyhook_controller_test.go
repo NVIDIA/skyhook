@@ -23,6 +23,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/NVIDIA/skyhook/api/v1alpha1"
@@ -880,34 +881,34 @@ var _ = Describe("skyhook controller tests", func() {
 
 		// Test 1: Deterministic behavior (same inputs = same output)
 		prefix1 := createNamePrefix(skyhook.Name, package1.Name, package1.Version, string(v1alpha1.StageApply))
-		name1 := generatePodName(prefix1, nodeName)
-		name2 := generatePodName(prefix1, nodeName)
+		name1 := generateSafeName(63, prefix1, nodeName)
+		name2 := generateSafeName(63, prefix1, nodeName)
 		Expect(name1).To(Equal(name2), "Generated pod names should be deterministic")
 
 		// Test 2: Uniqueness with different inputs
 		// Different stage
 		prefixApply := createNamePrefix(skyhook.Name, package1.Name, package1.Version, string(v1alpha1.StageApply))
 		prefixConfig := createNamePrefix(skyhook.Name, package1.Name, package1.Version, string(v1alpha1.StageConfig))
-		nameApply := generatePodName(prefixApply, nodeName)
-		nameConfig := generatePodName(prefixConfig, nodeName)
+		nameApply := generateSafeName(63, prefixApply, nodeName)
+		nameConfig := generateSafeName(63, prefixConfig, nodeName)
 		Expect(nameApply).NotTo(Equal(nameConfig), "Different stages should produce different pod names")
 
 		// Different package version
 		prefix2 := createNamePrefix(skyhook.Name, package2.Name, package2.Version, string(v1alpha1.StageApply))
-		nameVersion1 := generatePodName(prefix1, nodeName)
-		nameVersion2 := generatePodName(prefix2, nodeName)
+		nameVersion1 := generateSafeName(63, prefix1, nodeName)
+		nameVersion2 := generateSafeName(63, prefix2, nodeName)
 		Expect(nameVersion1).NotTo(Equal(nameVersion2), "Different package versions should produce different pod names")
 
 		// Different node
-		nameNode1 := generatePodName(prefix1, nodeName)
-		nameNode2 := generatePodName(prefix1, nodeName2)
+		nameNode1 := generateSafeName(63, prefix1, nodeName)
+		nameNode2 := generateSafeName(63, prefix1, nodeName2)
 		Expect(nameNode1).NotTo(Equal(nameNode2), "Different nodes should produce different pod names")
 
 		// Test for uninstall pods with timestamp
 		uninstallPrefix1 := fmt.Sprintf("%s-uninstall-123456789", prefixApply)
 		uninstallPrefix2 := fmt.Sprintf("%s-uninstall-987654321", prefixApply)
-		uninstallName1 := generatePodName(uninstallPrefix1, nodeName)
-		uninstallName2 := generatePodName(uninstallPrefix2, nodeName)
+		uninstallName1 := generateSafeName(63, uninstallPrefix1, nodeName)
+		uninstallName2 := generateSafeName(63, uninstallPrefix2, nodeName)
 		Expect(uninstallName1).NotTo(Equal(uninstallName2), "Uninstall pods with different timestamps should have different names")
 		Expect(uninstallName1).NotTo(Equal(nameApply), "Uninstall pod name should be different from regular pod name")
 
@@ -916,7 +917,7 @@ var _ = Describe("skyhook controller tests", func() {
 		longPackageName := "this-is-a-very-long-package-name-that-also-exceeds-kubernetes-naming-limits"
 		longPackageVersion := "1.2.3.4.5.6.7.8.9.10"
 		longPrefix := createNamePrefix(longSkyhookName, longPackageName, longPackageVersion, string(v1alpha1.StageApply))
-		longName := generatePodName(longPrefix, "node1")
+		longName := generateSafeName(63, longPrefix, "node1")
 		Expect(len(longName)).To(BeNumerically("<=", 63), "Pod name should not exceed Kubernetes 63 character limit")
 		Expect(longName).To(MatchRegexp(`-[0-9a-f]+$`), "Pod name should end with a hash component")
 	})
@@ -984,4 +985,127 @@ var _ = Describe("skyhook controller tests", func() {
 		matches = operator.PodMatchesPackage(testPackage, *interruptPod, testSkyhook, testStage)
 		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the interrupt pod it created")
 	})
+
+	It("should generate valid volume names", func() {
+		tests := []struct {
+			name        string
+			prefix      string
+			nodeName    string
+			expectedLen int
+			shouldMatch string
+			description string
+		}{
+			{
+				name:        "short name",
+				prefix:      "metadata",
+				nodeName:    "node1",
+				expectedLen: 23, // "metadata-node1-" + 8 char hash
+				description: "should handle short names",
+			},
+			{
+				name:        "very long node name",
+				prefix:      "metadata",
+				nodeName:    "very-long-node-name-that-exceeds-kubernetes-limits-and-needs-to-be-truncated-to-something-shorter",
+				expectedLen: 63,
+				description: "should handle long names by hashing",
+			},
+			{
+				name:        "consistent hashing",
+				prefix:      "metadata",
+				nodeName:    "node1",
+				shouldMatch: generateSafeName(63, "metadata", "node1"),
+				description: "should generate consistent names for the same input",
+			},
+		}
+
+		for _, tt := range tests {
+			result := generateSafeName(63, tt.prefix, tt.nodeName)
+
+			if tt.expectedLen > 0 {
+				Expect(len(result)).To(Equal(tt.expectedLen), tt.description)
+			}
+			if tt.shouldMatch != "" {
+				Expect(result).To(Equal(tt.shouldMatch), tt.description)
+			}
+			Expect(len(result)).To(BeNumerically("<=", 63), "volume name should never exceed 63 characters")
+			Expect(result).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`), "volume name should match kubernetes naming requirements")
+		}
+	})
+
+	It("should generate valid configmap names", func() {
+		tests := []struct {
+			name        string
+			skyhookName string
+			nodeName    string
+			expectedLen int
+			shouldMatch string
+			description string
+		}{
+			{
+				name:        "short names",
+				skyhookName: "skyhook1",
+				nodeName:    "node1",
+				expectedLen: 32, // "skyhook1-node1-metadata-" + 8 char hash
+				description: "should handle short names",
+			},
+			{
+				name:        "very long names",
+				skyhookName: "very-long-skyhook-name",
+				nodeName:    "very-long-node-name-that-exceeds-kubernetes-limits-and-needs-to-be-truncated",
+				expectedLen: 63,
+				description: "should handle long names by truncating and hashing",
+			},
+			{
+				name:        "consistent hashing",
+				skyhookName: "skyhook1",
+				nodeName:    "node1",
+				shouldMatch: generateSafeName(63, "skyhook1", "node1", "metadata"),
+				description: "should generate consistent names for the same input",
+			},
+			{
+				name:        "handles dots in names",
+				skyhookName: "skyhook.1",
+				nodeName:    "node.1",
+				expectedLen: 34,
+				description: "should handle dots in names consistently",
+			},
+		}
+
+		for _, tt := range tests {
+			result := generateSafeName(63, tt.skyhookName, tt.nodeName, "metadata")
+
+			if tt.expectedLen > 0 {
+				Expect(len(result)).To(Equal(tt.expectedLen), tt.description)
+			}
+			if tt.shouldMatch != "" {
+				Expect(result).To(Equal(tt.shouldMatch), tt.description)
+			}
+			Expect(len(result)).To(BeNumerically("<=", 63), "configmap name should never exceed 63 characters")
+			Expect(result).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`), "configmap name should match kubernetes naming requirements")
+		}
+	})
 })
+
+func TestGenerateValidPodNames(t *testing.T) {
+	g := NewWithT(t)
+
+	// Test short name
+	name := generateSafeName(63, "test", "node1")
+	g.Expect(len(name)).To(Equal(19)) // "test-node1-" + 8 char hash
+	g.Expect(name).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`))
+
+	// Test very long name
+	name = generateSafeName(63, "test-very-long-name-that-should-be-truncated", "node1")
+	g.Expect(len(name)).To(Equal(59))
+	g.Expect(name).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`))
+
+	// Test consistent hashing
+	name1 := generateSafeName(63, "test", "node1")
+	name2 := generateSafeName(63, "test", "node1")
+	g.Expect(name1).To(Equal(name2))
+
+	// Test dots in name
+	name = generateSafeName(63, "test.name", "node.1")
+	g.Expect(name).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`))
+	g.Expect(len(name)).To(Equal(25)) // "test-name-node-1-" + 8 char hash
+}
