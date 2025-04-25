@@ -777,6 +777,24 @@ func ptr[E any](e E) *E {
 	return &e
 }
 
+// generateSafeName generates a consistent name for Kubernetes resources that is unique
+// while staying within the specified character limit
+func generateSafeName(maxLen int, nameParts ...string) string {
+	name := strings.Join(nameParts, "-")
+	// Replace dots with dashes as they're not allowed in resource names
+	name = strings.ReplaceAll(name, ".", "-")
+
+	unique := sha256.Sum256([]byte(name))
+	uniqueStr := hex.EncodeToString(unique[:])[:8]
+
+	maxlen := maxLen - len(uniqueStr) - 1
+	if len(name) > maxlen {
+		name = name[:maxlen]
+	}
+
+	return strings.ToLower(fmt.Sprintf("%s-%s", name, uniqueStr))
+}
+
 func (r *SkyhookReconciler) UpsertNodeLabelsAnnotations(ctx context.Context, skyhook *wrapper.Skyhook, node *corev1.Node) error {
 	// No work to do if there is no labels or annotations for node
 	if len(node.Labels) == 0 && len(node.Annotations) == 0 {
@@ -793,11 +811,10 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotations(ctx context.Context, sky
 		return fmt.Errorf("error converting labels into byte array: %w", err)
 	}
 
-	// node names in different CSPs might include dots which isn't allowed in configmap names
-	// so we have to replace all dots with dashes
+	configMapName := generateSafeName(253, skyhook.Name, node.Name, "metadata")
 	newCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      strings.ReplaceAll(fmt.Sprintf("%s-%s-metadata", skyhook.Name, node.Name), ".", "-"),
+			Name:      configMapName,
 			Namespace: r.opts.Namespace,
 			Labels: map[string]string{
 				fmt.Sprintf("%s/skyhook-node-meta", v1alpha1.METADATA_PREFIX): skyhook.Name,
@@ -818,7 +835,7 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotations(ctx context.Context, sky
 	}
 
 	existingConfigMap := &corev1.ConfigMap{}
-	err = r.Get(ctx, client.ObjectKey{Namespace: r.opts.Namespace, Name: strings.ReplaceAll(fmt.Sprintf("%s-%s-metadata", skyhook.Name, node.Name), ".", "-")}, existingConfigMap)
+	err = r.Get(ctx, client.ObjectKey{Namespace: r.opts.Namespace, Name: configMapName}, existingConfigMap)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// create
@@ -1355,7 +1372,7 @@ func (r *SkyhookReconciler) ValidateNodeConfigmaps(ctx context.Context, skyhookN
 
 	shouldExist := make(map[string]struct{})
 	for _, node := range nodes {
-		shouldExist[strings.ReplaceAll(fmt.Sprintf("%s-%s-metadata", skyhookName, node.GetNode().Name), ".", "-")] = struct{}{}
+		shouldExist[generateSafeName(253, skyhookName, node.GetNode().Name, "metadata")] = struct{}{}
 	}
 
 	update := false
@@ -1418,7 +1435,7 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 		{
 			// node names in different CSPs might include dots which isn't allowed in volume names
 			// so we have to replace all dots with dashes
-			Name: strings.ReplaceAll(fmt.Sprintf("%s-metadata", nodeName), ".", "-"),
+			Name: generateSafeName(63, skyhook.Name, nodeName, "metadata"),
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
@@ -1438,7 +1455,7 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      generatePodName(fmt.Sprintf("%s-interrupt-%s", skyhook.Name, _interrupt.Type), nodeName),
+			Name:      generateSafeName(63, skyhook.Name, "interrupt", string(_interrupt.Type), nodeName),
 			Namespace: r.opts.Namespace,
 			Labels: map[string]string{
 				fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):      skyhook.Name,
@@ -1536,25 +1553,12 @@ func getAgentImage(opts SkyhookOperatorOptions, _package *v1alpha1.Package) stri
 	return opts.AgentImage
 }
 
-// generatePodName generates a pod name that is unique for a given node, skyhook, package, and stage
-// namePrefix is the prefix of the pod name (should be unique)
-func generatePodName(namePrefix, nodeName string) string {
-	// max name of pod is 63 characters
-	// so we need to truncate the name if it's too long
-
-	unique := sha256.Sum256([]byte(namePrefix + nodeName))
-	uniqueStr := hex.EncodeToString(unique[:])[:8]
-
-	maxlen := 63 - len(uniqueStr) - 1
-	if len(namePrefix) > maxlen {
-		namePrefix = namePrefix[:maxlen]
-	}
-
-	return strings.ToLower(fmt.Sprintf("%s-%s", namePrefix, uniqueStr))
-}
-
 // CreatePodFromPackage creates a pod spec for a skyhook pod for a given package
 func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string, stage v1alpha1.Stage) *corev1.Pod {
+	// Generate consistent names that won't exceed k8s limits
+	volumeName := generateSafeName(63, "metadata", nodeName)
+	configMapName := generateSafeName(253, skyhook.Name, nodeName, "metadata")
+
 	volumes := []corev1.Volume{
 		{
 			Name: "root-mount",
@@ -1565,13 +1569,11 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 			},
 		},
 		{
-			// node names in different CSPs might include dots which isn't allowed in volume names
-			// so we have to replace all dots with dashes
-			Name: strings.ReplaceAll(fmt.Sprintf("%s-metadata", nodeName), ".", "-"),
+			Name: volumeName,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: strings.ReplaceAll(fmt.Sprintf("%s-%s-metadata", skyhook.Name, nodeName), ".", "-"),
+						Name: configMapName,
 					},
 				},
 			},
@@ -1585,9 +1587,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 			MountPropagation: ptr(corev1.MountPropagationHostToContainer),
 		},
 		{
-			// node names in different CSPs might include dots which isn't allowed in volume mount names
-			// so we have to replace all dots with dashes
-			Name:      strings.ReplaceAll(fmt.Sprintf("%s-metadata", nodeName), ".", "-"),
+			Name:      volumeName,
 			MountPath: "/skyhook-package/node-metadata",
 		},
 	}
@@ -1623,7 +1623,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      generatePodName(fmt.Sprintf("%s-%s-%s-%s", skyhook.Name, _package.Name, _package.Version, stage), nodeName),
+			Name:      generateSafeName(63, skyhook.Name, _package.Name, _package.Version, string(stage), nodeName),
 			Namespace: r.opts.Namespace,
 			Labels: map[string]string{
 				fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhook.Name,
