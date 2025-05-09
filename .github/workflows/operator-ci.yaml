@@ -131,11 +131,14 @@ jobs:
           apt-get update && apt-get install -y make git jq
           cd operator
           # if this is a tag build, use the tag as the version, otherwise use the sha
-          TAGS="-t ${REGISTRY@L}/${{env.IMAGE_NAME}}/operator:${{ github.sha }}"
+          git fetch --all
+          export GIT_SHA=$(git rev-parse --short ${{ github.sha }})
+          TAGS="-t ${REGISTRY@L}/${{env.IMAGE_NAME}}/operator:${GIT_SHA}"
           case ${{ github.ref_type }} in
             branch)
                 # The last tag + current git sha
-                export OPERATOR_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")+${{ github.sha }}
+                export OPERATOR_VERSION=$(git tag --list 'operator*' --sort=-v:refname | head -n 1 | cut -d/ -f2 || echo "0.0.0")+${GIT_SHA}
+                TAGS="$TAGS -t ${REGISTRY@L}/${{env.IMAGE_NAME}}/operator:$(echo "${OPERATOR_VERSION}" | tr + -)"
                 ;;
             tag)
                 # The version part of the tag
@@ -149,7 +152,7 @@ jobs:
           esac
           set -x
           docker buildx build \
-            --build-arg GIT_SHA=$${{ github.sha }} \
+            --build-arg GIT_SHA=${GIT_SHA} \
             --build-arg VERSION=${OPERATOR_VERSION} \
             --build-arg GO_VERSION=${GO_VERSION} \
             --push \
