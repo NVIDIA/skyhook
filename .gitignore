@@ -1,3 +1,4 @@
 .cursorignore
 .pytest_cache
 .idea
+**/err.txt

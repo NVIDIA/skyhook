@@ -62,7 +62,7 @@ spec:
         - name: LOG_LEVEL
           value: {{ quote .Values.controllerManager.manager.env.logLevel }}
         - name: ENABLE_WEBHOOKS
-          value: {{ quote .Values.controllerManager.manager.env.enableWebhooks }}
+          value: {{ quote .Values.webhook.enable }}
         - name: NAMESPACE
           value: {{ .Release.Namespace }}
         - name: IMAGE_PULL_SECRET
@@ -97,7 +97,10 @@ spec:
             path: /readyz
             port: 8081
           initialDelaySeconds: 5
-          periodSeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          failureThreshold: 2
+          timeoutSeconds: 3
         resources: {{ if .Values.controllerManager.manager.resources }}{{- toYaml .Values.controllerManager.manager.resources | nindent 10 }}{{ else }}
           limits:
             cpu: {{ maxf 1000 (mulf 1.6 .Values.estimatedNodeCount (maxf 1 (mulf 0.4 .Values.estimatedPackageCount))) | int }}m
@@ -108,10 +111,6 @@ spec:
           {{- end }}
         securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
           | nindent 10 }}
-        volumeMounts:
-        - mountPath: /tmp/k8s-webhook-server/serving-certs
-          name: cert
-          readOnly: true
       - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
@@ -132,11 +131,6 @@ spec:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
-      volumes:
-      - name: cert
-        secret:
-          defaultMode: 420
-          secretName: webhook-server-cert
 {{ if ((.Values.controllerManager.podDisruptionBudget).minAvailable) }}
 {{ if ge .Values.controllerManager.podDisruptionBudget.minAvailable .Values.controllerManager.replicas }}
 {{- $_ := required "minAvailable to be less than replicas" .nil }}

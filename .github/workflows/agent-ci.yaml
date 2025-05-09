@@ -98,11 +98,14 @@ jobs:
           apt-get update && apt-get install -y make git jq
           cd agent
           # if this is a tag build, use the tag as the version, otherwise use the sha
-          TAGS="-t ${REGISTRY@L}/${{env.IMAGE_NAME}}/agent:${{ github.sha }}"
+          git fetch --all
+          export GIT_SHA=$(git rev-parse --short ${{ github.sha }})
+          TAGS="-t ${REGISTRY@L}/${{env.IMAGE_NAME}}/agent:${GIT_SHA}"
           case ${{ github.ref_type }} in
             branch)
                 # The last tag + current git sha
-                export AGENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")+${{ github.sha }}
+                export AGENT_VERSION=$(git tag --list 'agent*' --sort=-v:refname | head -n 1 | cut -d/ -f2 || echo "0.0.0")+${GIT_SHA}
+                TAGS="$TAGS -t ${REGISTRY@L}/${{env.IMAGE_NAME}}/agent:$(echo "${AGENT_VERSION}" | tr + -)"
                 ;;
             tag)
                 # The version part of the tag

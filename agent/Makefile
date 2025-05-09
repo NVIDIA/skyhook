@@ -56,11 +56,14 @@ docker-setup:
 	$(DOCKER_CMD) buildx create --platform linux/amd64,linux/arm64 --use builder
 	$(DOCKER_CMD) run --privileged --rm tonistiigi/binfmt --install amd64,arm64
 
-ACTUAL_TAGS=$(shell echo "-t $(REGISTRY)/$(AGENT_IMAGE):$(shell date +%y.%m.%d-%H%M%S)-$(COMMIT_SHORT_SHA) $(TAGS)" | tr A-Z a-z)
+GIT_SHA=$(shell git rev-parse --short HEAD)
+ACTUAL_TAGS=$(shell echo "-t $(REGISTRY)/$(AGENT_IMAGE):$(shell date +%y.%m.%d-%H%M%S)-$(GIT_SHA) $(TAGS)" | tr A-Z a-z)
 .PHONY: docker-build-only
 docker-build-only:
 	@echo "Building skyhook-agent $(DOCKER_CMD) image with tags: $(ACTUAL_TAGS)"
-	$(DOCKER_CMD) buildx build $(BUILD_ARGS) --build-arg AGENT_VERSION=$(AGENT_VERSION) --platform linux/amd64,linux/arm64 $(ACTUAL_TAGS) --metadata-file=metadata.json -f ../containers/agent.Dockerfile .
+	$(DOCKER_CMD) buildx build $(BUILD_ARGS) --build-arg AGENT_VERSION=$(AGENT_VERSION) \
+		--build-arg GIT_SHA=$(GIT_SHA) \
+		--platform linux/amd64,linux/arm64 $(ACTUAL_TAGS) --metadata-file=metadata.json -f ../containers/agent.Dockerfile .
 
 ##@ Vendor
 .PHONY: vendor

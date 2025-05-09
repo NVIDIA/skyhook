@@ -19,7 +19,7 @@
 # 
 
 resources:
-- manifests.yaml
+# - manifests.yaml
 - service.yaml
 
 configurations:

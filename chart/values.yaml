@@ -44,9 +44,6 @@ controllerManager:
       ## copyDirRoot is the directory for which the operator will work from on the host. 
       ## Some environments may require this to be set to a specific directory.
       copyDirRoot: /var/lib/skyhook
-      ## enableWebhooks: "true" will enable the webhook setup in the operator controller. 
-      ## Default is "true" and is required for production.
-      enableWebhooks: "true"
       ## leaderElection: "true" will enable leader election for the operator controller
       ## Default is "true" and is required for production.
       leaderElection: "true"
@@ -112,3 +109,17 @@ estimatedPackageCount: 1
 ## estimatedNodeCount: estimated number of nodes in the cluster
 ## this is used to calculate the resources for the operator controller
 estimatedNodeCount: 1
+
+## webhook config
+webhook:
+  ## secretName: name of the secret to store the webhook certificate
+  secretName: webhook-cert
+  ## serviceName: name of the service to expose the webhook
+  serviceName: skyhook-operator-webhook-service
+  ## enable: "true" will enable the webhook setup in the operator controller. 
+  ## Default is "true" and is required for production.
+  enable: true
+
+  ## uninstall image for cleaning up webhook resources
+  removalImage: bitnami/kubectl
+  removalTag: latest

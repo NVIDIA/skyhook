@@ -19,6 +19,7 @@ require (
 )
 
 require (
+	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
