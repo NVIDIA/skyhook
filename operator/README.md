@@ -1,9 +1,7 @@
 ## Getting Started
 
 ### Dependencies
-To install skyhook operator you need to first install [cert manager](https://cert-manager.io/). Its pretty easy to install, and does not need much tweeking or any depending on the install method used. There are two different ways of deployment:
-  - [static kubectl apply](https://cert-manager.io/docs/installation/)
-  - [helm](https://cert-manager.io/docs/installation/helm/)
+The operator handles its own certificate management for webhooks, so no additional dependencies are required.
 
 ### Usage Example Custom Resource
 
@@ -175,10 +173,8 @@ Build
 Deployment
   create-namespace  Create the namespace in the K8s cluster specified in ~/.kube/config.
   install          Install CRDs into the K8s cluster specified in ~/.kube/config.
-  install-cert-manager  Install cert-manager into the K8s cluster specified in ~/.kube/config.
   install-helm-chart  Install helm chart into the K8s cluster specified in ~/.kube/config.
   uninstall-helm-chart  Uninstall helm chart from the K8s cluster specified in ~/.kube/config.
-  uninstall-cert-manager  Uninstall cert-manager from the K8s cluster specified in ~/.kube/config.
   uninstall        Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
   deploy           Deploy controller to the K8s cluster specified in ~/.kube/config.
   generate-helm    Generates new helm chart using helmify. Be-careful, this can break things, it overwrites files, make sure to look at you git diff.
@@ -214,9 +210,6 @@ If you want to test the helm chart, this is how you can deploy it from the repo.
 ## setup namespace "skyhook"
 kubectl create namespace skyhook --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic node-init-secret --from-file=.dockerconfigjson=${HOME}/.config/containers/auth.json --type=kubernetes.io/dockerconfigjson -n  skyhook
-
-## install cert-manager
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.2/cert-manager.yaml
 
 ## install operator
 helm install skyhook-operator ./chart --namespace skyhook

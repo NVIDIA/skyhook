@@ -23,7 +23,9 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -45,6 +47,7 @@ import (
 	"github.com/NVIDIA/skyhook/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/internal/controller"
 	"github.com/NVIDIA/skyhook/internal/version"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -63,6 +66,7 @@ func init() {
 type options struct {
 	// SkyhookOperatorOptions are options for the operator operation, and not controller runtime.
 	controller.SkyhookOperatorOptions
+	controller.WebhookControllerOptions
 	// MetricsPort The address the metric endpoint binds to.
 	MetricsPort string `env:"METRICS_PORT, default=:8080"`
 	// ProbePort The address the probe endpoint binds to.
@@ -88,12 +92,20 @@ func main() {
 	ctrl.SetLogger(logger(options))
 	setupLog.Info("env options", "options", options)
 
+	certDir := filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: options.MetricsPort},
 		HealthProbeBindAddress: options.ProbePort,
 		LeaderElection:         options.LeaderElection,
 		LeaderElectionID:       "3c22c1ae.nvidia.com",
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:       9443,
+			CertDir:    certDir,
+			CertName:   "tls.crt",
+			KeyName:    "tls.key",
+			WebhookMux: http.NewServeMux(),
+		}),
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -126,6 +138,26 @@ func main() {
 	}
 
 	if options.EnableWebhooks {
+		webhookController := controller.NewWebhookController(
+			mgr.GetClient(),
+			options.Namespace,
+			certDir,
+			options.WebhookControllerOptions,
+		)
+
+		// Set up the webhook controller with the manager
+		if err = webhookController.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook controller", "controller", "Webhook")
+			os.Exit(1)
+		}
+
+		// Add webhook controller as a runnable
+		if err = mgr.Add(webhookController); err != nil {
+			setupLog.Error(err, "unable to add webhook controller as runnable", "controller", "Webhook")
+			os.Exit(1)
+		}
+
+		// Set up the webhook for Skyhook
 		if err = (&v1alpha1.Skyhook{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Skyhook")
 			os.Exit(1)

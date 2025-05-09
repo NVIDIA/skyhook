@@ -34,10 +34,6 @@ spec:
   - try:
     - script:
         content: |
-          ## install cert-manager (note this takes like 70+ seconds)
-          ../install-cert-manager.sh
-    - script:
-        content: |
           ## Install helm chart
           ../install-helm-chart.sh foobar values-scale.yaml
     - assert:
@@ -50,6 +46,5 @@ spec:
     finally:
     - script:
         content: |
-          ## Remove helm chart and cert-manager
+          ## Remove helm chart
           ../uninstall-helm-chart.sh foobar
-          ../uninstall-cert-manager.sh
