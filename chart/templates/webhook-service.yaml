@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: skyhook-operator-webhook-service
+  name: {{ .Values.webhook.serviceName }}
   labels:
     app.kubernetes.io/component: webhook
     app.kubernetes.io/created-by: skyhook-operator

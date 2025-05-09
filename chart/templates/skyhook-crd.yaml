@@ -3,8 +3,6 @@ kind: CustomResourceDefinition
 metadata:
   name: skyhooks.skyhook.nvidia.com
   annotations:
-    cert-manager.io/inject-ca-from: '{{ .Release.Namespace }}/{{ include "chart.fullname"
-      . }}-serving-cert'
     controller-gen.kubebuilder.io/version: v0.15.0
   labels:
   {{- include "chart.labels" . | nindent 4 }}

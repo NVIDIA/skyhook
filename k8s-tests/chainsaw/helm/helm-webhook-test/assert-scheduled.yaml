@@ -18,10 +18,31 @@
 # LICENSE END
 # 
 
-# The following patch adds a directive for certmanager to inject CA into the CRD
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
+apiVersion: v1
+kind: Pod
 metadata:
   annotations:
-    cert-manager.io/inject-ca-from: CERTIFICATE_NAMESPACE/CERTIFICATE_NAME
-  name: skyhooks.skyhook.nvidia.com
+    kubectl.kubernetes.io/default-container: manager
+  labels:
+    app: webhooks-skyhook-operator-controller-manager
+    app.kubernetes.io/instance: webhooks
+    app.kubernetes.io/name: skyhook-operator
+    control-plane: controller-manager
+  namespace: skyhook
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+spec:
+  containers:
+  - name: manager
+  - name: kube-rbac-proxy
+status:
+  (conditions[?type == 'Ready']):
+  - status: 'True'
+  (conditions[?type == 'PodScheduled']):
+  - status: 'True'
+  (conditions[?type == 'ContainersReady']):
+  - status: 'True'
+  phase: Running 

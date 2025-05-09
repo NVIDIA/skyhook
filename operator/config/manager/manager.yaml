@@ -131,7 +131,10 @@ spec:
             path: /readyz
             port: 8081
           initialDelaySeconds: 5
-          periodSeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          failureThreshold: 2
+          timeoutSeconds: 3
         # TODO(user): Configure the resources accordingly based on the project requirements.
         # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:

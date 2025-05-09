@@ -50,7 +50,6 @@ There are a few pre-built generalist packages available at [NVIDIA/skyhook-packa
 ## Quick Start
 
 ### Install the operator
-  1. Install cert-manager `kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.2/cert-manager.yaml`
   1. Create a secret for the operator to pull images `kubectl create secret generic node-init-secret --from-file=.dockerconfigjson=${HOME}/.config/containers/auth.json --type=kubernetes.io/dockerconfigjson -n  skyhook`
   1. Install the operator `helm install skyhook ./chart --namespace skyhook`
 

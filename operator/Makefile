@@ -16,10 +16,12 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
+GO_VERSION ?= 1.23.8
 
 # Image URL to use all building/pushing image targets
 ## TODO: update this to the correct image location
-IMG ?= ghcr.io/nvidia/skyhook/operator:latest
+IMG_REPO ?= ghcr.io/nvidia/skyhook
+IMG ?= $(IMG_REPO)/operator
 
 ## default version of kind to use
 KIND_VERSION?=1.30.10
@@ -35,8 +37,7 @@ GOBIN := $(shell go env GOBIN)
 endif
 
 GIT_SHA 		:= $(shell git rev-parse --short HEAD)
-GIT_TAG 		:= $(shell git describe --exact-match --tags 2>/dev/null)
-GIT_TAG_LAST 	:= $(shell git describe --tags --abbrev=0 2>/dev/null)
+GIT_TAG_LAST 	:= $(shell git tag --list 'operator*' --sort=-v:refname | head -n 1 | cut -d/ -f2)
 
 ## GO Flags
 GO_LDFLAGS  := -ldflags "-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=$(GIT_SHA) \
@@ -123,7 +124,7 @@ license-check: go-licenses ## Run go-licenses check against code.
 
 .PHONY: license-fmt
 license-fmt: ## Run add license header to code.
-	python3 ../scripts/format_license.py --root-dir . --license-file ../LICENSE
+	python3 ../scripts/format_license.py --root-dir ../ --license-file ../LICENSE
 
 .PHONY: fmt
 fmt: license-fmt ## Run go fmt against code.
@@ -165,7 +166,7 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
 ## https://kyverno.github.io/chainsaw/latest/reference/commands/chainsaw_test/
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
-CHAINSAW_ARGS:=--exec-timeout 30s --parallel 3
+CHAINSAW_ARGS:=--exec-timeout 30s --parallel 2
 
 e2e-tests: chainsaw install run ## Run end to end tests.
 	## requires a cluster to be running with access
@@ -243,7 +244,7 @@ build: manifests generate fmt vet lint ## Build manager binary.
 .PHONY: run
 ENABLE_WEBHOOKS?=false
 BACKGROUND?=true
-AGENT_IMAGE?=ghcr.io/nvidia/skyhook/agentless:6.2.0
+AGENT_IMAGE?=$(IMG_REPO)/agentless:6.2.0
 LOG_LEVEL?=info
 run: manifests generate fmt vet lint reporting install kill ## Run a controller from your host.
 	mkdir -p $(REPORTING)/int
@@ -266,7 +267,11 @@ kill:
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(DOCKER_CMD) build -f ../containers/operator.Dockerfile -t ${IMG} .
+	$(DOCKER_CMD) build -f ../containers/operator.Dockerfile \
+	--build-arg VERSION=$(VERSION) \
+	--build-arg GIT_SHA=$(GIT_SHA) \
+	--build-arg GO_VERSION=$(GO_VERSION) \
+	-t $(IMG):testing .
 
 ##@ Deployment
 
@@ -281,22 +286,13 @@ create-namespace: ## Create the namespace in the K8s cluster specified in ~/.kub
 install: manifests kustomize create-namespace license-fmt ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
 
-cert-manager-yaml-url=https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
-.PHONY: install-cert-manager
-install-cert-manager: ## Install cert-manager into the K8s cluster specified in ~/.kube/config.
-	kubectl apply -f $(cert-manager-yaml-url)
-	sleep 30 ## wait for cert-manager to be ready
-
 .PHONY: install-helm-chart
-install-helm-chart: helm create-namespace install-cert-manager ## Install helm chart into the K8s cluster specified in ~/.kube/config.
+install-helm-chart: helm create-namespace ## Install helm chart into the K8s cluster specified in ~/.kube/config.
 	$(HELM) install skyhook-operator ../chart -n $(SKYHOOK_NAMESPACE) 
 
 .PHONY: uninstall-helm-chart
 uninstall-helm-chart: helm ## Uninstall helm chart from the K8s cluster specified in ~/.kube/config.
 	$(HELM) uninstall skyhook-operator -n $(SKYHOOK_NAMESPACE)
-
-uninstall-cert-manager: ## Uninstall cert-manager from the K8s cluster specified in ~/.kube/config.
-	kubectl delete -f $(cert-manager-yaml-url)
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
@@ -304,7 +300,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}:latest
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
 generate-helm: confirm manifests kustomize helm helmify ## Generates new helm chart using helmify. Be-careful, this can break things, it overwrites files, make sure to look at you git diff.

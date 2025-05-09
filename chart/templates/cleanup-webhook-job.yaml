@@ -1,0 +1,28 @@
+{{- if .Values.webhook.enable }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "chart.fullname" . }}-webhook-cleanup"
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      containers:
+      - name: cleanup
+        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}:{{ .Values.webhook.removalTag | default "latest" }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          NAMESPACE="{{ .Release.Namespace }}"
+          WEBHOOK_SECRET_NAME="{{ .Values.webhook.secretName | default "webhook-cert" }}"
+          VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
+          MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
+          kubectl delete secret -n $NAMESPACE $WEBHOOK_SECRET_NAME || true
+          kubectl delete validatingwebhookconfiguration $VALIDATING_WEBHOOK_CONFIGURATION_NAME || true
+          kubectl delete mutatingwebhookconfiguration $MUTATING_WEBHOOK_CONFIGURATION_NAME || true
+{{- end }} 

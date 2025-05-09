@@ -18,8 +18,20 @@
 # LICENSE END
 # 
 
-resources:
-- certificate.yaml
-
-configurations:
-- kustomizeconfig.yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: invalid-skyhook
+spec:
+  packages:
+    cookies:
+      version: "3.2.3"
+      image: ghcr.io/nvidia/skyhook/agentless
+      dependsOn:
+        milkshake: "1.2.3" ## invalid dependency
+    milk:
+      version: "1.2"
+      image: ghcr.io/nvidia/skyhook/agentless

@@ -27,3 +27,5 @@ controllerManager:
       tag: latest ## THIS should change to be like a tag so it can point at a specific commit
 estimatedNodeCount: 400
 estimatedPackageCount: 5
+webhook:
+  enable: false

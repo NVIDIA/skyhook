@@ -23,7 +23,7 @@ Settings | Description | Default |
 | controllerManager.tolerations | add tolerations to the controller manager pod | [] |
 | controllerManager.selectors | add node selectors to the controller manager pod | {} |
 | controllerManager.manager.env.copyDirRoot | Directory for which the operator will work from on the host. Some environments may require this to be set to a specific directory. | /tmp |
-| controllerManager.manager.env.enableWebhooks | Enable the webhook setup in the operator controller. Default is "true" and is required for production. | "true" |
+| webhooks.enable | Enable the webhook setup in the operator controller. Default is "true" and is required for production. | "true" |
 | controllerManager.manager.env.leaderElection | Enable leader election for the operator controller. Default is "true" and is required for production. | "true" |
 | controllerManager.manager.env.logLevel | Log level for the operator controller. If you want more or less logs, change this value to "debug" or "error". | "info" |
 | controllerManager.manager.env.reapplyOnReboot | Reapply the packages on reboot. This is useful for systems that are read-only. | "false" |

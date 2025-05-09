@@ -10,6 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceRoot}/operator/cmd/main.go",
+            "cwd": "${workspaceRoot}/operator",
             "buildFlags": "--ldflags '-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=foobars -X github.com/NVIDIA/skyhook/internal/version.VERSION=v0.5.0'",
             "env": {
                 "ENABLE_WEBHOOKS": "false",
