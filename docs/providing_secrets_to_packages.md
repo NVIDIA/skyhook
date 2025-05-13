@@ -19,16 +19,16 @@ The `env` section of a package is passed directly to the pod definition when run
 A direct key/value:
 ```yaml
 env:
-    - name: FOO
-        value: bar
+  - name: FOO
+    value: bar
 ```
 
 Set the value for an enviroment variable from a secret
 ```yaml
 env:
-    - name: DB_PASSWORD
+  - name: DB_PASSWORD
     valueFrom:
-    secretKeyRef:
+      secretKeyRef:
         name: postgres-db-password
         key: db-password
 ```
