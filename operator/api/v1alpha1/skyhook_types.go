@@ -175,14 +175,10 @@ func (p *PackageRef) GetUniqueName() string {
 }
 
 type ResourceRequirements struct {
-	// +kubebuilder:default="500m"
-	CPURequest resource.Quantity `json:"cpuRequest,omitempty"`
-	// +kubebuilder:default="500m"
-	CPULimit resource.Quantity `json:"cpuLimit,omitempty"`
-	// +kubebuilder:default="256Mi"
+	CPURequest    resource.Quantity `json:"cpuRequest,omitempty"`
+	CPULimit      resource.Quantity `json:"cpuLimit,omitempty"`
 	MemoryRequest resource.Quantity `json:"memoryRequest,omitempty"`
-	// +kubebuilder:default="256Mi"
-	MemoryLimit resource.Quantity `json:"memoryLimit,omitempty"`
+	MemoryLimit   resource.Quantity `json:"memoryLimit,omitempty"`
 }
 
 // Package is a container that contains the skyhook agent plus some work to do, plus any dependencies to be run first.
@@ -225,8 +221,7 @@ type Package struct {
 
 	// Resources lets you set the cpu and memory limits and requests for this package.
 	// More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-	// +kubebuilder:default={}
-	Resources ResourceRequirements `json:"resources,omitempty"`
+	Resources *ResourceRequirements `json:"resources,omitempty"`
 
 	// GracefulShutdown is the graceful shutdown timeout for the package, if not set, uses k8s default
 	//+optional

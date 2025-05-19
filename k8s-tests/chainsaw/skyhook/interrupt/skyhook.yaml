@@ -43,22 +43,12 @@ spec:
       env: 
         - name: SLEEP_LEN
           value: "8" ## making slower
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     spencer:
       version: "3.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
           value: "3" ## making faster
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
       dependsOn:
         dexter: "1.2.3"
     foobar:
@@ -67,11 +57,6 @@ spec:
       dependsOn:
         dexter: "1.2.3"
         baxter: "3.3"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     baxter: 
       version: "3.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -83,11 +68,6 @@ spec:
         services: [rsyslog]
       dependsOn:
         spencer: "3.2.3"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     dexter:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -108,8 +88,3 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi

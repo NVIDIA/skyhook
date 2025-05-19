@@ -37,11 +37,6 @@ spec:
       env: 
         - name: SLEEP_LEN
           value: "3" 
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     bb:
       version: "1.2"
       gracefulShutdown: 46s
@@ -51,10 +46,5 @@ spec:
       env: 
         - name: SLEEP_LEN
           value: "2"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
       configMap:
         foo: buz

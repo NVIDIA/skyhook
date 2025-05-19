@@ -38,11 +38,6 @@ spec:
       interrupt: 
         type: service
         services: [cron]
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     dexter:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -57,11 +52,6 @@ spec:
           changed
         ui.properties: |
           changed
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     baxter:
       version: "3.2.1"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -74,8 +64,3 @@ spec:
           changed again
         ui.properties: |
           changed
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi

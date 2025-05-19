@@ -37,11 +37,6 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       dependsOn:
         dexter: "1.2.3"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     foobar:
       version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -50,11 +45,6 @@ spec:
           value: "3" ## making faster so the test works for asserting node condition
       dependsOn:
         dexter: "1.2.3"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     dexter:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless:bogus ## testing that the image tag is cut off
@@ -69,8 +59,3 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi

@@ -43,11 +43,6 @@ spec:
       interrupt: 
         type: service
         services: [cron]
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     dax:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -57,8 +52,3 @@ spec:
       interrupt: 
         type: service
         services: [containerd, foobar]
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi

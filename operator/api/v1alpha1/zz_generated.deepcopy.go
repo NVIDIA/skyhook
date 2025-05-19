@@ -133,7 +133,11 @@ func (in *Package) DeepCopyInto(out *Package) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	in.Resources.DeepCopyInto(&out.Resources)
+	if in.Resources != nil {
+		in, out := &in.Resources, &out.Resources
+		*out = new(ResourceRequirements)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.GracefulShutdown != nil {
 		in, out := &in.GracefulShutdown, &out.GracefulShutdown
 		*out = new(metav1.Duration)

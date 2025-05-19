@@ -35,11 +35,6 @@ spec:
     invalid-image:
       version: "3.2.3-bogus"
       image: ghcr.io/nvidia/skyhook/agentless
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     invalid-resources:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -54,8 +49,3 @@ spec:
       env:
         - name: SLEEP_LEN
           value: "1000"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi

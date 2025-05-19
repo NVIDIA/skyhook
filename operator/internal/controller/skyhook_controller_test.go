@@ -785,7 +785,8 @@ var _ = Describe("skyhook controller tests", func() {
 
 	})
 	It("Pods should always tolerate runtime required taint", func() {
-		pod := operator.CreatePodFromPackage(
+		pod := createPodFromPackage(
+			operator.opts,
 			&v1alpha1.Package{
 				PackageRef: v1alpha1.PackageRef{
 					Name:    "foo",
@@ -814,7 +815,8 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(found_toleration).To(BeTrue())
 	})
 	It("Interrupt pods should tolerate runtime required taint when it is runtime required", func() {
-		pod := operator.CreateInterruptPodForPackage(
+		pod := createInterruptPodForPackage(
+			operator.opts,
 			&v1alpha1.Interrupt{
 				Type: v1alpha1.REBOOT,
 			},
@@ -931,7 +933,7 @@ var _ = Describe("skyhook controller tests", func() {
 				Version: "1.2.3",
 			},
 			Image: "test-image:1.2.3",
-			Resources: v1alpha1.ResourceRequirements{
+			Resources: &v1alpha1.ResourceRequirements{
 				CPURequest:    resource.MustParse("100m"),
 				CPULimit:      resource.MustParse("200m"),
 				MemoryRequest: resource.MustParse("64Mi"),
@@ -945,6 +947,11 @@ var _ = Describe("skyhook controller tests", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
+				Spec: v1alpha1.SkyhookSpec{
+					Packages: v1alpha1.Packages{
+						"test-package": *testPackage,
+					},
+				},
 			},
 		}
 
@@ -953,25 +960,26 @@ var _ = Describe("skyhook controller tests", func() {
 
 		// Create actual pods that would be created by the operator functions
 		// First using CreatePodFromPackage
-		actualPod := operator.CreatePodFromPackage(testPackage, testSkyhook, "test-node", testStage)
+		actualPod := createPodFromPackage(operator.opts, testPackage, testSkyhook, "test-node", testStage)
 
 		// Verify that the pod matches the package according to PodMatchesPackage
-		matches := operator.PodMatchesPackage(testPackage, *actualPod, testSkyhook, testStage)
+		matches := podMatchesPackage(operator.opts, testPackage, *actualPod, testSkyhook, testStage)
 		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the pod it created")
 
 		// Now let's modify the package version and see if it correctly identifies non-matches
 		modifiedPackage := testPackage.DeepCopy()
 		modifiedPackage.Version = "1.2.4"
 
-		matches = operator.PodMatchesPackage(modifiedPackage, *actualPod, testSkyhook, testStage)
+		matches = podMatchesPackage(operator.opts, modifiedPackage, *actualPod, testSkyhook, testStage)
 		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when package version changed")
 
 		// Test with different stage
-		matches = operator.PodMatchesPackage(testPackage, *actualPod, testSkyhook, v1alpha1.StageConfig)
+		matches = podMatchesPackage(operator.opts, testPackage, *actualPod, testSkyhook, v1alpha1.StageConfig)
 		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when stage changed")
 
 		// Test with interrupt pods
-		interruptPod := operator.CreateInterruptPodForPackage(
+		interruptPod := createInterruptPodForPackage(
+			operator.opts,
 			&v1alpha1.Interrupt{
 				Type: v1alpha1.REBOOT,
 			},
@@ -982,7 +990,7 @@ var _ = Describe("skyhook controller tests", func() {
 		)
 
 		// Verify that the interrupt pod matches the package
-		matches = operator.PodMatchesPackage(testPackage, *interruptPod, testSkyhook, testStage)
+		matches = podMatchesPackage(operator.opts, testPackage, *interruptPod, testSkyhook, testStage)
 		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the interrupt pod it created")
 	})
 
@@ -1083,6 +1091,200 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(len(result)).To(BeNumerically("<=", 63), "configmap name should never exceed 63 characters")
 			Expect(result).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`), "configmap name should match kubernetes naming requirements")
 		}
+	})
+})
+
+var _ = Describe("Resource Comparison", func() {
+	var (
+		expectedPod *corev1.Pod
+		actualPod   *corev1.Pod
+		skyhook     *wrapper.Skyhook
+		package_    *v1alpha1.Package
+	)
+
+	BeforeEach(func() {
+		// Setup common test objects
+		nodeName := "testNode"
+		stage := v1alpha1.StageApply
+		package_ = &v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "test-package",
+				Version: "1.0.0",
+			},
+			Image: "test-image",
+		}
+
+		skyhook = &wrapper.Skyhook{
+			Skyhook: &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-skyhook",
+				},
+				Spec: v1alpha1.SkyhookSpec{
+					Packages: map[string]v1alpha1.Package{
+						"test-package": *package_,
+					},
+				},
+			},
+		}
+
+		// Create base pod structure, to much work to do it again
+		expectedPod = createPodFromPackage(operator.opts, package_, skyhook, nodeName, stage)
+		actualPod = expectedPod.DeepCopy()
+	})
+
+	It("should match when resources are identical", func() {
+		// Setup: Add resources to package and expected pod
+		newPackage := *package_
+		newPackage.Resources = &v1alpha1.ResourceRequirements{
+			CPURequest:    resource.MustParse("100m"),
+			CPULimit:      resource.MustParse("200m"),
+			MemoryRequest: resource.MustParse("128Mi"),
+			MemoryLimit:   resource.MustParse("256Mi"),
+		}
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		expectedResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+
+		// Set resources for all init containers in expected pod
+		for i := range expectedPod.Spec.InitContainers {
+			expectedPod.Spec.InitContainers[i].Resources = expectedResources
+		}
+
+		// Test: Set actual pod resources to match expected
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = expectedResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
+	})
+
+	It("should not match when resources differ", func() {
+		// Setup: Add resources to package and expected pod
+		newPackage := *package_
+		newPackage.Resources = &v1alpha1.ResourceRequirements{
+			CPURequest:    resource.MustParse("100m"),
+			CPULimit:      resource.MustParse("200m"),
+			MemoryRequest: resource.MustParse("128Mi"),
+			MemoryLimit:   resource.MustParse("256Mi"),
+		}
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		expectedResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+
+		// Set resources for all init containers in expected pod
+		for i := range expectedPod.Spec.InitContainers {
+			expectedPod.Spec.InitContainers[i].Resources = expectedResources
+		}
+
+		// Test: Set different CPU request in actual pod for all init containers
+		differentResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"), // Different CPU request
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = differentResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
+	})
+
+	It("should match when no resources are specified and pod has no overrides", func() {
+		// Setup: Ensure no resources in package
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Test: Ensure pod has no resource overrides for any init container
+		emptyResources := corev1.ResourceRequirements{}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = emptyResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
+	})
+
+	It("should not match when no resources are specified but pod has requests", func() {
+		// Setup: Ensure no resources in package
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Test: Add resource requests to all init containers
+		requestResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = requestResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
+	})
+
+	It("should not match when no resources are specified but pod has limits", func() {
+		// Setup: Ensure no resources in package
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Test: Add resource limits to all init containers
+		limitResources := corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = limitResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
 	})
 })
 
