@@ -24,8 +24,7 @@ kind: Test
 metadata:
   name: simple-skyhook
 spec:
-  concurrent: true 
-  # skip: false ##  this test doesn't seem to be useful, just slows things down, leaving it for, should delete at some point if still skipped
+  concurrent: false ## because this test creates a limit range in the namespace, it must be run serially
   timeouts:
     assert: 240s
   steps:
@@ -34,7 +33,12 @@ spec:
         content: |
           ## remove annotation from last run
           ../rest_test.sh simple-skyhook
+    - create: ## set a limit range in the namespace
+        file: limitrange.yaml
     - create:
         file: skyhook.yaml
     - assert:
         file: assert.yaml
+  - finally:
+    - delete:
+        file: limitrange.yaml

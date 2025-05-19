@@ -108,4 +108,18 @@ If there is **no LimitRange** and you do **not** set resource requests/limits in
 
 ---
 
+## 7. Special Case: Uninstall Pod Resources
+
+Uninstall pods in Skyhook **do not use per-package resource overrides**.  
+Instead, their resource requests/limits are determined only by the namespace defaults:
+
+- If a LimitRange is present in the namespace, uninstall pods will use those default CPU and memory requests/limits.
+- If there is no LimitRange, uninstall pods will run as "BestEffort" (no resource requests/limits).
+- Any `resources:` overrides set for the original package are **not applied** to the uninstall pod.
+
+**Note:**
+- Ensure defaults are big enough for uninstall processes if using the uninstall package life cycle.
+
+---
+
 For more information, see the [Kubernetes documentation on resource management](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/) and [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/). 

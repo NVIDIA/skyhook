@@ -738,12 +738,6 @@ func HandleVersionChange(skyhook *skyhookNodes) ([]*v1alpha1.Package, error) {
 				newPackage := &v1alpha1.Package{
 					PackageRef: packageStatusRef,
 					Image:      packageStatus.Image,
-					Resources: v1alpha1.ResourceRequirements{
-						CPURequest:    resource.MustParse("250m"),
-						CPULimit:      resource.MustParse("250m"),
-						MemoryRequest: resource.MustParse("256Mi"),
-						MemoryLimit:   resource.MustParse("256Mi"),
-					},
 				}
 
 				// Add package to uninstall list if it's not already present
@@ -1244,7 +1238,7 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 		return fmt.Errorf("error creating interrupt args: %w", err)
 	}
 
-	pod := r.CreateInterruptPodForPackage(_interrupt, argEncode, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name)
+	pod := createInterruptPodForPackage(r.opts, _interrupt, argEncode, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name)
 
 	if err := SetPackages(pod, skyhookNode.GetSkyhook().Skyhook, _package.Image, v1alpha1.StageInterrupt, _package); err != nil {
 		return fmt.Errorf("error setting package on interrupt: %w", err)
@@ -1412,10 +1406,10 @@ func (r *SkyhookReconciler) PodExists(ctx context.Context, nodeName, skyhookName
 	return true, nil
 }
 
-// CreateInterruptPodForPackage returns the pod spec for an interrupt pod given an package
-func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.Interrupt, argEncode string, _package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string) *corev1.Pod {
+// createInterruptPodForPackage returns the pod spec for an interrupt pod given an package
+func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alpha1.Interrupt, argEncode string, _package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string) *corev1.Pod {
 	copyDir := fmt.Sprintf("%s/%s/%s-%s-%s-%d",
-		r.opts.CopyDirRoot,
+		opts.CopyDirRoot,
 		skyhook.Name,
 		_package.Name,
 		_package.Version,
@@ -1456,7 +1450,7 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      generateSafeName(63, skyhook.Name, "interrupt", string(_interrupt.Type), nodeName),
-			Namespace: r.opts.Namespace,
+			Namespace: opts.Namespace,
 			Labels: map[string]string{
 				fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):      skyhook.Name,
 				fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX):   fmt.Sprintf("%s-%s", _package.Name, _package.Version),
@@ -1469,7 +1463,7 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 			InitContainers: []corev1.Container{
 				{
 					Name:  InterruptContainerName,
-					Image: getAgentImage(r.opts, _package),
+					Image: getAgentImage(opts, _package),
 					Args:  []string{"interrupt", "/root", copyDir, argEncode},
 					Env: []corev1.EnvVar{
 						{
@@ -1500,7 +1494,7 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 			Containers: []corev1.Container{
 				{
 					Name:  "pause",
-					Image: r.opts.PauseImage,
+					Image: opts.PauseImage,
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -1515,7 +1509,7 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 			},
 			ImagePullSecrets: []corev1.LocalObjectReference{
 				{
-					Name: r.opts.ImagePullSecret,
+					Name: opts.ImagePullSecret,
 				},
 			},
 			HostPID:     true,
@@ -1532,12 +1526,11 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 					Operator: corev1.TolerationOpEqual,
 					Effect:   corev1.TaintEffectNoSchedule,
 				},
-				r.opts.GetRuntimeRequiredToleration(),
+				opts.GetRuntimeRequiredToleration(),
 			}, skyhook.Spec.AdditionalTolerations...),
 			Volumes: volumes,
 		},
 	}
-	setPodResources(pod, _package.Resources)
 	return pod
 }
 
@@ -1555,8 +1548,8 @@ func getAgentImage(opts SkyhookOperatorOptions, _package *v1alpha1.Package) stri
 	return opts.AgentImage
 }
 
-// CreatePodFromPackage creates a pod spec for a skyhook pod for a given package
-func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string, stage v1alpha1.Stage) *corev1.Pod {
+// createPodFromPackage creates a pod spec for a skyhook pod for a given package
+func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string, stage v1alpha1.Stage) *corev1.Pod {
 	// Generate consistent names that won't exceed k8s limits
 	volumeName := generateSafeName(63, "metadata", nodeName)
 	configMapName := generateSafeName(253, skyhook.Name, nodeName, "metadata")
@@ -1613,7 +1606,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 	}
 
 	copyDir := fmt.Sprintf("%s/%s/%s-%s-%s-%d",
-		r.opts.CopyDirRoot,
+		opts.CopyDirRoot,
 		skyhook.Name,
 		_package.Name,
 		_package.Version,
@@ -1626,7 +1619,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      generateSafeName(63, skyhook.Name, _package.Name, _package.Version, string(stage), nodeName),
-			Namespace: r.opts.Namespace,
+			Namespace: opts.Namespace,
 			Labels: map[string]string{
 				fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhook.Name,
 				fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX): fmt.Sprintf("%s-%s", _package.Name, _package.Version),
@@ -1658,7 +1651,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 				},
 				{
 					Name:            fmt.Sprintf("%s-%s", trunstr(_package.Name, 43), stage),
-					Image:           getAgentImage(r.opts, _package),
+					Image:           getAgentImage(opts, _package),
 					ImagePullPolicy: "Always",
 					Args:            applyargs,
 					Env: append(_package.Env, []corev1.EnvVar{
@@ -1677,7 +1670,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 				},
 				{
 					Name:            fmt.Sprintf("%s-%scheck", trunstr(_package.Name, 43), stage),
-					Image:           getAgentImage(r.opts, _package),
+					Image:           getAgentImage(opts, _package),
 					ImagePullPolicy: "Always",
 					Args:            checkargs,
 					Env: append(_package.Env, []corev1.EnvVar{
@@ -1698,7 +1691,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 			Containers: []corev1.Container{
 				{
 					Name:  "pause",
-					Image: r.opts.PauseImage,
+					Image: opts.PauseImage,
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
 							corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -1713,7 +1706,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 			},
 			ImagePullSecrets: []corev1.LocalObjectReference{
 				{
-					Name: r.opts.ImagePullSecret,
+					Name: opts.ImagePullSecret,
 				},
 			},
 			Volumes:     volumes,
@@ -1725,7 +1718,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 					Key:      TaintUnschedulable,
 					Operator: corev1.TolerationOpExists,
 				},
-				r.opts.GetRuntimeRequiredToleration(),
+				opts.GetRuntimeRequiredToleration(),
 			}, skyhook.Spec.AdditionalTolerations...),
 		},
 	}
@@ -1758,15 +1751,15 @@ func FilterEnv(envs []corev1.EnvVar, exclude ...string) []corev1.EnvVar {
 }
 
 // PodMatchesPackage asserts that a given pod matches the given pod spec
-func (r *SkyhookReconciler) PodMatchesPackage(_package *v1alpha1.Package, pod corev1.Pod, skyhook *wrapper.Skyhook, stage v1alpha1.Stage) bool {
+func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, pod corev1.Pod, skyhook *wrapper.Skyhook, stage v1alpha1.Stage) bool {
 	var expectedPod *corev1.Pod
 
 	// need to differentiate whether the pod is for an interrupt or not so we know
 	// what to expect and how to compare them
 	if pod.Labels[fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX)] == "True" {
-		expectedPod = r.CreateInterruptPodForPackage(&v1alpha1.Interrupt{}, "", _package, skyhook, "")
+		expectedPod = createInterruptPodForPackage(opts, &v1alpha1.Interrupt{}, "", _package, skyhook, "")
 	} else {
-		expectedPod = r.CreatePodFromPackage(_package, skyhook, "", stage)
+		expectedPod = createPodFromPackage(opts, _package, skyhook, "", stage)
 	}
 
 	actualPod := pod.DeepCopy()
@@ -1801,8 +1794,18 @@ func (r *SkyhookReconciler) PodMatchesPackage(_package *v1alpha1.Package, pod co
 		}
 
 		// compare resource requests and limits (CPU, memory, etc.)
-		if !reflect.DeepEqual(expectedContainer.Resources, actualContainer.Resources) {
-			return false
+		expectedResources := expectedContainer.Resources
+		actualResources := actualContainer.Resources
+		if skyhook.Spec.Packages[_package.Name].Resources != nil {
+			// If CR has resources specified, they should match exactly
+			if !reflect.DeepEqual(expectedResources, actualResources) {
+				return false
+			}
+		} else {
+			// If CR has no resources specified, ensure pod has no resource overrides
+			if actualResources.Requests != nil || actualResources.Limits != nil {
+				return false
+			}
 		}
 	}
 
@@ -1850,7 +1853,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 
 			// check if the package is part of the skyhook spec, if not we need to delete it
 			for _, v := range skyhook.skyhook.Spec.Packages {
-				if r.PodMatchesPackage(&v, pod, skyhook.skyhook, runningPackage.Stage) {
+				if podMatchesPackage(r.opts, &v, pod, skyhook.skyhook, runningPackage.Stage) {
 					found = true
 				}
 			}
@@ -2093,7 +2096,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 		return nil
 	}
 
-	pod := r.CreatePodFromPackage(_package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name, stage)
+	pod := createPodFromPackage(r.opts, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name, stage)
 
 	if err := SetPackages(pod, skyhookNode.GetSkyhook().Skyhook, _package.Image, stage, _package); err != nil {
 		return fmt.Errorf("error setting package on pod: %w", err)
@@ -2200,7 +2203,10 @@ func getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks map[types.UID][]Skyho
 }
 
 // setPodResources sets resources for all containers and init containers in the pod if override is set, else leaves empty for LimitRange
-func setPodResources(pod *corev1.Pod, res v1alpha1.ResourceRequirements) {
+func setPodResources(pod *corev1.Pod, res *v1alpha1.ResourceRequirements) {
+	if res == nil {
+		return
+	}
 	if !res.CPURequest.IsZero() || !res.CPULimit.IsZero() || !res.MemoryRequest.IsZero() || !res.MemoryLimit.IsZero() {
 		for i := range pod.Spec.InitContainers {
 			pod.Spec.InitContainers[i].Resources = corev1.ResourceRequirements{

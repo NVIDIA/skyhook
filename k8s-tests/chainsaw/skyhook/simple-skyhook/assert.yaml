@@ -42,6 +42,13 @@ metadata:
 spec:
   initContainers:
     - name: spencer-init
+      resources: ## including these to tests defaults are working
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 500m
+          memory: 256Mi
     - name: spencer-apply
       args:
         ([0]): apply
@@ -66,6 +73,61 @@ spec:
         requests:
           cpu: 500m
           memory: 256Mi
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: simple-skyhook
+    skyhook.nvidia.com/package: foobar-1.2
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "foobar",
+        "version": "1.2",
+        "skyhook": "simple-skyhook",
+        "stage": "apply",
+        "image": "ghcr.io/nvidia/skyhook/agentless"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: simple-skyhook
+spec:
+  initContainers:
+    - name: foobar-init
+      resources: ## Testing overriding
+        limits:
+          cpu: 50m
+          memory: 32Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+    - name: foobar-apply
+      args:
+        ([0]): apply
+        ([1]): /root
+        (length(@)): 3
+      resources: ## Testing overriding
+        limits:
+          cpu: 50m
+          memory: 32Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+    - name: foobar-applycheck
+      args:
+        ([0]): apply-check
+        ([1]): /root
+        (length(@)): 3
+      resources: ## Testing overriding
+        limits:
+          cpu: 50m
+          memory: 32Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
 ---
 apiVersion: v1
 kind: Node

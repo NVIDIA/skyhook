@@ -54,7 +54,7 @@ spec:
     - assert:
         file: assert.yaml
   - try:
-    - patch:
+    - update:
         file: update.yaml
     - assert:
         file: assert-update.yaml

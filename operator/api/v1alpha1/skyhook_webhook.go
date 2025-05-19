@@ -91,7 +91,10 @@ func (r *Skyhook) ValidateDelete() (admission.Warnings, error) {
 	return nil, nil
 }
 
-func validateResourceOverrides(name string, res ResourceRequirements) error {
+func validateResourceOverrides(name string, res *ResourceRequirements) error {
+	if res == nil {
+		return nil
+	}
 	anySet := !res.CPURequest.IsZero() || !res.CPULimit.IsZero() || !res.MemoryRequest.IsZero() || !res.MemoryLimit.IsZero()
 	allSet := !res.CPURequest.IsZero() && !res.CPULimit.IsZero() && !res.MemoryRequest.IsZero() && !res.MemoryLimit.IsZero()
 	if anySet && !allSet {

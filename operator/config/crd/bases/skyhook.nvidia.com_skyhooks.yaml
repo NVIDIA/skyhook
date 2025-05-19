@@ -392,7 +392,6 @@ spec:
                       pattern: ^[a-z][-a-z0-9]{0,41}[a-z]$
                       type: string
                     resources:
-                      default: {}
                       description: |-
                         Resources lets you set the cpu and memory limits and requests for this package.
                         More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
@@ -401,28 +400,24 @@ spec:
                           anyOf:
                           - type: integer
                           - type: string
-                          default: 500m
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         cpuRequest:
                           anyOf:
                           - type: integer
                           - type: string
-                          default: 500m
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         memoryLimit:
                           anyOf:
                           - type: integer
                           - type: string
-                          default: 256Mi
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         memoryRequest:
                           anyOf:
                           - type: integer
                           - type: string
-                          default: 256Mi
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                       type: object

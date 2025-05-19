@@ -418,7 +418,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
 				Image:      "alpine",
 			}
-			mkSkyhook := func(res ResourceRequirements) *Skyhook {
+			mkSkyhook := func(res *ResourceRequirements) *Skyhook {
 				return &Skyhook{
 					ObjectMeta: metav1.ObjectMeta{Name: "test"},
 					Spec: SkyhookSpec{
@@ -430,10 +430,10 @@ var _ = Describe("Skyhook Webhook", func() {
 			}
 
 			// 1. All unset (valid)
-			Expect(mkSkyhook(ResourceRequirements{}).Validate()).To(Succeed())
+			Expect(mkSkyhook(&ResourceRequirements{}).Validate()).To(Succeed())
 
 			// 2. All set and valid
-			res := ResourceRequirements{
+			res := &ResourceRequirements{
 				CPURequest:    resource.MustParse("100m"),
 				CPULimit:      resource.MustParse("200m"),
 				MemoryRequest: resource.MustParse("128Mi"),

@@ -39,22 +39,12 @@ spec:
       env: 
         - name: SLEEP_LEN
           value: "1"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     bb-slow:
       version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
           value: "10"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
     cc-last:
       version: "5.4.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -64,8 +54,3 @@ spec:
       env: 
         - name: SLEEP_LEN
           value: "1"
-      resources:
-        cpuLimit: 50m
-        cpuRequest: 50m
-        memoryLimit: 32Mi
-        memoryRequest: 32Mi
