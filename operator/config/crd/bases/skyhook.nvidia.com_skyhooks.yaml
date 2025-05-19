@@ -483,6 +483,12 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              priority:
+                default: 0
+                description: Priority determines the order in which skyhooks are applied.
+                  Lower values are applied first.
+                minimum: 0
+                type: integer
               runtimeRequired:
                 default: false
                 description: This skyhook is required to have been completed before
