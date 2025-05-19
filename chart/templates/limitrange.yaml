@@ -1,0 +1,16 @@
+{{- if .Values.limitRange }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "skyhook.fullname" . }}-default-limits
+  namespace: {{ .Release.Namespace }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: {{ .Values.limitRange.default.cpu | default "500m" }}
+        memory: {{ .Values.limitRange.default.memory | default "512Mi" }}
+      defaultRequest:
+        cpu: {{ .Values.limitRange.defaultRequest.cpu | default "250m" }}
+        memory: {{ .Values.limitRange.defaultRequest.memory | default "256Mi" }}
+{{- end }}

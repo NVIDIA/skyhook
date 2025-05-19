@@ -1453,7 +1453,7 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 		},
 	}
 
-	return &corev1.Pod{
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      generateSafeName(63, skyhook.Name, "interrupt", string(_interrupt.Type), nodeName),
 			Namespace: r.opts.Namespace,
@@ -1537,6 +1537,8 @@ func (r *SkyhookReconciler) CreateInterruptPodForPackage(_interrupt *v1alpha1.In
 			Volumes: volumes,
 		},
 	}
+	setPodResources(pod, _package.Resources)
+	return pod
 }
 
 func trunstr(str string, length int) string {
@@ -1653,16 +1655,6 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 						Privileged: ptr(true),
 					},
 					VolumeMounts: volumeMounts,
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    _package.Resources.CPULimit,
-							corev1.ResourceMemory: _package.Resources.MemoryLimit,
-						},
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    _package.Resources.CPURequest,
-							corev1.ResourceMemory: _package.Resources.MemoryRequest,
-						},
-					},
 				},
 				{
 					Name:            fmt.Sprintf("%s-%s", trunstr(_package.Name, 43), stage),
@@ -1682,16 +1674,6 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 						Privileged: ptr(true),
 					},
 					VolumeMounts: volumeMounts,
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    _package.Resources.CPULimit,
-							corev1.ResourceMemory: _package.Resources.MemoryLimit,
-						},
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    _package.Resources.CPURequest,
-							corev1.ResourceMemory: _package.Resources.MemoryRequest,
-						},
-					},
 				},
 				{
 					Name:            fmt.Sprintf("%s-%scheck", trunstr(_package.Name, 43), stage),
@@ -1711,16 +1693,6 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 						Privileged: ptr(true),
 					},
 					VolumeMounts: volumeMounts,
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    _package.Resources.CPULimit,
-							corev1.ResourceMemory: _package.Resources.MemoryLimit,
-						},
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    _package.Resources.CPURequest,
-							corev1.ResourceMemory: _package.Resources.MemoryRequest,
-						},
-					},
 				},
 			},
 			Containers: []corev1.Container{
@@ -1760,7 +1732,7 @@ func (r *SkyhookReconciler) CreatePodFromPackage(_package *v1alpha1.Package, sky
 	if _package.GracefulShutdown != nil {
 		pod.Spec.TerminationGracePeriodSeconds = ptr(int64(_package.GracefulShutdown.Duration.Seconds()))
 	}
-
+	setPodResources(pod, _package.Resources)
 	return pod
 }
 
@@ -2225,4 +2197,22 @@ func getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks map[types.UID][]Skyho
 		}
 	}
 	return to_remove
+}
+
+// setPodResources sets resources for all containers and init containers in the pod if override is set, else leaves empty for LimitRange
+func setPodResources(pod *corev1.Pod, res v1alpha1.ResourceRequirements) {
+	if !res.CPURequest.IsZero() || !res.CPULimit.IsZero() || !res.MemoryRequest.IsZero() || !res.MemoryLimit.IsZero() {
+		for i := range pod.Spec.InitContainers {
+			pod.Spec.InitContainers[i].Resources = corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    res.CPULimit,
+					corev1.ResourceMemory: res.MemoryLimit,
+				},
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    res.CPURequest,
+					corev1.ResourceMemory: res.MemoryRequest,
+				},
+			}
+		}
+	}
 }
