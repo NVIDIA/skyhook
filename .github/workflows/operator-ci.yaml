@@ -149,7 +149,7 @@ jobs:
           case ${{ github.ref_type }} in
             branch)
                 # The last tag + current git sha
-                export OPERATOR_VERSION=$(git tag --list 'operator*' --sort=-v:refname | head -n 1 | cut -d/ -f2")+${GIT_SHA}
+                export OPERATOR_VERSION=$(git tag --list 'operator*' --sort=-v:refname | head -n 1 | cut -d/ -f2)+${GIT_SHA}
                 TAGS="$TAGS -t ${REGISTRY@L}/${{env.IMAGE_NAME}}/operator:$(echo "${OPERATOR_VERSION}" | tr + -)"
                 ;;
             tag)

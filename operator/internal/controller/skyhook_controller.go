@@ -1756,8 +1756,12 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 
 	// need to differentiate whether the pod is for an interrupt or not so we know
 	// what to expect and how to compare them
+	isInterrupt := false
+	_, limitRange := pod.Annotations["kubernetes.io/limit-ranger"]
+
 	if pod.Labels[fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX)] == "True" {
 		expectedPod = createInterruptPodForPackage(opts, &v1alpha1.Interrupt{}, "", _package, skyhook, "")
+		isInterrupt = true
 	} else {
 		expectedPod = createPodFromPackage(opts, _package, skyhook, "", stage)
 	}
@@ -1793,18 +1797,22 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 			return false
 		}
 
-		// compare resource requests and limits (CPU, memory, etc.)
-		expectedResources := expectedContainer.Resources
-		actualResources := actualContainer.Resources
-		if skyhook.Spec.Packages[_package.Name].Resources != nil {
-			// If CR has resources specified, they should match exactly
-			if !reflect.DeepEqual(expectedResources, actualResources) {
-				return false
-			}
-		} else {
-			// If CR has no resources specified, ensure pod has no resource overrides
-			if actualResources.Requests != nil || actualResources.Limits != nil {
-				return false
+		if !isInterrupt { // dont compare these since they are not configured on interrupt
+			// compare resource requests and limits (CPU, memory, etc.)
+			expectedResources := expectedContainer.Resources
+			actualResources := actualContainer.Resources
+			if skyhook.Spec.Packages[_package.Name].Resources != nil {
+				// If CR has resources specified, they should match exactly
+				if !reflect.DeepEqual(expectedResources, actualResources) {
+					return false
+				}
+			} else {
+				// If CR has no resources specified, ensure pod has no resource overrides
+				if !limitRange {
+					if actualResources.Requests != nil || actualResources.Limits != nil {
+						return false
+					}
+				}
 			}
 		}
 	}

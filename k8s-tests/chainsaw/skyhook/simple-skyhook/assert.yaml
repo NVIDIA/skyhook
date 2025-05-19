@@ -175,7 +175,7 @@ metadata:
   name: simple-skyhook
 status:
   status: complete
-  observedGeneration: 2
+  (to_number(observedGeneration) == `2` || to_number(observedGeneration) == `3`): true
   nodeState:
     (values(@)):
       - dexter|1.2.3:

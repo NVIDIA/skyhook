@@ -33,9 +33,9 @@ spec:
         content: |
           ## remove annotation from last run
           ../rest_test.sh simple-skyhook
-    - create: ## set a limit range in the namespace
+    - apply: ## set a limit range in the namespace
         file: limitrange.yaml
-    - create:
+    - apply:
         file: skyhook.yaml
     - assert:
         file: assert.yaml
