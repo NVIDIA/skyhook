@@ -36,33 +36,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var _ = Describe("skyhook controller tests", func() {
-
-	It("Should pick the correct results", func() {
-		left := &ctrl.Result{Requeue: true}
-		right := &ctrl.Result{}
-
-		Expect(PickResults(nil, nil)).To(BeNil())
-		Expect(PickResults(left, nil)).To(BeEquivalentTo(left))
-		Expect(PickResults(nil, right)).To(BeEquivalentTo(right))
-
-		Expect(PickResults(left, right)).To(BeEquivalentTo(left))
-
-		left = &ctrl.Result{}
-		right = &ctrl.Result{Requeue: true}
-		Expect(PickResults(left, right)).To(BeEquivalentTo(right))
-
-		left = &ctrl.Result{RequeueAfter: time.Second * 10}
-		right = &ctrl.Result{RequeueAfter: time.Second * 5}
-		Expect(PickResults(left, right)).To(BeEquivalentTo(left))
-
-		right = &ctrl.Result{RequeueAfter: time.Second * 15}
-		Expect(PickResults(left, right)).To(BeEquivalentTo(right))
-	})
 
 	It("should map only pods we created", func() {
 

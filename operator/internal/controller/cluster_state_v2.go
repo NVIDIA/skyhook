@@ -104,7 +104,13 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList) (*cluste
 		}
 	}
 
+	// Sort by priority (ascending), then by name (ascending) if priorities are equal
 	sort.Slice(ret.skyhooks, func(i, j int) bool {
+		pi := ret.skyhooks[i].skyhook.Spec.Priority
+		pj := ret.skyhooks[j].skyhook.Spec.Priority
+		if pi != pj {
+			return pi < pj
+		}
 		return ret.skyhooks[i].skyhook.Name < ret.skyhooks[j].skyhook.Name
 	})
 
@@ -117,6 +123,22 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList) (*cluste
 	return ret, nil
 }
 
+func GetNextSkyhook(skyhooks []SkyhookNodes) (int, SkyhookNodes) {
+	for i, skyhook := range skyhooks {
+		if skyhook.IsComplete() || skyhook.IsDisabled() {
+			continue
+		}
+		return i, skyhook
+	}
+	// Always return the last non disabled skyhook to handle any final state logic
+	// for i := len(skyhooks) - 1; i >= 0; i-- {
+	// 	if !skyhooks[i].IsDisabled() {
+	// 		return skyhooks[i]
+	// 	}
+	// }
+	return -1, nil
+}
+
 // SkyhookNodes wraps the skyhook and nodes that it pertains too
 type SkyhookNodes interface {
 	CollectNodeStatus() v1alpha1.Status
@@ -124,6 +146,8 @@ type SkyhookNodes interface {
 	GetNodes() []wrapper.SkyhookNode
 	GetNode(name string) (v1alpha1.Status, wrapper.SkyhookNode)
 	IsComplete() bool
+	IsDisabled() bool
+	IsPaused() bool
 	NodeCount() int
 	SetStatus(status v1alpha1.Status)
 	Status() v1alpha1.Status
@@ -166,6 +190,14 @@ func (s *skyhookNodes) IsComplete() bool {
 	}
 
 	return true
+}
+
+func (s *skyhookNodes) IsDisabled() bool {
+	return s.skyhook.IsDisabled()
+}
+
+func (s *skyhookNodes) IsPaused() bool {
+	return s.skyhook.IsPaused()
 }
 
 func (s *skyhookNodes) Status() v1alpha1.Status {
