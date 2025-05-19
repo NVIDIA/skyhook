@@ -77,6 +77,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Fetch all tags
+        run: git fetch --tags --force
       # Uses the `docker/login-action` action to log in to the Container registry using the account and password that will publish the packages. Once published, the packages are scoped to the account defined here.
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -104,7 +106,7 @@ jobs:
           case ${{ github.ref_type }} in
             branch)
                 # The last tag + current git sha
-                export AGENT_VERSION=$(git tag --list 'agent*' --sort=-v:refname | head -n 1 | cut -d/ -f2 || echo "0.0.0")+${GIT_SHA}
+                export AGENT_VERSION=$(git tag --list 'agent*' --sort=-v:refname | head -n 1 | cut -d/ -f2)+${GIT_SHA}
                 TAGS="$TAGS -t ${REGISTRY@L}/${{env.IMAGE_NAME}}/agent:$(echo "${AGENT_VERSION}" | tr + -)"
                 ;;
             tag)
