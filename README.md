@@ -42,6 +42,7 @@ Skyhook works in any Kubernetes environment (self-managed, on-prem, cloud) and s
 - **Package Interrupt:** service (containerd, cron, any thing systemd), or reboot
 - **Additional Tolerations:**  are tolerations added to the packages
 - [**Runtime Required**](docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
+- **Resource Management:** Skyhook uses Kubernetes [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/) to set default CPU and memory requests/limits for all containers in its namespace. You can override these defaults per-package in your Skyhook CR. Strict validation is enforced: if you set any resource override, you must set all four fields (cpuRequest, cpuLimit, memoryRequest, memoryLimit), and limits must be >= requests. See [docs/resource_management.md](docs/resource_management.md) for details and examples.
 
 ## Pre-built Packages
 
@@ -137,29 +138,13 @@ Part of how the operator works is the [skyhook-agent](agent/README.md). Packages
 └── config.json
 ```
 
-## Example Kyverno Policy
+## Examples
 
-This repository includes an example Kyverno policy that demonstrates how to restrict the images that can be used in Skyhook packages. While this is not a complete policy, it serves as a template that end users can modify to fit their security needs.
+See the [examples/](examples/) directory for sample manifests, usage patterns, and demo configurations to help you get started with Skyhook.
 
-The policy prevents the creation of Skyhook resources that contain packages with restricted image patterns. Specifically, it blocks:
-- Images containing 'shellscript:' anywhere in the image name
-- Images from Docker Hub (matching 'docker.io/*')
+## Kyverno Policy Examples
 
-If you are going to use kyverno make sure to turn on the creation of the skyhook-viewer-role in the values file for the operator. (rbac.createSkyhookViewerRole: true) and then bind kyverno to that role. Example policy:
-```
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kyverno-skyhook-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: skyhook-viewer-role
-subjects:
-- kind: ServiceAccount
-  name: kyverno-reports-controller
-  namespace: kyverno
-```
+See [docs/kyverno/README.md](docs/kyverno/README.md) for example Kyverno policies and guidance on restricting images or packages in Skyhook resources.
 
 ## [Skyhook-Operator](operator/README.md)
 The operator is a kbuernetes operator that monitors cluster events and coordinates the installation and lifecycle of Skyhook packages.

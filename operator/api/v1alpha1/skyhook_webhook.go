@@ -91,6 +91,26 @@ func (r *Skyhook) ValidateDelete() (admission.Warnings, error) {
 	return nil, nil
 }
 
+func validateResourceOverrides(name string, res ResourceRequirements) error {
+	anySet := !res.CPURequest.IsZero() || !res.CPULimit.IsZero() || !res.MemoryRequest.IsZero() || !res.MemoryLimit.IsZero()
+	allSet := !res.CPURequest.IsZero() && !res.CPULimit.IsZero() && !res.MemoryRequest.IsZero() && !res.MemoryLimit.IsZero()
+	if anySet && !allSet {
+		return fmt.Errorf("package %q: if any resource override is set, all of cpuRequest, cpuLimit, memoryRequest, memoryLimit must be set", name)
+	}
+	if allSet {
+		if res.CPULimit.Cmp(res.CPURequest) < 0 {
+			return fmt.Errorf("package %q: cpuLimit (%s) must be >= cpuRequest (%s)", name, res.CPULimit.String(), res.CPURequest.String())
+		}
+		if res.MemoryLimit.Cmp(res.MemoryRequest) < 0 {
+			return fmt.Errorf("package %q: memoryLimit (%s) must be >= memoryRequest (%s)", name, res.MemoryLimit.String(), res.MemoryRequest.String())
+		}
+		if res.CPURequest.Sign() <= 0 || res.CPULimit.Sign() <= 0 || res.MemoryRequest.Sign() <= 0 || res.MemoryLimit.Sign() <= 0 {
+			return fmt.Errorf("package %q: all resource values must be positive", name)
+		}
+	}
+	return nil
+}
+
 func (r *Skyhook) Validate() error {
 
 	if err := r.Spec.InterruptionBudget.Validate(); err != nil {
@@ -139,6 +159,10 @@ func (r *Skyhook) Validate() error {
 
 		if !semver.IsValid(v.Version) {
 			return fmt.Errorf("error version string for %s is invalid: %s", v.Name, v.Version)
+		}
+
+		if err := validateResourceOverrides(name, v.Resources); err != nil {
+			return err
 		}
 	}
 

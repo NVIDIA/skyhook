@@ -36,3 +36,6 @@ Settings | Description | Default |
 - **estimatedPackageCount** and **estimatedNodeCount** are used to size the resource requirements. Default setting should be good for nodes > 1000 and packages 1-2 or nodes > 500 and packages >= 4. If your approaching this size deployment it would make sense to set these. You can also override them by explicitly with `controllerManager.manager.resources` the values file has an example.
 - **runtimeRequired**: If your systems nodes have this taint make sure to add the toleration to the controllerManager.tolerations
 - **CRD**: This project currently has one CRD and its not managed the ["recommended" way](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/). Its part of the templates. Meaning it will be updated with the `helm upgrade`. We decided it was better do it this way for this project. Doing it either way has consequences and this route has worked well for upgrades so far our deployments.
+
+### Resource Management
+Skyhook uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your Skyhook CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.

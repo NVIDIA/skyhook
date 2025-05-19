@@ -123,3 +123,16 @@ webhook:
   ## uninstall image for cleaning up webhook resources
   removalImage: bitnami/kubectl
   removalTag: latest
+
+## limitRange: is the limit range for the operator controller.
+## This sets for all containers in the namespace.
+## So if your package does not override the limits, these are what will be used.
+## if you omit this, the we will not create a limit range.
+## best practice on limits and requests is to make make the limits 2x the requests max.
+limitRange:
+  default:
+    cpu: "500m"
+    memory: "512Mi"
+  defaultRequest:
+    cpu: "250m"
+    memory: "256Mi"

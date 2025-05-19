@@ -25,6 +25,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -410,6 +411,56 @@ var _ = Describe("Skyhook Webhook", func() {
 				}
 			}
 
+		})
+
+		It("should validate resource override requirements", func() {
+			basePkg := Package{
+				PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+				Image:      "alpine",
+			}
+			mkSkyhook := func(res ResourceRequirements) *Skyhook {
+				return &Skyhook{
+					ObjectMeta: metav1.ObjectMeta{Name: "test"},
+					Spec: SkyhookSpec{
+						Packages: Packages{
+							"foo": func() Package { p := basePkg; p.Resources = res; return p }(),
+						},
+					},
+				}
+			}
+
+			// 1. All unset (valid)
+			Expect(mkSkyhook(ResourceRequirements{}).Validate()).To(Succeed())
+
+			// 2. All set and valid
+			res := ResourceRequirements{
+				CPURequest:    resource.MustParse("100m"),
+				CPULimit:      resource.MustParse("200m"),
+				MemoryRequest: resource.MustParse("128Mi"),
+				MemoryLimit:   resource.MustParse("256Mi"),
+			}
+			Expect(mkSkyhook(res).Validate()).To(Succeed())
+
+			// 3. Only some set (invalid)
+			res3 := res
+			res3.CPULimit = resource.Quantity{} // unset
+			Expect(mkSkyhook(res3).Validate()).NotTo(Succeed())
+
+			// 4. Limit < request (invalid)
+			res4 := res
+			res4.CPULimit = resource.MustParse("50m")
+			Expect(mkSkyhook(res4).Validate()).NotTo(Succeed())
+			res4 = res
+			res4.MemoryLimit = resource.MustParse("64Mi")
+			Expect(mkSkyhook(res4).Validate()).NotTo(Succeed())
+
+			// 5. Negative or zero values (invalid)
+			res5 := res
+			res5.CPURequest = resource.MustParse("0")
+			Expect(mkSkyhook(res5).Validate()).NotTo(Succeed())
+			res5 = res
+			res5.MemoryLimit = resource.MustParse("-1Mi")
+			Expect(mkSkyhook(res5).Validate()).NotTo(Succeed())
 		})
 	})
 
