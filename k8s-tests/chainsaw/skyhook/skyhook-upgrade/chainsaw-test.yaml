@@ -24,7 +24,7 @@ kind: Test
 metadata:
   name: skyhook-upgrade
 spec:
-  concurrent: true 
+  concurrent: false 
   skip: true ## skipping because this test current requires manual updating of the version
   description: |
     This test is skipped because it is because its not automated to change versions while its running.

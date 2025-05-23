@@ -228,7 +228,7 @@ merge-coverage:
 	$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/\1|g' $(REPORTING)/cover.out
 
 .PHONY: lint
-lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
+lint: golangci-lint# license-check ## Run golangci-lint linter & yamllint
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix

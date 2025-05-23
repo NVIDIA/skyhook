@@ -297,12 +297,17 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	errs := make([]error, 0)
 	var result *ctrl.Result
+
 	for _, skyhook := range clusterState.skyhooks {
 		if yes, result, err := shouldReturn(r.HandleFinalizer(ctx, skyhook)); yes {
 			return result, err
 		}
 
-		if skyhook.skyhook.Spec.Pause {
+		if yes, result, err := shouldReturn(r.ReportState(ctx, clusterState, skyhook)); yes {
+			return result, err
+		}
+
+		if skyhook.skyhook.IsPaused() {
 			continue
 		}
 
@@ -318,19 +323,41 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return result, err
 		}
 
-		if yes, result, err := shouldReturn(r.ReportState(ctx, clusterState, skyhook)); yes {
-			return result, err
+		changed := IntrospectSkyhook(skyhook)
+
+		if changed {
+			_, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
+			if len(errs) > 0 {
+				return ctrl.Result{RequeueAfter: time.Second * 2}, utilerrors.NewAggregate(errs)
+			}
+			return ctrl.Result{RequeueAfter: time.Second * 2}, nil
 		}
 
-		ret, err := r.RunSkyhookPackages(ctx, clusterState, nodePicker, skyhook)
+		_, err := HandleVersionChange(skyhook)
+		if err != nil {
+			return ctrl.Result{RequeueAfter: time.Second * 2}, fmt.Errorf("error getting packages to uninstall: %w", err)
+		}
+
+		// if len(toUninstall) > 0 {
+		// 	return ctrl.Result{RequeueAfter: time.Second * 2}, nil
+		// }
+	}
+
+	// This whole section seems dumb but it makes the mock easier in tests
+	skyhookNodesIface := make([]SkyhookNodes, len(clusterState.skyhooks))
+	for i, n := range clusterState.skyhooks {
+		skyhookNodesIface[i] = n
+	}
+	interfaceIndex, skyhookInterface := GetNextSkyhook(skyhookNodesIface)
+	if skyhookInterface != nil && !skyhookInterface.IsPaused() {
+
+		skyhook := clusterState.skyhooks[interfaceIndex]
+		// End of dumb section
+
+		result, err = r.RunSkyhookPackages(ctx, clusterState, nodePicker, skyhook)
 		if err != nil {
 			logger.Error(err, "error processing skyhook", "skyhook", skyhook.skyhook.Name)
 			errs = append(errs, err)
-		}
-
-		// NOT a fan of this logic
-		if ret != nil {
-			result = PickResults(ret, result)
 		}
 	}
 
@@ -357,7 +384,7 @@ func shouldReturn(updates bool, err error) (bool, ctrl.Result, error) {
 		return true, ctrl.Result{}, err
 	}
 	if updates {
-		return true, ctrl.Result{Requeue: true}, nil
+		return true, ctrl.Result{RequeueAfter: time.Second * 2}, nil
 	}
 	return false, ctrl.Result{}, nil
 }
@@ -453,7 +480,12 @@ func (r *SkyhookReconciler) ReportState(ctx context.Context, clusterState *clust
 		return true, nil
 	}
 
-	return false, nil
+	saved, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
+	if len(errs) > 0 {
+		return saved, utilerrors.NewAggregate(errs)
+	}
+
+	return saved, nil
 }
 
 func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clusterState) (bool, error) {
@@ -502,32 +534,6 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 	}
 
 	return updates, utilerrors.NewAggregate(errs)
-}
-
-func PickResults(left, right *ctrl.Result) *ctrl.Result {
-
-	// handle nils
-	if left == nil && right == nil {
-		return nil
-	}
-	if left == nil {
-		return right
-	}
-	if right == nil {
-		return left
-	}
-
-	if left.Requeue {
-		return left
-	}
-	if right.Requeue {
-		return right
-	}
-	if left.RequeueAfter > right.RequeueAfter {
-		return left
-	}
-
-	return right
 }
 
 // Runs all skyhook packages then saves and requeues if changes were made

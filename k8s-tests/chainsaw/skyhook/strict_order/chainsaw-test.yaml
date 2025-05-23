@@ -22,9 +22,9 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: failure-skyhook
+  name: strict-order-skyhook
 spec:
-  concurrent: false 
+  concurrent: false
   timeouts:
     assert: 240s
   catch: ## if errors, print the most important info
@@ -33,18 +33,31 @@ spec:
       kind: Node
       selector: skyhook.nvidia.com/test-node=skyhooke2e
       format: yaml
-  - get:
-      apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
-      name: failure-skyhook
-      format: yaml
   steps:
   - try:
     - script:
         content: |
-          ## remove annotation from last run
-          ../rest_test.sh failure-skyhook
-    - create:
+          ## remove annotation/labels from last run
+          ../rest_test.sh strict-order-skyhook-zzz
+          ../rest_test.sh strict-order-skyhook-b
+          ../rest_test.sh strict-order-skyhook-c
+          ../rest_test.sh strict-order-skyhook-d
+    - apply:
         file: skyhook.yaml
     - assert:
-        file: node-assert.yaml
+        file: assert-a.yaml
+    - assert:
+        file: assert-b.yaml
+    - assert:
+        file: assert-c.yaml
+    # make sure that if it was going to start d it will start d
+    - sleep:
+        duration: 5s
+    - assert:
+        file: assert-c.yaml
+  - try:
+    - patch:
+        ## this test is very odd, it adds stuff... not makes it so
+        file: skyhook-update.yaml
+    - assert:
+        file: assert-d.yaml

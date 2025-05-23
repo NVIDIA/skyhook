@@ -24,7 +24,8 @@ kind: Test
 metadata:
   name: simple-skyhook
 spec:
-  concurrent: false ## because this test creates a limit range in the namespace, it must be run serially
+  concurrent: false 
+  # skip: false ##  this test doesn't seem to be useful, just slows things down, leaving it for, should delete at some point if still skipped
   timeouts:
     assert: 240s
   steps:

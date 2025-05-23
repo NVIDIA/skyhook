@@ -18,26 +18,12 @@
 # LICENSE END
 # 
 
-# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
-apiVersion: chainsaw.kyverno.io/v1alpha1
-kind: Test
+apiVersion: v1
+kind: Node
 metadata:
-  name: depends-on
-spec:
-  concurrent: false 
-  description: |
-    Test makes sure depends-on works as expected. c depends on a, and b. Make sure a and b complete before c starts.
-  timeouts:
-    assert: 180s
-  steps:
-  - try:
-    ## setup step, skyhook to complete
-    - script:
-        content: |
-          ## remove annotation from last run
-          ../rest_test.sh depends-on
-    - create:
-        file: skyhook.yaml
-    - assert:
-        file: assert-skyhook.yaml
-    
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
+    skyhook.nvidia.com/status_strict-order-skyhook-b: complete
+    skyhook.nvidia.com/status_strict-order-skyhook-c: unknown
+    skyhook.nvidia.com/status_strict-order-skyhook-d: unknown

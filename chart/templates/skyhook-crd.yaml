@@ -421,12 +421,6 @@ spec:
                   type: object
                 description: Packages are the DAG of packages to be applied to nodes.
                 type: object
-              pause:
-                default: false
-                description: |-
-                  Pause halt the operator from proceeding. THIS is for admin use to stop skyhook if there is an issue or
-                  concert without needing to delete to ad in discovery of the issue.
-                type: boolean
               podNonInterruptLabels:
                 description: PodNonInterruptLabels are a set of labels we want to
                   monitor pods for whether they Interruptible
@@ -479,6 +473,11 @@ spec:
                 description: This skyhook is required to have been completed before
                   any workloads can start
                 type: boolean
+              priority:
+                description: Priority determines the order in which skyhooks are applied. Lower values are applied first.
+                type: integer
+                minimum: 0
+                default: 0
               serial:
                 default: false
                 description: Serial tells skyhook if it allowed to run in parallel or

@@ -25,6 +25,9 @@ metadata:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
   name: demo
+  annotations:
+    skyhook.nvidia.com/pause: "false"
+    skyhook.nvidia.com/disable: "false"
 spec:
   packages:
     baz:
