@@ -38,6 +38,9 @@ spec:
       interrupt: 
         type: service
         services: [cron]
+      env: 
+        - name: SLEEP_LEN
+          value: "1"
     dexter:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -47,6 +50,9 @@ spec:
         game.properties:
           type: service
           services: [rsyslog]
+      env: 
+        - name: SLEEP_LEN
+          value: "1"
       configMap:
         game.properties: |
           enemies=aliens
@@ -65,6 +71,9 @@ spec:
         game.properties:
           type: service
           services: [rsyslog, cron]
+      env: 
+        - name: SLEEP_LEN
+          value: "1"
       configMap:  
         game.properties: |
           enemies=aliens

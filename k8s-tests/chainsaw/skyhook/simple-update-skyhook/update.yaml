@@ -46,9 +46,12 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      env: 
+        - name: SLEEP_LEN
+          value: "1"
     jackie-chan: ## TODO: need to handle bad naming, because this are pod names, so can have issues depending on the chars
       version: "2024.7.7-test"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "3" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition

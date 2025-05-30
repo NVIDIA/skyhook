@@ -23,6 +23,7 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var _ = Describe("Skyhook Types", func() {
@@ -550,6 +551,54 @@ var _ = Describe("Skyhook Types", func() {
 
 		Expect(nodeState.IsPackageComplete(packages["foo"], interrupts, configUpdates)).To(BeEquivalentTo(true))
 		Expect(nodeState.IsPackageComplete(packages["bar"], interrupts, configUpdates)).To(BeEquivalentTo(false))
+	})
+
+	It("Should detect IsPaused correctly", func() {
+		s := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{},
+		}
+		// Case 1: Annotations is nil
+		Expect(s.IsPaused()).To(BeFalse())
+
+		// Case 2: Annotations is empty map
+		s.Annotations = map[string]string{}
+		Expect(s.IsPaused()).To(BeFalse())
+
+		// Case 3: Key not present
+		s.Annotations = map[string]string{"other": "true"}
+		Expect(s.IsPaused()).To(BeFalse())
+
+		// Case 4: Key present with value "true"
+		s.Annotations = map[string]string{METADATA_PREFIX + "/pause": "true"}
+		Expect(s.IsPaused()).To(BeTrue())
+
+		// Case 5: Key present with value "false"
+		s.Annotations = map[string]string{METADATA_PREFIX + "/pause": "false"}
+		Expect(s.IsPaused()).To(BeFalse())
+	})
+
+	It("Should detect IsDisabled correctly", func() {
+		s := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{},
+		}
+		// Case 1: Annotations is nil
+		Expect(s.IsDisabled()).To(BeFalse())
+
+		// Case 2: Annotations is empty map
+		s.Annotations = map[string]string{}
+		Expect(s.IsDisabled()).To(BeFalse())
+
+		// Case 3: Key not present
+		s.Annotations = map[string]string{"other": "true"}
+		Expect(s.IsDisabled()).To(BeFalse())
+
+		// Case 4: Key present with value "true"
+		s.Annotations = map[string]string{METADATA_PREFIX + "/disable": "true"}
+		Expect(s.IsDisabled()).To(BeTrue())
+
+		// Case 5: Key present with value "false"
+		s.Annotations = map[string]string{METADATA_PREFIX + "/disable": "false"}
+		Expect(s.IsDisabled()).To(BeFalse())
 	})
 
 })

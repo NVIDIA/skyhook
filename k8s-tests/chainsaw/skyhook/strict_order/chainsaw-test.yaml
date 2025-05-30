@@ -22,38 +22,41 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: validate-packages
+  name: strict-order-skyhook
 spec:
-  description: This test makes sure that the operator will validate that the pods it's created match the package's current spec in the SCR and if not it will kill them off. 
-    We assert this by creating some packages with an incorrect specification such as a bogus image, too much resources, and an env that causes the container to hang. 
-    We then fix this in the SCR with an update and assert that the pods were killed and that the operator allowed the packages to finish.
   timeouts:
     assert: 240s
   catch: ## if errors, print the most important info
-    - get:
-        apiVersion: v1
-        kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
-        format: yaml
-    - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
-        name: validate-packages
-        format: yaml
+  - get:
+      apiVersion: v1
+      kind: Node
+      selector: skyhook.nvidia.com/test-node=skyhooke2e
+      format: yaml
   steps:
   - try:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../rest_test.sh validate-packages
+          ../rest_test.sh strict-order-skyhook-zzz
+          ../rest_test.sh strict-order-skyhook-b
+          ../rest_test.sh strict-order-skyhook-c
+          ../rest_test.sh strict-order-skyhook-d
     - apply:
         file: skyhook.yaml
+    - assert:
+        file: assert-a.yaml
+    - assert:
+        file: assert-b.yaml
+    - assert:
+        file: assert-c.yaml
+    # make sure that if it was going to start d it will start d
     - sleep:
         duration: 5s
     - assert:
-        file: assert.yaml
+        file: assert-c.yaml
   - try:
-    - update:
-        file: update.yaml
+    - patch:
+        ## this test is very odd, it adds stuff... not makes it so
+        file: skyhook-update.yaml
     - assert:
-        file: assert-update.yaml
+        file: assert-d.yaml

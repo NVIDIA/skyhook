@@ -25,7 +25,13 @@ metadata:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
   name: demo
+  annotations:
+    skyhook.nvidia.com/pause: "false"
+    skyhook.nvidia.com/disable: "false"
 spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
   packages:
     baz:
       version: 1.1.0
@@ -33,9 +39,9 @@ spec:
       configMap:
         config.yaml: |-
           #!/bin/bash
-          sleep 30
+          sleep 1
           echo "Hello, config!"
         config_check.yaml: |-
           #!/bin/bash
-          sleep 30
+          sleep 1
           echo "Hello, config check!"

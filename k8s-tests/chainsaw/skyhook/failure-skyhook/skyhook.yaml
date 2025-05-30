@@ -38,6 +38,8 @@ spec:
       env: 
         - name: EXIT_CODE
           value: "2"
+        - name: SLEEP_LEN
+          value: "1"
       dependsOn:
         dexter: "1.2.3"
     dexter:

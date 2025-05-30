@@ -24,7 +24,6 @@ kind: Test
 metadata:
   name: pod-finalization
 spec:
-  concurrent: true
   timeouts:
     assert: 180s
   steps:

@@ -71,6 +71,11 @@ type SkyhookSpec struct {
 	// This skyhook is required to have been completed before any workloads can start
 	//+kubebuilder:default=false
 	RuntimeRequired bool `json:"runtimeRequired,omitempty"`
+
+	// Priority determines the order in which skyhooks are applied. Lower values are applied first.
+	//+kubebuilder:validation:Minimum=0
+	//+kubebuilder:default=200
+	Priority int `json:"priority,omitempty"`
 }
 
 // BuildGraph turns packages in the a graph of dependencies
@@ -653,4 +658,24 @@ func init() {
 // WasUpdated returns true if this instance of skyhook has been updated
 func (s *Skyhook) WasUpdated() bool {
 	return s.Generation > 1 && s.Generation > s.Status.ObservedGeneration
+}
+
+func (s *Skyhook) IsPaused() bool {
+	if s.Annotations == nil {
+		return false
+	}
+	if val, ok := s.Annotations[fmt.Sprintf("%s/pause", METADATA_PREFIX)]; ok {
+		return val == "true"
+	}
+	return false
+}
+
+func (s *Skyhook) IsDisabled() bool {
+	if s.Annotations == nil {
+		return false
+	}
+	if val, ok := s.Annotations[fmt.Sprintf("%s/disable", METADATA_PREFIX)]; ok {
+		return val == "true"
+	}
+	return false
 }
