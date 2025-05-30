@@ -74,7 +74,7 @@ type SkyhookSpec struct {
 
 	// Priority determines the order in which skyhooks are applied. Lower values are applied first.
 	//+kubebuilder:validation:Minimum=0
-	//+kubebuilder:default=0
+	//+kubebuilder:default=200
 	Priority int `json:"priority,omitempty"`
 }
 
@@ -596,9 +596,6 @@ const (
 	StatusInProgress Status = "in_progress"
 	StatusErroring   Status = "erroring"
 	StatusUnknown    Status = "unknown"
-	StatusDisabled   Status = "disabled"
-	StatusWaiting    Status = "waiting"
-	StatusPaused     Status = "paused"
 )
 
 func GetStatus(s string) Status {
@@ -609,12 +606,6 @@ func GetStatus(s string) Status {
 		return StatusInProgress
 	case StatusErroring:
 		return StatusErroring
-	case StatusDisabled:
-		return StatusDisabled
-	case StatusWaiting:
-		return StatusWaiting
-	case StatusPaused:
-		return StatusPaused
 	default:
 		return StatusUnknown
 	}

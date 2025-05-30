@@ -24,7 +24,6 @@ kind: Test
 metadata:
   name: failure-skyhook
 spec:
-  concurrent: false 
   timeouts:
     assert: 240s
   catch: ## if errors, print the most important info

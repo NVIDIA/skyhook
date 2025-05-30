@@ -24,7 +24,6 @@ kind: Test
 metadata:
   name: simple-skyhook
 spec:
-  concurrent: false 
   # skip: false ##  this test doesn't seem to be useful, just slows things down, leaving it for, should delete at some point if still skipped
   timeouts:
     assert: 240s

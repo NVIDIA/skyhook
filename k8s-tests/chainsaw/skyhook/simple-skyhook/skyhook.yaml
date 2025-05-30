@@ -40,6 +40,9 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       dependsOn:
         dexter: "1.2.3"
+      env: 
+        - name: SLEEP_LEN
+          value: "1"
     foobar:
       version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
@@ -47,7 +50,7 @@ spec:
         dexter: "1.2.3"
       env: 
         - name: SLEEP_LEN
-          value: "3" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition
       resources:
         cpuLimit: 50m
         cpuRequest: 50m
@@ -67,3 +70,6 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+      env: 
+        - name: SLEEP_LEN
+          value: "1"

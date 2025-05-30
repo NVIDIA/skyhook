@@ -2,7 +2,7 @@
 ## What
 With v0.8.0 Skyhooks now always get applied in a repeatable and specific order. This also means that all Skyhooks will now be sequential, though packages within a Skyhook can be parallel. Each custom resource now supports a `priority` field which is a non-zero positive integer. Skyhooks will be processed in order starting from 0, any Skyhooks with the same `priority` will be processed by sorting them by their `metadata.name` field.
 
-**NOTE**: Any Skyhook which does NOT provide a `priority` field will be assigned a priority value of 0.
+**NOTE**: Any Skyhook which does NOT provide a `priority` field will be assigned a priority value of 200.
 
 Two additional flow control features have been added with this and can be set in the annotations of each skyhook:
  * `skyhook.nvidia.com/disable`: bool. When `true` it will skip this Skyhook from processing and continue with any other ones further down the priority order.

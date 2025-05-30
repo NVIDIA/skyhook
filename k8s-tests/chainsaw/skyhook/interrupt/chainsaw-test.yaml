@@ -31,7 +31,6 @@ spec:
     Additionally this test tests the agentImageOverride, interruption budgets, and dependsOn fields.
   ## this can't run concurrently because it can cause a race condition where the other skyhooks make the node unschedulable 
   ## and the pods won't come up
-  concurrent: false
   timeouts:
     assert: 240s
   catch: ## if errors, print the most important info
