@@ -24,7 +24,6 @@ kind: Test
 metadata:
   name: cleanup-pods
 spec:
-  concurrent: false 
   description: |
     This test runs a simple skyhook with dependsOn. We wait tell completed, then trigger update to force config cycle on package B. Once config
     is complete, we update again to make the package error, and at the same clear out the node annotation to trigger cleanup.

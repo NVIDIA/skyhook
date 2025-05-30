@@ -69,14 +69,14 @@ func (t *ObjectTracker) Track(obj client.Object) {
 
 type clusterState struct {
 	tracker  ObjectTracker
-	skyhooks []*skyhookNodes
+	skyhooks []SkyhookNodes
 }
 
 func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList) (*clusterState, error) {
 
 	ret := &clusterState{
 		tracker:  ObjectTracker{objects: make(map[string]client.Object)},
-		skyhooks: make([]*skyhookNodes, len(skyhooks.Items)),
+		skyhooks: make([]SkyhookNodes, len(skyhooks.Items)),
 		// nodes:    make(map[string][]*SkyhookNode),
 	}
 
@@ -99,36 +99,36 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList) (*cluste
 			}
 			if selector.Matches(labels.Set(node.Labels)) { // note: if selector is empty, it selects all
 				ret.tracker.Track(node.DeepCopy())
-				ret.skyhooks[idx].nodes = append(ret.skyhooks[idx].nodes, skyNode)
+				ret.skyhooks[idx].AddNode(skyNode)
 			}
 		}
 	}
 
 	// Sort by priority (ascending), then by name (ascending) if priorities are equal
 	sort.Slice(ret.skyhooks, func(i, j int) bool {
-		pi := ret.skyhooks[i].skyhook.Spec.Priority
-		pj := ret.skyhooks[j].skyhook.Spec.Priority
+		pi := ret.skyhooks[i].GetSkyhook().Spec.Priority
+		pj := ret.skyhooks[j].GetSkyhook().Spec.Priority
 		if pi != pj {
 			return pi < pj
 		}
-		return ret.skyhooks[i].skyhook.Name < ret.skyhooks[j].skyhook.Name
+		return ret.skyhooks[i].GetSkyhook().Name < ret.skyhooks[j].GetSkyhook().Name
 	})
 
 	for _, skyhook := range ret.skyhooks {
-		sort.Slice(skyhook.nodes, func(i, j int) bool {
-			return skyhook.nodes[i].GetNode().CreationTimestamp.Before(&skyhook.nodes[j].GetNode().CreationTimestamp)
+		sort.Slice(skyhook.GetNodes(), func(i, j int) bool {
+			return skyhook.GetNodes()[i].GetNode().CreationTimestamp.Before(&skyhook.GetNodes()[j].GetNode().CreationTimestamp)
 		})
 	}
 
 	return ret, nil
 }
 
-func GetNextSkyhook(skyhooks []SkyhookNodes) (int, SkyhookNodes) {
-	for i, skyhook := range skyhooks {
+func GetNextSkyhook(skyhooks []SkyhookNodes) SkyhookNodes {
+	for _, skyhook := range skyhooks {
 		if skyhook.IsComplete() || skyhook.IsDisabled() {
 			continue
 		}
-		return i, skyhook
+		return skyhook
 	}
 	// Always return the last non disabled skyhook to handle any final state logic
 	// for i := len(skyhooks) - 1; i >= 0; i-- {
@@ -136,7 +136,7 @@ func GetNextSkyhook(skyhooks []SkyhookNodes) (int, SkyhookNodes) {
 	// 		return skyhooks[i]
 	// 	}
 	// }
-	return -1, nil
+	return nil
 }
 
 // SkyhookNodes wraps the skyhook and nodes that it pertains too
@@ -145,12 +145,14 @@ type SkyhookNodes interface {
 	GetSkyhook() *wrapper.Skyhook
 	GetNodes() []wrapper.SkyhookNode
 	GetNode(name string) (v1alpha1.Status, wrapper.SkyhookNode)
+	AddNode(node wrapper.SkyhookNode)
 	IsComplete() bool
 	IsDisabled() bool
 	IsPaused() bool
 	NodeCount() int
 	SetStatus(status v1alpha1.Status)
 	Status() v1alpha1.Status
+	GetPriorStatus() v1alpha1.Status
 	// WasUpdated() bool
 	UpdateCondition() bool
 	ReportState()
@@ -166,8 +168,16 @@ type skyhookNodes struct {
 	priorStatus v1alpha1.Status
 }
 
+func (s *skyhookNodes) GetPriorStatus() v1alpha1.Status {
+	return s.priorStatus
+}
+
 func (s *skyhookNodes) GetNodes() []wrapper.SkyhookNode {
 	return s.nodes
+}
+
+func (s *skyhookNodes) AddNode(node wrapper.SkyhookNode) {
+	s.nodes = append(s.nodes, node)
 }
 
 func (s *skyhookNodes) GetSkyhook() *wrapper.Skyhook {
@@ -301,14 +311,14 @@ func NewNodePicker(runtimeRequiredToleration corev1.Toleration) *NodePicker {
 }
 
 // primeAndPruneNodes add current priority from skyhook status, and check time removing old ones
-func (s *NodePicker) primeAndPruneNodes(skyhook *skyhookNodes) {
+func (s *NodePicker) primeAndPruneNodes(skyhook SkyhookNodes) {
 
-	for n, t := range skyhook.skyhook.Status.NodePriority {
+	for n, t := range skyhook.GetSkyhook().Status.NodePriority {
 		// prune
 		// if the node is complete, remove it from the priority list
 		if nodeStatus, _ := skyhook.GetNode(n); nodeStatus == v1alpha1.StatusComplete {
-			delete(skyhook.skyhook.Status.NodePriority, n)
-			skyhook.skyhook.Updated = true
+			delete(skyhook.GetSkyhook().Status.NodePriority, n)
+			skyhook.GetSkyhook().Updated = true
 		} else {
 			s.priorityNodes[n] = t.Time
 		}
@@ -357,7 +367,7 @@ func CheckTaintToleration(tolerations []corev1.Toleration, taints []corev1.Taint
 	return all_tolerated
 }
 
-func (np *NodePicker) SelectNodes(s *skyhookNodes) []wrapper.SkyhookNode {
+func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 
 	np.primeAndPruneNodes(s)
 
@@ -372,23 +382,23 @@ func (np *NodePicker) SelectNodes(s *skyhookNodes) []wrapper.SkyhookNode {
 		},
 		{
 			Key:      SkyhookTaintUnschedulable,
-			Value:    s.skyhook.Name,
+			Value:    s.GetSkyhook().GetName(),
 			Operator: corev1.TolerationOpEqual,
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
-	}, s.skyhook.Spec.AdditionalTolerations...)
+	}, s.GetSkyhook().Spec.AdditionalTolerations...)
 
-	if s.skyhook.Spec.RuntimeRequired {
+	if s.GetSkyhook().Spec.RuntimeRequired {
 		tolerations = append(tolerations, np.runtimeRequiredToleration)
 	}
 
 	var nodeCount int
-	if s.skyhook.Spec.InterruptionBudget.Percent != nil {
-		limit := float64(*s.skyhook.Spec.InterruptionBudget.Percent) / 100
+	if s.GetSkyhook().Spec.InterruptionBudget.Percent != nil {
+		limit := float64(*s.GetSkyhook().Spec.InterruptionBudget.Percent) / 100
 		nodeCount = max(1, int(float64(s.NodeCount())*limit))
 	}
-	if s.skyhook.Spec.InterruptionBudget.Count != nil {
-		nodeCount = max(1, min(s.NodeCount(), *s.skyhook.Spec.InterruptionBudget.Count))
+	if s.GetSkyhook().Spec.InterruptionBudget.Count != nil {
+		nodeCount = max(1, min(s.NodeCount(), *s.GetSkyhook().Spec.InterruptionBudget.Count))
 	}
 
 	// if we don't have a setting still, set it to all
@@ -413,7 +423,7 @@ func (np *NodePicker) SelectNodes(s *skyhookNodes) []wrapper.SkyhookNode {
 	nodesWithTaintTolerationIssue := make([]string, 0)
 	// look for progress first
 	for _, order := range priority {
-		for _, node := range s.nodes {
+		for _, node := range s.GetNodes() {
 
 			if len(nodes) >= nodeCount {
 				break
@@ -433,7 +443,7 @@ func (np *NodePicker) SelectNodes(s *skyhookNodes) []wrapper.SkyhookNode {
 	for _, node := range nodes {
 		if CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
 			final_nodes = append(final_nodes, node)
-			np.upsertPick(node.GetNode().GetName(), s.skyhook) // track pick
+			np.upsertPick(node.GetNode().GetName(), s.GetSkyhook()) // track pick
 		} else {
 			nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
 		}
@@ -441,7 +451,7 @@ func (np *NodePicker) SelectNodes(s *skyhookNodes) []wrapper.SkyhookNode {
 
 	// if we have nodes that are not tolerable, we need to add a condition to the skyhook
 	if len(nodesWithTaintTolerationIssue) > 0 {
-		s.skyhook.AddCondition(metav1.Condition{
+		s.GetSkyhook().AddCondition(metav1.Condition{
 			Type:               fmt.Sprintf("%s/TaintNotTolerable", v1alpha1.METADATA_PREFIX),
 			Status:             metav1.ConditionTrue,
 			Reason:             "TaintNotTolerable",
@@ -449,7 +459,7 @@ func (np *NodePicker) SelectNodes(s *skyhookNodes) []wrapper.SkyhookNode {
 			LastTransitionTime: metav1.Now(),
 		})
 	} else {
-		s.skyhook.AddCondition(metav1.Condition{
+		s.GetSkyhook().AddCondition(metav1.Condition{
 			Type:               fmt.Sprintf("%s/TaintNotTolerable", v1alpha1.METADATA_PREFIX),
 			Status:             metav1.ConditionFalse,
 			Reason:             "TaintNotTolerable",

@@ -307,7 +307,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return result, err
 		}
 
-		if skyhook.skyhook.IsPaused() {
+		if skyhook.IsPaused() {
 			continue
 		}
 
@@ -315,7 +315,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return result, err
 		}
 
-		if yes, result, err := shouldReturn(r.ValidateNodeConfigmaps(ctx, skyhook.skyhook.Name, skyhook.nodes)); yes {
+		if yes, result, err := shouldReturn(r.ValidateNodeConfigmaps(ctx, skyhook.GetSkyhook().Name, skyhook.GetNodes())); yes {
 			return result, err
 		}
 
@@ -343,20 +343,12 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// }
 	}
 
-	// This whole section seems dumb but it makes the mock easier in tests
-	skyhookNodesIface := make([]SkyhookNodes, len(clusterState.skyhooks))
-	for i, n := range clusterState.skyhooks {
-		skyhookNodesIface[i] = n
-	}
-	interfaceIndex, skyhookInterface := GetNextSkyhook(skyhookNodesIface)
-	if skyhookInterface != nil && !skyhookInterface.IsPaused() {
-
-		skyhook := clusterState.skyhooks[interfaceIndex]
-		// End of dumb section
+	skyhook := GetNextSkyhook(clusterState.skyhooks)
+	if skyhook != nil && !skyhook.IsPaused() {
 
 		result, err = r.RunSkyhookPackages(ctx, clusterState, nodePicker, skyhook)
 		if err != nil {
-			logger.Error(err, "error processing skyhook", "skyhook", skyhook.skyhook.Name)
+			logger.Error(err, "error processing skyhook", "skyhook", skyhook.GetSkyhook().Name)
 			errs = append(errs, err)
 		}
 	}
@@ -404,14 +396,14 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 
 		err := skyhook.Migrate(logger)
 		if err != nil {
-			return false, fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.skyhook.Name, err)
+			return false, fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
-		if err := skyhook.skyhook.Skyhook.Validate(); err != nil {
-			return false, fmt.Errorf("error validating skyhook [%s]: %w", skyhook.skyhook.Name, err)
+		if err := skyhook.GetSkyhook().Skyhook.Validate(); err != nil {
+			return false, fmt.Errorf("error validating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
-		for _, node := range skyhook.nodes {
+		for _, node := range skyhook.GetNodes() {
 			if node.Changed() {
 				err := r.Status().Patch(ctx, node.GetNode(), client.MergeFrom(clusterState.tracker.GetOriginal(node.GetNode())))
 				if err != nil {
@@ -426,12 +418,12 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			}
 		}
 
-		if skyhook.skyhook.Updated {
+		if skyhook.GetSkyhook().Updated {
 			// need to do this because SaveNodesAndSkyhook only saves skyhook status, not the main skyhook object where the annotations are
 			// additionally it needs to be an update, a patch nils out the annotations for some reason, which the save function does a patch
 
-			if err = r.Status().Update(ctx, skyhook.skyhook.Skyhook); err != nil {
-				return false, fmt.Errorf("error updating during migration skyhook status [%s]: %w", skyhook.skyhook.Name, err)
+			if err = r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+				return false, fmt.Errorf("error updating during migration skyhook status [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 
 			// because of conflict issues (409) we need to do things a bit differently here.
@@ -441,9 +433,9 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 
 			// work around for now is to grab a new copy of the object, and then patch it
 
-			newskyhook, err := r.dal.GetSkyhook(ctx, skyhook.skyhook.Name)
+			newskyhook, err := r.dal.GetSkyhook(ctx, skyhook.GetSkyhook().Name)
 			if err != nil {
-				return false, fmt.Errorf("error getting skyhook to migrate [%s]: %w", skyhook.skyhook.Name, err)
+				return false, fmt.Errorf("error getting skyhook to migrate [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 			newPatch := client.MergeFrom(newskyhook.DeepCopy())
 
@@ -451,7 +443,7 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			wrapper.NewSkyhookWrapper(newskyhook).SetVersion()
 
 			if err = r.Patch(ctx, newskyhook, newPatch); err != nil {
-				return false, fmt.Errorf("error updating during migration skyhook [%s]: %w", skyhook.skyhook.Name, err)
+				return false, fmt.Errorf("error updating during migration skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 
 			updates = true
@@ -467,12 +459,12 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 
 // ReportState computes and puts important information into the skyhook status so that monitoring tools such as k9s
 // can see the information at a glance. For example, the number of completed nodes and the list of packages in the skyhook.
-func (r *SkyhookReconciler) ReportState(ctx context.Context, clusterState *clusterState, skyhook *skyhookNodes) (bool, error) {
+func (r *SkyhookReconciler) ReportState(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes) (bool, error) {
 
 	// save updated state to skyhook status
 	skyhook.ReportState()
 
-	if skyhook.skyhook.Updated {
+	if skyhook.GetSkyhook().Updated {
 		_, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
 		if len(errs) > 0 {
 			return false, utilerrors.NewAggregate(errs)
@@ -480,12 +472,7 @@ func (r *SkyhookReconciler) ReportState(ctx context.Context, clusterState *clust
 		return true, nil
 	}
 
-	saved, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
-	if len(errs) > 0 {
-		return saved, utilerrors.NewAggregate(errs)
-	}
-
-	return saved, nil
+	return false, nil
 }
 
 func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clusterState) (bool, error) {
@@ -498,12 +485,12 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 			skyhook.GetSkyhook().Status.NodeBootIds = make(map[string]string)
 		}
 
-		for _, node := range skyhook.nodes {
+		for _, node := range skyhook.GetNodes() {
 			id, ok := skyhook.GetSkyhook().Status.NodeBootIds[node.GetNode().Name]
 
 			if !ok { // new node
 				skyhook.GetSkyhook().Status.NodeBootIds[node.GetNode().Name] = node.GetNode().Status.NodeInfo.BootID
-				skyhook.skyhook.Updated = true
+				skyhook.GetSkyhook().Updated = true
 			}
 
 			if id != "" && id != node.GetNode().Status.NodeInfo.BootID { // node rebooted
@@ -513,7 +500,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 					node.Reset()
 				}
 				skyhook.GetSkyhook().Status.NodeBootIds[node.GetNode().Name] = node.GetNode().Status.NodeInfo.BootID
-				skyhook.skyhook.Updated = true
+				skyhook.GetSkyhook().Updated = true
 			}
 
 			if node.Changed() { // update
@@ -524,11 +511,11 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 				}
 			}
 		}
-		if skyhook.skyhook.Updated { // update
+		if skyhook.GetSkyhook().Updated { // update
 			updates = true
 			err := r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("error updating skyhook status after reboot [%s]: %w", skyhook.skyhook.Name, err))
+				errs = append(errs, fmt.Errorf("error updating skyhook status after reboot [%s]: %w", skyhook.GetSkyhook().Name, err))
 			}
 		}
 	}
@@ -537,7 +524,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 }
 
 // Runs all skyhook packages then saves and requeues if changes were made
-func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState *clusterState, nodePicker *NodePicker, skyhook *skyhookNodes) (*ctrl.Result, error) {
+func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState *clusterState, nodePicker *NodePicker, skyhook SkyhookNodes) (*ctrl.Result, error) {
 
 	logger := log.FromContext(ctx)
 	requeue := false
@@ -567,7 +554,7 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 		// prepend the uninstall packages so they are ran first
 		toRun = append(toUninstall, toRun...)
 
-		interrupt, pack := fudgeInterruptWithPriority(toRun, skyhook.skyhook.GetConfigUpdates(), skyhook.skyhook.GetConfigInterrupts())
+		interrupt, pack := fudgeInterruptWithPriority(toRun, skyhook.GetSkyhook().GetConfigUpdates(), skyhook.GetSkyhook().GetConfigInterrupts())
 
 		for _, f := range toRun {
 
@@ -587,7 +574,7 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 			}
 
 			// process one package at a time
-			if skyhook.skyhook.Spec.Serial {
+			if skyhook.GetSkyhook().Spec.Serial {
 				return &ctrl.Result{Requeue: true}, nil
 			}
 		}
@@ -609,11 +596,11 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 }
 
 // SaveNodesAndSkyhook saves nodes and skyhook and will update the events if the skyhook status changes
-func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterState *clusterState, skyhook *skyhookNodes) (bool, []error) {
+func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes) (bool, []error) {
 	saved := false
 	errs := make([]error, 0)
 
-	for _, node := range skyhook.nodes {
+	for _, node := range skyhook.GetNodes() {
 		patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()))
 		if node.Changed() {
 			err := r.Patch(ctx, node.GetNode(), patch)
@@ -622,18 +609,18 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 			}
 			saved = true
 
-			err = r.UpsertNodeLabelsAnnotations(ctx, skyhook.skyhook, node.GetNode())
+			err = r.UpsertNodeLabelsAnnotations(ctx, skyhook.GetSkyhook(), node.GetNode())
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error upserting labels and annotations config map for node [%s]: %w", node.GetNode().Name, err))
 			}
 
 			if node.IsComplete() {
-				r.recorder.Eventf(node.GetNode(), EventTypeNormal, EventsReasonSkyhookStateChange, "Skyhook [%s] complete.", skyhook.skyhook.Name)
+				r.recorder.Eventf(node.GetNode(), EventTypeNormal, EventsReasonSkyhookStateChange, "Skyhook [%s] complete.", skyhook.GetSkyhook().Name)
 
 				// since node is complete remove from priority
-				if _, ok := skyhook.skyhook.Status.NodePriority[node.GetNode().Name]; ok {
-					delete(skyhook.skyhook.Status.NodePriority, node.GetNode().Name)
-					skyhook.skyhook.Updated = true
+				if _, ok := skyhook.GetSkyhook().Status.NodePriority[node.GetNode().Name]; ok {
+					delete(skyhook.GetSkyhook().Status.NodePriority, node.GetNode().Name)
+					skyhook.GetSkyhook().Updated = true
 				}
 			}
 		}
@@ -650,21 +637,21 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 		}
 
 		if node.GetSkyhook() != nil && node.GetSkyhook().Updated {
-			skyhook.skyhook.Updated = true
+			skyhook.GetSkyhook().Updated = true
 		}
 	}
 
-	if skyhook.skyhook.Updated {
-		patch := client.MergeFrom(clusterState.tracker.GetOriginal(skyhook.skyhook.Skyhook))
-		err := r.Status().Patch(ctx, skyhook.skyhook.Skyhook, patch)
+	if skyhook.GetSkyhook().Updated {
+		patch := client.MergeFrom(clusterState.tracker.GetOriginal(skyhook.GetSkyhook().Skyhook))
+		err := r.Status().Patch(ctx, skyhook.GetSkyhook().Skyhook, patch)
 		if err != nil {
 			errs = append(errs, err)
 		}
 		saved = true
 
-		if skyhook.priorStatus != "" && skyhook.priorStatus != skyhook.Status() {
+		if skyhook.GetPriorStatus() != "" && skyhook.GetPriorStatus() != skyhook.Status() {
 			// we transitioned, fire event
-			r.recorder.Eventf(skyhook.skyhook, EventTypeNormal, EventsReasonSkyhookStateChange, "Skyhook transitioned [%s] -> [%s]", skyhook.priorStatus, skyhook.Status())
+			r.recorder.Eventf(skyhook.GetSkyhook(), EventTypeNormal, EventsReasonSkyhookStateChange, "Skyhook transitioned [%s] -> [%s]", skyhook.GetPriorStatus(), skyhook.Status())
 		}
 	}
 
@@ -675,10 +662,10 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 }
 
 // Updates the state for the node or skyhook if a version is changed on a package
-func HandleVersionChange(skyhook *skyhookNodes) ([]*v1alpha1.Package, error) {
+func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 	toUninstall := make([]*v1alpha1.Package, 0)
 
-	for _, node := range skyhook.nodes {
+	for _, node := range skyhook.GetNodes() {
 		nodeState, err := node.State()
 		if err != nil {
 			return nil, err
@@ -687,7 +674,7 @@ func HandleVersionChange(skyhook *skyhookNodes) ([]*v1alpha1.Package, error) {
 		for _, packageStatus := range nodeState {
 			upgrade := false
 
-			_package, exists := skyhook.skyhook.Spec.Packages[packageStatus.Name]
+			_package, exists := skyhook.GetSkyhook().Spec.Packages[packageStatus.Name]
 			if exists && _package.Version == packageStatus.Version {
 				continue // no uninstall needed for package
 			}
@@ -762,7 +749,7 @@ func HandleVersionChange(skyhook *skyhookNodes) ([]*v1alpha1.Package, error) {
 			// remove all config updates for the package since it's being uninstalled or
 			// upgraded. NOTE: The config updates must be removed whenever the version changes
 			// or else the package interrupt may be skipped if there is one
-			skyhook.skyhook.RemoveConfigUpdates(_package.Name)
+			skyhook.GetSkyhook().RemoveConfigUpdates(_package.Name)
 
 			// set the node and skyhook status to in progress
 			node.SetStatus(v1alpha1.StatusInProgress)
@@ -861,14 +848,14 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotations(ctx context.Context, sky
 
 // HandleConfigUpdates checks whether the configMap on a package was updated and if it was the configmap will
 // be updated and the package will be put into config mode if the package is complete or erroring
-func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterState *clusterState, skyhook *skyhookNodes, _package v1alpha1.Package, oldConfigMap, newConfigMap *corev1.ConfigMap) (bool, error) {
-	completedNodes, nodeCount := 0, len(skyhook.nodes)
+func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes, _package v1alpha1.Package, oldConfigMap, newConfigMap *corev1.ConfigMap) (bool, error) {
+	completedNodes, nodeCount := 0, len(skyhook.GetNodes())
 	erroringNode := false
 
 	// if configmap changed
 	if !reflect.DeepEqual(oldConfigMap.Data, newConfigMap.Data) {
-		for _, node := range skyhook.nodes {
-			exists, err := r.PodExists(ctx, node.GetNode().Name, skyhook.skyhook.GetName(), &_package)
+		for _, node := range skyhook.GetNodes() {
+			exists, err := r.PodExists(ctx, node.GetNode().Name, skyhook.GetSkyhook().Name, &_package)
 			if err != nil {
 				return false, err
 			}
@@ -892,7 +879,7 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 								"spec.nodeName": node.GetNode().Name,
 							},
 							client.MatchingLabels{
-								fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhook.skyhook.Name,
+								fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhook.GetSkyhook().Name,
 								fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX): fmt.Sprintf("%s-%s", _package.Name, _package.Version),
 							},
 						)
@@ -926,13 +913,13 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 
 			// if updates completed then clear out old config updates as they are finished
 			if completedNodes == nodeCount {
-				skyhook.skyhook.RemoveConfigUpdates(_package.Name)
+				skyhook.GetSkyhook().RemoveConfigUpdates(_package.Name)
 			}
 
 			// Add the new changed keys to the config updates
-			skyhook.skyhook.AddConfigUpdates(_package.Name, newConfigUpdates...)
+			skyhook.GetSkyhook().AddConfigUpdates(_package.Name, newConfigUpdates...)
 
-			for _, node := range skyhook.nodes {
+			for _, node := range skyhook.GetNodes() {
 				err := node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageConfig, 0)
 				if err != nil {
 					return false, fmt.Errorf("error upserting node status [%s]: %w", node.GetNode().Name, err)
@@ -959,11 +946,11 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 	return false, nil
 }
 
-func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook *skyhookNodes, clusterState *clusterState) (bool, error) {
+func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, error) {
 	updated := false
 
 	var list corev1.ConfigMapList
-	err := r.List(ctx, &list, client.InNamespace(r.opts.Namespace), client.MatchingLabels{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.skyhook.Name})
+	err := r.List(ctx, &list, client.InNamespace(r.opts.Namespace), client.MatchingLabels{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.GetSkyhook().Name})
 	if err != nil {
 		return false, fmt.Errorf("error listing config maps while upserting: %w", err)
 	}
@@ -975,8 +962,8 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook *skyho
 
 	// clean up from an update
 	shouldExist := make(map[string]struct{})
-	for _, _package := range skyhook.skyhook.Spec.Packages {
-		shouldExist[strings.ToLower(fmt.Sprintf("%s-%s-%s", skyhook.skyhook.Name, _package.Name, _package.Version))] = struct{}{}
+	for _, _package := range skyhook.GetSkyhook().Spec.Packages {
+		shouldExist[strings.ToLower(fmt.Sprintf("%s-%s-%s", skyhook.GetSkyhook().Name, _package.Name, _package.Version))] = struct{}{}
 	}
 
 	for k, v := range existingCMs {
@@ -989,18 +976,18 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook *skyho
 		}
 	}
 
-	for _, _package := range skyhook.skyhook.Spec.Packages {
+	for _, _package := range skyhook.GetSkyhook().Spec.Packages {
 		if len(_package.ConfigMap) > 0 {
 
 			newCM := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      strings.ToLower(fmt.Sprintf("%s-%s-%s", skyhook.skyhook.Name, _package.Name, _package.Version)),
+					Name:      strings.ToLower(fmt.Sprintf("%s-%s-%s", skyhook.GetSkyhook().Name, _package.Name, _package.Version)),
 					Namespace: r.opts.Namespace,
 					Labels: map[string]string{
-						fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.skyhook.Name,
+						fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.GetSkyhook().Name,
 					},
 					Annotations: map[string]string{
-						fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):            skyhook.skyhook.Name,
+						fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):            skyhook.GetSkyhook().Name,
 						fmt.Sprintf("%s/Package.Name", v1alpha1.METADATA_PREFIX):    _package.Name,
 						fmt.Sprintf("%s/Package.Version", v1alpha1.METADATA_PREFIX): _package.Version,
 					},
@@ -1008,11 +995,11 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook *skyho
 				Data: _package.ConfigMap,
 			}
 			// set owner of CM to the SCR, which will clean up the CM in delete of the SCR
-			if err := ctrl.SetControllerReference(skyhook.skyhook.Skyhook, newCM, r.scheme); err != nil {
+			if err := ctrl.SetControllerReference(skyhook.GetSkyhook().Skyhook, newCM, r.scheme); err != nil {
 				return false, fmt.Errorf("error setting ownership of cm: %w", err)
 			}
 
-			if existingCM, ok := existingCMs[strings.ToLower(fmt.Sprintf("%s-%s-%s", skyhook.skyhook.Name, _package.Name, _package.Version))]; ok {
+			if existingCM, ok := existingCMs[strings.ToLower(fmt.Sprintf("%s-%s-%s", skyhook.GetSkyhook().Name, _package.Name, _package.Version))]; ok {
 				updatedConfigMap, err := r.HandleConfigUpdates(ctx, clusterState, skyhook, _package, &existingCM, newCM)
 				if err != nil {
 					return false, fmt.Errorf("error updating config map [%s]: %s", newCM.Name, err)
@@ -1088,21 +1075,21 @@ func ShouldEvict(pod *corev1.Pod) bool {
 }
 
 // HandleFinalizer returns true only if we container is deleted and we handled it completely, else false
-func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook *skyhookNodes) (bool, error) {
-	if skyhook.skyhook.DeletionTimestamp.IsZero() { // if not deleted, and does not have our finalizer, add it
-		if !controllerutil.ContainsFinalizer(skyhook.skyhook.Skyhook, SkyhookFinalizer) {
-			controllerutil.AddFinalizer(skyhook.skyhook.Skyhook, SkyhookFinalizer)
+func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook SkyhookNodes) (bool, error) {
+	if skyhook.GetSkyhook().DeletionTimestamp.IsZero() { // if not deleted, and does not have our finalizer, add it
+		if !controllerutil.ContainsFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer) {
+			controllerutil.AddFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer)
 
-			if err := r.Update(ctx, skyhook.skyhook.Skyhook); err != nil {
+			if err := r.Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
 				return false, fmt.Errorf("error updating skyhook to add finalizer: %w", err)
 			}
 		}
 	} else { // being delete, time to handle our
-		if controllerutil.ContainsFinalizer(skyhook.skyhook.Skyhook, SkyhookFinalizer) {
+		if controllerutil.ContainsFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer) {
 
 			errs := make([]error, 0)
 
-			for _, node := range skyhook.nodes {
+			for _, node := range skyhook.GetNodes() {
 				patch := client.StrategicMergeFrom(node.GetNode().DeepCopy())
 
 				node.Uncordon()
@@ -1123,14 +1110,14 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook *skyhoo
 				return false, utilerrors.NewAggregate(errs)
 			}
 
-			controllerutil.RemoveFinalizer(skyhook.skyhook.Skyhook, SkyhookFinalizer)
-			if err := r.Update(ctx, skyhook.skyhook.Skyhook); err != nil {
+			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer)
+			if err := r.Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
 				return false, fmt.Errorf("error updating skyhook removing finalizer: %w", err)
 			}
 			// should be 1, and now 2. we want to set ObservedGeneration up to not trigger an logic from this update adding the finalizer
-			skyhook.skyhook.Status.ObservedGeneration = skyhook.skyhook.Status.ObservedGeneration + 1
+			skyhook.GetSkyhook().Status.ObservedGeneration = skyhook.GetSkyhook().Status.ObservedGeneration + 1
 
-			if err := r.Status().Update(ctx, skyhook.skyhook.Skyhook); err != nil {
+			if err := r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
 				return false, fmt.Errorf("error updating skyhook status: %w", err)
 			}
 
@@ -1828,14 +1815,14 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 
 // ValidateRunningPackages deletes pods that don't match the current spec and checks if there are pods running
 // that don't match the node state and removes them if they exist
-func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook *skyhookNodes) (bool, error) {
+func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook SkyhookNodes) (bool, error) {
 
 	update := false
 	errs := make([]error, 0)
 	// get all pods for this skyhook packages
 	pods, err := r.dal.GetPods(ctx,
 		client.MatchingLabels{
-			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.skyhook.Name,
+			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.GetSkyhook().Name,
 		},
 	)
 	if err != nil {
@@ -1851,7 +1838,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 		podsbyNode[pod.Spec.NodeName] = append(podsbyNode[pod.Spec.NodeName], pod)
 	}
 
-	for _, node := range skyhook.nodes {
+	for _, node := range skyhook.GetNodes() {
 		nodeState, err := node.State()
 		if err != nil {
 			return false, fmt.Errorf("error getting node state: %w", err)
@@ -1866,8 +1853,8 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 			}
 
 			// check if the package is part of the skyhook spec, if not we need to delete it
-			for _, v := range skyhook.skyhook.Spec.Packages {
-				if podMatchesPackage(r.opts, &v, pod, skyhook.skyhook, runningPackage.Stage) {
+			for _, v := range skyhook.GetSkyhook().Spec.Packages {
+				if podMatchesPackage(r.opts, &v, pod, skyhook.GetSkyhook(), runningPackage.Stage) {
 					found = true
 				}
 			}
@@ -2183,10 +2170,10 @@ func groupSkyhooksByNode(clusterState *clusterState) (map[types.UID][]SkyhookNod
 	nodes := make(map[types.UID]*corev1.Node)
 	for _, skyhook := range clusterState.skyhooks {
 		// Ignore skyhooks that don't have runtime required
-		if !skyhook.skyhook.Skyhook.Spec.RuntimeRequired {
+		if !skyhook.GetSkyhook().Spec.RuntimeRequired {
 			continue
 		}
-		for _, node := range skyhook.nodes {
+		for _, node := range skyhook.GetNodes() {
 			if _, ok := node_to_skyhooks[node.GetNode().UID]; !ok {
 				node_to_skyhooks[node.GetNode().UID] = make([]SkyhookNodes, 0)
 				nodes[node.GetNode().UID] = node.GetNode()

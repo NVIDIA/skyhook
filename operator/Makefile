@@ -18,7 +18,7 @@ include deps.mk
 VERSION ?= $(GIT_TAG_LAST)
 GO_VERSION ?= 1.23.8
 
-# Image URL to use all building/pushing image targets
+# Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location
 IMG_REPO ?= ghcr.io/nvidia/skyhook
 IMG ?= $(IMG_REPO)/operator
@@ -166,7 +166,7 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
 ## https://kyverno.github.io/chainsaw/latest/reference/commands/chainsaw_test/
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
-CHAINSAW_ARGS:=--exec-timeout 30s --parallel 2
+CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 
 e2e-tests: chainsaw install run ## Run end to end tests.
 	## requires a cluster to be running with access
@@ -228,7 +228,7 @@ merge-coverage:
 	$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/\1|g' $(REPORTING)/cover.out
 
 .PHONY: lint
-lint: golangci-lint# license-check ## Run golangci-lint linter & yamllint
+lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix

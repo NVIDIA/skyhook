@@ -130,21 +130,18 @@ var _ = Describe("GetNextSkyhook", func() {
 		n3 := makeSkyhookNodes(false, true)
 
 		// Should return n1
-		idx, result := GetNextSkyhook([]SkyhookNodes{n1, n2, n3})
-		Expect(idx).To(Equal(0))
+		result := GetNextSkyhook([]SkyhookNodes{n1, n2, n3})
 		Expect(result).To(Equal(n1))
 
 		// Should return nil as all complete or disabled
 		n1 = makeSkyhookNodes(true, false)
-		idx, result = GetNextSkyhook([]SkyhookNodes{n1, n2, n3})
-		Expect(idx).To(Equal(-1))
+		result = GetNextSkyhook([]SkyhookNodes{n1, n2, n3})
 		Expect(result).To(BeNil())
 
 		// Should return n3 as all others are complete or disabled
 		n2 = makeSkyhookNodes(false, true)
 		n3 = makeSkyhookNodes(false, false)
-		idx, result = GetNextSkyhook([]SkyhookNodes{n1, n2, n3})
-		Expect(idx).To(Equal(2))
+		result = GetNextSkyhook([]SkyhookNodes{n1, n2, n3})
 		Expect(result).To(Equal(n3))
 	})
 })
@@ -170,8 +167,8 @@ var _ = Describe("BuildState ordering", func() {
 		Expect(err).ToNot(HaveOccurred())
 		ordered := clusterState.skyhooks
 		// Should be: a (priority 1), b (priority 2, name b), c (priority 2, name c)
-		Expect(ordered[0].skyhook.Name).To(Equal("a"))
-		Expect(ordered[1].skyhook.Name).To(Equal("b"))
-		Expect(ordered[2].skyhook.Name).To(Equal("c"))
+		Expect(ordered[0].GetSkyhook().Name).To(Equal("a"))
+		Expect(ordered[1].GetSkyhook().Name).To(Equal("b"))
+		Expect(ordered[2].GetSkyhook().Name).To(Equal("c"))
 	})
 })

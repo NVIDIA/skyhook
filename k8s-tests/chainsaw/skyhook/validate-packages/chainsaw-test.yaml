@@ -27,7 +27,6 @@ spec:
   description: This test makes sure that the operator will validate that the pods it's created match the package's current spec in the SCR and if not it will kill them off. 
     We assert this by creating some packages with an incorrect specification such as a bogus image, too much resources, and an env that causes the container to hang. 
     We then fix this in the SCR with an update and assert that the pods were killed and that the operator allowed the packages to finish.
-  concurrent: false
   timeouts:
     assert: 240s
   catch: ## if errors, print the most important info

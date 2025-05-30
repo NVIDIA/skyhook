@@ -33,4 +33,7 @@ spec:
     spencer:
       version: "3.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
+      env:
+        - name: SLEEP_LEN
+          value: "1"
 

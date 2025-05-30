@@ -44,6 +44,39 @@ func (_m *MockSkyhookNodes) EXPECT() *MockSkyhookNodes_Expecter {
 	return &MockSkyhookNodes_Expecter{mock: &_m.Mock}
 }
 
+// AddNode provides a mock function with given fields: node
+func (_m *MockSkyhookNodes) AddNode(node wrapper.SkyhookNode) {
+	_m.Called(node)
+}
+
+// MockSkyhookNodes_AddNode_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddNode'
+type MockSkyhookNodes_AddNode_Call struct {
+	*mock.Call
+}
+
+// AddNode is a helper method to define mock.On call
+//   - node wrapper.SkyhookNode
+func (_e *MockSkyhookNodes_Expecter) AddNode(node interface{}) *MockSkyhookNodes_AddNode_Call {
+	return &MockSkyhookNodes_AddNode_Call{Call: _e.mock.On("AddNode", node)}
+}
+
+func (_c *MockSkyhookNodes_AddNode_Call) Run(run func(node wrapper.SkyhookNode)) *MockSkyhookNodes_AddNode_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(wrapper.SkyhookNode))
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AddNode_Call) Return() *MockSkyhookNodes_AddNode_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AddNode_Call) RunAndReturn(run func(wrapper.SkyhookNode)) *MockSkyhookNodes_AddNode_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CollectNodeStatus provides a mock function with given fields:
 func (_m *MockSkyhookNodes) CollectNodeStatus() v1alpha1.Status {
 	ret := _m.Called()
@@ -190,6 +223,51 @@ func (_c *MockSkyhookNodes_GetNodes_Call) Return(_a0 []wrapper.SkyhookNode) *Moc
 }
 
 func (_c *MockSkyhookNodes_GetNodes_Call) RunAndReturn(run func() []wrapper.SkyhookNode) *MockSkyhookNodes_GetNodes_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetPriorStatus provides a mock function with given fields:
+func (_m *MockSkyhookNodes) GetPriorStatus() v1alpha1.Status {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPriorStatus")
+	}
+
+	var r0 v1alpha1.Status
+	if rf, ok := ret.Get(0).(func() v1alpha1.Status); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(v1alpha1.Status)
+	}
+
+	return r0
+}
+
+// MockSkyhookNodes_GetPriorStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPriorStatus'
+type MockSkyhookNodes_GetPriorStatus_Call struct {
+	*mock.Call
+}
+
+// GetPriorStatus is a helper method to define mock.On call
+func (_e *MockSkyhookNodes_Expecter) GetPriorStatus() *MockSkyhookNodes_GetPriorStatus_Call {
+	return &MockSkyhookNodes_GetPriorStatus_Call{Call: _e.mock.On("GetPriorStatus")}
+}
+
+func (_c *MockSkyhookNodes_GetPriorStatus_Call) Run(run func()) *MockSkyhookNodes_GetPriorStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_GetPriorStatus_Call) Return(_a0 v1alpha1.Status) *MockSkyhookNodes_GetPriorStatus_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *MockSkyhookNodes_GetPriorStatus_Call) RunAndReturn(run func() v1alpha1.Status) *MockSkyhookNodes_GetPriorStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }
