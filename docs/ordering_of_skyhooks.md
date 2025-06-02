@@ -1,6 +1,6 @@
 # Ordering of Skyhooks
 ## What
-With v0.8.0 Skyhooks now always get applied in a repeatable and specific order. This also means that all Skyhooks will now be sequential, though packages within a Skyhook can be parallel. Each custom resource now supports a `priority` field which is a non-zero positive integer. Skyhooks will be processed in order starting from 0, any Skyhooks with the same `priority` will be processed by sorting them by their `metadata.name` field.
+With v0.8.0 Skyhooks now always get applied in a repeatable and specific order. This also means that all Skyhooks will now be sequential, though packages within a Skyhook can be parallel. Each custom resource now supports a `priority` field which is a non-zero positive integer. Skyhooks will be processed in order starting from 1, any Skyhooks with the same `priority` will be processed by sorting them by their `metadata.name` field.
 
 **NOTE**: Any Skyhook which does NOT provide a `priority` field will be assigned a priority value of 200.
 
