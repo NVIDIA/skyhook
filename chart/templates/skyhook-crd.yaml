@@ -476,7 +476,7 @@ spec:
               priority:
                 description: Priority determines the order in which skyhooks are applied. Lower values are applied first.
                 type: integer
-                minimum: 0
+                minimum: 1
                 default: 200
               serial:
                 default: false
