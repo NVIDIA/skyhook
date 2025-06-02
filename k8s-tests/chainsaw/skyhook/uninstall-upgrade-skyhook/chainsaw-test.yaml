@@ -31,7 +31,6 @@ spec:
     asserted that it runs in upgrade before finishing as normal. Then finally we assert that the uninstall still works when every package is removed from the SCR by removing the last package
     and then making sure that it's uninstalled successfully.
     Additionally we are assert pod resource requests and limits are set correctly from defaults.
-  concurrent: false
   timeouts:
     assert: 420s
   catch: ## if errors, print the most important info

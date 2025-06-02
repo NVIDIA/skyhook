@@ -28,7 +28,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "false"
 spec:
-  priority: 0
+  priority: 1
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
@@ -38,7 +38,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "5" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -50,7 +50,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "false"
 spec:
-  priority: 1
+  priority: 2
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
@@ -60,7 +60,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "5" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -72,7 +72,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "false"
 spec:
-  priority: 1
+  priority: 2
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
@@ -82,7 +82,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "5" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -94,7 +94,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "true"
 spec:
-  priority: 1
+  priority: 2
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
@@ -104,4 +104,4 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "5" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition
