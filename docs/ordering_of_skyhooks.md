@@ -16,7 +16,7 @@ The first is to to better support debugging. Prior to this it was impossible to 
 The second is to provide the ability for complex tasks to be sequenced. This comes up when needing to apply different sets of work to different node groups in a particular order.
 
 The third is to provide the community a way to bucket Skyhooks according to where they might live in a stream of updates and therefore better coordinate work without explicit communication. We propose the following buckets:
- * 0 - 99 for initialization and infrastucture work
+ * 1 - 99 for initialization and infrastucture work
     * install security or monitoring tools
  * 100 - 199 for configuration work
     * configuring ssh access

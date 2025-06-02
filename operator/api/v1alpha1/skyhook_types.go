@@ -73,7 +73,7 @@ type SkyhookSpec struct {
 	RuntimeRequired bool `json:"runtimeRequired,omitempty"`
 
 	// Priority determines the order in which skyhooks are applied. Lower values are applied first.
-	//+kubebuilder:validation:Minimum=0
+	//+kubebuilder:validation:Minimum=1
 	//+kubebuilder:default=200
 	Priority int `json:"priority,omitempty"`
 }

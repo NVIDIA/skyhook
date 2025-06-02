@@ -28,7 +28,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "false"
 spec:
-  priority: 0
+  priority: 1
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
@@ -50,7 +50,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "false"
 spec:
-  priority: 1
+  priority: 2
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
@@ -72,7 +72,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "false"
 spec:
-  priority: 1
+  priority: 2
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
@@ -94,7 +94,7 @@ metadata:
   annotations:
     skyhook.nvidia.com/disable: "false"
 spec:
-  priority: 1
+  priority: 2
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
