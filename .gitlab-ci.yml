@@ -228,3 +228,65 @@ create-agent-json:
   artifacts:
     paths:
       - artifacts.json
+
+create-chart-json:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^chart\/v\d+\.\d+\.\d+$/'
+  needs: 
+    - job: bootstrap
+      artifacts: true
+  script:
+    - |
+      cat > artifacts.json << EOF
+      {
+        "skyhook": {
+          "source": {
+            "org": "${NGC_PRIVATE_ORG}",
+            "team": "skyhook"
+          },
+          "target": {
+            "org": "nvidia",
+            "team": "skyhook"
+          },
+          "artifacts": [
+            {
+              "name": "chart",
+              "version": "${CI_COMMIT_TAG#chart/}",
+              "type": "chart"
+            }
+          ],
+          "nspect_id": "${OPERATOR_NSPECT_ID}"
+        }
+      }
+      EOF
+  artifacts:
+    paths:
+      - artifacts.json
+
+publish-chart:
+  stage: deploy
+  rules: 
+    ## on commit to main publish a chart to our dev registry
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+      needs: [bootstrap]
+      variables:
+        ENV: dev
+        VERSION: $CI_COMMIT_SHORT_SHA
+        REGISTRY: swgpu-baseos
+        URL: helm.ngc.nvidia.com/nvidian/swgpu-baseos
+    ## on tag publish a chart to the prod staging registry
+    - if: '$CI_COMMIT_TAG =~ /^chart\/v\d+\.\d+\.\d+$/'
+      needs: [bootstrap]
+      variables:
+        ENV: prod
+        REGISTRY: staging
+        URL: helm.ngc.nvidia.com/staging
+  variables:
+    USERNAME: "$$oauthtoken"
+    PASSWORD: ${NVCR_REGISTRY_PASSWORD}
+    ARGS: ""
+  script:
+    - if [ "${ENV}" == "dev" ]; then ARGS="--version $(date +%Y.%m.%d)-${CI_COMMIT_SHORT_SHA}"; fi
+    - /workspace/bin/helm repo add ${REGISTRY} https://${URL} --username="${USERNAME}" --password=${PASSWORD}
+    - /workspace/bin/helm package chart ${ARGS}
+    - /workspace/bin/helm cm-push $(ls skyhook-operator-*.tgz) ${REGISTRY}
