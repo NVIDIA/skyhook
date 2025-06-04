@@ -76,11 +76,10 @@ spec:
         - name: PAUSE_IMAGE
           value: {{ quote .Values.controllerManager.manager.env.pauseImage }}
         - name: AGENT_IMAGE
-          value: {{ quote .Values.controllerManager.manager.env.agentImage }}
+          value: {{ .Values.controllerManager.manager.agent.repository }}:{{ .Values.controllerManager.manager.agent.tag}}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag
-          | default .Chart.AppVersion }}
+        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}
         livenessProbe:
           httpGet:
             path: /healthz

@@ -28,6 +28,10 @@ Settings | Description | Default |
 | controllerManager.manager.env.logLevel | Log level for the operator controller. If you want more or less logs, change this value to "debug" or "error". | "info" |
 | controllerManager.manager.env.reapplyOnReboot | Reapply the packages on reboot. This is useful for systems that are read-only. | "false" |
 | controllerManager.manager.env.runtimeRequiredTaint | This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag. This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete. | skyhook.nvidia.com=runtime-required:NoSchedule | 
+| controllerManager.manager.image.repository | Where to get the image from | "ghcr.io/nvidia/skyhook/operator" |
+| controllerManager.manager.image.tag | what version of the operator to run | defaults to appVersion |
+| controllerManager.manager.agent.repository | Where to get the image from | "ghcr.io/nvidia/skyhook/agent" |
+| controllerManager.manager.agent.tag | what version of the agent to run | defaults to the current latest, but is not latest example v6.1.5 |
 | imagePullSecret | the secret used to pull the operator controller image, agent image, and package images. | node-init-secret |
 | estimatedPackageCount | estimated number of packages to be installed on the cluster, this is used to calculate the resources for the operator controller. | 1 |
 | estimatedNodeCount | estimated number of nodes in the cluster, this is used to calculate the resources for the operator controller | 1 |
@@ -39,3 +43,11 @@ Settings | Description | Default |
 
 ### Resource Management
 Skyhook uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your Skyhook CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.
+
+## Versioning
+
+This Helm chart follows independent versioning from the operator and agent components. The chart's `appVersion` field specifies the recommended stable operator version that provides a good default for installations. See [../docs/versioning.md](../docs/versioning.md) for more details on versioning.
+
+### Chart Version vs App Version
+- **Chart version** (`version` in Chart.yaml): Tracks changes to chart templates, values, and configuration (NOTE: agent version in set in the values.)
+- **App version** (`appVersion` in Chart.yaml): Recommended stable operator version for this chart release
