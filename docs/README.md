@@ -4,17 +4,24 @@ This directory contains user and operator documentation for Skyhook. Here you'll
 
 ## Available Documentation
 
-- [Resource Management](resource_management.md):
-  How Skyhook manages CPU/memory resources using LimitRange, per-package overrides, and validation rules.
-
 - [Kyverno Policy Examples](kyverno/README.md):
   Example Kyverno policies for restricting images or packages in Skyhook resources.
 
-- [Providing Secrets to Packages](providing_secrets_to_packages.md):
-  How to securely provide secrets to Skyhook-managed packages.
+- **Features**
+  - [Providing Secrets to Packages](providing_secrets_to_packages.md):
+    How to securely provide secrets to Skyhook-managed packages.
 
-- [Releases](releases.md):
-  Release notes and upgrade information for Skyhook.
+  - [Runtime Required](runtime_required.md):
+    How to use the runtime required taint and feature in Skyhook.
 
-- [Runtime Required](runtime_required.md):
-  How to use the runtime required taint and feature in Skyhook.
+  - [Strict Ordering](ordering_of_skyhooks.md): How and why the operator applies each Skyhook Custom Resource in a deterministic sequential order.
+
+- **Resources**
+  - [Resource Management](resource_management.md):
+  How Skyhook manages CPU/memory resources using LimitRange, per-package overrides, and validation rules.
+
+  - [Operator Resources At Scale](operator_resources_at_scale.md): Considerations for how cpu and memory have to change for the Operator pods as cluster nodes and skyhook packages change.
+
+- **Process**
+  - [Releases](releases.md):
+      Release notes and upgrade information for Skyhook.
