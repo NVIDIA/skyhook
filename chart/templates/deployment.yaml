@@ -106,8 +106,8 @@ spec:
             cpu: {{ maxf 1000 (mulf 1.6 .Values.estimatedNodeCount (maxf 1 (mulf 0.4 .Values.estimatedPackageCount))) | int }}m
             memory: {{ maxf 512 (mulf 0.8 .Values.estimatedNodeCount (maxf 1 (mulf 0.4 .Values.estimatedPackageCount))) | int }}Mi
           requests:
-            cpu: 200m
-            memory: {{ maxf 64 (mulf 0.45 .Values.estimatedNodeCount) | int }}Mi
+            cpu: 500m
+            memory: {{ maxf 256 (mulf 0.45 .Values.estimatedNodeCount) | int }}Mi
           {{- end }}
         securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
           | nindent 10 }}
