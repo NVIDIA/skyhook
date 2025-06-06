@@ -234,7 +234,6 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
 func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-
 	// split off requests for pods
 	if strings.HasPrefix(req.Name, "pod---") {
 		name := strings.Split(req.Name, "pod---")[1]
@@ -337,10 +336,6 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if err != nil {
 			return ctrl.Result{RequeueAfter: time.Second * 2}, fmt.Errorf("error getting packages to uninstall: %w", err)
 		}
-
-		// if len(toUninstall) > 0 {
-		// 	return ctrl.Result{RequeueAfter: time.Second * 2}, nil
-		// }
 	}
 
 	skyhook := GetNextSkyhook(clusterState.skyhooks)
@@ -1832,6 +1827,9 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 		return false, nil // nothing running for this skyhook on this node
 	}
 
+	// Initialize metrics for each stage
+	stages := make(map[string]map[string]map[v1alpha1.Stage]int)
+
 	// group pods by node
 	podsbyNode := make(map[string][]corev1.Pod)
 	for _, pod := range pods.Items {
@@ -1858,6 +1856,18 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 					found = true
 				}
 			}
+
+			// Increment the stage count for metrics
+			if _, ok := stages[runningPackage.Name]; !ok {
+				stages[runningPackage.Name] = make(map[string]map[v1alpha1.Stage]int)
+				if _, ok := stages[runningPackage.Name][runningPackage.Version]; !ok {
+					stages[runningPackage.Name][runningPackage.Version] = make(map[v1alpha1.Stage]int)
+					for _, stage := range v1alpha1.Stages {
+						stages[runningPackage.Name][runningPackage.Version][stage] = 0
+					}
+				}
+			}
+			stages[runningPackage.Name][runningPackage.Version][runningPackage.Stage]++
 
 			// uninstall is by definition not part of the skyhook spec, so we cant delete it (because it used to be but was removed, hence uninstalling it)
 			if runningPackage.Stage == v1alpha1.StageUninstall {
@@ -1898,6 +1908,19 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 				if err != nil {
 					errs = append(errs, fmt.Errorf("error invalidating package: %w", err))
 				}
+			}
+		}
+	}
+
+	// update the metrics for each package, version, and stage
+	for package_name, package_map := range stages {
+		for version, stage_counts := range package_map {
+			for stage, count := range stage_counts {
+				skyhook_package_stage_count.WithLabelValues(
+					skyhook.GetSkyhook().Name,
+					package_name,
+					version,
+					fmt.Sprintf("%s", stage)).Set(float64(count))
 			}
 		}
 	}
@@ -2132,6 +2155,12 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 	r.recorder.Eventf(skyhookNode.GetSkyhook(), EventTypeNormal, EventsReasonSkyhookApply, "Applying package [%s:%s] to node [%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetNode().Name, stage)
 
 	skyhookNode.GetSkyhook().Updated = true
+
+	// skyhook_package_in_progress_count.WithLabelValues(
+	// 	skyhookNode.GetSkyhook().Name,
+	// 	_package.Name,
+	// 	_package.Version,
+	// ).Inc()
 
 	return err
 }

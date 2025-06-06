@@ -576,6 +576,17 @@ const (
 	StageConfig        Stage = "config"
 )
 
+var (
+	Stages = []Stage{
+		StageUninstall,
+		StageUpgrade,
+		StageApply,
+		StageInterrupt,
+		StagePostInterrupt,
+		StageConfig,
+	}
+)
+
 type State string
 
 const (
@@ -588,6 +599,16 @@ const (
 )
 
 type Status string
+
+var (
+	States = []State{
+		StateComplete,
+		StateInProgress,
+		StateSkipped,
+		StateErroring,
+		StateUnknown,
+	}
+)
 
 // TODO: seems like we might be missing a waiting or queued status for nodes, not sure it makes sense at the upper level
 // unless we add a limit of number parallel packages, might be another good idea.
