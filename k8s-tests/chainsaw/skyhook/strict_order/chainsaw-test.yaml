@@ -43,8 +43,18 @@ spec:
           ../rest_test.sh strict-order-skyhook-d
     - apply:
         file: skyhook.yaml
+    - script:
+        timeout: 11s
+        content: |
+          ../metrics_test.sh skyhook_disabled_count  "strict-order-skyhook-d" 1
+          ../metrics_test.sh skyhook_node_in_progress_count "strict-order-skyhook-zz" 1
     - assert:
         file: assert-a.yaml
+    - script:
+        timeout: 11s
+        content: |
+          ../metrics_test.sh skyhook_node_in_progress_count "strict-order-skyhook-zz" 0
+          ../metrics_test.sh skyhook_node_complete_count "strict-order-skyhook-zz" 1
     - assert:
         file: assert-b.yaml
     - assert:

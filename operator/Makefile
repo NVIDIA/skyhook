@@ -310,6 +310,18 @@ generate-helm: confirm manifests kustomize helm helmify ## Generates new helm ch
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
+
+.PHONY: metrics
+metrics:
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+	helm repo update
+	helm install prometheus prometheus-community/prometheus
+	echo "kubectl port-forward svc/prometheus-server 9090:80"
+
+.PHONY: metrics-undeploy
+metrics-undeploy:
+	helm uninstall prometheus
+
 ##@ Build Dependencies
 
 ## Tool Binaries
