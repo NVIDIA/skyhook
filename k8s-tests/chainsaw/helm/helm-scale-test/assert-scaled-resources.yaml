@@ -38,8 +38,8 @@ spec:
         cpu: 1280m
         memory: 640Mi
       requests:
-        cpu: 200m
-        memory: 180Mi
+        cpu: 640m
+        memory: 256Mi
   - name: kube-rbac-proxy
     resources:
       limits:

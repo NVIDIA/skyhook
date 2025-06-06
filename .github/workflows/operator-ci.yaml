@@ -30,6 +30,7 @@ on:
       - containers/operator.Dockerfile
       - .github/workflows/operator-ci.yaml
       - k8s-tests/**
+      - chart/**
   push:
     branches:
       - main
@@ -40,6 +41,7 @@ on:
       - containers/operator.Dockerfile
       - .github/workflows/operator-ci.yaml
       - k8s-tests/**
+      - chart/**
 
 # NOTE: we may want to switch to matrix build for multi-platform support if this is taking too long
 # https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
