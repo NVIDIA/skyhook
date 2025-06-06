@@ -279,8 +279,8 @@ publish-chart:
       needs: [bootstrap]
       variables:
         ENV: prod
-        REGISTRY: staging
-        URL: helm.ngc.nvidia.com/staging
+        REGISTRY: skyhook
+        URL: helm.ngc.nvidia.com/nvstaging/skyhook
   variables:
     USERNAME: "$$oauthtoken"
     PASSWORD: ${NVCR_REGISTRY_PASSWORD}
