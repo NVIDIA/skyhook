@@ -70,7 +70,7 @@ func (e *eventHandler) Update(ctx context.Context, event event.UpdateEvent, queu
 
 	matches, err := e.genericHandler(ctx, event.ObjectNew)
 	if err != nil {
-		e.logger.Error(err, "error handling create event",
+		e.logger.Error(err, "error handling update event",
 			"namespace", event.ObjectNew.GetNamespace(),
 			"name", event.ObjectNew.GetName(),
 			"kind", event.ObjectNew.GetObjectKind())
@@ -85,7 +85,7 @@ func (e *eventHandler) Update(ctx context.Context, event event.UpdateEvent, queu
 func (e *eventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
 	matches, err := e.genericHandler(ctx, event.Object)
 	if err != nil {
-		e.logger.Error(err, "error handling create event",
+		e.logger.Error(err, "error handling delete event",
 			"namespace", event.Object.GetNamespace(),
 			"name", event.Object.GetName(),
 			"kind", event.Object.GetObjectKind())
@@ -102,7 +102,7 @@ func (e *eventHandler) Generic(ctx context.Context, event event.GenericEvent, qu
 
 	matches, err := e.genericHandler(ctx, event.Object)
 	if err != nil {
-		e.logger.Error(err, "error handling create event",
+		e.logger.Error(err, "error handling generic event",
 			"namespace", event.Object.GetNamespace(),
 			"name", event.Object.GetName(),
 			"kind", event.Object.GetObjectKind())

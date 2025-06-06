@@ -21,6 +21,7 @@
 package controller
 
 import (
+	"github.com/NVIDIA/skyhook/api/v1alpha1"
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -123,6 +124,26 @@ var (
 		[]string{"skyhook_name", "package_name", "package_version", "stage"},
 	)
 )
+
+func zeroOutSkyhookMetrics(skyhook SkyhookNodes) {
+	skyhook_node_target_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+	skyhook_node_in_progress_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+	skyhook_node_complete_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+	skyhook_node_error_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+	skyhook_node_blocked_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+	for _, _package := range skyhook.GetSkyhook().Spec.Packages {
+		zeroOutSkyhookPackageMetrics(skyhook.GetSkyhook().Name, _package.Name, _package.Version)
+	}
+}
+
+func zeroOutSkyhookPackageMetrics(skyhookName, packageName, packageVersion string) {
+	skyhook_package_in_progress_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(0)
+	skyhook_package_error_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(0)
+	skyhook_package_complete_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(0)
+	for _, stage := range v1alpha1.Stages {
+		skyhook_package_stage_count.WithLabelValues(skyhookName, packageName, packageVersion, string(stage)).Set(0)
+	}
+}
 
 func init() {
 	metrics.Registry.MustRegister(
