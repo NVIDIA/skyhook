@@ -451,6 +451,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 
 	// if we have nodes that are not tolerable, we need to add a condition to the skyhook
 	if len(nodesWithTaintTolerationIssue) > 0 {
+		skyhook_node_blocked_count.WithLabelValues(s.GetSkyhook().Name).Set(float64(len(nodesWithTaintTolerationIssue)))
 		s.GetSkyhook().AddCondition(metav1.Condition{
 			Type:               fmt.Sprintf("%s/TaintNotTolerable", v1alpha1.METADATA_PREFIX),
 			Status:             metav1.ConditionTrue,
@@ -517,7 +518,9 @@ func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes) bool {
 // ReportState collects the current state of the skyhook and reports it to the skyhook status for printer columns
 func (skyhook *skyhookNodes) ReportState() {
 
-	completeNodes, nodesInProgress, nodeCount := 0, 0, len(skyhook.nodes)
+	completeNodes, nodesInProgress, nodeErrorCount, nodeCount := 0, 0, 0, len(skyhook.nodes)
+
+	packageStatuses := make(map[string]map[string]map[v1alpha1.State]int)
 
 	// get current count of completed nodes
 	for _, node := range skyhook.nodes {
@@ -527,6 +530,64 @@ func (skyhook *skyhookNodes) ReportState() {
 			nodesInProgress++
 		} else if node.Status() == v1alpha1.StatusErroring {
 			nodesInProgress++
+			nodeErrorCount++
+		}
+		for _, _package := range node.GetSkyhook().Spec.Packages {
+			packageStatus, found := node.PackageStatus(_package.GetUniqueName())
+			if !found {
+				continue
+			} else {
+				_ = fmt.Sprintf("package status package %s version %s status %s", _package.Name, _package.Version, packageStatus.State)
+			}
+			if _, ok := packageStatuses[_package.Name]; !ok {
+				packageStatuses[_package.Name] = make(map[string]map[v1alpha1.State]int)
+			}
+			if _, ok := packageStatuses[_package.Name][_package.Version]; !ok {
+				packageStatuses[_package.Name][_package.Version] = make(map[v1alpha1.State]int)
+				for _, state := range v1alpha1.States {
+					packageStatuses[_package.Name][_package.Version][state] = 0
+				}
+			}
+			packageStatuses[_package.Name][_package.Version][packageStatus.State]++
+		}
+	}
+
+	// metrics
+	skyhook_node_complete_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(completeNodes))
+	skyhook_node_in_progress_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(nodesInProgress))
+	skyhook_node_target_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(nodeCount))
+	skyhook_node_error_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(nodeErrorCount))
+
+	if skyhook.IsDisabled() {
+		skyhook_disabled_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(1)
+		// skip the rest of the logic for this skyhook so it displays as disabled in the metrics
+	} else {
+		skyhook_disabled_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+		if skyhook.IsPaused() {
+			skyhook_paused_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(1)
+			// skip the rest of the logic for this skyhook so it displays as paused in the metrics
+		} else {
+			skyhook_paused_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+			if skyhook.IsComplete() {
+				skyhook_complete_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(1)
+			} else {
+				skyhook_complete_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+			}
+		}
+	}
+
+	for _package, versions := range packageStatuses {
+		for version, states := range versions {
+			for state, count := range states {
+				switch state {
+				case v1alpha1.StateComplete:
+					skyhook_package_complete_count.WithLabelValues(skyhook.GetSkyhook().Name, _package, version).Set(float64(count))
+				case v1alpha1.StateInProgress:
+					skyhook_package_in_progress_count.WithLabelValues(skyhook.GetSkyhook().Name, _package, version).Set(float64(count))
+				case v1alpha1.StateErroring:
+					skyhook_package_error_count.WithLabelValues(skyhook.GetSkyhook().Name, _package, version).Set(float64(count))
+				}
+			}
 		}
 	}
 
