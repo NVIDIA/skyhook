@@ -66,7 +66,7 @@ controllerManager:
     ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
     agent:
       repository: ghcr.io/nvidia/skyhook/agent
-      tag: "v6.1.5"
+      tag: "v6.2.0"
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
