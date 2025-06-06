@@ -36,6 +36,25 @@ spec:
         file: limitrange.yaml
     - apply:
         file: skyhook.yaml
+    - script:
+        timeout: 11s
+        content: |
+          ../metrics_test.sh skyhook_package_in_progress_count "simple-skyhook.*dexter" 1
+          ../metrics_test.sh skyhook_node_target_count "simple-skyhook" 1
+          ../metrics_test.sh skyhook_package_in_progress_count "simple-skyhook.*spencer" 0
+          ../metrics_test.sh skyhook_package_in_progress_count "simple-skyhook.*foobar" 0
+    - script:
+        timeout: 11s
+        content: |
+          ../metrics_test.sh skyhook_package_complete_count "simple-skyhook.*dexter" 1
+          ../metrics_test.sh skyhook_package_in_progress_count "simple-skyhook.*spencer" 1
+          ../metrics_test.sh skyhook_package_in_progress_count "simple-skyhook.*foobar" 1
+    - script:
+        timeout: 11s
+        content: |
+          ../metrics_test.sh skyhook_package_complete_count "simple-skyhook.*spencer" 1
+          ../metrics_test.sh skyhook_package_complete_count "simple-skyhook.*foobar" 1
+          ../metrics_test.sh skyhook_node_complete_count "simple-skyhook" 1
     - assert:
         file: assert.yaml
   - finally:
