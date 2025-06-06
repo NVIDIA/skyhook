@@ -1084,6 +1084,9 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 
 			errs := make([]error, 0)
 
+			// zero out all the metrics related to this skyhook both skyhook and packages
+			zeroOutSkyhookMetrics(skyhook)
+
 			for _, node := range skyhook.GetNodes() {
 				patch := client.StrategicMergeFrom(node.GetNode().DeepCopy())
 
