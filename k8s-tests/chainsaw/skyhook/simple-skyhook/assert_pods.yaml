@@ -1,0 +1,131 @@
+# 
+# LICENSE START
+#
+#    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+# LICENSE END
+# 
+
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: simple-skyhook
+    skyhook.nvidia.com/package: spencer-3.2.3
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "spencer",
+        "version": "3.2.3",
+        "skyhook": "simple-skyhook",
+        "stage": "apply",
+        "image": "ghcr.io/nvidia/skyhook/agentless"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: simple-skyhook
+spec:
+  initContainers:
+    - name: spencer-init
+      resources: ## including these to tests defaults are working
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 500m
+          memory: 256Mi
+    - name: spencer-apply
+      args:
+        ([0]): apply
+        ([1]): /root
+        (length(@)): 3
+      resources: ## including these to tests defaults are working
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 500m
+          memory: 256Mi
+    - name: spencer-applycheck
+      args:
+        ([0]): apply-check
+        ([1]): /root
+        (length(@)): 3
+      resources: ## including these to tests defaults are working
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 500m
+          memory: 256Mi
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: simple-skyhook
+    skyhook.nvidia.com/package: foobar-1.2
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "foobar",
+        "version": "1.2",
+        "skyhook": "simple-skyhook",
+        "stage": "apply",
+        "image": "ghcr.io/nvidia/skyhook/agentless"
+      }
+  ownerReferences:
+    - apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      name: simple-skyhook
+spec:
+  initContainers:
+    - name: foobar-init
+      resources: ## Testing overriding
+        limits:
+          cpu: 50m
+          memory: 32Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+    - name: foobar-apply
+      args:
+        ([0]): apply
+        ([1]): /root
+        (length(@)): 3
+      resources: ## Testing overriding
+        limits:
+          cpu: 50m
+          memory: 32Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+    - name: foobar-applycheck
+      args:
+        ([0]): apply-check
+        ([1]): /root
+        (length(@)): 3
+      resources: ## Testing overriding
+        limits:
+          cpu: 50m
+          memory: 32Mi
+        requests:
+          cpu: 50m
+          memory: 32Mi
+---
