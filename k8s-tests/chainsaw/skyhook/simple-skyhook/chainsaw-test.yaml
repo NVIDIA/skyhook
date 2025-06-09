@@ -42,6 +42,8 @@ spec:
           ../metrics_test.sh skyhook_node_target_count "simple-skyhook" 1
           ../metrics_test.sh skyhook_package_in_progress_count "spencer.*simple-skyhook" 0
           ../metrics_test.sh skyhook_package_in_progress_count "foobar.*simple-skyhook" 0
+    - assert:
+        file: assert_pods.yaml
     - script:
         timeout: 90s
         content: |
