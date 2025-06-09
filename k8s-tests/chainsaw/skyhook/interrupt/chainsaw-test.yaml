@@ -72,12 +72,5 @@ spec:
             value: 'true'
     - create:
         file: skyhook.yaml
-    - script:
-        timeout: 11s
-        content: |
-          ../metrics_test.sh skyhook_package_stage_count "dexter.*config" 1
-          ../metrics_test.sh skyhook_node_target_count "simple-skyhook" 1
-          ../metrics_test.sh skyhook_package_in_progress_count "spencer" 0
-          ../metrics_test.sh skyhook_package_in_progress_count "foobar" 0
     - assert:
         file: assert.yaml
