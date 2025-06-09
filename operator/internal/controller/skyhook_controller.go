@@ -1923,7 +1923,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 					skyhook.GetSkyhook().Name,
 					package_name,
 					version,
-					fmt.Sprintf("%s", stage)).Set(float64(count))
+					string(stage)).Set(float64(count))
 			}
 		}
 	}
