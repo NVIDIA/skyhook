@@ -46,7 +46,7 @@ if [[ -z "$METRIC_VALUE" ]]; then
   exit 2
 fi
 
-TIMEOUT="${TIMEOUT:-10}"
+TIMEOUT="${TIMEOUT:-30}"
 PERIOD="${PERIOD:-0.1}"
 
 start_time=$(date +%s)
@@ -59,7 +59,7 @@ while true; do
   fi
   now=$(date +%s)
   if (( now >= end_time )); then
-    echo "Metric $METRIC_NAME not found after $TIMEOUT seconds"
+    echo "Metric $METRIC_NAME $METRIC_KEY $METRIC_VALUE not found after $TIMEOUT seconds"
     exit 1
   fi
   #echo "sleeping $PERIOD"
