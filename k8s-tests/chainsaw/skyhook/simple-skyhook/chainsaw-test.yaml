@@ -26,6 +26,7 @@ metadata:
 spec:
   timeouts:
     assert: 240s
+    exec: 90s
   steps:
   - try:
     - script:
@@ -45,7 +46,6 @@ spec:
     - assert:
         file: assert_pods.yaml
     - script:
-        timeout: 90s
         content: |
           ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook
           ../metrics_test.py skyhook_package_in_progress_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook
@@ -53,7 +53,6 @@ spec:
     - assert:
         file: assert.yaml
     - script:
-        timeout: 90s
         content: |
           ../metrics_test.py skyhook_package_complete_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook
           ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t skyhook_name=simple-skyhook

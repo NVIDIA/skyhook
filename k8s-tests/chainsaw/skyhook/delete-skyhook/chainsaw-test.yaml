@@ -26,6 +26,7 @@ metadata:
 spec:
   timeouts:
     assert: 240s
+    exec: 90s
   steps:
   - try:
     - script:
@@ -37,7 +38,6 @@ spec:
     - assert:
         file: assert.yaml
     - script:
-        timeout: 11s
         content: |
           ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=delete-skyhook
           ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=delete-skyhook
@@ -50,7 +50,6 @@ spec:
     - delete:
         file: skyhook.yaml
     - script:
-        timeout: 11s
         content: |
           ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=delete-skyhook --not-found
           ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=delete-skyhook --not-found

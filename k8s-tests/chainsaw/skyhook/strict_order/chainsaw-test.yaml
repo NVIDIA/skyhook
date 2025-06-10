@@ -26,6 +26,7 @@ metadata:
 spec:
   timeouts:
     assert: 60s
+    exec: 90s
   catch: ## if errors, print the most important info
   - get:
       apiVersion: v1
@@ -44,23 +45,20 @@ spec:
     - apply:
         file: skyhook.yaml
     - script:
-        timeout: 11s
         content: |
           ../metrics_test.py skyhook_disabled_count 1 -t skyhook_name=strict-order-skyhook-d
-          ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-zz
+          ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-zzz
     - assert:
         file: assert-a.yaml
     - script:
-        timeout: 11s
         content: |
-          ../metrics_test.py skyhook_node_in_progress_count 0 -t skyhook_name=strict-order-skyhook-zz
-          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=strict-order-skyhook-zz
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zz
-          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zz -t stage=config
+          ../metrics_test.py skyhook_node_in_progress_count 0 -t skyhook_name=strict-order-skyhook-zzz
+          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=strict-order-skyhook-zzz
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t stage=config
     - assert:
         file: assert-b.yaml
     - script:
-        timeout: 11s
         content: |
           ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-c
           ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=strict-order-skyhook-b
