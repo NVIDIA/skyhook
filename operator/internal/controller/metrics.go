@@ -115,6 +115,14 @@ var (
 		[]string{"skyhook_name", "package_name", "package_version"},
 	)
 
+	skyhook_package_restarts_count = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "skyhook_package_restarts_count",
+			Help: "Number of restarts for this package",
+		},
+		[]string{"skyhook_name", "package_name", "package_version"},
+	)
+
 	// This should maybe a counter but ensuring the decrement is done correctly is tricky
 	skyhook_package_stage_count = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -126,22 +134,26 @@ var (
 )
 
 func zeroOutSkyhookMetrics(skyhook SkyhookNodes) {
-	skyhook_node_target_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
-	skyhook_node_in_progress_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
-	skyhook_node_complete_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
-	skyhook_node_error_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
-	skyhook_node_blocked_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
+	skyhook_complete_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_paused_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_disabled_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_node_target_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_node_in_progress_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_node_complete_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_node_error_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_node_blocked_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
 	for _, _package := range skyhook.GetSkyhook().Spec.Packages {
 		zeroOutSkyhookPackageMetrics(skyhook.GetSkyhook().Name, _package.Name, _package.Version)
 	}
 }
 
 func zeroOutSkyhookPackageMetrics(skyhookName, packageName, packageVersion string) {
-	skyhook_package_in_progress_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(0)
-	skyhook_package_error_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(0)
-	skyhook_package_complete_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(0)
+	skyhook_package_in_progress_count.DeleteLabelValues(skyhookName, packageName, packageVersion)
+	skyhook_package_error_count.DeleteLabelValues(skyhookName, packageName, packageVersion)
+	skyhook_package_complete_count.DeleteLabelValues(skyhookName, packageName, packageVersion)
+	skyhook_package_restarts_count.DeleteLabelValues(skyhookName, packageName, packageVersion)
 	for _, stage := range v1alpha1.Stages {
-		skyhook_package_stage_count.WithLabelValues(skyhookName, packageName, packageVersion, string(stage)).Set(0)
+		skyhook_package_stage_count.DeleteLabelValues(skyhookName, packageName, packageVersion, string(stage))
 	}
 }
 
@@ -159,5 +171,6 @@ func init() {
 		skyhook_package_error_count,
 		skyhook_package_complete_count,
 		skyhook_package_stage_count,
+		skyhook_package_restarts_count,
 	)
 }

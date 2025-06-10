@@ -521,7 +521,7 @@ func (skyhook *skyhookNodes) ReportState() {
 	completeNodes, nodesInProgress, nodeErrorCount, nodeCount := 0, 0, 0, len(skyhook.nodes)
 
 	packageStatuses := make(map[string]map[string]map[v1alpha1.State]int)
-
+	packageRestarts := make(map[string]map[string]int32)
 	// get current count of completed nodes
 	for _, node := range skyhook.nodes {
 		if node.IsComplete() {
@@ -549,6 +549,14 @@ func (skyhook *skyhookNodes) ReportState() {
 				}
 			}
 			packageStatuses[_package.Name][_package.Version][packageStatus.State]++
+			// Report this as a metric
+			if _, ok := packageRestarts[_package.Name]; !ok {
+				packageRestarts[_package.Name] = make(map[string]int32)
+			}
+			if _, ok := packageRestarts[_package.Name][_package.Version]; !ok {
+				packageRestarts[_package.Name][_package.Version] = 0
+			}
+			packageRestarts[_package.Name][_package.Version] += packageStatus.Restarts
 		}
 	}
 
@@ -588,6 +596,12 @@ func (skyhook *skyhookNodes) ReportState() {
 					skyhook_package_error_count.WithLabelValues(skyhook.GetSkyhook().Name, _package, version).Set(float64(count))
 				}
 			}
+		}
+	}
+
+	for packageName, versions := range packageRestarts {
+		for version, restarts := range versions {
+			skyhook_package_restarts_count.WithLabelValues(skyhook.GetSkyhook().Name, packageName, version).Set(float64(restarts))
 		}
 	}
 

@@ -39,27 +39,27 @@ spec:
     - script:
         timeout: 11s
         content: |
-          ../metrics_test.sh skyhook_node_target_count "delete-skyhook" 1
-          ../metrics_test.sh skyhook_node_complete_count "delete-skyhook" 1
-          ../metrics_test.sh skyhook_package_complete_count "dexter.*delete-skyhook" 1
-          ../metrics_test.sh skyhook_package_complete_count "spencer.*delete-skyhook" 1
-          ../metrics_test.sh skyhook_package_complete_count "foobar.*delete-skyhook" 1
-          ../metrics_test.sh skyhook_package_stage_count "dexter.*delete-skyhook.*config" 1
-          ../metrics_test.sh skyhook_package_stage_count "spencer.*delete-skyhook.*config" 1
-          ../metrics_test.sh skyhook_package_stage_count "foobar.*delete-skyhook.*config" 1
+          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=delete-skyhook
+          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=delete-skyhook
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t stage=config
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t stage=config
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t stage=config
     - delete:
         file: skyhook.yaml
     - script:
         timeout: 11s
         content: |
-          ../metrics_test.sh skyhook_node_target_count "delete-skyhook" 0
-          ../metrics_test.sh skyhook_node_complete_count "delete-skyhook" 0
-          ../metrics_test.sh skyhook_package_complete_count "dexter.*delete-skyhook" 0
-          ../metrics_test.sh skyhook_package_complete_count "spencer.*delete-skyhook" 0
-          ../metrics_test.sh skyhook_package_complete_count "foobar.*delete-skyhook" 0
-          ../metrics_test.sh skyhook_package_stage_count "dexter.*delete-skyhook.*config" 0
-          ../metrics_test.sh skyhook_package_stage_count "spencer.*delete-skyhook.*config" 0
-          ../metrics_test.sh skyhook_package_stage_count "foobar.*delete-skyhook.*config" 0
+          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=delete-skyhook --not-found
+          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=delete-skyhook --not-found
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook --not-found
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook --not-found
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook --not-found
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t stage=config --not-found
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t stage=config --not-found
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t stage=config --not-found
   - finally:
     - delete:
         file: skyhook.yaml

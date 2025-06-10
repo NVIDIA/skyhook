@@ -40,7 +40,7 @@ metadata:
             "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "apply",
             "state": "erroring",
-            (!restarts || restarts == `1`): true
+            (restarts > `0`): true
         }
     }
     ## another way to do it

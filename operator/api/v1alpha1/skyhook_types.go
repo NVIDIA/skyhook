@@ -562,7 +562,8 @@ func (left *PackageStatus) Equal(right *PackageStatus) bool {
 	return left.Name == right.Name &&
 		left.Version == right.Version &&
 		left.Stage == right.Stage &&
-		left.State == right.State
+		left.State == right.State &&
+		left.Restarts == right.Restarts
 }
 
 type Stage string
