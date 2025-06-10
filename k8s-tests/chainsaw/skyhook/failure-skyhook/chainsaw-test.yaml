@@ -50,8 +50,10 @@ spec:
     - script:
         timeout: 11s
         content: |
-          ../metrics_test.sh skyhook_node_error_count "failure-skyhook" 1
-          ../metrics_test.sh skyhook_node_complete_count "failure-skyhook" 0
-          ../metrics_test.sh skyhook_package_error_count "failure" 1
-          ../metrics_test.sh skyhook_package_complete_count "failure" 0
-          ../metrics_test.sh skyhook_package_complete_count "dexter" 1
+          ../metrics_test.py skyhook_package_restarts_count 0 -t package_name=failure -t skyhook_name=failure-skyhook --not-found
+          ../metrics_test.py skyhook_node_error_count 1 -t skyhook_name=failure-skyhook
+          ../metrics_test.py skyhook_node_complete_count 0 -t skyhook_name=failure-skyhook
+          ../metrics_test.py skyhook_package_error_count 1 -t package_name=failure -t skyhook_name=failure-skyhook
+          ../metrics_test.py skyhook_package_complete_count 0 -t package_name=failure -t skyhook_name=failure-skyhook
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=failure-skyhook
+          

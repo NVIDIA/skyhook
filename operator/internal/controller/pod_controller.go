@@ -289,6 +289,9 @@ func containerExitedSuccessfully(pod *corev1.Pod) (string, string, int32) {
 			return containerStateRunning, status.RestartCount
 		}
 		if status.State.Waiting != nil {
+			if status.State.Waiting.Reason == "CrashLoopBackOff" {
+				return containerStateFailed, status.RestartCount
+			}
 			return containerStateWaiting, status.RestartCount
 		}
 		return "", int32(0)

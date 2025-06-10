@@ -46,24 +46,24 @@ spec:
     - script:
         timeout: 11s
         content: |
-          ../metrics_test.sh skyhook_disabled_count  "strict-order-skyhook-d" 1
-          ../metrics_test.sh skyhook_node_in_progress_count "strict-order-skyhook-zz" 1
+          ../metrics_test.py skyhook_disabled_count 1 -t skyhook_name=strict-order-skyhook-d
+          ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-zz
     - assert:
         file: assert-a.yaml
     - script:
         timeout: 11s
         content: |
-          ../metrics_test.sh skyhook_node_in_progress_count "strict-order-skyhook-zz" 0
-          ../metrics_test.sh skyhook_node_complete_count "strict-order-skyhook-zz" 1
-          ../metrics_test.sh skyhook_package_complete_count "foobar.*1.2.*strict-order-skyhook-zz" 1
-          ../metrics_test.sh skyhook_package_stage_count "foobar.*1.2.*strict-order-skyhook-zz.*config" 1
+          ../metrics_test.py skyhook_node_in_progress_count 0 -t skyhook_name=strict-order-skyhook-zz
+          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=strict-order-skyhook-zz
+          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zz
+          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zz -t stage=config
     - assert:
         file: assert-b.yaml
     - script:
         timeout: 11s
         content: |
-          ../metrics_test.sh skyhook_node_in_progress_count "strict-order-skyhook-c" 1
-          ../metrics_test.sh skyhook_node_complete_count "strict-order-skyhook-b" 1
+          ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-c
+          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=strict-order-skyhook-b
     - assert:
         file: assert-c.yaml
     # make sure that if it was going to start d it will start d
