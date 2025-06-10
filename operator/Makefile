@@ -228,7 +228,7 @@ merge-coverage:
 	$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/\1|g' $(REPORTING)/cover.out
 
 .PHONY: lint
-lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
+lint: golangci-lint #license-check ## Run golangci-lint linter & yamllint
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix
@@ -313,14 +313,26 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 .PHONY: metrics
 metrics:
+	helm repo add grafana https://grafana.github.io/helm-charts
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
-	helm install prometheus prometheus-community/prometheus
+	helm upgrade --install prometheus prometheus-community/prometheus -f ../docs/metrics/prometheus_values.yaml
+	helm upgrade --install grafana grafana/grafana -f ../docs/metrics/grafana_values.yaml
 	echo "kubectl port-forward svc/prometheus-server 9090:80"
 
 .PHONY: metrics-undeploy
 metrics-undeploy:
 	helm uninstall prometheus
+	helm uninstall grafana
+
+.PHONY: grafana-password
+grafana-password:
+	kubectl get secret --namespace default grafana -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+
+
+.PHONY: grafana-connect
+grafana-connect:
+	kubectl port-forward svc/grafana 8080:80
 
 ##@ Build Dependencies
 

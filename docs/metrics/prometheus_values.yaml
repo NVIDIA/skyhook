@@ -1,0 +1,10 @@
+extraScrapeConfigs: |
+  - job_name: 'skyhook'
+    metrics_path: /metrics
+    scheme: http
+    # tls_config:
+    #   insecure_skip_verify: true
+    static_configs:
+      - targets:
+        - skyhook-operator-controller-manager-metrics-service.skyhook.svc.cluster.local:8443
+

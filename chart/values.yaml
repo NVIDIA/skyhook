@@ -88,10 +88,9 @@ controllerManager:
 kubernetesClusterDomain: cluster.local
 metricsService:
   ports:
-  - name: https
-    port: 8443
+  - port: 8443
+    targetPort: 8080
     protocol: TCP
-    targetPort: https
   type: ClusterIP
 webhookService:
   ports:
@@ -126,6 +125,11 @@ webhook:
   ## uninstall image for cleaning up webhook resources
   removalImage: bitnami/kubectl
   removalTag: latest
+
+metrics:
+  addServiceAccountBinding: true
+  serviceAccountName: prometheus-server
+  serviceAccountNamespace: default
 
 ## limitRange: is the limit range for the operator controller.
 ## This sets for all containers in the namespace.
