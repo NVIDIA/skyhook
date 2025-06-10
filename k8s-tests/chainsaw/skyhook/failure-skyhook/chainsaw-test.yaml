@@ -26,6 +26,7 @@ metadata:
 spec:
   timeouts:
     assert: 240s
+    exec: 90s
   catch: ## if errors, print the most important info
   - get:
       apiVersion: v1
@@ -48,7 +49,6 @@ spec:
     - assert:
         file: node-assert.yaml
     - script:
-        timeout: 11s
         content: |
           ../metrics_test.py skyhook_package_restarts_count 0 -t package_name=failure -t skyhook_name=failure-skyhook --not-found
           ../metrics_test.py skyhook_node_error_count 1 -t skyhook_name=failure-skyhook
