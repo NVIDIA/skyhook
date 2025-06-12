@@ -48,6 +48,7 @@ HELM_VERSION ?= v3.15.0
 HELMIFY_VERSION ?= v0.4.12
 GO_LICENSES_VERSION ?= v1.6.0
 
+
 .PHONY: install-deps
 install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-licenses ## Install all dependencies
 
