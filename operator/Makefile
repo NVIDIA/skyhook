@@ -120,7 +120,7 @@ license-report: go-licenses ## Run run license report
 
 .PHONY: license-check
 license-check: go-licenses ## Run go-licenses check against code.
-	$(LOCALBIN)/go-licenses check  ./... --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib
+	$(LOCALBIN)/go-licenses check --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib ./... 
 
 .PHONY: license-fmt
 license-fmt: ## Run add license header to code.
