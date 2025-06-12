@@ -127,9 +127,9 @@ webhook:
   removalTag: latest
 
 metrics:
-  addServiceAccountBinding: true
-  serviceAccountName: prometheus-server
-  serviceAccountNamespace: default
+  addServiceAccountBinding: false
+  serviceAccountName: prometheus
+  serviceAccountNamespace: monitoring
 
 ## limitRange: is the limit range for the operator controller.
 ## This sets for all containers in the namespace.
