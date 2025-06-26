@@ -7,7 +7,10 @@ metadata:
     app.kubernetes.io/created-by: skyhook-operator
     app.kubernetes.io/part-of: skyhook-operator
     control-plane: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  {{- if .Values.metricsService.annotations }}
+  annotations:
+    {{- .Values.metricsService.annotations | toYaml | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.metricsService.type }}
   selector:
