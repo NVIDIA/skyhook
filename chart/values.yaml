@@ -87,14 +87,24 @@ controllerManager:
     annotations: {}
 kubernetesClusterDomain: cluster.local
 metricsService:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/scheme: "http"
   ports:
-  - port: 8443
+  - name: metrics
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+  - name: metrics-http
+    port: 8080
     targetPort: 8080
     protocol: TCP
   type: ClusterIP
 webhookService:
   ports:
-  - port: 443
+  - name: webhook
+    port: 443
     protocol: TCP
     targetPort: 9443
   type: ClusterIP
