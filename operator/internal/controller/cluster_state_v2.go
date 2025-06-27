@@ -448,6 +448,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 			nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
 		}
 	}
+	skyhook_node_taint_tolerance_issue_count.WithLabelValues(s.GetSkyhook().Name).Set(float64(len(nodesWithTaintTolerationIssue)))
 
 	// if we have nodes that are not tolerable, we need to add a condition to the skyhook
 	if len(nodesWithTaintTolerationIssue) > 0 {
