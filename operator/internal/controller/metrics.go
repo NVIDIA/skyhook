@@ -131,6 +131,14 @@ var (
 		},
 		[]string{"skyhook_name", "package_name", "package_version", "stage"},
 	)
+
+	skyhook_node_taint_tolerance_issue_count = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "skyhook_node_taint_tolerance_issue_count",
+			Help: "Number of nodes in the cluster that have taint tolerance issues",
+		},
+		[]string{"skyhook_name"},
+	)
 )
 
 func zeroOutSkyhookMetrics(skyhook SkyhookNodes) {
@@ -142,6 +150,7 @@ func zeroOutSkyhookMetrics(skyhook SkyhookNodes) {
 	skyhook_node_complete_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
 	skyhook_node_error_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
 	skyhook_node_blocked_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
+	skyhook_node_taint_tolerance_issue_count.DeleteLabelValues(skyhook.GetSkyhook().Name)
 	for _, _package := range skyhook.GetSkyhook().Spec.Packages {
 		zeroOutSkyhookPackageMetrics(skyhook.GetSkyhook().Name, _package.Name, _package.Version)
 	}
@@ -172,5 +181,6 @@ func init() {
 		skyhook_package_complete_count,
 		skyhook_package_stage_count,
 		skyhook_package_restarts_count,
+		skyhook_node_taint_tolerance_issue_count,
 	)
 }
