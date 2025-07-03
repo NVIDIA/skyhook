@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 # 
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # LICENSE START
 #
 #    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
@@ -19,6 +22,8 @@
 #
 # LICENSE END
 # 
+
+
 
 import os
 import argparse
@@ -84,11 +89,18 @@ def read_license_template(template_path: str) -> str:
     with open(template_path, 'r') as f:
         return f.read().strip()
 
-def format_license(license_text: str, comment_style: Dict[str, str]) -> str:
-    """Format the license text with the appropriate comment style."""
+def format_license(license_text: str, comment_style: Dict[str, str], year: str = None) -> str:
+    """Format the license text with the appropriate comment style and SPDX headers."""
+    import datetime
+    if year is None:
+        year = str(datetime.datetime.now().year)
+    
     lines = license_text.split('\n')
     formatted = [
         comment_style['start'],
+        f"{comment_style['line']}SPDX-FileCopyrightText: Copyright (c) {year} NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+        f"{comment_style['line']}SPDX-License-Identifier: Apache-2.0",
+        comment_style['line'].rstrip(),
         f"{comment_style['line']}LICENSE START",
         comment_style['line'].rstrip()
     ]
@@ -133,17 +145,50 @@ def find_files(root_dir: str, patterns: List[str], ignore_patterns: List[str]) -
     return matches
 
 def find_existing_license(content: str) -> Tuple[int, int]:
-    """Find the start and end positions of an existing license header."""
+    """Find the start and end positions of an existing license header, including SPDX headers."""
     lines = content.split('\n')
-    start_line = 0
-    end_line = 0
+    start_line = -1
+    end_line = -1
+    in_license_block = False
     
-    # Look for LICENSE START and LICENSE END markers
     for i, line in enumerate(lines):
-        if 'LICENSE START' in line:
-            start_line = i - 1  # Include the opening comment line
-        elif 'LICENSE END' in line:
-            end_line = i + 2  # Include the closing comment line
+        stripped_line = line.strip()
+        
+        # Skip shebang lines
+        if stripped_line.startswith('#!/'):
+            continue
+            
+        # Check for the start of a license block (SPDX headers or LICENSE START)
+        if not in_license_block:
+            if ('SPDX-FileCopyrightText' in stripped_line or 
+                'SPDX-License-Identifier' in stripped_line or
+                'LICENSE START' in stripped_line):
+                # Look backwards to find the actual start of the comment block
+                start_line = i
+                for j in range(i - 1, -1, -1):
+                    prev_line = lines[j].strip()
+                    if prev_line.startswith('/*') or prev_line.startswith('#'):
+                        start_line = j
+                        break
+                    elif prev_line == '' or prev_line.startswith('#!/'):
+                        break
+                    else:
+                        break
+                in_license_block = True
+        
+        # Check for the end of a license block
+        if in_license_block and 'LICENSE END' in stripped_line:
+            # Look forward to find the actual end of the comment block
+            end_line = i + 1
+            for j in range(i + 1, len(lines)):
+                next_line = lines[j].strip()
+                if next_line.endswith('*/') or (next_line.startswith('#') and next_line.endswith('#')):
+                    end_line = j + 1
+                    break
+                elif next_line == '' or not (next_line.startswith('#') or next_line.startswith('*') or next_line.startswith('/*') or next_line.startswith('*/')):
+                    break
+                else:
+                    end_line = j + 1
             break
     
     return start_line, end_line
@@ -202,6 +247,7 @@ def main():
     3. Preserve shebang lines in scripts
     4. Skip vendor directories and files matching ignore patterns
     5. Add LICENSE START/END markers for easier detection and replacement
+    6. Include SPDX headers at the beginning of each license block
 
     Supported file types:
     - Python (.py)       : Uses # comments
@@ -211,11 +257,12 @@ def main():
     - Dockerfile         : Uses # comments (includes both "Dockerfile" and files ending in ".Dockerfile")
 
     Usage:
-        ./format_license.py [--license-file PATH] [--root-dir PATH] [--verbose]
+        ./format_license.py [--license-file PATH] [--root-dir PATH] [--year YEAR] [--verbose]
 
     Arguments:
         --license-file : Path to the Apache 2.0 license file (default: LICENSE)
         --root-dir     : Root directory to search for files (default: current directory)
+        --year         : Year to use in SPDX copyright header (default: current year)
         --verbose      : Show detailed messages, including when licenses are already formatted
 
     Example:
@@ -225,6 +272,9 @@ def main():
         # Format files using a specific license file and directory with verbose output
         ./format_license.py --license-file /path/to/LICENSE --root-dir /path/to/project --verbose
 
+        # Format files with a specific year in the SPDX header
+        ./format_license.py --year 2024
+
     Note:
         The script automatically ignores common vendor directories.
         The chart/ directory is also ignored by default. See BUILT_IN_IGNORE_PATTERNS for more details.
@@ -232,6 +282,7 @@ def main():
     parser = argparse.ArgumentParser(description='Format and apply license headers to source files')
     parser.add_argument('--license-file', default='LICENSE',  help='Path to the license template file')
     parser.add_argument('--root-dir', default='.',  help='Root directory to search for files')
+    parser.add_argument('--year', help='Year to use in SPDX copyright header (default: current year)')
     parser.add_argument('--verbose', action='store_true', help='Show detailed messages, including when licenses are already formatted')
     args = parser.parse_args()
 
@@ -257,7 +308,7 @@ def main():
     # Process each file pattern
     for pattern, comment_style in COMMENT_STYLES.items():
         # Format the license for this file type
-        formatted_license = format_license(license_text, comment_style)
+        formatted_license = format_license(license_text, comment_style, args.year)
         
         # Find and process all files matching this pattern
         files = find_files(args.root_dir, [pattern], ignore_patterns)
@@ -265,4 +316,4 @@ def main():
             insert_license(file_path, formatted_license, args.verbose)
 
 if __name__ == '__main__':
-    main() 
+    main()

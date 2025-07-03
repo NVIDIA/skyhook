@@ -1,4 +1,7 @@
 # 
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # LICENSE START
 #
 #    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
@@ -133,5 +136,3 @@ class TestConfig(unittest.TestCase):
             this_config["package_version"] = v
             with self.assertRaises(ValidationError):
                 config.check(this_config, registry)
-
-

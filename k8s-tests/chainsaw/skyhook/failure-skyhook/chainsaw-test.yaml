@@ -1,4 +1,7 @@
 # 
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # LICENSE START
 #
 #    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
@@ -56,4 +59,3 @@ spec:
           ../metrics_test.py skyhook_package_error_count 1 -t package_name=failure -t skyhook_name=failure-skyhook
           ../metrics_test.py skyhook_package_complete_count 0 -t package_name=failure -t skyhook_name=failure-skyhook
           ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=failure-skyhook
-          
