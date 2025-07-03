@@ -34,7 +34,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -67,8 +66,6 @@ var _ = Describe("skyhook controller tests", func() {
 		r, err := operator.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo", Namespace: ""}})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(r.RequeueAfter).To(BeEquivalentTo(0))
-		Expect(r.Requeue).To(Equal(false))
-
 	})
 
 	Context("cluster state", func() {
@@ -78,7 +75,7 @@ var _ = Describe("skyhook controller tests", func() {
 				skyhooks := &v1alpha1.SkyhookList{
 					Items: []v1alpha1.Skyhook{
 						{
-							ObjectMeta: v1.ObjectMeta{
+							ObjectMeta: metav1.ObjectMeta{
 								Name: "skyhook1",
 							},
 							Spec: v1alpha1.SkyhookSpec{
@@ -96,7 +93,7 @@ var _ = Describe("skyhook controller tests", func() {
 				for i := 0; i < count; i++ {
 					nodes.Items = append(nodes.Items,
 						corev1.Node{
-							ObjectMeta: v1.ObjectMeta{
+							ObjectMeta: metav1.ObjectMeta{
 								Name: fmt.Sprintf("node_%d", i),
 								// Annotations: map[string]string{
 								// 	"skyhook.nvidia.com/state": string(v1alpha1.ENABLED),
@@ -128,7 +125,7 @@ var _ = Describe("skyhook controller tests", func() {
 				skyhooks := &v1alpha1.SkyhookList{
 					Items: []v1alpha1.Skyhook{
 						{
-							ObjectMeta: v1.ObjectMeta{
+							ObjectMeta: metav1.ObjectMeta{
 								Name: "skyhook1",
 							},
 							Spec: v1alpha1.SkyhookSpec{
@@ -146,7 +143,7 @@ var _ = Describe("skyhook controller tests", func() {
 				for i := 0; i < nodeCode; i++ {
 					nodes.Items = append(nodes.Items,
 						corev1.Node{
-							ObjectMeta: v1.ObjectMeta{
+							ObjectMeta: metav1.ObjectMeta{
 								Name: fmt.Sprintf("node_%d", i),
 								// Annotations: map[string]string{
 								// 	"skyhook.nvidia.com/state": string(v1alpha1.ENABLED),
@@ -576,7 +573,7 @@ var _ = Describe("skyhook controller tests", func() {
 		skyhooks := &v1alpha1.SkyhookList{
 			Items: []v1alpha1.Skyhook{
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook1",
 					},
 					Spec: v1alpha1.SkyhookSpec{
@@ -589,7 +586,7 @@ var _ = Describe("skyhook controller tests", func() {
 					},
 				},
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook2",
 					},
 					Spec: v1alpha1.SkyhookSpec{
@@ -610,7 +607,7 @@ var _ = Describe("skyhook controller tests", func() {
 		nodes := &corev1.NodeList{
 			Items: []corev1.Node{
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Labels: map[string]string{
 							"foo": "bar",
@@ -619,7 +616,7 @@ var _ = Describe("skyhook controller tests", func() {
 					},
 				},
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "node2",
 						Labels: map[string]string{
 							"foo": "baz",
@@ -642,7 +639,7 @@ var _ = Describe("skyhook controller tests", func() {
 		skyhooks := &v1alpha1.SkyhookList{
 			Items: []v1alpha1.Skyhook{
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook1",
 					},
 					Spec: v1alpha1.SkyhookSpec{
@@ -655,7 +652,7 @@ var _ = Describe("skyhook controller tests", func() {
 					},
 				},
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook2",
 					},
 					Spec: v1alpha1.SkyhookSpec{
@@ -673,7 +670,7 @@ var _ = Describe("skyhook controller tests", func() {
 		nodes := &corev1.NodeList{
 			Items: []corev1.Node{
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Labels: map[string]string{
 							"foo": "bar",
@@ -681,7 +678,7 @@ var _ = Describe("skyhook controller tests", func() {
 					},
 				},
 				{
-					ObjectMeta: v1.ObjectMeta{
+					ObjectMeta: metav1.ObjectMeta{
 						Name: "node2",
 						Labels: map[string]string{
 							"foo": "baz",
@@ -714,14 +711,14 @@ var _ = Describe("skyhook controller tests", func() {
 		// }
 
 		node1 := corev1.Node{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name: "node1",
 				UID:  "node1",
 			},
 		}
 
 		node2 := corev1.Node{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name: "node2",
 				UID:  "node2",
 			},

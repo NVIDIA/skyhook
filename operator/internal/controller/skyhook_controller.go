@@ -155,7 +155,6 @@ func (o *SkyhookOperatorOptions) GetRuntimeRequiredToleration() corev1.Toleratio
 // force type checking against this interface
 var _ reconcile.Reconciler = &SkyhookReconciler{}
 
-// NOTE: if get a few more settings, we might want to encapsulate them
 func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, recorder record.EventRecorder, opts SkyhookOperatorOptions) (*SkyhookReconciler, error) {
 
 	err := opts.Validate()
@@ -518,7 +517,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 	return updates, utilerrors.NewAggregate(errs)
 }
 
-// Runs all skyhook packages then saves and requeues if changes were made
+// RunSkyhookPackages runs all skyhook packages then saves and requeues if changes were made
 func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState *clusterState, nodePicker *NodePicker, skyhook SkyhookNodes) (*ctrl.Result, error) {
 
 	logger := log.FromContext(ctx)
@@ -656,7 +655,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 	return saved, errs
 }
 
-// Updates the state for the node or skyhook if a version is changed on a package
+// HandleVersionChange updates the state for the node or skyhook if a version is changed on a package
 func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 	toUninstall := make([]*v1alpha1.Package, 0)
 
@@ -1337,7 +1336,7 @@ func merge[T cmp.Ordered](left, right []T) []T {
 	return left
 }
 
-// Validate that there are no orphaned or stale config maps for a node
+// ValidateNodeConfigmaps validates that there are no orphaned or stale config maps for a node
 func (r *SkyhookReconciler) ValidateNodeConfigmaps(ctx context.Context, skyhookName string, nodes []wrapper.SkyhookNode) (bool, error) {
 	var list corev1.ConfigMapList
 	err := r.List(ctx, &list, client.InNamespace(r.opts.Namespace), client.MatchingLabels{fmt.Sprintf("%s/skyhook-node-meta", v1alpha1.METADATA_PREFIX): skyhookName})
@@ -1720,7 +1719,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 	return pod
 }
 
-// filterEnv removes the environment variables passed into exlude
+// FilterEnv removes the environment variables passed into exlude
 func FilterEnv(envs []corev1.EnvVar, exclude ...string) []corev1.EnvVar {
 	var filteredEnv []corev1.EnvVar
 
@@ -2168,7 +2167,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 	return err
 }
 
-// Find any nodes for which all runtime required Skyhooks are complete and remove their runtime required taint
+// HandleRuntimeRequired finds any nodes for which all runtime required Skyhooks are complete and remove their runtime required taint
 // Will return an error if the patching of the nodes is not possible
 func (r *SkyhookReconciler) HandleRuntimeRequired(ctx context.Context, clusterState *clusterState) error {
 	node_to_skyhooks, skyhook_node_map := groupSkyhooksByNode(clusterState)

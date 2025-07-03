@@ -21,6 +21,7 @@
 package v1alpha1
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -31,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -43,8 +43,11 @@ var (
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
 func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
+	skyhookWebhook := &SkyhookWebhook{}
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
+		WithDefaulter(skyhookWebhook).
+		WithValidator(skyhookWebhook).
 		Complete()
 }
 
@@ -52,39 +55,66 @@ func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:webhook:path=/mutate-skyhook-nvidia-com-v1alpha1-skyhook,mutating=true,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=skyhooks,verbs=create;update,versions=v1alpha1,name=mskyhook.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Defaulter = &Skyhook{}
+type SkyhookWebhook struct {
+}
+
+var _ admission.CustomDefaulter = &SkyhookWebhook{}
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
-func (r *Skyhook) Default() {
-	skyhooklog.Info("default", "name", r.Name)
+func (r *SkyhookWebhook) Default(ctx context.Context, obj runtime.Object) error {
+
+	skyhook, ok := obj.(*Skyhook)
+	if !ok {
+		return fmt.Errorf("object is not a Skyhook")
+	}
+
+	skyhooklog.Info("default", "name", skyhook.Name)
 
 	// TODO(user): fill in your defaulting logic.
 	// Things we might want to default:
 	//  - InterruptionBudget
+	return nil
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 //+kubebuilder:webhook:path=/validate-skyhook-nvidia-com-v1alpha1-skyhook,mutating=false,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=skyhooks,verbs=create;update,versions=v1alpha1,name=vskyhook.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Validator = &Skyhook{}
+var _ admission.CustomValidator = &SkyhookWebhook{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *Skyhook) ValidateCreate() (admission.Warnings, error) {
-	skyhooklog.Info("validate create", "name", r.Name)
+func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 
-	return nil, r.Validate()
+	skyhook, ok := obj.(*Skyhook)
+	if !ok {
+		return nil, fmt.Errorf("object is not a Skyhook")
+	}
+
+	skyhooklog.Info("validate create", "name", skyhook.Name)
+
+	return nil, skyhook.Validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *Skyhook) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
-	skyhooklog.Info("validate update", "name", r.Name)
+func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 
-	return nil, r.Validate()
+	skyhook, ok := newObj.(*Skyhook)
+	if !ok {
+		return nil, fmt.Errorf("object is not a Skyhook")
+	}
+
+	skyhooklog.Info("validate update", "name", skyhook.Name)
+
+	return nil, skyhook.Validate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *Skyhook) ValidateDelete() (admission.Warnings, error) {
-	skyhooklog.Info("validate delete", "name", r.Name)
+func (r *SkyhookWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	skyhook, ok := obj.(*Skyhook)
+	if !ok {
+		return nil, fmt.Errorf("object is not a Skyhook")
+	}
+
+	skyhooklog.Info("validate delete", "name", skyhook.Name)
 
 	// I do yet know if we need to do any valuations on delete,
 	// if so guessing they would be different than update and create anyways

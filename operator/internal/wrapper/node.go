@@ -76,7 +76,7 @@ type SkyhookNodeOnly interface {
 
 var _ SkyhookNode = &skyhookNode{}
 
-// most of use cases for the wrapper just needs name, so this stub is for making helpers for those use cases,
+// NewSkyhookNodeOnly most of use cases for the wrapper just needs name, so this stub is for making helpers for those use cases,
 // should help reduce calls to api, and not leak stubbed skyhooks with just name set
 func NewSkyhookNodeOnly(node *corev1.Node, skyhookName string) (SkyhookNodeOnly, error) {
 	ret := &skyhookNode{
@@ -478,13 +478,14 @@ func (node *skyhookNode) UpdateCondition() {
 	}
 
 	for i, condition := range node.Node.Status.Conditions {
-		if condition.Type == errorCond.Type {
+		switch condition.Type {
+		case errorCond.Type:
 			errorCondFound = true
 			if condition.Reason != errorCond.Reason && condition.Message == errorCond.Message {
 				node.Node.Status.Conditions[i] = errorCond // update it with the new condition
 				node.updated = true
 			}
-		} else if condition.Type == cond.Type {
+		case cond.Type:
 			condFound = true
 			if condition.Reason != cond.Reason && condition.Message == cond.Message {
 				node.Node.Status.Conditions[i] = cond // update it with the new condition

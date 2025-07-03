@@ -34,7 +34,6 @@ import (
 	"github.com/NVIDIA/skyhook/internal/mocks/workqueue"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -50,7 +49,7 @@ var _ = Describe("Event Handler Tests", func() {
 	It("Pod Event matches a Skyhook", func() {
 
 		dalMock := dalmock.MockDAL{}
-		queue := workqueue.MockRateLimitingInterface{}
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
 		handler := eventHandler{
 			logger: GinkgoLogr,
 			dal:    &dalMock,
@@ -67,7 +66,7 @@ var _ = Describe("Event Handler Tests", func() {
 		}
 
 		node := &corev1.Node{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Labels: labels,
 				Name:   nodename,
 			},
@@ -75,7 +74,7 @@ var _ = Describe("Event Handler Tests", func() {
 
 		skyhooks := v1alpha1.SkyhookList{
 			Items: []v1alpha1.Skyhook{{
-				ObjectMeta: v1.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Name: "foobar_name",
 				},
 				Spec: v1alpha1.SkyhookSpec{
@@ -92,17 +91,17 @@ var _ = Describe("Event Handler Tests", func() {
 		queue.EXPECT().Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: skyhooks.Items[0].Name}}).Once()
 
 		/// test
-		handler.Create(ctx, event.CreateEvent{Object: pod}, &queue)
+		handler.Create(ctx, event.CreateEvent{Object: pod}, queue)
 
 	})
 
 	It("Pod Event does not match a Skyhook", func() {
 
-		clientMock := MockClient.MockClient{}
-		queue := workqueue.MockRateLimitingInterface{}
+		clientMock := MockClient.NewClient(GinkgoT())
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
 		handler := eventHandler{
 			logger: GinkgoLogr,
-			dal:    dal.New(&clientMock),
+			dal:    dal.New(clientMock),
 		}
 
 		pod := &corev1.Pod{
@@ -112,7 +111,7 @@ var _ = Describe("Event Handler Tests", func() {
 		}
 
 		node := &corev1.Node{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
 					"foobar": "2000",
 				},
@@ -121,7 +120,7 @@ var _ = Describe("Event Handler Tests", func() {
 		}
 
 		skyhook := v1alpha1.Skyhook{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name: "foobar_name",
 			},
 			Spec: v1alpha1.SkyhookSpec{
@@ -146,19 +145,19 @@ var _ = Describe("Event Handler Tests", func() {
 			})
 
 		/// test
-		handler.Create(ctx, event.CreateEvent{Object: pod}, &queue)
+		handler.Create(ctx, event.CreateEvent{Object: pod}, queue)
 	})
 
 	It("All Node Event matches a Skyhook", func() {
-		clientMock := MockClient.MockClient{}
-		queue := workqueue.MockRateLimitingInterface{}
+		clientMock := MockClient.NewClient(GinkgoT())
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
 		handler := eventHandler{
 			logger: GinkgoLogr,
-			dal:    dal.New(&clientMock),
+			dal:    dal.New(clientMock),
 		}
 
 		node := &corev1.Node{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
 					"foo": "Bar",
 				},
@@ -167,7 +166,7 @@ var _ = Describe("Event Handler Tests", func() {
 		}
 
 		skyhook := v1alpha1.Skyhook{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name: "foobar_name",
 			},
 			Spec: v1alpha1.SkyhookSpec{
@@ -182,14 +181,6 @@ var _ = Describe("Event Handler Tests", func() {
 			Run(func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) {
 				l := list.(*v1alpha1.SkyhookList)
 				l.Items = append(l.Items, skyhook)
-			}).
-			Times(4)
-
-		clientMock.EXPECT().Get(ctx, types.NamespacedName{Name: nodename}, &corev1.Node{}).
-			Return(nil).
-			Run(func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) {
-				n := obj.(*corev1.Node)
-				n.ObjectMeta = node.ObjectMeta
 			}).
 			Times(4)
 
@@ -199,23 +190,23 @@ var _ = Describe("Event Handler Tests", func() {
 			Times(4)
 
 		/// test
-		handler.Create(ctx, event.CreateEvent{Object: node}, &queue)
-		handler.Delete(ctx, event.DeleteEvent{Object: node}, &queue)
-		handler.Generic(ctx, event.GenericEvent{Object: node}, &queue)
+		handler.Create(ctx, event.CreateEvent{Object: node}, queue)
+		handler.Delete(ctx, event.DeleteEvent{Object: node}, queue)
+		handler.Generic(ctx, event.GenericEvent{Object: node}, queue)
 
 		oldNode := node.DeepCopy()
 		oldNode.Labels = map[string]string{
 			"foobar": "2000",
 		}
-		handler.Update(ctx, event.UpdateEvent{ObjectNew: node, ObjectOld: oldNode}, &queue)
+		handler.Update(ctx, event.UpdateEvent{ObjectNew: node, ObjectOld: oldNode}, queue)
 	})
 
 	It("List Skyhook errors", func() {
-		clientMock := MockClient.MockClient{}
+		clientMock := MockClient.NewClient(GinkgoT())
 
 		handler := eventHandler{
 			logger: GinkgoLogr,
-			dal:    dal.New(&clientMock),
+			dal:    dal.New(clientMock),
 		}
 
 		pod := &corev1.Pod{
@@ -228,7 +219,7 @@ var _ = Describe("Event Handler Tests", func() {
 
 		clientMock.EXPECT().List(ctx, &v1alpha1.SkyhookList{}).
 			Return(err).
-			Times(4)
+			Times(3)
 
 		handler.Create(ctx, event.CreateEvent{Object: pod}, nil)
 		handler.Delete(ctx, event.DeleteEvent{Object: pod}, nil)
@@ -237,11 +228,11 @@ var _ = Describe("Event Handler Tests", func() {
 	})
 
 	It("Get Node errors on pod event", func() {
-		clientMock := MockClient.MockClient{}
+		clientMock := MockClient.NewClient(GinkgoT())
 
 		handler := eventHandler{
 			logger: GinkgoLogr,
-			dal:    dal.New(&clientMock),
+			dal:    dal.New(clientMock),
 		}
 
 		pod := &corev1.Pod{
@@ -252,7 +243,7 @@ var _ = Describe("Event Handler Tests", func() {
 
 		err := errors.New("this is an error")
 		skyhook := v1alpha1.Skyhook{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name: "foobar_name",
 			},
 			Spec: v1alpha1.SkyhookSpec{

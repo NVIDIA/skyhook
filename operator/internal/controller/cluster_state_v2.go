@@ -476,7 +476,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 // for node/package source of true, its on the node (we true to reflect this on the skyhook status)
 // for SCR true, we need to look at all nodes and compare state to current SCR. This should be reflected in the SCR too.
 
-// Introspect checks the current state of nodes, and SCR if they are in a bad mix, update to be correct
+// IntrospectSkyhook checks the current state of nodes, and SCR if they are in a bad mix, update to be correct
 func IntrospectSkyhook(skyhook SkyhookNodes) bool {
 	change := false
 

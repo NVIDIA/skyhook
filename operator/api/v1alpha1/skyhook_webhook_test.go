@@ -30,6 +30,7 @@ import (
 )
 
 var _ = Describe("Skyhook Webhook", func() {
+	skyhookWebhook := &SkyhookWebhook{}
 
 	Context("When creating Skyhook under Defaulting Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
@@ -57,7 +58,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateUpdate(skyhook)
+			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
 			Expect(err).ToNot(BeNil())
 
 		})
@@ -83,7 +84,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateUpdate(skyhook)
+			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
 			Expect(err).ToNot(BeNil())
 		})
 
@@ -109,7 +110,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateCreate()
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).To(BeNil())
 
 			skyhook = &Skyhook{
@@ -132,7 +133,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err = skyhook.ValidateCreate()
+			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).ToNot(BeNil())
 		})
 
@@ -160,7 +161,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateCreate()
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).To(BeNil())
 
 			skyhook = &Skyhook{
@@ -185,7 +186,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err = skyhook.ValidateCreate()
+			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).ToNot(BeNil())
 		})
 
@@ -228,7 +229,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateUpdate(skyhook)
+			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
 			Expect(err).ToNot(BeNil())
 
 			skyhook = &Skyhook{
@@ -274,7 +275,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err = skyhook.ValidateUpdate(skyhook)
+			_, err = skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
 			Expect(err).To(BeNil())
 		})
 
@@ -306,7 +307,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateUpdate(skyhook)
+			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
 			Expect(err).ToNot(BeNil())
 		})
 
@@ -332,7 +333,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateCreate()
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).ToNot(BeNil())
 
 			skyhook = &Skyhook{
@@ -356,7 +357,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err = skyhook.ValidateCreate()
+			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).To(BeNil())
 		})
 
@@ -376,7 +377,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhook.ValidateCreate()
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).To(BeNil())
 		})
 
@@ -487,7 +488,7 @@ var _ = Describe("Skyhook Webhook", func() {
 			},
 		}
 
-		_, err := skyhook.ValidateCreate()
+		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 		Expect(err).ToNot(BeNil())
 
 	})

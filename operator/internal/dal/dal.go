@@ -24,7 +24,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NVIDIA/skyhook/api/v1alpha1"
 	skyhookv1alpha1 "github.com/NVIDIA/skyhook/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -53,7 +52,7 @@ type dal struct {
 }
 
 func (e *dal) GetSkyhook(ctx context.Context, name string, opts ...client.ListOption) (*skyhookv1alpha1.Skyhook, error) {
-	var skyhook v1alpha1.Skyhook
+	var skyhook skyhookv1alpha1.Skyhook
 
 	// nodes does have namespace so leaving blank
 	if err := e.client.Get(ctx, types.NamespacedName{Name: name}, &skyhook); err != nil {

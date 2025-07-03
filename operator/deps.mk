@@ -36,13 +36,13 @@ ifndef ARCH
 endif
 
 ## versions
-GOLANGCI_LINT_VERSION ?= v1.63.4
+GOLANGCI_LINT_VERSION ?= v2.2.1
 KUSTOMIZE_VERSION ?= v5.4.1
-CONTROLLER_TOOLS_VERSION ?= v0.15.0
-ENVTEST_K8S_VERSION ?= 1.30.0
+CONTROLLER_TOOLS_VERSION ?= v0.18.0
+ENVTEST_K8S_VERSION ?= 1.33.0
 GOCOVER_VERSION ?= v1.3.0
 GINKGO_VERSION ?= v2.22.2
-MOCKERY_VERSION ?= v2.42.3
+MOCKERY_VERSION ?= v3.5.0
 CHAINSAW_VERSION ?= v0.2.10
 HELM_VERSION ?= v3.15.0
 HELMIFY_VERSION ?= v0.4.12
@@ -106,7 +106,7 @@ ginkgo: ## Download ginkgo locally if necessary.
 
 .PHONY: mockery
 mockery: ## Download mockery locally if necessary.
-	test -s $(LOCALBIN)/mockery ||  GOBIN=$(LOCALBIN) go install github.com/vektra/mockery/v2@$(MOCKERY_VERSION)
+	test -s $(LOCALBIN)/mockery ||  GOBIN=$(LOCALBIN) go install github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 
 .PHONY: chainsaw
 chainsaw: ## Download chainsaw locally if necessary.

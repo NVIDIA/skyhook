@@ -101,7 +101,7 @@ func (s *Skyhook) GetComplete(node string) {
 
 }
 
-// Adds the specified package and key to the config updates
+// AddConfigUpdates Adds the specified package and key to the config updates
 func (s *Skyhook) AddConfigUpdates(_package string, newKeys ...string) {
 	if s.Status.ConfigUpdates == nil {
 		s.Status.ConfigUpdates = make(map[string][]string, 0)
@@ -126,7 +126,7 @@ func (s *Skyhook) AddConfigUpdates(_package string, newKeys ...string) {
 	}
 }
 
-// Removes all changes for specified package in the config updates
+// RemoveConfigUpdates removes all changes for specified package in the config updates
 func (s *Skyhook) RemoveConfigUpdates(_package string) {
 	if s.Status.ConfigUpdates[_package] != nil {
 		delete(s.Status.ConfigUpdates, _package)
@@ -135,11 +135,12 @@ func (s *Skyhook) RemoveConfigUpdates(_package string) {
 	s.Updated = true
 }
 
+// GetConfigUpdates gets the config updates
 func (s *Skyhook) GetConfigUpdates() map[string][]string {
 	return s.Status.ConfigUpdates
 }
 
-// Gets all the config interrupts needed based on the current config updates
+// GetConfigInterrupts gets all the config interrupts needed based on the current config updates
 func (s *Skyhook) GetConfigInterrupts() map[string][]*v1alpha1.Interrupt {
 	interrupts := make(map[string][]*v1alpha1.Interrupt)
 

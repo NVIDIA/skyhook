@@ -25,7 +25,7 @@ import "golang.org/x/mod/semver"
 var GIT_SHA string = ""
 var VERSION string = ""
 
-// isValid checks if the version is a valid semver version adds a 'v' prefix if missing
+// IsValid checks if the version is a valid semver version adds a 'v' prefix if missing
 func IsValid(version string) bool {
 	if version == "" {
 		return false
