@@ -18,38 +18,35 @@
 # LICENSE END
 # 
 
-dir: "{{.InterfaceDir}}/mock"
-filename: "{{.InterfaceName }}.go"
-quiet: False
-with-expecter: true
+dir: '{{.InterfaceDir}}/mock'
+filename: "{{.InterfaceName}}.go"
+template: testify
+template-data:
+  unroll-variadic: true
 packages:
-## external packages
-    k8s.io/client-go/util/workqueue:
-        # place your package-specific config here
-        config:
-            dir: "internal/mocks/{{.PackageName}}"
-        interfaces:
-            # select the interfaces you want mocked
-            RateLimitingInterface:
-                # Modify package-level config for this specific interface (if applicable)
-                config:
-    
-    sigs.k8s.io/controller-runtime/pkg/client:
-        config:
-            dir: "internal/mocks/{{.PackageName}}"
-        interfaces:
-            Client:
-    k8s.io/client-go/tools/record:
-        config:
-            dir: "internal/mocks/{{.PackageName}}"
-        interfaces:
-            EventRecorder:
-## internal packages
-    github.com/NVIDIA/skyhook/internal/dal:
-        config:
-            all: True
-    github.com/NVIDIA/skyhook/internal/controller:
-        config:
-            all: True
-        interfaces:
-            SkyhookNodes:
+  github.com/NVIDIA/skyhook/internal/controller:
+    config:
+      all: true
+    interfaces:
+      SkyhookNodes: {}
+  github.com/NVIDIA/skyhook/internal/dal:
+    config:
+      all: true
+  k8s.io/client-go/tools/record:
+    config:
+      dir: internal/mocks/{{.SrcPackageName}}
+      structname: "{{.InterfaceName}}"
+    interfaces:
+      EventRecorder: {}
+  k8s.io/client-go/util/workqueue:
+    config:
+      dir: internal/mocks/{{.SrcPackageName}}
+      structname: "{{.InterfaceName}}"
+    interfaces:
+      TypedRateLimitingInterface: {}
+  sigs.k8s.io/controller-runtime/pkg/client:
+    config:
+      dir: internal/mocks/{{.SrcPackageName}}
+      structname: "{{.InterfaceName}}"
+    interfaces:
+      Client: {}

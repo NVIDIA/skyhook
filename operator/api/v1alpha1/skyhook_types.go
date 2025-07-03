@@ -62,7 +62,6 @@ type SkyhookSpec struct {
 	InterruptionBudget InterruptionBudget `json:"interruptionBudget,omitempty"`
 
 	// Packages are the DAG of packages to be applied to nodes.
-	//+kubebuilder:validation:Required
 	Packages Packages `json:"packages,omitempty"`
 
 	// AdditionalTolerations adds tolerations to all packages
@@ -104,7 +103,7 @@ func (spec *SkyhookSpec) BuildGraph() (graph.DependencyGraph[*Package], error) {
 // Packages are set of packages to apply
 type Packages map[string]Package
 
-// set the names on packages if not set
+// Names sets the names on packages if not set
 func (f Packages) Names() {
 	for k := range f {
 		m := f[k]
@@ -115,7 +114,7 @@ func (f Packages) Names() {
 	}
 }
 
-// Remove the image tag if set on image
+// Images removes the image tag if set on image
 func (f Packages) Images() {
 	for k := range f {
 		m := f[k]
@@ -337,7 +336,7 @@ type SkyhookStatus struct {
 
 type NodeState map[string]PackageStatus
 
-// Adds or updates specified state for package in the node state
+// Upsert adds or updates specified state for package in the node state
 func (ns *NodeState) Upsert(_package PackageRef, image string, state State, stage Stage, restarts int32) bool {
 
 	if *ns == nil {
@@ -363,7 +362,7 @@ func (ns *NodeState) Upsert(_package PackageRef, image string, state State, stag
 	return true
 }
 
-// Removes specified package from Node State
+// RemoveState removes specified package from Node State
 func (ns *NodeState) RemoveState(_package PackageRef) bool {
 	if *ns == nil {
 		return false
@@ -402,7 +401,7 @@ func (ns *NodeState) IsComplete(packages Packages, interrupt map[string][]*Inter
 	return false
 }
 
-// Determines whether package has an interrupt based off of config updates and interrupts passed to it
+// HasInterrupt determines whether package has an interrupt based off of config updates and interrupts passed to it
 func (ns *NodeState) HasInterrupt(_package Package, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 	var hasInterrupt bool
 
@@ -446,7 +445,7 @@ func (ns *NodeState) NextStage(_package *Package, interrupt map[string][]*Interr
 	return nil
 }
 
-// Equal return true if node state contains the same packages as the spec including versions
+// Contains return true if node state contains the same packages as the spec including versions
 func (ns *NodeState) Contains(packages Packages) bool {
 
 	if len(*ns) < len(packages) { // same as above, ns can be longer, but not shorter

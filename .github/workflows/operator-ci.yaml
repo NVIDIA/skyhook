@@ -51,22 +51,26 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: 1.23.8
+  GO_VERSION: 1.24.4
   PLATFORMS: linux/amd64,linux/arm64
 
 # There is a single job in this workflow. It's configured to run on the latest available version of Ubuntu.
 jobs:
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        k8s-version: ["1.30.13", "1.31.9", "1.32.5", "1.33.1"]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-tags: true
           fetch-depth: 0
-      - name: Setup Go 1.23
+      - name: Setup Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v5
         with:
-          go-version: 1.23.9
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: operator/go.sum
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -79,6 +83,7 @@ jobs:
         uses: helm/kind-action@v1
         with:
           version: v0.26.0
+          kubernetes_version: v${{ matrix.k8s-version }}
           install_only: true
       - name: Restore cached Binaries
         id: cached-binaries

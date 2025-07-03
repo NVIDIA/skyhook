@@ -47,7 +47,7 @@ type eventHandler struct {
 var _ handler.EventHandler = &eventHandler{}
 
 // the EventHandler interface
-func (e *eventHandler) Create(ctx context.Context, event event.CreateEvent, queue workqueue.RateLimitingInterface) {
+func (e *eventHandler) Create(ctx context.Context, event event.TypedCreateEvent[client.Object], queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
 	matches, err := e.genericHandler(ctx, event.Object)
 	if err != nil {
@@ -63,7 +63,7 @@ func (e *eventHandler) Create(ctx context.Context, event event.CreateEvent, queu
 	}
 }
 
-func (e *eventHandler) Update(ctx context.Context, event event.UpdateEvent, queue workqueue.RateLimitingInterface) {
+func (e *eventHandler) Update(ctx context.Context, event event.TypedUpdateEvent[client.Object], queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
 	// ignoring the old for now, might need to do some comparing to decided
 	// if we want to do something, but for now starting simple
@@ -82,7 +82,7 @@ func (e *eventHandler) Update(ctx context.Context, event event.UpdateEvent, queu
 	}
 }
 
-func (e *eventHandler) Delete(ctx context.Context, event event.DeleteEvent, queue workqueue.RateLimitingInterface) {
+func (e *eventHandler) Delete(ctx context.Context, event event.TypedDeleteEvent[client.Object], queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	matches, err := e.genericHandler(ctx, event.Object)
 	if err != nil {
 		e.logger.Error(err, "error handling delete event",
@@ -98,7 +98,7 @@ func (e *eventHandler) Delete(ctx context.Context, event event.DeleteEvent, queu
 }
 
 // Generic not sure what Generic is, so just loging for now
-func (e *eventHandler) Generic(ctx context.Context, event event.GenericEvent, queue workqueue.RateLimitingInterface) {
+func (e *eventHandler) Generic(ctx context.Context, event event.TypedGenericEvent[client.Object], queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 
 	matches, err := e.genericHandler(ctx, event.Object)
 	if err != nil {

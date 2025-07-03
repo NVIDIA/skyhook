@@ -25,22 +25,11 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - admissionregistration.k8s.io
-  resources:
-  - mutatingwebhookconfigurations
-  - validatingwebhookconfigurations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - ""
   resources:
   - configmaps
+  - pods
+  - secrets
   verbs:
   - create
   - delete
@@ -77,18 +66,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - pods/eviction
   verbs:
   - create
@@ -99,9 +76,10 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - ""
+  - admissionregistration.k8s.io
   resources:
-  - secrets
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
   verbs:
   - create
   - delete

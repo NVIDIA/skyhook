@@ -16,7 +16,7 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.23.8
+GO_VERSION ?= 1.24.4
 
 # Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location
@@ -24,7 +24,7 @@ IMG_REPO ?= ghcr.io/nvidia/skyhook
 IMG ?= $(IMG_REPO)/operator
 
 ## default version of kind to use
-KIND_VERSION?=1.30.10
+KIND_VERSION?=1.33.1
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook
@@ -111,7 +111,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: generate-mocks 
 generate-mocks: mockery ## Generate code for interface mocking
-	$(MOCKERY)
+	$(MOCKERY) --config .mockery.yaml
 	$(MAKE) fmt ## fix up license headers
 
 license-report: go-licenses ## Run run license report
