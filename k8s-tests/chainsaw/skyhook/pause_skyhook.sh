@@ -1,6 +1,9 @@
 #!/bin/bash -x
 
 # 
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # LICENSE START
 #
 #    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
@@ -19,6 +22,8 @@
 #
 # LICENSE END
 # 
+
+
 
 skyhook="$1"
 pause="$2"

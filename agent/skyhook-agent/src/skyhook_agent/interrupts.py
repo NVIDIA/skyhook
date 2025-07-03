@@ -1,4 +1,7 @@
 # 
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # LICENSE START
 #
 #    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
@@ -17,7 +20,6 @@
 #
 # LICENSE END
 # 
-
 
 import string
 import base64
@@ -131,4 +133,3 @@ def inflate(serialized_value: str) -> Interrupt:
         raise ValueError(f"Unknown interrupt {interrupt_type} must be one of: {', '.join(interrupt_map.keys())}")
     
     return interrupt
-
