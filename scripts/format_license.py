@@ -1,78 +1,126 @@
 #!/usr/bin/env python3
 
-# 
-# LICENSE START
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
-#    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
 #
-#    Licensed under the Apache License, Version 2.0 (the "License");
-#    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#        http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS,
-#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#    See the License for the specific language governing permissions and
-#    limitations under the License.
-#
-# LICENSE END
-# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+License Header Formatting Tool
+
+This script automatically adds, updates, or validates Apache 2.0 license headers
+in source code files. It supports multiple file types and uses appropriate comment
+styles for each.
+
+Key Features:
+- Detects existing license headers and updates them if needed
+- Preserves shebang lines in shell/Python scripts
+- Supports multiple file types with appropriate comment styles
+- Normalizes license content for accurate comparison
+- Ignores vendor directories and other unwanted files
+- Uses SPDX headers for modern license identification
+
+Workflow:
+1. Scan directories for supported file types
+2. For each file, check if it has a license header
+3. If no header exists, add one
+4. If header exists but is outdated, replace it
+5. If header is already correct, skip the file
+"""
 
 import os
 import argparse
 import re
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 import fnmatch
 
-# Comment style definitions for different file types with regex patterns
+# Comment style definitions for different file types
+# Maps regex patterns (for matching file names) to comment prefixes
 COMMENT_STYLES = {
-    r'.*\.py$|.*\.sh$|.*\.ya?ml$|.*\.Dockerfile$|^Dockerfile$': {
-        'start': '# ',
-        'line': '# ',
-        'end': '# '
-    },
-    r'.*\.go$': {
-        'start': '/*',
-        'line': ' * ',
-        'end': ' */'
-    },
+    # Hash-style comments: Python, Shell, YAML, Dockerfile
+    r'.*\.py$|.*\.sh$|.*\.ya?ml$|.*\.Dockerfile$|^Dockerfile$': '# ',
+    # Block-style comments: Go files (inside /* */ block)
+    r'.*\.go$': ' * ',
 }
 
-# Built-in ignore patterns
+# Built-in ignore patterns - directories and files to skip
+# These patterns use fnmatch-style wildcards (* and ?)
+# The script will skip any file or directory that matches these patterns
 BUILT_IN_IGNORE_PATTERNS = [
-    # Vendor directories
-    'vendor',
-    'vendor/*',
-    # Go vendor directories
-    'Godeps',
-    'Godeps/*',
+    # Vendor directories (third-party dependencies)
+    'vendor',        # Exact directory name
+    'vendor/*',      # Anything inside vendor directory
+    
+    # Go vendor directories (legacy Go dependency management)
+    'Godeps',        # Godeps directory
+    'Godeps/*',      # Anything inside Godeps
+    
     # Node.js vendor directories
-    'node_modules',
+    'node_modules',  # Node.js dependencies
     'node_modules/*',
-    # Python vendor directories
-    'venv',
+    
+    # Python virtual environment directories
+    'venv',          # Virtual environment
     'venv/*',
-    '.env',
+    '.env',          # Environment files
     '.env/*',
-    'env',
+    'env',           # Another common venv name
     'env/*',
-    # Chart directory
-    'chart',
-    'chart/*'
+    
+    # Helm chart directory (has its own license structure)
+    'chart',         # Chart directory
+    'chart/*'        # Anything inside chart directory
 ]
 
+def is_block_comment(comment_prefix: str) -> bool:
+    """
+    Check if the comment style uses block comments (/* */) vs line comments (#).
+    
+    Args:
+        comment_prefix: The comment prefix string (e.g., '# ' or ' * ')
+        
+    Returns:
+        True if this is a block comment style (like Go), False for line comments
+    """
+    return comment_prefix == ' * '
+
+
 def should_ignore(path: str, ignore_patterns: List[str]) -> bool:
-    """Check if a path should be ignored based on ignore patterns."""
+    """
+    Check if a file path should be ignored based on ignore patterns.
+    
+    Args:
+        path: The file path to check (relative to root directory)
+        ignore_patterns: List of fnmatch patterns to match against
+        
+    Returns:
+        True if the path should be ignored, False otherwise
+        
+    The function checks both the full path and individual path components
+    to handle patterns like 'vendor/*' and 'vendor' properly.
+    """
+    # Split path into components (e.g., "src/vendor/lib.py" -> ["src", "vendor", "lib.py"])
     path_parts = path.split(os.sep)
     
     for pattern in ignore_patterns:
         # Check if the pattern matches the full path
+        # Example: pattern "vendor/*" matches "vendor/lib.py"
         if fnmatch.fnmatch(path, pattern):
             return True
         
-        # Check if pattern matches any part of the path
+        # Check if pattern matches any individual part of the path
+        # Example: pattern "vendor" matches path "src/vendor/lib.py"
         for part in path_parts:
             if fnmatch.fnmatch(part, pattern):
                 return True
@@ -80,112 +128,320 @@ def should_ignore(path: str, ignore_patterns: List[str]) -> bool:
     return False
 
 def read_license_template(template_path: str) -> str:
-    """Read the license template file."""
+    """Read the license template file and extract the boilerplate section.
+    
+    The Apache 2.0 license file contains the full license text, but we only need
+    the boilerplate section that should be included in source files. This function
+    extracts that specific section from the APPENDIX.
+    """
     with open(template_path, 'r') as f:
-        return f.read().strip()
+        license_text = f.read().strip()
+    
+    # Extract the boilerplate section from the Apache 2.0 license
+    # The boilerplate is located in the APPENDIX section
+    start_marker = "   APPENDIX: How to apply the Apache License to your work."
+    end_marker = "   limitations under the License."
+    
+    start_idx = license_text.find(start_marker)
+    if start_idx != -1:
+        # Find the actual copyright line that starts the boilerplate
+        boilerplate_start = license_text.find("   Copyright", start_idx)
+        if boilerplate_start != -1:
+            # Find the end of the boilerplate section
+            end_idx = license_text.find(end_marker, boilerplate_start)
+            if end_idx != -1:
+                # Extract just the boilerplate text
+                return license_text[boilerplate_start:end_idx + len(end_marker)]
+    
+    # If we can't find the boilerplate section, return the full license text
+    # This serves as a fallback in case the LICENSE file format is different
+    return license_text
 
-def format_license(license_text: str, comment_style: Dict[str, str]) -> str:
-    """Format the license text with the appropriate comment style."""
+def format_license(license_text: str, comment_prefix: str, year: str = None) -> str:
+    """
+    Format the license text with appropriate comment style and SPDX headers.
+    
+    Args:
+        license_text: The license boilerplate text from the LICENSE file
+        comment_prefix: Comment prefix string for this file type (e.g., '# ' or ' * ')
+        year: Copyright year (defaults to current year)
+        
+    Returns:
+        Formatted license header as a string, ready to insert into source files
+        
+    The function creates a license header with:
+    1. SPDX headers for modern license identification
+    2. The Apache 2.0 license boilerplate text
+    3. Proper comment formatting for the target file type
+    """
+    import datetime
+    
+    # Use current year if not specified
+    if year is None:
+        year = str(datetime.datetime.now().year)
+    
+    # Determine file type based on comment prefix
+    # Go files use block comments /* */, others use line comments
+    uses_block_comments = is_block_comment(comment_prefix)
+    
+    # Build the license header, starting with SPDX headers
+    # SPDX headers provide machine-readable license information
+    if uses_block_comments:
+        # Block comment files (like Go): Start with block comment opener
+        formatted = [
+            "/*",  # Open block comment
+            f" * SPDX-FileCopyrightText: Copyright (c) {year} NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+            f" * SPDX-License-Identifier: Apache-2.0",
+            " *"   # Empty line separator
+        ]
+    else:
+        # Line comment files (Python, Shell, YAML, etc.): Use line comments
+        formatted = [
+            f"{comment_prefix}SPDX-FileCopyrightText: Copyright (c) {year} NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+            f"{comment_prefix}SPDX-License-Identifier: Apache-2.0",
+            comment_prefix.rstrip()  # Empty comment line
+        ]
+    
+    # Process the license boilerplate text from the LICENSE file
     lines = license_text.split('\n')
-    formatted = [
-        comment_style['start'],
-        f"{comment_style['line']}LICENSE START",
-        comment_style['line'].rstrip()
-    ]
-    
     for line in lines:
-        if line.strip():
-            formatted.append(f"{comment_style['line']}{line}")
+        # Clean up the line (remove leading/trailing whitespace)
+        cleaned_line = line.strip()
+        
+        # Skip the original copyright line since we use our own SPDX header
+        # This prevents duplication of copyright information
+        if cleaned_line.startswith('Copyright (c) NVIDIA CORPORATION'):
+            continue
+        
+        # Add the line with appropriate comment formatting
+        if cleaned_line:
+            # Non-empty line: add comment prefix + content
+            formatted.append(f"{comment_prefix}{cleaned_line}")
         else:
-            formatted.append(f"{comment_style['line'].rstrip()}")
+            # Empty line: add just the comment prefix (trimmed)
+            formatted.append(f"{comment_prefix.rstrip()}")
     
-    formatted.extend([
-        comment_style['line'].rstrip(),
-        f"{comment_style['line']}LICENSE END",
-        comment_style['end']
-    ])
+    # Close the block comment for block comment files
+    if uses_block_comments:
+        formatted.append(" */")  # Close block comment
+    
+    # Join all lines with newlines to create the final license header
     return '\n'.join(formatted)
 
 def find_files(root_dir: str, patterns: List[str], ignore_patterns: List[str]) -> List[str]:
-    """Find all files matching the regex patterns recursively, respecting ignore patterns."""
+    """
+    Find all files matching the regex patterns recursively, respecting ignore patterns.
+    
+    Args:
+        root_dir: Root directory to start searching from
+        patterns: List of regex patterns to match against filenames
+        ignore_patterns: List of fnmatch patterns for files/directories to ignore
+        
+    Returns:
+        List of absolute file paths that match the patterns and aren't ignored
+        
+    The function walks the directory tree and:
+    1. Skips directories that match ignore patterns
+    2. Skips files that match ignore patterns
+    3. Includes files that match any of the regex patterns
+    """
     matches = []
+    
+    # Walk the directory tree starting from root_dir
+    # os.walk yields (root, dirs, files) for each directory
     for root, _, filenames in os.walk(root_dir):
-        # Get relative path from root_dir
+        # Get relative path from root_dir for ignore pattern matching
+        # Example: "/path/to/project/src" -> "src"
         rel_root = os.path.relpath(root, root_dir)
         
         # Skip if this directory should be ignored
+        # Example: skip "vendor" directory and all its subdirectories
         if should_ignore(rel_root, ignore_patterns):
             continue
             
+        # Check each file in this directory
         for filename in filenames:
+            # Build relative path for ignore pattern checking
             rel_path = os.path.join(rel_root, filename)
             
             # Skip if the file should be ignored
+            # Example: skip files in vendor subdirectories
             if should_ignore(rel_path, ignore_patterns):
                 continue
                 
-            # Check if the file matches any of our patterns
+            # Check if the filename matches any of our regex patterns
+            # Example: "*.py" pattern matches "script.py"
             for pattern in patterns:
                 if re.match(pattern, filename):
+                    # Add the absolute path to our matches
                     matches.append(os.path.join(root, filename))
                     break  # No need to check other patterns once we have a match
                     
     return matches
 
 def find_existing_license(content: str) -> Tuple[int, int]:
-    """Find the start and end positions of an existing license header."""
-    lines = content.split('\n')
-    start_line = 0
-    end_line = 0
+    """
+    Find the start and end positions of an existing license header in file content.
     
-    # Look for LICENSE START and LICENSE END markers
+    Args:
+        content: The full content of the file as a string
+        
+    Returns:
+        Tuple of (start_line, end_line) where:
+        - start_line: Line number where license starts (0-based), -1 if not found
+        - end_line: Line number after license ends (0-based), -1 if not found
+        
+    This function detects SPDX license headers and standard Apache 2.0 license blocks.
+    """
+    lines = content.split('\n')
+    start_line = -1
+    end_line = -1
+    in_license_block = False
+    
+    # Scan through each line looking for license markers
     for i, line in enumerate(lines):
-        if 'LICENSE START' in line:
-            start_line = i - 1  # Include the opening comment line
-        elif 'LICENSE END' in line:
-            end_line = i + 2  # Include the closing comment line
-            break
+        stripped_line = line.strip()
+        
+        # Skip shebang lines (#!/usr/bin/env python3, #!/bin/bash, etc.)
+        # These should be preserved at the beginning of files
+        if stripped_line.startswith('#!/'):
+            continue
+            
+        # Look for the start of a license block
+        if not in_license_block:
+            # Check for SPDX headers or copyright notices
+            if ('SPDX-FileCopyrightText' in stripped_line or 
+                'SPDX-License-Identifier' in stripped_line or
+                'Copyright (c) NVIDIA CORPORATION' in stripped_line or
+                # Go files with block comment starting license
+                (stripped_line == '/*' and i + 1 < len(lines) and 
+                 ('SPDX-FileCopyrightText' in lines[i + 1] or 
+                  'SPDX-License-Identifier' in lines[i + 1] or
+                  'Copyright (c) NVIDIA CORPORATION' in lines[i + 1]))):
+                start_line = i
+                in_license_block = True
+        
+        # Look for the end of a license block
+        if in_license_block and 'limitations under the License' in stripped_line:
+            end_line = i + 1
+            
+            # Include any trailing empty comment lines
+            for j in range(i + 1, len(lines)):
+                next_line = lines[j].strip()
+                if (next_line == '' or  # Empty lines
+                    next_line.startswith('#') and next_line.replace('#', '').strip() == '' or
+                    next_line == '# ' or
+                    next_line == '*/' or  # Go comment block endings
+                    next_line.startswith('*') and next_line.replace('*', '').strip() == ''):
+                    end_line = j + 1
+                else:
+                    # Stop when we hit actual code/content
+                    break
+            break  # Found the end, stop scanning
     
     return start_line, end_line
 
+def normalize_license_for_comparison(license_text: str) -> str:
+    """
+    Normalize a license text for comparison by removing extra whitespace.
+    
+    Args:
+        license_text: The license text to normalize
+        
+    Returns:
+        Normalized license text with consistent whitespace
+        
+    This function helps compare existing licenses with generated ones by:
+    1. Removing trailing whitespace from each line
+    2. Removing leading/trailing empty lines
+    3. Preserving the overall structure and content
+    
+    This ensures that minor whitespace differences don't trigger unnecessary updates.
+    """
+    lines = license_text.split('\n')
+    normalized_lines = []
+    
+    for line in lines:
+        # Keep the line structure but remove trailing whitespace
+        # This handles differences like "# " vs "#" at line ends
+        normalized_lines.append(line.rstrip())
+    
+    # Join lines and remove any leading/trailing whitespace from the whole block
+    return '\n'.join(normalized_lines).strip()
+
 def insert_license(file_path: str, formatted_license: str, verbose: bool = False) -> None:
-    """Insert the formatted license at the beginning of the file."""
+    """
+    Insert or update the license header in a source file.
+    
+    Args:
+        file_path: Path to the file to modify
+        formatted_license: The properly formatted license text to insert
+        verbose: Whether to print detailed status messages
+        
+    This function handles the complete workflow of license management:
+    1. Read the existing file content
+    2. Check if a license already exists
+    3. Compare existing license with target license
+    4. Update only if necessary
+    5. Preserve important file elements (shebang lines)
+    6. Write the updated content back to file
+    """
+    # Read the current file content
     with open(file_path, 'r') as f:
         content = f.read()
     
-    # Find any existing license header
+    # Look for any existing license header in the file
     start_line, end_line = find_existing_license(content)
     
     lines = content.split('\n')
+    
+    # Handle existing license
     if start_line != -1 and end_line != -1:
-        # Check if the found license is the same as the formatted license
+        # Extract the existing license text for comparison
         existing_license = "\n".join(lines[start_line:end_line])
-        if existing_license == formatted_license:
+        
+        # Normalize both licenses for accurate comparison
+        # This prevents updates due to minor whitespace differences
+        existing_normalized = normalize_license_for_comparison(existing_license)
+        formatted_normalized = normalize_license_for_comparison(formatted_license)
+        
+        # Check if the license is already correct
+        if existing_normalized == formatted_normalized:
             if verbose:
                 print(f"License is already formatted in {file_path}")
-            return
+            return  # No changes needed
 
-        # Remove existing license
+        # License exists but needs updating
         print(f"Replacing existing license in {file_path}")
+        # Remove the old license by excluding those lines
         lines = lines[:start_line] + lines[end_line:]
         content = '\n'.join(lines)
+    else:
+        # No existing license found
+        print(f"Adding license to {file_path}")
     
-    # Strip any leading/trailing whitespace from content
+    # Clean up the content (remove leading/trailing whitespace)
     content = content.strip()
     
-    # For Python/Shell files, preserve any shebang line
+    # Handle special cases for file types that need careful formatting
     if file_path.endswith(('.py', '.sh')):
+        # Python and Shell files: preserve shebang lines
         lines = content.split('\n')
         if lines and lines[0].startswith('#!'):
+            # Shebang exists: put it first, then license, then content
+            # Format: #!/usr/bin/env python3\n\n<license>\n\n<content>
             content = lines[0] + '\n\n' + formatted_license + '\n\n' + '\n'.join(lines[1:])
         else:
+            # No shebang: license first, then content
             content = formatted_license + '\n\n' + content
     else:
+        # Other file types: license first, then content
         content = formatted_license + '\n\n' + content
     
-    # Ensure file ends with exactly one newline
+    # Ensure consistent file ending (exactly one newline)
     content = content.rstrip('\n') + '\n'
     
+    # Write the updated content back to the file
     with open(file_path, 'w') as f:
         f.write(content)
     print(f"Updated license in {file_path}")
@@ -201,7 +457,7 @@ def main():
     2. Replace existing license headers with the standardized format
     3. Preserve shebang lines in scripts
     4. Skip vendor directories and files matching ignore patterns
-    5. Add LICENSE START/END markers for easier detection and replacement
+    5. Include SPDX headers at the beginning of each license block
 
     Supported file types:
     - Python (.py)       : Uses # comments
@@ -211,11 +467,12 @@ def main():
     - Dockerfile         : Uses # comments (includes both "Dockerfile" and files ending in ".Dockerfile")
 
     Usage:
-        ./format_license.py [--license-file PATH] [--root-dir PATH] [--verbose]
+        ./format_license.py [--license-file PATH] [--root-dir PATH] [--year YEAR] [--verbose]
 
     Arguments:
         --license-file : Path to the Apache 2.0 license file (default: LICENSE)
         --root-dir     : Root directory to search for files (default: current directory)
+        --year         : Year to use in SPDX copyright header (default: current year)
         --verbose      : Show detailed messages, including when licenses are already formatted
 
     Example:
@@ -225,6 +482,9 @@ def main():
         # Format files using a specific license file and directory with verbose output
         ./format_license.py --license-file /path/to/LICENSE --root-dir /path/to/project --verbose
 
+        # Format files with a specific year in the SPDX header
+        ./format_license.py --year 2024
+
     Note:
         The script automatically ignores common vendor directories.
         The chart/ directory is also ignored by default. See BUILT_IN_IGNORE_PATTERNS for more details.
@@ -232,37 +492,31 @@ def main():
     parser = argparse.ArgumentParser(description='Format and apply license headers to source files')
     parser.add_argument('--license-file', default='LICENSE',  help='Path to the license template file')
     parser.add_argument('--root-dir', default='.',  help='Root directory to search for files')
+    parser.add_argument('--year', help='Year to use in SPDX copyright header (default: current year)')
     parser.add_argument('--verbose', action='store_true', help='Show detailed messages, including when licenses are already formatted')
     args = parser.parse_args()
 
-    # Read the license template
+    # Step 1: Read and extract the license boilerplate from the LICENSE file
+    # This automatically extracts just the part needed for source file headers
     license_text = read_license_template(args.license_file)
-    
-    # Get the boilerplate section from the license
-    start_marker = "   APPENDIX: How to apply the Apache License to your work."
-    end_marker = "   limitations under the License."
-    
-    start_idx = license_text.find(start_marker)
-    if start_idx != -1:
-        # Skip to the actual boilerplate
-        boilerplate_start = license_text.find("   Copyright", start_idx)
-        if boilerplate_start != -1:
-            end_idx = license_text.find(end_marker, boilerplate_start)
-            if end_idx != -1:
-                license_text = license_text[boilerplate_start:end_idx + len(end_marker)]
 
-    # Read .gitignore patterns
+    # Step 2: Set up file/directory filtering
+    # Use built-in patterns to ignore vendor directories, etc.
     ignore_patterns = BUILT_IN_IGNORE_PATTERNS
 
-    # Process each file pattern
-    for pattern, comment_style in COMMENT_STYLES.items():
-        # Format the license for this file type
-        formatted_license = format_license(license_text, comment_style)
+    # Step 3: Process each supported file type
+    # Each file type has its own regex pattern and comment prefix
+    for pattern, comment_prefix in COMMENT_STYLES.items():
+        # Format the license text for this specific file type
+        # This adds appropriate comment characters and SPDX headers
+        formatted_license = format_license(license_text, comment_prefix, args.year)
         
-        # Find and process all files matching this pattern
+        # Find all files matching this pattern in the directory tree
         files = find_files(args.root_dir, [pattern], ignore_patterns)
+        
+        # Process each file: add, update, or skip license as needed
         for file_path in files:
             insert_license(file_path, formatted_license, args.verbose)
 
 if __name__ == '__main__':
-    main() 
+    main()
