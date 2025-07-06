@@ -24,6 +24,7 @@ import (
 
 	"github.com/NVIDIA/skyhook/api/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/skyhook/internal/controller/mock"
+	"github.com/NVIDIA/skyhook/internal/wrapper"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -168,5 +169,166 @@ var _ = Describe("BuildState ordering", func() {
 		Expect(ordered[0].GetSkyhook().Name).To(Equal("a"))
 		Expect(ordered[1].GetSkyhook().Name).To(Equal("b"))
 		Expect(ordered[2].GetSkyhook().Name).To(Equal("c"))
+	})
+})
+
+var _ = Describe("CleanupRemovedNodes", func() {
+	It("should cleanup removed nodes from all status maps", func() {
+		// Create mock skyhook nodes
+		mockSkyhookNodes := skyhookNodesMock.MockSkyhookNodes{}
+		// Create mock nodes that currently exist
+		mockNode1 := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+		}
+		mockNode2 := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "node2"},
+		}
+
+		// Create actual wrapper nodes using NewSkyhookNodeOnly
+		node1, err := wrapper.NewSkyhookNode(
+			mockNode1,
+			&v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			},
+		)
+		Expect(err).NotTo(HaveOccurred())
+		node2, err := wrapper.NewSkyhookNode(
+			mockNode2,
+			&v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			},
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Create mock skyhook wrapper with status maps containing both existing and removed nodes
+		mockSkyhook := &wrapper.Skyhook{
+			Skyhook: &v1alpha1.Skyhook{
+				Status: v1alpha1.SkyhookStatus{
+					NodeState: map[string]v1alpha1.NodeState{
+						"node1":        {},
+						"node2":        {},
+						"removed-node": {},
+					},
+					NodeStatus: map[string]v1alpha1.Status{
+						"node1":        v1alpha1.StatusComplete,
+						"node2":        v1alpha1.StatusInProgress,
+						"removed-node": v1alpha1.StatusErroring,
+					},
+					NodeBootIds: map[string]string{
+						"node1":        "boot-id-1",
+						"node2":        "boot-id-2",
+						"removed-node": "boot-id-removed",
+					},
+					NodePriority: map[string]metav1.Time{
+						"node1":        metav1.Now(),
+						"node2":        metav1.Now(),
+						"removed-node": metav1.Now(),
+					},
+					ConfigUpdates: map[string][]string{
+						"package1": {"config1"},
+						"package2": {"config2"},
+						"package3": {"config3"},
+					},
+				},
+			},
+			Updated: false,
+		}
+
+		// Set up mock expectations
+		mockSkyhookNodes.EXPECT().GetNodes().Return([]wrapper.SkyhookNode{
+			node1,
+			node2,
+		})
+		mockSkyhookNodes.EXPECT().GetSkyhook().Return(mockSkyhook)
+
+		// Call the function
+		CleanupRemovedNodes(&mockSkyhookNodes)
+
+		// Verify that removed-node was cleaned up from all maps
+		Expect(mockSkyhook.Status.NodeState).To(HaveKey("node1"))
+		Expect(mockSkyhook.Status.NodeState).To(HaveKey("node2"))
+		Expect(mockSkyhook.Status.NodeState).NotTo(HaveKey("removed-node"))
+
+		Expect(mockSkyhook.Status.NodeStatus).To(HaveKey("node1"))
+		Expect(mockSkyhook.Status.NodeStatus).To(HaveKey("node2"))
+		Expect(mockSkyhook.Status.NodeStatus).NotTo(HaveKey("removed-node"))
+
+		Expect(mockSkyhook.Status.NodeBootIds).To(HaveKey("node1"))
+		Expect(mockSkyhook.Status.NodeBootIds).To(HaveKey("node2"))
+		Expect(mockSkyhook.Status.NodeBootIds).NotTo(HaveKey("removed-node"))
+
+		Expect(mockSkyhook.Status.NodePriority).To(HaveKey("node1"))
+		Expect(mockSkyhook.Status.NodePriority).To(HaveKey("node2"))
+		Expect(mockSkyhook.Status.NodePriority).NotTo(HaveKey("removed-node"))
+
+		// ConfigUpdates should NOT be cleaned up by node removal since it's keyed by package names
+		Expect(mockSkyhook.Status.ConfigUpdates).To(HaveKey("package1"))
+		Expect(mockSkyhook.Status.ConfigUpdates).To(HaveKey("package2"))
+		Expect(mockSkyhook.Status.ConfigUpdates).To(HaveKey("package3"))
+
+		// Verify that Updated flag was set since changes were made
+		Expect(mockSkyhook.Updated).To(BeTrue())
+	})
+
+	It("should not set Updated flag when no nodes are removed", func() {
+		// Create mock skyhook nodes
+		mockSkyhookNodes := skyhookNodesMock.MockSkyhookNodes{}
+		// Create mock nodes that currently exist
+		mockNode1 := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+		}
+
+		// Create actual wrapper nodes using NewSkyhookNodeOnly
+		node1, err := wrapper.NewSkyhookNode(
+			mockNode1,
+			&v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			},
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Create mock skyhook wrapper with status maps containing both existing and removed nodes
+		mockSkyhook := &wrapper.Skyhook{
+			Skyhook: &v1alpha1.Skyhook{
+				Status: v1alpha1.SkyhookStatus{
+					NodeState: map[string]v1alpha1.NodeState{
+						"node1": {},
+					},
+					NodeStatus: map[string]v1alpha1.Status{
+						"node1": v1alpha1.StatusComplete,
+					},
+					NodeBootIds: map[string]string{
+						"node1": "boot-id-1",
+					},
+					NodePriority: map[string]metav1.Time{
+						"node1": metav1.Now(),
+					},
+					ConfigUpdates: map[string][]string{
+						"package1": {"config1"},
+					},
+				},
+			},
+			Updated: false,
+		}
+
+		// Set up mock expectations
+		mockSkyhookNodes.EXPECT().GetNodes().Return([]wrapper.SkyhookNode{
+			node1,
+		})
+		mockSkyhookNodes.EXPECT().GetSkyhook().Return(mockSkyhook)
+
+		// Call the function
+		CleanupRemovedNodes(&mockSkyhookNodes)
+
+		// Verify that removed-node was cleaned up from all maps
+		Expect(mockSkyhook.Status.NodeState).To(HaveKey("node1"))
+		Expect(mockSkyhook.Status.NodeStatus).To(HaveKey("node1"))
+		Expect(mockSkyhook.Status.NodeBootIds).To(HaveKey("node1"))
+		Expect(mockSkyhook.Status.NodePriority).To(HaveKey("node1"))
+		// ConfigUpdates should remain unchanged since it's keyed by package names, not node names
+		Expect(mockSkyhook.Status.ConfigUpdates).To(HaveKey("package1"))
+
+		// Verify that Updated flag was set since changes were made
+		Expect(mockSkyhook.Updated).To(BeFalse())
 	})
 })
