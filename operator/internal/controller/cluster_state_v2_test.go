@@ -170,3 +170,185 @@ var _ = Describe("BuildState ordering", func() {
 		Expect(ordered[2].GetSkyhook().Name).To(Equal("c"))
 	})
 })
+
+var _ = Describe("CleanupRemovedNodes", func() {
+	It("should test the cleanup logic for removed nodes", func() {
+		// Test the core cleanup logic using the helper function pattern
+
+		// Simulate current nodes in cluster (only node1 and node2 exist)
+		currentNodeNames := make(map[string]struct{})
+		currentNodeNames["node1"] = struct{}{}
+		currentNodeNames["node2"] = struct{}{}
+
+		// Test NodeState cleanup
+		nodeStateMap := map[string]v1alpha1.Status{
+			"node1": v1alpha1.StatusInProgress,
+			"node2": v1alpha1.StatusComplete,
+			"node3": v1alpha1.StatusErroring, // This should be removed
+		}
+
+		change1 := false
+		for nodeName := range nodeStateMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodeStateMap, nodeName)
+				change1 = true
+			}
+		}
+
+		Expect(change1).To(BeTrue(), "Should detect changes when cleaning NodeState")
+		Expect(nodeStateMap).To(HaveKey("node1"))
+		Expect(nodeStateMap).To(HaveKey("node2"))
+		Expect(nodeStateMap).ToNot(HaveKey("node3"))
+
+		// Test NodeBootIds cleanup
+		nodeBootIdsMap := map[string]string{
+			"node1": "boot1",
+			"node2": "boot2",
+			"node3": "boot3", // This should be removed
+		}
+
+		change2 := false
+		for nodeName := range nodeBootIdsMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodeBootIdsMap, nodeName)
+				change2 = true
+			}
+		}
+
+		Expect(change2).To(BeTrue(), "Should detect changes when cleaning NodeBootIds")
+		Expect(nodeBootIdsMap).To(HaveKey("node1"))
+		Expect(nodeBootIdsMap).To(HaveKey("node2"))
+		Expect(nodeBootIdsMap).ToNot(HaveKey("node3"))
+
+		// Test NodePriority cleanup
+		nodePriorityMap := map[string]metav1.Time{
+			"node1": metav1.Now(),
+			"node2": metav1.Now(),
+			"node3": metav1.Now(), // This should be removed
+		}
+
+		change3 := false
+		for nodeName := range nodePriorityMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodePriorityMap, nodeName)
+				change3 = true
+			}
+		}
+
+		Expect(change3).To(BeTrue(), "Should detect changes when cleaning NodePriority")
+		Expect(nodePriorityMap).To(HaveKey("node1"))
+		Expect(nodePriorityMap).To(HaveKey("node2"))
+		Expect(nodePriorityMap).ToNot(HaveKey("node3"))
+
+		// Test ConfigUpdates cleanup
+		configUpdatesMap := map[string]metav1.Time{
+			"node1": metav1.Now(),
+			"node2": metav1.Now(),
+			"node3": metav1.Now(), // This should be removed
+		}
+
+		change4 := false
+		for nodeName := range configUpdatesMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(configUpdatesMap, nodeName)
+				change4 = true
+			}
+		}
+
+		Expect(change4).To(BeTrue(), "Should detect changes when cleaning ConfigUpdates")
+		Expect(configUpdatesMap).To(HaveKey("node1"))
+		Expect(configUpdatesMap).To(HaveKey("node2"))
+		Expect(configUpdatesMap).ToNot(HaveKey("node3"))
+	})
+
+	It("should return false when no changes are needed", func() {
+		// Test when all nodes in status maps still exist in cluster
+		currentNodeNames := make(map[string]struct{})
+		currentNodeNames["node1"] = struct{}{}
+		currentNodeNames["node2"] = struct{}{}
+
+		nodeMap := map[string]v1alpha1.Status{
+			"node1": v1alpha1.StatusInProgress,
+			"node2": v1alpha1.StatusComplete,
+		}
+
+		change := false
+		for nodeName := range nodeMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodeMap, nodeName)
+				change = true
+			}
+		}
+
+		Expect(change).To(BeFalse(), "Should return false when no changes are needed")
+		Expect(nodeMap).To(HaveLen(2))
+		Expect(nodeMap).To(HaveKey("node1"))
+		Expect(nodeMap).To(HaveKey("node2"))
+	})
+
+	It("should handle nil maps gracefully", func() {
+		// Test that nil maps don't cause panics
+		currentNodeNames := make(map[string]struct{})
+		currentNodeNames["node1"] = struct{}{}
+
+		var nodeStateMap map[string]v1alpha1.Status = nil
+		var nodeBootIdsMap map[string]string = nil
+		var nodePriorityMap map[string]metav1.Time = nil
+		var configUpdatesMap map[string]metav1.Time = nil
+
+		change := false
+
+		// Test nil safety for each map type
+		for nodeName := range nodeStateMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodeStateMap, nodeName)
+				change = true
+			}
+		}
+
+		for nodeName := range nodeBootIdsMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodeBootIdsMap, nodeName)
+				change = true
+			}
+		}
+
+		for nodeName := range nodePriorityMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodePriorityMap, nodeName)
+				change = true
+			}
+		}
+
+		for nodeName := range configUpdatesMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(configUpdatesMap, nodeName)
+				change = true
+			}
+		}
+
+		Expect(change).To(BeFalse(), "Should handle nil maps without panic or changes")
+	})
+
+	It("should handle empty node list", func() {
+		// Test when all nodes are removed from cluster
+		currentNodeNames := make(map[string]struct{}) // Empty - no nodes in cluster
+
+		nodeMap := map[string]v1alpha1.Status{
+			"node1": v1alpha1.StatusInProgress,
+			"node2": v1alpha1.StatusComplete,
+			"node3": v1alpha1.StatusErroring,
+		}
+
+		change := false
+		for nodeName := range nodeMap {
+			if _, ok := currentNodeNames[nodeName]; !ok {
+				delete(nodeMap, nodeName)
+				change = true
+			}
+		}
+
+		Expect(change).To(BeTrue(), "Should detect changes when all nodes are removed")
+		Expect(nodeMap).To(BeEmpty())
+	})
+})

@@ -478,6 +478,11 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 func IntrospectSkyhook(skyhook SkyhookNodes) bool {
 	change := false
 
+	// Clean up nodes that no longer exist in the cluster
+	if CleanupRemovedNodes(skyhook) {
+		change = true
+	}
+
 	scrStatus := skyhook.Status()
 	collectNodeStatus := skyhook.CollectNodeStatus()
 
@@ -665,4 +670,48 @@ func (skyhook *skyhookNodes) Migrate(logger logr.Logger) error {
 	}
 
 	return nil
+}
+
+// cleanupNodeMap removes nodes from the given map that no longer exist in currentNodes
+// Returns false if nodeMap is nil, otherwise returns true if any nodes were removed
+func cleanupNodeMap[T any](nodeMap map[string]T, currentNodes map[string]struct{}) bool {
+	if nodeMap == nil {
+		return false
+	}
+
+	change := false
+	for nodeName := range nodeMap {
+		if _, ok := currentNodes[nodeName]; !ok {
+			delete(nodeMap, nodeName)
+			change = true
+		}
+	}
+	return change
+}
+
+// CleanupRemovedNodes removes nodes from the Skyhook status that no longer exist in the cluster
+// or no longer match the node selector. This ensures that only nodes that exist in the cluster
+// are tracked in the status section of the Custom Resource.
+func CleanupRemovedNodes(skyhook SkyhookNodes) bool {
+	// Get all current node names from the cluster using struct{} for O(1) lookup
+	currentNodeNames := make(map[string]struct{})
+	for _, node := range skyhook.GetNodes() {
+		currentNodeNames[node.GetNode().Name] = struct{}{}
+	}
+
+	status := skyhook.GetSkyhook().Status
+
+	// Check and remove nodes from all status maps
+	change := cleanupNodeMap(status.NodeState, currentNodeNames)
+	change = cleanupNodeMap(status.NodeStatus, currentNodeNames) || change
+	change = cleanupNodeMap(status.NodeBootIds, currentNodeNames) || change
+	change = cleanupNodeMap(status.NodePriority, currentNodeNames) || change
+	change = cleanupNodeMap(status.ConfigUpdates, currentNodeNames) || change
+
+	// Only set Updated flag if there were changes
+	if change {
+		skyhook.GetSkyhook().Updated = true
+	}
+
+	return change
 }
