@@ -43,25 +43,22 @@ on:
       - k8s-tests/**
       - chart/**
 
-# NOTE: we may want to switch to matrix build for multi-platform support if this is taking too long
-# https://docs.docker.com/build/ci/github-actions/multi-platform/#distribute-build-across-multiple-runners
-
-
-# Defines two custom environment variables for the workflow. These are used for the Container registry domain, and a name for the Docker image that this workflow builds.
+## these envs control the build and test process below
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   GO_VERSION: 1.24.4
   PLATFORMS: linux/amd64,linux/arm64
 
-# There is a single job in this workflow. It's configured to run on the latest available version of Ubuntu.
 jobs:
+  # Test operator across supported Kubernetes versions
   tests:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # Test on all supported K8s versions (matches docs/kubernetes-support.md)
         k8s-version: ["1.30.13", "1.31.9", "1.32.5", "1.33.1"]
-      fail-fast: false
+      fail-fast: false  # Continue testing other versions if one fails
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,19 +75,20 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Kubernetes KinD Cluster
+      - name: Kubernetes KinD Cluster v${{ matrix.k8s-version }}
         id: kind
         uses: helm/kind-action@v1
         with:
           version: v0.26.0
           kubernetes_version: v${{ matrix.k8s-version }}
           install_only: true
+      # Cache build tools and dependencies for faster builds
       - name: Restore cached Binaries
         id: cached-binaries
         uses: actions/cache/restore@v4
         with:
-          key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-bin-
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
@@ -104,15 +102,18 @@ jobs:
         if: steps.cached-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
+      # Run full test suite including e2e tests
       - name: end-to-end-tests
         run: |
           cd operator
           GITHUB_TOKEN=${{ secrets.github_token }} make create-kind-cluster
           make test
+  
+  # Build multi-platform container image and push to registry
   build-and-push-operator:
     runs-on: ubuntu-latest
     needs: [tests] # Don't run the build and push if the k8s tests fail
@@ -135,13 +136,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      # Setup for multi-platform
+      # Setup for multi-platform builds (linux/amd64, linux/arm64)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Build and tag container image based on git ref type
       - name: Build the operator container image
         id: build
         env:
@@ -183,7 +185,7 @@ jobs:
           echo "digest=$(cat metadata.json | jq -r .\"containerimage.digest\")" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
       
-      # This step generates an artifact attestation for the image, which is an unforgeable statement about where and how it was built. It increases supply chain security for people who consume the image. For more information, see [AUTOTITLE](/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds). 
+      # Generate supply chain security attestation
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
