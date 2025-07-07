@@ -124,12 +124,13 @@ async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sin
             # Run the special chroot_exec.py script to chroot into the directory and run the command
             # This is necessary because the this is expected to run in a distroless container and we
             # want the chroot to only persist for the duration of the command.
-            cmd = ["python", os.path.join(script_dir, "chroot_exec.py"), f.name, chroot_dir]
+            cmd = [os.path.join(script_dir, "chroot_exec.py"), f.name, chroot_dir]
             p = await asyncio.create_subprocess_shell(
                 " ".join(cmd),
                 limit=buff_size,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                executable="python",
                 **kwargs,
             )
             await asyncio.gather(
