@@ -192,17 +192,16 @@ else
 DOCKER_AUTH_FILE=${HOME}/.config/containers/auth.json
 endif
 
-create-kind-cluster: ## deletes and creates a new kind cluster. versions is set via KIND_VERSION
-ifdef CI
-	@echo $(GITHUB_TOKEN) | docker login ghcr.io -u $(GITHUB_ACTOR) --password-stdin
-endif
-	kind delete cluster && kind create cluster --image=kindest/node:v$(KIND_VERSION) --config config/local-dev/kind-config.yaml
-	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e
-	
+setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook namespace
 	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
+	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	$(KUBECTL) create secret generic node-init-secret --type=kubernetes.io/dockerconfigjson -n $(SKYHOOK_NAMESPACE) \
 		--from-file=.dockerconfigjson=$(DOCKER_AUTH_FILE)
+
+create-kind-cluster: ## deletes and creates a new kind cluster. versions is set via KIND_VERSION
+	kind delete cluster && kind create cluster --image=kindest/node:v$(KIND_VERSION) --config config/local-dev/kind-config.yaml
+	$(MAKE) setup-kind-cluster
 
 podman-create-machine: ## creates a podman machine
 	podman machine stop podman-machine-default || true
