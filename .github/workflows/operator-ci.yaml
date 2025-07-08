@@ -79,9 +79,10 @@ jobs:
         id: kind
         uses: helm/kind-action@v1
         with:
-          version: v0.26.0
-          kubernetes_version: v${{ matrix.k8s-version }}
-          install_only: true
+          version: v0.29.0
+          node_image: kindest/node:v${{ matrix.k8s-version }}
+          config: operator/config/local-dev/kind-config.yaml
+          cluster_name: kind
       # Cache build tools and dependencies for faster builds
       - name: Restore cached Binaries
         id: cached-binaries
@@ -110,7 +111,7 @@ jobs:
       - name: end-to-end-tests
         run: |
           cd operator
-          GITHUB_TOKEN=${{ secrets.github_token }} make create-kind-cluster
+          make setup-kind-cluster
           make test
   
   # Build multi-platform container image and push to registry
