@@ -21,6 +21,7 @@
 
 import unittest
 import tempfile
+import sys
 import os
 import stat
 import json
@@ -121,6 +122,7 @@ class TestHelpers(unittest.TestCase):
     def test_tee_adds_cmds(self, sys_mock):
         sys_mock.stdout = FakeIO()
         sys_mock.stderr = FakeIO()
+        sys_mock.executable = sys.executable
 
         with tempfile.TemporaryDirectory() as dir:
             with open(f"{dir}/foo", 'w') as f:
