@@ -453,6 +453,10 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
         with open(interrupt_flag, 'w') as f:
             f.write(str(time.time()))
 
+        if interrupt.type == interrupts.NoOp._type():
+            # NoOp interrupts dont do anything and so don't need to be run
+            return False
+
         return_code = _run(
             cmd,
             get_log_file(f"interrupts/{interrupt_id}", copy_dir, config_data, root_mount),
