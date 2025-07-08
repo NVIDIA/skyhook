@@ -22,7 +22,7 @@
 
 import sys
 import os
-import stat
+import shutil
 import subprocess
 import base64
 import asyncio
@@ -89,21 +89,48 @@ async def _stream_process(
     is_first_line = True
     while True:
         try:
-            data = str(await stream.read(limit), "UTF-8")
+            data = await stream.read(limit)
+            if not data:
+                break
+            
+            # Decode the data
+            data_str = data.decode("UTF-8", errors="replace")
+            
+            # Add timestamp and label
+            t = datetime.now().isoformat()
+            if is_first_line:
+                data_str = f"{label}{t} {data_str}"
+                is_first_line = False
+            
+            # Add timestamp to each newline
+            data_str = data_str.replace("\n", f"\n{label}{t} ")
+            
+            # Write to all sinks
+            for sink in sinks:
+                sink.write(data_str)
+                sink.flush()
+                
         except asyncio.IncompleteReadError as e:
-            data = str(e.partial, "UTF-8").strip()
-    
-        if not data:
+            # Handle partial data at end of stream
+            if e.partial:
+                data_str = e.partial.decode("UTF-8", errors="replace")
+                t = datetime.now().isoformat()
+                if is_first_line:
+                    data_str = f"{label}{t} {data_str}"
+                    is_first_line = False
+                data_str = data_str.replace("\n", f"\n{label}{t} ")
+                
+                for sink in sinks:
+                    sink.write(data_str)
+                    sink.flush()
             break
-
-        t = datetime.now().isoformat()
-        if is_first_line:
-            data = f"{label}{t} {data}"
-            is_first_line = False
-        data = data.replace("\n", f"\n{label}{t} ")
-        for sink in sinks:
-            sink.write(data)
-            sink.flush()
+        except Exception as e:
+            # Log any errors but don't crash
+            error_msg = f"{label}{datetime.now().isoformat()} ERROR reading stream: {str(e)}\n"
+            for sink in sinks:
+                sink.write(error_msg)
+                sink.flush()
+            break
 
 
 async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, **kwargs):
@@ -124,21 +151,25 @@ async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sin
             # Run the special chroot_exec.py script to chroot into the directory and run the command
             # This is necessary because the this is expected to run in a distroless container and we
             # want the chroot to only persist for the duration of the command.
-            cmd = [os.path.join(script_dir, "chroot_exec.py"), f.name, chroot_dir]
-            p = await asyncio.create_subprocess_shell(
-                " ".join(cmd),
+            new_cmd = [sys.executable, os.path.join(script_dir, "chroot_exec.py"), f.name, chroot_dir]
+            p = await asyncio.create_subprocess_exec(
+                *new_cmd,
                 limit=buff_size,
+                stdin=None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                executable="python",
+                executable=sys.executable,
                 **kwargs,
             )
+            
+            # Wait for both stream processing and subprocess completion
             await asyncio.gather(
                 _stream_process(p.stdout, [sys.stdout, stdout_sink_f], label="[out]"),
                 _stream_process(p.stderr, [sys.stderr, stderr_sink_f], label="[err]"),
+                p.wait(),  # Wait for subprocess to complete
             )
 
-    return subprocess.CompletedProcess(cmd, await p.wait())
+    return subprocess.CompletedProcess(cmd, p.returncode)
 
 def get_host_path_for_steps(copy_dir: str):
     return f"{copy_dir}/skyhook_dir"

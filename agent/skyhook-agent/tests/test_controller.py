@@ -951,18 +951,17 @@ class TestUseCases(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_d:
             os.makedirs(f"{temp_d}/skyhook_dir")
             log_file_mock.return_value = f"{temp_d}/log"
-            with open(f"{temp_d}/skyhook_dir/foo.sh", "w") as step_file:
+            with open(f"{temp_d}/skyhook_dir/foo.sh", "w", newline='\n', encoding='utf-8') as step_file:
                 # Make simple step script that outputs to stdout and stderr
                 step_file.write(
                     textwrap.dedent(
+                        """#!/bin/sh
+                        for i in 1 2; do
+                            echo "$i"
+                            >&2 echo "$i err"
+                            sleep $i
+                        done
                         """
-                    #!/bin/bash
-                    for i in 1 2; do
-                        echo "$i"
-                        >&2 echo "$i err"
-                        sleep $i
-                    done
-                    """
                     )
                 )
             os.chmod(f"{temp_d}/skyhook_dir/foo.sh", os.stat(f"{temp_d}/skyhook_dir/foo.sh").st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
@@ -970,8 +969,13 @@ class TestUseCases(unittest.TestCase):
             with mock.patch.object(
                 controller.sys, "stderr", stderr_buff
             ), mock.patch.object(controller.sys, "stdout", stdout_buff):
-                controller.run_step(Step("foo.sh", arguments=[], returncodes=[0]), "local", temp_d, config_data=self.config_data)
+                failed = controller.run_step(Step("foo.sh", arguments=[], returncodes=[0]), "local", temp_d, config_data=self.config_data)
             os.remove(step_file.name)
+            if failed:
+                # This means it failed
+                print(stdout_buff.read())
+                print(stderr_buff.read())
+                self.fail("Step should not have failed")
             with open(f"{temp_d}/log", "r") as log_f:
                 # Compare sorted to avoid any issues wrt to sequencing of the async writes
                 self.assertEqual(

@@ -23,6 +23,7 @@ import stat
 import json
 import sys
 import subprocess
+import shutil
 
 
 def chroot_exec(cmds: list[str], chroot_dir: str):
@@ -31,7 +32,7 @@ def chroot_exec(cmds: list[str], chroot_dir: str):
     try:
         # chmod +x the step
         os.chmod(cmds[0], os.stat(cmds[0]).st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
-        subprocess.run(cmds, shell=True, check=True)
+        subprocess.run(cmds, check=True)
     except:
         raise
         sys.exit(1)
