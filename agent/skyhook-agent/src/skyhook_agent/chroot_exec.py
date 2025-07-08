@@ -26,16 +26,18 @@ import subprocess
 import shutil
 
 
-def chroot_exec(cmds: list[str], chroot_dir: str):
+def chroot_exec(config: dict, chroot_dir: str):
+    cmds = config["cmd"]
+    no_chmod = config["no_chmod"]
     if chroot_dir != "local":
         os.chroot(chroot_dir)
     try:
-        # chmod +x the step
-        os.chmod(cmds[0], os.stat(cmds[0]).st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
+        if not no_chmod:
+            # chmod +x the step
+            os.chmod(cmds[0], os.stat(cmds[0]).st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
         subprocess.run(cmds, check=True)
     except:
         raise
-        sys.exit(1)
 
 
 if __name__ == "__main__":
@@ -43,6 +45,6 @@ if __name__ == "__main__":
     chroot_dir = sys.argv[2]
 
     with open(control_file, "r") as f:
-        cmds = json.load(f)
+        config = json.load(f)
     
-    chroot_exec(cmds, chroot_dir)
+    chroot_exec(config, chroot_dir)

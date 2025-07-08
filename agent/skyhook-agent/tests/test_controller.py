@@ -1179,6 +1179,12 @@ class TestUseCases(unittest.TestCase):
                 mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True)
             ])
 
+    def test_interrupt_noop_makes_the_flag_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with set_env(SKYHOOK_RESOURCE_ID="scr-id-1_package_version"):
+                controller.main(Mode.INTERRUPT, temp_dir, "copy_dir", interrupts.NoOp().make_controller_input())
+                self.assertTrue(os.path.exists(f"{controller.get_skyhook_directory(temp_dir)}/interrupts/flags/scr-id-1_package_version/no_op.complete"))
+
     @mock.patch("skyhook_agent.controller.main")
     @mock.patch("skyhook_agent.controller.get_log_file")
     def test_interrupt_mode_reads_extra_argument(self, get_log_file_mock, main_mock):

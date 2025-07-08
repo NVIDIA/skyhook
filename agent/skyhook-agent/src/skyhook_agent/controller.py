@@ -133,7 +133,7 @@ async def _stream_process(
             break
 
 
-async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, **kwargs):
+async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, no_chmod=False, **kwargs):
     """
     Run the cmd in a subprocess and keep the stream of stdout/stderr and merge both into
     the sink_path as a log.
@@ -145,7 +145,7 @@ async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sin
             sys.stdout.write(" ".join(cmd) + "\n")
             stdout_sink_f.write(" ".join(cmd) + "\n")
         with tempfile.NamedTemporaryFile(mode="w", delete=True) as f:
-            f.write(json.dumps(cmd))
+            f.write(json.dumps({"cmd": cmd, "no_chmod": no_chmod}))
             f.flush()
             
             # Run the special chroot_exec.py script to chroot into the directory and run the command
@@ -223,7 +223,7 @@ def set_flag(flag_file: str, msg: str = "") -> None:
         f.write(msg)
 
 
-def _run(chroot_dir: str, cmds: list[str], log_path: str, write_cmds=False, **kwargs) -> int:
+def _run(chroot_dir: str, cmds: list[str], log_path: str, write_cmds=False, no_chmod=False,**kwargs) -> int:
     """
     Synchronous wrapper around the tee command to have logs written to disk
     """
@@ -236,6 +236,7 @@ def _run(chroot_dir: str, cmds: list[str], log_path: str, write_cmds=False, **kw
             log_path,
             f"{log_path}.err",
             write_cmds=write_cmds,
+            no_chmod=no_chmod,
             **kwargs
         )
     )
@@ -433,6 +434,9 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
     """
     Run an interrupt if there hasn't been an interrupt already for the skyhook ID.
     """
+
+    def _make_interrupt_flag(interrupt_dir: str, interrupt_id: int) -> str:
+        return f"{interrupt_dir}/{interrupt_id}.complete"
     
     SKYHOOK_RESOURCE_ID, _, _, _ = _get_env_config()
 
@@ -442,9 +446,17 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
     # Check if the interrupt has already been run for this particular skyhook resource
     interrupt_dir = f"{get_skyhook_directory(root_mount)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
     os.makedirs(interrupt_dir, exist_ok=True)
+
+    if interrupt.type == interrupts.NoOp._type():
+        # NoOp interrupts dont do anything and so don't need to be run
+        interrupt_flag = _make_interrupt_flag(interrupt_dir, interrupt.type)
+        with open(interrupt_flag, 'w') as f:
+            f.write(str(time.time()))
+        return False
+    
     for i, cmd in enumerate(interrupt.interrupt_cmd):
         interrupt_id = f"{interrupt._type()}_{i}"
-        interrupt_flag = f"{interrupt_dir}/{interrupt_id}.complete"
+        interrupt_flag = _make_interrupt_flag(interrupt_dir, interrupt_id)
 
         if os.path.exists(interrupt_flag):
             print(f"Skipping interrupt {interrupt_id} because it was already run for {SKYHOOK_RESOURCE_ID}")
@@ -453,14 +465,11 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
         with open(interrupt_flag, 'w') as f:
             f.write(str(time.time()))
 
-        if interrupt.type == interrupts.NoOp._type():
-            # NoOp interrupts dont do anything and so don't need to be run
-            return False
-
         return_code = _run(
             cmd,
             get_log_file(f"interrupts/{interrupt_id}", copy_dir, config_data, root_mount),
-            write_cmds=True
+            write_cmds=True,
+            no_chmod=True
         )
 
         if return_code != 0:
