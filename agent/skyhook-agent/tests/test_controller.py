@@ -202,6 +202,7 @@ class TestHelpers(unittest.TestCase):
                     f"{log_file}.err",
                     env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
                     write_cmds=False,
+                    no_chmod=False
                 )
             ]
         )
@@ -249,7 +250,8 @@ class TestHelpers(unittest.TestCase):
                     log_file,
                     f"{log_file}.err",
                     env=dict(**os.environ, **{"STEP_ROOT": "copy_dir/skyhook_dir", "FOO": "foo", "SKYHOOK_DIR": "copy_dir"}),
-                    write_cmds=False
+                    write_cmds=False,
+                    no_chmod=False
                 )
             ]
         )
@@ -1071,8 +1073,8 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", copy_dir, config_data, root_dir), write_cmds=True),
-                mock.call(["systemctl", "restart", "containerd"], controller.get_log_file("interrupts/service_restart_1", copy_dir, config_data, root_dir), write_cmds=True)
+                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True),
+                mock.call(["systemctl", "restart", "containerd"], controller.get_log_file("interrupts/service_restart_1", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True)
             ])
 
     @mock.patch("skyhook_agent.controller._run")
@@ -1143,7 +1145,7 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True)
+                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
             ])
 
             self.assertEqual(result, True)
@@ -1176,7 +1178,7 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True)
+                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
             ])
 
     def test_interrupt_noop_makes_the_flag_file(self):
