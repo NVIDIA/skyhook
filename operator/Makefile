@@ -142,7 +142,7 @@ $(REPORTING):
 	mkdir -p $@
 
 .PHONY: test
-test:: reporting manifests generate fmt vet lint unit-tests e2e-tests helm-tests ## Run all tests.
+test:: reporting manifests generate fmt vet lint unit-tests e2e-tests helm-tests operator-agent-tests ## Run all tests.
 
 ifndef CI
 ## we double define test so we can do thing different if in ci vs local
@@ -185,6 +185,12 @@ helm-tests: helm chainsaw
 	$(MAKE) kill
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/helm $(CHAINSAW_ARGS)
 
+operator-agent-tests: chainsaw install ## Run operator agent tests.
+	../k8s-tests/operator-agent/setup.sh kind-worker setup
+	AGENT_IMAGE=ghcr.io/nvidia/skyhook/agent:v6.2.0-964d84f $(MAKE) run
+	$(CHAINSAW) test --test-dir ../k8s-tests/operator-agent $(CHAINSAW_ARGS)
+	$(MAKE) kill
+	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
 
 ifeq ($(DOCKER_CMD),docker)
 DOCKER_AUTH_FILE=${HOME}/.docker/config.json

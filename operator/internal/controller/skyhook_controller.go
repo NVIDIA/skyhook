@@ -82,6 +82,7 @@ type SkyhookOperatorOptions struct {
 	RuntimeRequiredTaint string        `env:"RUNTIME_REQUIRED_TAINT, default=skyhook.nvidia.com=runtime-required:NoSchedule"`
 	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
 	AgentImage           string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/skyhook/agent:latest"` // TODO: this needs to be updated with a working default
+	AgentLogRoot         string        `env:"AGENT_LOG_ROOT, default=/var/log/skyhook"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {
@@ -1456,16 +1457,7 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 					Name:  InterruptContainerName,
 					Image: getAgentImage(opts, _package),
 					Args:  []string{"interrupt", "/root", copyDir, argEncode},
-					Env: []corev1.EnvVar{
-						{
-							Name:  "COPY_RESOLV",
-							Value: "false",
-						},
-						{
-							Name:  "SKYHOOK_RESOURCE_ID",
-							Value: fmt.Sprintf("%s_%s_%s", skyhook.ResourceID(), _package.Name, _package.Version),
-						},
-					},
+					Env:   getAgentConfigEnvVars(opts, _package.Name, _package.Version, skyhook.ResourceID(), copyDir),
 					SecurityContext: &corev1.SecurityContext{
 						Privileged: ptr(true),
 					},
@@ -1539,6 +1531,27 @@ func getAgentImage(opts SkyhookOperatorOptions, _package *v1alpha1.Package) stri
 	return opts.AgentImage
 }
 
+func getAgentConfigEnvVars(opts SkyhookOperatorOptions, packageName string, packageVersion string, resourceID string, copyDir string) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{
+			Name:  "SKYHOOK_DIR",
+			Value: copyDir,
+		},
+		{
+			Name:  "SKYHOOK_LOG_DIR",
+			Value: opts.AgentLogRoot,
+		},
+		{
+			Name:  "COPY_RESOLV",
+			Value: "false",
+		},
+		{
+			Name:  "SKYHOOK_RESOURCE_ID",
+			Value: fmt.Sprintf("%s_%s_%s", resourceID, packageName, packageVersion),
+		},
+	}
+}
+
 // createPodFromPackage creates a pod spec for a skyhook pod for a given package
 func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string, stage v1alpha1.Stage) *corev1.Pod {
 	// Generate consistent names that won't exceed k8s limits
@@ -1607,6 +1620,11 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 	applyargs := []string{strings.ToLower(string(stage)), "/root", copyDir}
 	checkargs := []string{strings.ToLower(string(stage) + "-check"), "/root", copyDir}
 
+	agentEnvs := append(
+		_package.Env,
+		getAgentConfigEnvVars(opts, _package.Name, _package.Version, skyhook.ResourceID(), copyDir)...,
+	)
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      generateSafeName(63, skyhook.Name, _package.Name, _package.Version, string(stage), nodeName),
@@ -1645,15 +1663,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 					Image:           getAgentImage(opts, _package),
 					ImagePullPolicy: "Always",
 					Args:            applyargs,
-					Env: append(_package.Env, []corev1.EnvVar{
-						{
-							Name:  "COPY_RESOLV",
-							Value: "false",
-						},
-						{
-							Name:  "SKYHOOK_RESOURCE_ID",
-							Value: fmt.Sprintf("%s_%s_%s", skyhook.ResourceID(), _package.Name, _package.Version),
-						}}...),
+					Env:             agentEnvs,
 					SecurityContext: &corev1.SecurityContext{
 						Privileged: ptr(true),
 					},
@@ -1664,15 +1674,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 					Image:           getAgentImage(opts, _package),
 					ImagePullPolicy: "Always",
 					Args:            checkargs,
-					Env: append(_package.Env, []corev1.EnvVar{
-						{
-							Name:  "COPY_RESOLV",
-							Value: "false",
-						},
-						{
-							Name:  "SKYHOOK_RESOURCE_ID",
-							Value: fmt.Sprintf("%s_%s_%s", skyhook.ResourceID(), _package.Name, _package.Version),
-						}}...),
+					Env:             agentEnvs,
 					SecurityContext: &corev1.SecurityContext{
 						Privileged: ptr(true),
 					},
@@ -1781,9 +1783,16 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 		// compare the containers env vars except for the ones that are inserted
 		// by the operator by default as the SKYHOOK_RESOURCE_ID will change every
 		// time the skyhook is updated and would cause every pod to be removed
-		excludeEnvs := []string{"SKYHOOK_RESOURCE_ID", "NODEOS_DO_NOT_UPDATE_LABEL", "COPY_RESOLV", "SKYHOOK_DIR"}
-		expectedFilteredEnv := FilterEnv(expectedContainer.Env, excludeEnvs...)
-		actualFilteredEnv := FilterEnv(actualContainer.Env, excludeEnvs...)
+		// TODO: This is ignoring all the static env vars that are set by operator config.
+		// It probably should be just SKYHOOK_RESOURCE_ID that is ignored. Otherwise,
+		// a user will have to manually delete the pod to update the package when operator is updated.
+		dummyAgentEnv := getAgentConfigEnvVars(opts, "", "", "", "")
+		excludedEnvs := make([]string, len(dummyAgentEnv))
+		for i, env := range dummyAgentEnv {
+			excludedEnvs[i] = env.Name
+		}
+		expectedFilteredEnv := FilterEnv(expectedContainer.Env, excludedEnvs...)
+		actualFilteredEnv := FilterEnv(actualContainer.Env, excludedEnvs...)
 		if !reflect.DeepEqual(expectedFilteredEnv, actualFilteredEnv) {
 			return false
 		}
