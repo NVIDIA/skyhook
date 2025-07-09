@@ -286,12 +286,16 @@ def run_step(
 
     time.sleep(1)
     log_file = get_log_file(step_path, copy_dir, config_data, chroot_dir)
+    
+    # Make sure to include the original environment here or else things like path resolution dont work
+    env = dict(**os.environ)
+    env.update(step.env)
+    env.update({"STEP_ROOT": get_host_path_for_steps(copy_dir), "SKYHOOK_DIR": copy_dir})
     return_code = _run(
         chroot_dir,
         [step_path, *step.arguments],
         log_file,
-        # Make sure to include the original environment here or else things like path resolution dont work
-        env=dict(**os.environ, **step.env, **{"STEP_ROOT": get_host_path_for_steps(copy_dir), "SKYHOOK_DIR": copy_dir}),)
+        env=env)
     
     cleanup_old_logs(get_log_file(step_path, copy_dir, config_data, "*"))
     if return_code not in step.returncodes:
