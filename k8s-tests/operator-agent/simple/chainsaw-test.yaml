@@ -43,11 +43,11 @@ spec:
         file: assert.yaml
     - script:
         content: |
-          ../check_node.sh kind-worker "cat /var/log/skyhook/shellscript/1.1.1/*.log" ".*Hello, world!"
-          ../check_node.sh kind-worker "cat /var/log/skyhook/shellscript/1.1.1/*.log" ".*This is a test"
-          ../check_node.sh kind-worker "ls /etc/skyhook/flags" "START"
-          ../check_node.sh kind-worker "ls /etc/skyhook/flags/shellscript/1.1.1/" "shellscript_run.sh.*"
-          ../check_node.sh kind-worker "ls /etc/skyhook/history" "shellscript.json"
+          ../check_node.sh kind-worker "cat /var/log/skyhook/simple-agent-operator/shellscript/1.1.1/*.log" ".*Hello, world!"
+          ../check_node.sh kind-worker "cat /var/log/skyhook/simple-agent-operator/shellscript/1.1.1/*.log" ".*This is a test"
+          ../check_node.sh kind-worker "ls /var/lib/skyhook/simple-agent-operator/flags" "START"
+          ../check_node.sh kind-worker "ls /var/lib/skyhook/simple-agent-operator/flags/shellscript/1.1.1/" "shellscript_run.sh.*"
+          ../check_node.sh kind-worker "ls /var/lib/skyhook/simple-agent-operator/history" "shellscript.json"
   - finally:
     - delete:
         file: skyhook.yaml

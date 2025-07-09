@@ -187,7 +187,7 @@ helm-tests: helm chainsaw
 
 operator-agent-tests: chainsaw install ## Run operator agent tests.
 	../k8s-tests/operator-agent/setup.sh kind-worker setup
-	AGENT_IMAGE=ghcr.io/nvidia/skyhook/agent:v6.2.0-964d84f $(MAKE) run
+	AGENT_IMAGE=ghcr.io/nvidia/skyhook/agent:v6.2.0-30d8b7a $(MAKE) run
 	$(CHAINSAW) test --test-dir ../k8s-tests/operator-agent $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
