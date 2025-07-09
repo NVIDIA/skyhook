@@ -68,11 +68,11 @@ def _get_env_config() -> tuple[str]:
     # This needs to be set to support legacy mode and should be where skyhook files are on the container
     SKYHOOK_DATA_DIR = os.getenv("SKYHOOK_DATA_DIR", "/skyhook-package")
 
-    SKYHOOK_DIR = os.getenv("SKYHOOK_DIR", "/etc/skyhook")
+    SKYHOOK_ROOT_DIR = os.getenv("SKYHOOK_ROOT_DIR", "/etc/skyhook")
 
     SKYHOOK_LOG_DIR = os.getenv("SKYHOOK_LOG_DIR", "/var/log/skyhook")
 
-    return SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_DIR, SKYHOOK_LOG_DIR
+    return SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR
 
 def _get_package_information(config_data: dict) -> tuple[str, str]:
    return config_data["package_name"], config_data["package_version"]
@@ -175,8 +175,8 @@ def get_host_path_for_steps(copy_dir: str):
     return f"{copy_dir}/skyhook_dir"
 
 def get_skyhook_directory(root_mount: str) -> str:
-    _, _, SKYHOOK_DIR, _ = _get_env_config()
-    return f"{root_mount}{SKYHOOK_DIR}"
+    _, _, SKYHOOK_ROOT_DIR, _ = _get_env_config()
+    return f"{root_mount}{SKYHOOK_ROOT_DIR}"
 
 def get_flag_dir(root_mount: str) -> str:
     return f"{get_skyhook_directory(root_mount)}/flags"
@@ -286,7 +286,7 @@ def run_step(
 
     time.sleep(1)
     log_file = get_log_file(step_path, copy_dir, config_data, chroot_dir)
-    
+
     # Make sure to include the original environment here or else things like path resolution dont work
     env = dict(**os.environ)
     env.update(step.env)
@@ -646,10 +646,10 @@ def cli(sys_argv: list[str]=sys.argv):
     print(str.center("ENV CONFIGURATION", 20, "-"))
     print(f"COPY_RESOLV: {copy_resolv}")
     print(f"OVERLAY_ALWAYS_RUN_STEP: {always_run_step}")
-    SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_DIR, SKYHOOK_LOG_DIR = _get_env_config()
+    SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR = _get_env_config()
     print(f"SKYHOOK_RESOURCE_ID: {SKYHOOK_RESOURCE_ID}")
     print(f"SKYHOOK_DATA_DIR: {SKYHOOK_DATA_DIR}")
-    print(f"SKYHOOK_DIR: {SKYHOOK_DIR}")
+    print(f"SKYHOOK_ROOT_DIR: {SKYHOOK_ROOT_DIR}")
     print(f"SKYHOOK_LOG_DIR: {SKYHOOK_LOG_DIR}")
     print(f"SKYHOOK_AGENT_BUFFER_LIMIT: {buff_size}")
     print(str.center("Directory CONFIGURATION", 20, "-"))
