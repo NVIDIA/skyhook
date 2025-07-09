@@ -41,7 +41,7 @@ spec:
         file: skyhook.yaml
     - script:
         content: |
-          ../check_node.sh kind-worker "ls /etc/skyhook/interrupts/flags/interrupt-agent-operator*/" "no_op.complete" 30
+          ../check_node.sh kind-worker "ls /var/lib/skyhook/interrupt-agent-operator/interrupts/flags/interrupt-agent-operator*/" "no_op.complete" 60
     - assert:
         file: assert.yaml
   - finally:

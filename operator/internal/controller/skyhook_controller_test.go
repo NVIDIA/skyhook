@@ -470,19 +470,19 @@ var _ = Describe("skyhook controller tests", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
-			AgentLogRoot:         "/tmp/agent",
+			AgentLogRoot:         "/log",
 		}
 		Expect(opts.Validate()).To(BeNil())
 
-		envs := getAgentConfigEnvVars(opts, "package", "version", "id", "copy_dir")
+		envs := getAgentConfigEnvVars(opts, "package", "version", "id", "skyhook_name")
 		expected := []corev1.EnvVar{
 			{
-				Name:  "SKYHOOK_DIR",
-				Value: "copy_dir",
+				Name:  "SKYHOOK_LOG_DIR",
+				Value: "/log/skyhook_name",
 			},
 			{
-				Name:  "SKYHOOK_LOG_DIR",
-				Value: "/tmp/agent",
+				Name:  "SKYHOOK_ROOT_DIR",
+				Value: "/tmp/skyhook_name",
 			},
 			{
 				Name:  "COPY_RESOLV",

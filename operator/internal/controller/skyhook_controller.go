@@ -1457,7 +1457,7 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 					Name:  InterruptContainerName,
 					Image: getAgentImage(opts, _package),
 					Args:  []string{"interrupt", "/root", copyDir, argEncode},
-					Env:   getAgentConfigEnvVars(opts, _package.Name, _package.Version, skyhook.ResourceID(), copyDir),
+					Env:   getAgentConfigEnvVars(opts, _package.Name, _package.Version, skyhook.ResourceID(), skyhook.Name),
 					SecurityContext: &corev1.SecurityContext{
 						Privileged: ptr(true),
 					},
@@ -1531,15 +1531,15 @@ func getAgentImage(opts SkyhookOperatorOptions, _package *v1alpha1.Package) stri
 	return opts.AgentImage
 }
 
-func getAgentConfigEnvVars(opts SkyhookOperatorOptions, packageName string, packageVersion string, resourceID string, copyDir string) []corev1.EnvVar {
+func getAgentConfigEnvVars(opts SkyhookOperatorOptions, packageName string, packageVersion string, resourceID string, skyhookName string) []corev1.EnvVar {
 	return []corev1.EnvVar{
 		{
-			Name:  "SKYHOOK_DIR",
-			Value: copyDir,
+			Name:  "SKYHOOK_LOG_DIR",
+			Value: fmt.Sprintf("%s/%s", opts.AgentLogRoot, skyhookName),
 		},
 		{
-			Name:  "SKYHOOK_LOG_DIR",
-			Value: opts.AgentLogRoot,
+			Name:  "SKYHOOK_ROOT_DIR",
+			Value: fmt.Sprintf("%s/%s", opts.CopyDirRoot, skyhookName),
 		},
 		{
 			Name:  "COPY_RESOLV",
@@ -1622,7 +1622,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 
 	agentEnvs := append(
 		_package.Env,
-		getAgentConfigEnvVars(opts, _package.Name, _package.Version, skyhook.ResourceID(), copyDir)...,
+		getAgentConfigEnvVars(opts, _package.Name, _package.Version, skyhook.ResourceID(), skyhook.Name)...,
 	)
 
 	pod := &corev1.Pod{
