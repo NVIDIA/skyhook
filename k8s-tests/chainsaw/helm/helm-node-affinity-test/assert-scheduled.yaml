@@ -1,0 +1,65 @@
+# 
+# LICENSE START
+#
+#    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+# LICENSE END
+# 
+
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubectl.kubernetes.io/default-container: manager
+  labels:
+    app: node-affinity-test-skyhook-operator-controller-manager
+    app.kubernetes.io/instance: node-affinity-test
+    app.kubernetes.io/name: skyhook-operator
+    control-plane: controller-manager
+  namespace: skyhook
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/arch
+            operator: In
+            values:
+            - amd64
+            - arm64
+          - key: kubernetes.io/os
+            operator: In
+            values:
+            - linux
+          - key: node-role.kubernetes.io/control-plane
+            operator: DoesNotExist
+          - key: skyhook.nvidia.com/test-node
+            operator: In
+            values:
+            - skyhooke2e
+status:
+  (conditions[?type == 'Ready']):
+  - status: 'True'
+  (conditions[?type == 'PodScheduled']):
+  - status: 'True'
+  (conditions[?type == 'ContainersReady']):
+  - status: 'True'
+  phase: Running 

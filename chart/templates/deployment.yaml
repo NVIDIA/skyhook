@@ -24,6 +24,9 @@ spec:
       annotations:
         kubectl.kubernetes.io/default-container: manager
     spec:
+      {{- if and .Values.controllerManager.selectors .Values.controllerManager.nodeAffinity.matchExpressions }}
+      {{- fail "Error: Cannot specify both controllerManager.selectors and controllerManager.nodeAffinity.matchExpressions. Use nodeAffinity.matchExpressions for complex node selection or selectors for simple key-value matching." }}
+      {{- end }}
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -38,6 +41,16 @@ spec:
                 operator: In
                 values:
                 - linux
+              {{- range .Values.controllerManager.nodeAffinity.matchExpressions }}
+              - key: {{ .key }}
+                operator: {{ .operator }}
+                {{- if .values }}
+                values:
+                {{- range .values }}
+                - {{ . }}
+                {{- end }}
+                {{- end }}
+              {{- end }}
       {{- with .Values.controllerManager.tolerations }}
       tolerations: 
         {{- toYaml . | nindent 6 }}
