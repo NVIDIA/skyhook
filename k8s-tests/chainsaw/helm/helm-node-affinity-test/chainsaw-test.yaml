@@ -1,0 +1,64 @@
+# 
+# LICENSE START
+#
+#    Copyright (c) NVIDIA CORPORATION.  All rights reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+# LICENSE END
+# 
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helm-node-affinity
+spec:
+  description: This test asserts that the helm chart correctly applies node affinity expressions 
+    from the values file. It validates that the controller manager pods are scheduled only on 
+    nodes matching the configured node affinity expressions.
+  concurrent: false
+  timeouts:
+    assert: 240s
+    exec: 240s
+  steps:
+  - try:
+    - script:
+        content: |
+          ## Install helm chart with node affinity configuration targeting non-existent labels
+          ## This should cause pods to NOT schedule
+          ../install-helm-chart.sh node-affinity-test values-no-match.yaml
+    - assert:
+        file: assert-no-schedule.yaml
+  - try:
+    - script:
+        content: |
+          ## Upgrade helm chart to use values that match the node labels
+          ../install-helm-chart.sh node-affinity-test values-match.yaml
+    - assert:
+        file: assert-scheduled.yaml
+  - try:
+    - script:
+        content: |
+          ## Upgrade helm chart to use values that match the node labels
+          ../install-helm-chart.sh node-affinity-test values-conflict-test.yaml
+          error=$?
+          if [ $error -eq 0 ]; then
+            echo "✗ Helm chart installed successfully - this should not happen!"
+            exit 1
+          fi
+    finally:
+    - script:
+        content: |
+          ## Remove helm chart
+          ../uninstall-helm-chart.sh node-affinity-test 

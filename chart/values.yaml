@@ -7,11 +7,27 @@ controllerManager:
   #   value: system-cpu
   #   effect: NoSchedule
   tolerations: []
-  ## selectors: add node selectors to the controller manager pod
+  ## selectors: add simple node selectors to the controller manager pod
   ## Example below is for a system-workload node selector
+  ## NOTE: Cannot be used together with nodeAffinity.matchExpressions
   # selectors:
   #   dedicated: system-workload
   selectors: {}
+  ## nodeAffinity: add advanced node affinity expressions to the controller manager pod
+  ## This allows for more complex node selection than simple selectors
+  ## NOTE: Cannot be used together with selectors - choose one approach
+  ## Example below shows how to select nodes with specific labels using expressions
+  # nodeAffinity:
+  #   matchExpressions:
+  #   - key: node-role.kubernetes.io/control-plane
+  #     operator: DoesNotExist
+  #   - key: dedicated
+  #     operator: In
+  #     values:
+  #     - system-workload
+  #     - gpu-workload
+  nodeAffinity:
+    matchExpressions: []
   ## config for kube-rbac-proxy used for webhooks
   kubeRbacProxy:
     args:
