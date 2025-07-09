@@ -1332,17 +1332,17 @@ class TestUseCases(unittest.TestCase):
         with set_env(
             SKYHOOK_RESOURCE_ID="resource_id", 
             SKYHOOK_DATA_DIR="data_dir", 
-            SKYHOOK_DIR="skyhook_dir",
+            SKYHOOK_ROOT_DIR="skyhook_dir",
             SKYHOOK_LOG_DIR="log_dir"):
-            SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_DIR, SKYHOOK_LOG_DIR = controller._get_env_config()
+            SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR = controller._get_env_config()
             self.assertEqual(SKYHOOK_RESOURCE_ID, "resource_id")
             self.assertEqual(SKYHOOK_DATA_DIR, "data_dir")
-            self.assertEqual(SKYHOOK_DIR, "skyhook_dir")
+            self.assertEqual(SKYHOOK_ROOT_DIR, "skyhook_dir")
             self.assertEqual(SKYHOOK_LOG_DIR, "log_dir")
 
         # Test the default values
-        SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_DIR, SKYHOOK_LOG_DIR = controller._get_env_config()
+        SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR = controller._get_env_config()
         self.assertEqual(SKYHOOK_RESOURCE_ID, "")
         self.assertEqual(SKYHOOK_DATA_DIR, "/skyhook-package")
-        self.assertEqual(SKYHOOK_DIR, "/etc/skyhook")
+        self.assertEqual(SKYHOOK_ROOT_DIR, "/etc/skyhook")
         self.assertEqual(SKYHOOK_LOG_DIR, "/var/log/skyhook")
