@@ -1,4 +1,5 @@
 .cursorignore
+.cursor
 .pytest_cache
 .idea
 **/err.txt

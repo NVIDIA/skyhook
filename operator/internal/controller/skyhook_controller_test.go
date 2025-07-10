@@ -457,6 +457,42 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(FilterEnv(envs, "CATS", "DUCKS", "DOGS")).To(BeNil())
 	})
 
+	It("Ensure all the config env vars are set", func() {
+		opts := SkyhookOperatorOptions{
+			Namespace:            "skyhook",
+			MaxInterval:          time.Second * 61,
+			ImagePullSecret:      "foo",
+			CopyDirRoot:          "/tmp",
+			ReapplyOnReboot:      true,
+			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:           "foo:bar",
+			PauseImage:           "foo:bar",
+			AgentLogRoot:         "/log",
+		}
+		Expect(opts.Validate()).To(BeNil())
+
+		envs := getAgentConfigEnvVars(opts, "package", "version", "id", "skyhook_name")
+		expected := []corev1.EnvVar{
+			{
+				Name:  "SKYHOOK_LOG_DIR",
+				Value: "/log/skyhook_name",
+			},
+			{
+				Name:  "SKYHOOK_ROOT_DIR",
+				Value: "/tmp/skyhook_name",
+			},
+			{
+				Name:  "COPY_RESOLV",
+				Value: "false",
+			},
+			{
+				Name:  "SKYHOOK_RESOURCE_ID",
+				Value: "id_package_version",
+			},
+		}
+		Expect(envs).To(BeEquivalentTo(expected))
+	})
+
 	It("should pick highest priority interrupt", func() {
 		packages := []*v1alpha1.Package{
 			{
@@ -1252,6 +1288,46 @@ var _ = Describe("Resource Comparison", func() {
 		}
 		for i := range actualPod.Spec.InitContainers {
 			actualPod.Spec.InitContainers[i].Resources = limitResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
+	})
+
+	It("should ignore SKYHOOK_RESOURCE_ID env var", func() {
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Setup: Add SKYHOOK_RESOURCE_ID env var to all init containers
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Env = append(actualPod.Spec.InitContainers[i].Env, corev1.EnvVar{
+				Name:  "SKYHOOK_RESOURCE_ID",
+				Value: "SOME_VALUE",
+			})
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
+	})
+
+	It("should not ignore non static env vars", func() {
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Setup: Add SKYHOOK_RESOURCE_ID env var to all init containers
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Env = append(actualPod.Spec.InitContainers[i].Env, corev1.EnvVar{
+				Name:  "SOME_ENV_VAR",
+				Value: "SOME_VALUE",
+			})
 		}
 
 		// Set the package in the pod annotations

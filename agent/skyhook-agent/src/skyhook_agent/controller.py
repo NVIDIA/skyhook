@@ -22,7 +22,7 @@
 
 import sys
 import os
-import stat
+import shutil
 import subprocess
 import base64
 import asyncio
@@ -34,7 +34,7 @@ import os
 import shutil
 import glob
 import signal
-
+import tempfile
 from skyhook_agent.step import Step, UpgradeStep, Idempotence, Mode, CHECK_TO_APPLY
 from skyhook_agent import interrupts, config
 from typing import List
@@ -68,7 +68,11 @@ def _get_env_config() -> tuple[str]:
     # This needs to be set to support legacy mode and should be where skyhook files are on the container
     SKYHOOK_DATA_DIR = os.getenv("SKYHOOK_DATA_DIR", "/skyhook-package")
 
-    return SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR
+    SKYHOOK_ROOT_DIR = os.getenv("SKYHOOK_ROOT_DIR", "/etc/skyhook")
+
+    SKYHOOK_LOG_DIR = os.getenv("SKYHOOK_LOG_DIR", "/var/log/skyhook")
+
+    return SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR
 
 def _get_package_information(config_data: dict) -> tuple[str, str]:
    return config_data["package_name"], config_data["package_version"]
@@ -85,66 +89,110 @@ async def _stream_process(
     is_first_line = True
     while True:
         try:
-            data = str(await stream.read(limit), "UTF-8")
+            data = await stream.read(limit)
+            if not data:
+                break
+            
+            # Decode the data
+            data_str = data.decode("UTF-8", errors="replace")
+            
+            # Add timestamp and label
+            t = datetime.now().isoformat()
+            if is_first_line:
+                data_str = f"{label}{t} {data_str}"
+                is_first_line = False
+            
+            # Add timestamp to each newline
+            data_str = data_str.replace("\n", f"\n{label}{t} ")
+            
+            # Write to all sinks
+            for sink in sinks:
+                sink.write(data_str)
+                sink.flush()
+                
         except asyncio.IncompleteReadError as e:
-            data = str(e.partial, "UTF-8").strip()
-    
-        if not data:
+            # Handle partial data at end of stream
+            if e.partial:
+                data_str = e.partial.decode("UTF-8", errors="replace")
+                t = datetime.now().isoformat()
+                if is_first_line:
+                    data_str = f"{label}{t} {data_str}"
+                    is_first_line = False
+                data_str = data_str.replace("\n", f"\n{label}{t} ")
+                
+                for sink in sinks:
+                    sink.write(data_str)
+                    sink.flush()
+            break
+        except Exception as e:
+            # Log any errors but don't crash
+            error_msg = f"{label}{datetime.now().isoformat()} ERROR reading stream: {str(e)}\n"
+            for sink in sinks:
+                sink.write(error_msg)
+                sink.flush()
             break
 
-        t = datetime.now().isoformat()
-        if is_first_line:
-            data = f"{label}{t} {data}"
-            is_first_line = False
-        data = data.replace("\n", f"\n{label}{t} ")
-        for sink in sinks:
-            sink.write(data)
-            sink.flush()
 
-
-async def tee(cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, **kwargs):
+async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, no_chmod=False, **kwargs):
     """
     Run the cmd in a subprocess and keep the stream of stdout/stderr and merge both into
     the sink_path as a log.
     """
+    # get the directory of the script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     with open(stdout_sink_path, "w") as stdout_sink_f, open(stderr_sink_path, "w") as stderr_sink_f:
         if write_cmds:
             sys.stdout.write(" ".join(cmd) + "\n")
             stdout_sink_f.write(" ".join(cmd) + "\n")
-        p = await asyncio.create_subprocess_shell(
-            " ".join(cmd),
-            limit=buff_size,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            **kwargs,
-        )
-        await asyncio.gather(
-            _stream_process(p.stdout, [sys.stdout, stdout_sink_f], label="[out]"),
-            _stream_process(p.stderr, [sys.stderr, stderr_sink_f], label="[err]"),
-        )
+        with tempfile.NamedTemporaryFile(mode="w", delete=True) as f:
+            f.write(json.dumps({"cmd": cmd, "no_chmod": no_chmod}))
+            f.flush()
+            
+            # Run the special chroot_exec.py script to chroot into the directory and run the command
+            # This is necessary because the this is expected to run in a distroless container and we
+            # want the chroot to only persist for the duration of the command.
+            new_cmd = [sys.executable, os.path.join(script_dir, "chroot_exec.py"), f.name, chroot_dir]
+            p = await asyncio.create_subprocess_exec(
+                *new_cmd,
+                limit=buff_size,
+                stdin=None,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                executable=sys.executable,
+                **kwargs,
+            )
+            
+            # Wait for both stream processing and subprocess completion
+            await asyncio.gather(
+                _stream_process(p.stdout, [sys.stdout, stdout_sink_f], label="[out]"),
+                _stream_process(p.stderr, [sys.stderr, stderr_sink_f], label="[err]"),
+                p.wait(),  # Wait for subprocess to complete
+            )
 
-    return subprocess.CompletedProcess(cmd, await p.wait())
+    return subprocess.CompletedProcess(cmd, p.returncode)
 
 def get_host_path_for_steps(copy_dir: str):
     return f"{copy_dir}/skyhook_dir"
 
-def get_skyhook_directory() -> str:
-    return f"/etc/skyhook"
+def get_skyhook_directory(root_mount: str) -> str:
+    _, _, SKYHOOK_ROOT_DIR, _ = _get_env_config()
+    return f"{root_mount}{SKYHOOK_ROOT_DIR}"
 
-def get_flag_dir() -> str:
-    return f"{get_skyhook_directory()}/flags"
+def get_flag_dir(root_mount: str) -> str:
+    return f"{get_skyhook_directory(root_mount)}/flags"
 
-def get_history_dir() -> str:
-    return f"{get_skyhook_directory()}/history"
+def get_history_dir(root_mount: str) -> str:
+    return f"{get_skyhook_directory(root_mount)}/history"
 
-def get_log_dir() -> str:
-    return f"/var/log/skyhook"
+def get_log_dir(root_mount: str) -> str:
+    _, _, _, SKYHOOK_LOG_DIR = _get_env_config()
+    return f"{root_mount}{SKYHOOK_LOG_DIR}"
 
-def get_log_file(step_path: str, copy_dir: str, config_data: dict, timestamp: str=None) -> str:
+def get_log_file(step_path: str, copy_dir: str, config_data: dict, root_mount: str, timestamp: str=None) -> str:
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
     package_name, package_current_version = _get_package_information(config_data)
-    log_file = f"{get_log_dir()}/{package_name}/{package_current_version}/{step_path.replace(get_host_path_for_steps(copy_dir), '')}-{timestamp}.log"
+    log_file = f"{get_log_dir(root_mount)}/{package_name}/{package_current_version}/{step_path.replace(get_host_path_for_steps(copy_dir), '')}-{timestamp}.log"
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     return log_file
 
@@ -161,9 +209,9 @@ def cleanup_old_logs(log_file_glob: str) -> None:
 
 
 def make_flag_path(
-        step: Step|UpgradeStep, config_data: dict
+        step: Step|UpgradeStep, config_data: dict, root_mount: str
 ) -> str:
-    flag_dir = get_flag_dir()
+    flag_dir = get_flag_dir(root_mount)
     package_name, package_current_version = _get_package_information(config_data)
     marker = base64.b64encode(bytes(f"{step.arguments}_{step.returncodes}", "utf-8")).decode("utf-8")
     return f"{flag_dir}/{package_name}/{package_current_version}/{step.path}_{marker}"
@@ -175,17 +223,20 @@ def set_flag(flag_file: str, msg: str = "") -> None:
         f.write(msg)
 
 
-def _run(cmds: list[str], log_path: str, write_cmds=False, **kwargs) -> int:
+def _run(chroot_dir: str, cmds: list[str], log_path: str, write_cmds=False, no_chmod=False,**kwargs) -> int:
     """
     Synchronous wrapper around the tee command to have logs written to disk
     """
     # "tee" the stdout and stderr to a file to log the step results
+    
     result = asyncio.run(
         tee(
+            chroot_dir,
             cmds,
             log_path,
             f"{log_path}.err",
             write_cmds=write_cmds,
+            no_chmod=no_chmod,
             **kwargs
         )
     )
@@ -194,6 +245,7 @@ def _run(cmds: list[str], log_path: str, write_cmds=False, **kwargs) -> int:
 
 def run_step(
     step: Step|UpgradeStep,
+    chroot_dir: str,
     copy_dir: str,
     config_data: dict
 ) -> bool:
@@ -232,16 +284,18 @@ def run_step(
             print(msg)
         return True
 
-    # chmod +x the step
-    os.chmod(step_path, os.stat(step_path).st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
-
     time.sleep(1)
-    log_file = get_log_file(step_path, copy_dir, config_data)
+    log_file = get_log_file(step_path, copy_dir, config_data, chroot_dir)
+
+    # Make sure to include the original environment here or else things like path resolution dont work
+    env = dict(**os.environ)
+    env.update(step.env)
+    env.update({"STEP_ROOT": get_host_path_for_steps(copy_dir), "SKYHOOK_DIR": copy_dir})
     return_code = _run(
+        chroot_dir,
         [step_path, *step.arguments],
         log_file,
-        # Make sure to include the original environment here or else things like path resolution dont work
-        env=dict(**os.environ, **step.env, **{"STEP_ROOT": get_host_path_for_steps(copy_dir), "SKYHOOK_DIR": copy_dir}),)
+        env=env)
     
     cleanup_old_logs(get_log_file(step_path, copy_dir, config_data, "*"))
     if return_code not in step.returncodes:
@@ -278,7 +332,7 @@ def check_flag_file(
         return True
     return False
 
-def get_or_update_history(config_data: dict, write: bool = False, step: Step|UpgradeStep = None, mode: Mode = None) -> None:
+def get_or_update_history(root_mount: str, config_data: dict, write: bool = False, step: Step|UpgradeStep = None, mode: Mode = None) -> None:
     """
     Manages the history file for tracking version changes, and auditing purposes.
 
@@ -297,7 +351,7 @@ def get_or_update_history(config_data: dict, write: bool = False, step: Step|Upg
     """
     package_name, package_current_version = _get_package_information(config_data)
     # Create history dir if it doesn't already exist
-    history_dir = get_history_dir()
+    history_dir = get_history_dir(root_mount)
     os.makedirs(history_dir, exist_ok=True)
 
     history_file = f"{history_dir}/{package_name}.json"
@@ -342,11 +396,11 @@ def get_or_update_history(config_data: dict, write: bool = False, step: Step|Upg
         if step and isinstance(step, UpgradeStep):
             step.arguments.extend([history_data["current-version"], package_current_version])
 
-def summarize_check_results(results: list[bool], step_data: dict[Mode, list[Step|UpgradeStep]], step_selector: Mode, ) -> bool:
+def summarize_check_results(results: list[bool], step_data: dict[Mode, list[Step|UpgradeStep]], step_selector: Mode, root_mount: str) -> bool:
     """
     Returning True means there is at least one failure
     """
-    flag_dir = get_flag_dir()
+    flag_dir = get_flag_dir(root_mount)
     if len(results) != len(step_data[step_selector]):
         print("It does not look like you have successfully run all check steps yet.")
         return True
@@ -368,7 +422,7 @@ def summarize_check_results(results: list[bool], step_data: dict[Mode, list[Step
     return False
 
 def make_config_data_from_resource_id() -> dict:
-    SKYHOOK_RESOURCE_ID, _ = _get_env_config()
+    SKYHOOK_RESOURCE_ID, _, _, _ = _get_env_config()
 
     # Interrupts don't really have config data we can read from the Package as it is run standalone.
     # So read it off of SKYHOOK_RESOURCE_ID  instead
@@ -384,19 +438,29 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
     """
     Run an interrupt if there hasn't been an interrupt already for the skyhook ID.
     """
+
+    def _make_interrupt_flag(interrupt_dir: str, interrupt_id: int) -> str:
+        return f"{interrupt_dir}/{interrupt_id}.complete"
     
-    SKYHOOK_RESOURCE_ID, _ = _get_env_config()
+    SKYHOOK_RESOURCE_ID, _, _, _ = _get_env_config()
 
     config_data = make_config_data_from_resource_id()
 
     interrupt = interrupts.inflate(interrupt_data)
-    os.chroot(root_mount)
     # Check if the interrupt has already been run for this particular skyhook resource
-    interrupt_dir = f"{get_skyhook_directory()}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
+    interrupt_dir = f"{get_skyhook_directory(root_mount)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
     os.makedirs(interrupt_dir, exist_ok=True)
+
+    if interrupt.type == interrupts.NoOp._type():
+        # NoOp interrupts dont do anything and so don't need to be run
+        interrupt_flag = _make_interrupt_flag(interrupt_dir, interrupt.type)
+        with open(interrupt_flag, 'w') as f:
+            f.write(str(time.time()))
+        return False
+    
     for i, cmd in enumerate(interrupt.interrupt_cmd):
         interrupt_id = f"{interrupt._type()}_{i}"
-        interrupt_flag = f"{interrupt_dir}/{interrupt_id}.complete"
+        interrupt_flag = _make_interrupt_flag(interrupt_dir, interrupt_id)
 
         if os.path.exists(interrupt_flag):
             print(f"Skipping interrupt {interrupt_id} because it was already run for {SKYHOOK_RESOURCE_ID}")
@@ -407,8 +471,9 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
 
         return_code = _run(
             cmd,
-            get_log_file(f"interrupts/{interrupt_id}", copy_dir, config_data),
-            write_cmds=True
+            get_log_file(f"interrupts/{interrupt_id}", copy_dir, config_data, root_mount),
+            write_cmds=True,
+            no_chmod=True
         )
 
         if return_code != 0:
@@ -421,9 +486,9 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
     return False
 
 ## Remove all step flags after uninstall
-def remove_flags(step_data: dict[Mode, list[Step|UpgradeStep]], config_data: dict) -> None:
+def remove_flags(step_data: dict[Mode, list[Step|UpgradeStep]], config_data: dict, root_mount: str) -> None:
     for step in [step for steps in step_data.values() for step in steps]:
-        flag_file = make_flag_path(step, config_data)
+        flag_file = make_flag_path(step, config_data, root_mount)
         if os.path.exists(flag_file):  # Check if the file exists before trying to remove it
             os.remove(flag_file)
 
@@ -439,7 +504,7 @@ def main(mode: Mode, root_mount: str, copy_dir: str, interrupt_data: None|str, a
     if mode == Mode.INTERRUPT:
         return do_interrupt(interrupt_data, root_mount, copy_dir)
     
-    _, SKYHOOK_DATA_DIR = _get_env_config()
+    _, SKYHOOK_DATA_DIR, _, _ = _get_env_config()
 
     # Check to see if the directory has already been copied down. If it hasn't assume that we
     # are running in legacy mode and copy the directory down.
@@ -481,9 +546,8 @@ def agent_main(mode: Mode, root_mount: str, copy_dir: str, config_data: dict, in
             
     # Pull out step_data so it matches with existing code
     step_data = config_data["modes"]
-    os.chroot(root_mount)
     # Make a flag to mark Skyhook has started
-    set_flag(f"{get_flag_dir()}/START")
+    set_flag(f"{get_flag_dir(root_mount)}/START")
     results = []
 
     # If no steps configured for this mode but being run output warning that this is a no-op
@@ -499,19 +563,19 @@ def agent_main(mode: Mode, root_mount: str, copy_dir: str, config_data: dict, in
         # Make the flag file without the host path argument (first one). This is because in operator world
         # the host path is going to change every time the Skyhook Custom Resource changes so it would
         # look like a step hasn't been run when it fact it had.
-        flag_file = make_flag_path(step, config_data)
+        flag_file = make_flag_path(step, config_data, root_mount)
 
         # If upgrading get the from and to versions from the history file
         # so it can be passed to the upgrade steps via args or environment vars
         if mode == Mode.UPGRADE or mode == Mode.UPGRADE_CHECK:
-            get_or_update_history(config_data, step=step)
+            get_or_update_history(root_mount, config_data, step=step)
 
         if not str(mode).endswith("-check"):
             if check_flag_file(step, flag_file, always_run_step, mode):
                 continue
             print(f"{mode} {step.path} {step.arguments} {step.returncodes} {step.idempotence} {step.on_host}")
 
-            failed = run_step(step, copy_dir, config_data)
+            failed = run_step(step, root_mount, copy_dir, config_data)
             if failed:
                 return True
 
@@ -521,20 +585,20 @@ def agent_main(mode: Mode, root_mount: str, copy_dir: str, config_data: dict, in
             )
         else:
             print(f"{mode} {step.path} {step.arguments} {step.returncodes} {step.idempotence} {step.on_host}")
-            results.append(run_step(step, copy_dir, config_data))
+            results.append(run_step(step, root_mount, copy_dir, config_data))
                     
 
     if mode in CHECK_TO_APPLY and len(step_data.get(mode, [])) > 0:
-        if summarize_check_results(results, step_data, mode):
+        if summarize_check_results(results, step_data, mode, root_mount):
             return True
 
     ## If APPLY_CHECK, UPGRADE_CHECK, or UNINSTALL_CHECK finished successfully update installed version history
     if mode in [Mode.APPLY_CHECK, Mode.UPGRADE_CHECK, Mode.UNINSTALL_CHECK]:
-        get_or_update_history(config_data, write=True, mode=mode)
+        get_or_update_history(root_mount, config_data, write=True, mode=mode)
 
         ## We also want to remove the flags if the package was uninstalled
         if mode == Mode.UNINSTALL_CHECK:
-            remove_flags(step_data, config_data)
+            remove_flags(step_data, config_data, root_mount)
 
     return False
 
@@ -582,17 +646,19 @@ def cli(sys_argv: list[str]=sys.argv):
     print(str.center("ENV CONFIGURATION", 20, "-"))
     print(f"COPY_RESOLV: {copy_resolv}")
     print(f"OVERLAY_ALWAYS_RUN_STEP: {always_run_step}")
-    SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR = _get_env_config()
+    SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR = _get_env_config()
     print(f"SKYHOOK_RESOURCE_ID: {SKYHOOK_RESOURCE_ID}")
     print(f"SKYHOOK_DATA_DIR: {SKYHOOK_DATA_DIR}")
+    print(f"SKYHOOK_ROOT_DIR: {SKYHOOK_ROOT_DIR}")
+    print(f"SKYHOOK_LOG_DIR: {SKYHOOK_LOG_DIR}")
     print(f"SKYHOOK_AGENT_BUFFER_LIMIT: {buff_size}")
     print(str.center("Directory CONFIGURATION", 20, "-"))
     # print flag dir and log dir
     config_data = make_config_data_from_resource_id()
-    print(f"flag_dir: {get_flag_dir()}/{config_data['package_name']}/{config_data['package_version']}")
-    log_dir = '/'.join(get_log_file('step',copy_dir, config_data, timestamp='timestamp').split('/')[:-1])
+    print(f"flag_dir: {get_flag_dir("")}/{config_data['package_name']}/{config_data['package_version']}")
+    log_dir = '/'.join(get_log_file('step', copy_dir, config_data, "", timestamp='timestamp').split('/')[:-1])
     print(f"log_dir: {log_dir}")
-    print(f"history_file: {get_history_dir()}/{config_data['package_name']}.json")
+    print(f"history_file: {get_history_dir("")}/{config_data['package_name']}.json")
     print("-" * 20)
 
     return main(mode, root_mount, copy_dir, interrupt_data, always_run_step)
