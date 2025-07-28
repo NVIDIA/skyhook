@@ -23,6 +23,7 @@ metadata:
   name: strict-order-skyhook-zzz
   annotations:
     skyhook.nvidia.com/disable: "false"
+    skyhook.nvidia.com/pause: "false"
 spec:
   priority: 1
   nodeSelectors:
@@ -34,7 +35,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "1" ## making faster so the test works for asserting node condition
+          value: "3" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -45,7 +46,7 @@ metadata:
   name: strict-order-skyhook-b
   annotations:
     skyhook.nvidia.com/disable: "false"
-    skyhook.nvidia.com/pause: "true"
+    skyhook.nvidia.com/pause: "false"
 spec:
   priority: 2
   nodeSelectors:
@@ -57,7 +58,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "5" ## making faster so the test works for asserting node condition
+          value: "3" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -80,7 +81,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "5" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -103,4 +104,4 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "5" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition

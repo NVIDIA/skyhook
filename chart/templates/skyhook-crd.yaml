@@ -654,6 +654,10 @@ spec:
                 enum:
                 - unknown
                 - complete
+                - blocked
+                - waiting
+                - disabled
+                - paused
                 - in_progress
                 - erroring
                 type: string

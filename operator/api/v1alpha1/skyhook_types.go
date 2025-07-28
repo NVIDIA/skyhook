@@ -292,7 +292,7 @@ type SkyhookStatus struct {
 	NodeStatus map[string]Status `json:"nodeStatus,omitempty"`
 
 	//Status is the roll of this instance of skyhook and all nodes status.
-	//+kubebuilder:validation:Enum=unknown;complete;in_progress;erroring
+	//+kubebuilder:validation:Enum=unknown;complete;blocked;waiting;disabled;paused;in_progress;erroring
 	Status Status `json:"status,omitempty"`
 
 	// Represents the observations of a skyhook's current state.
@@ -612,6 +612,10 @@ var (
 // unless we add a limit of number parallel packages, might be another good idea.
 const (
 	StatusComplete   Status = "complete"
+	StatusBlocked    Status = "blocked"
+	StatusWaiting    Status = "waiting"
+	StatusDisabled   Status = "disabled"
+	StatusPaused     Status = "paused"
 	StatusInProgress Status = "in_progress"
 	StatusErroring   Status = "erroring"
 	StatusUnknown    Status = "unknown"
@@ -621,6 +625,14 @@ func GetStatus(s string) Status {
 	switch Status(s) {
 	case StatusComplete:
 		return StatusComplete
+	case StatusBlocked:
+		return StatusBlocked
+	case StatusWaiting:
+		return StatusWaiting
+	case StatusDisabled:
+		return StatusDisabled
+	case StatusPaused:
+		return StatusPaused
 	case StatusInProgress:
 		return StatusInProgress
 	case StatusErroring:

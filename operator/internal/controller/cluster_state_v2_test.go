@@ -331,4 +331,138 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		// Verify that Updated flag was set since changes were made
 		Expect(mockSkyhook.Updated).To(BeFalse())
 	})
+
+	Describe("isSkyhookControlledNodeStatus", func() {
+		It("should return true for disabled status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusDisabled)
+			Expect(result).To(BeTrue())
+		})
+
+		It("should return true for paused status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusPaused)
+			Expect(result).To(BeTrue())
+		})
+
+		It("should return true for waiting status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusWaiting)
+			Expect(result).To(BeTrue())
+		})
+
+		It("should return false for complete status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusComplete)
+			Expect(result).To(BeFalse())
+		})
+
+		It("should return false for in_progress status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusInProgress)
+			Expect(result).To(BeFalse())
+		})
+
+		It("should return false for erroring status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusErroring)
+			Expect(result).To(BeFalse())
+		})
+
+		It("should return false for blocked status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusBlocked)
+			Expect(result).To(BeFalse())
+		})
+
+		It("should return false for unknown status", func() {
+			result := isSkyhookControlledNodeStatus(v1alpha1.StatusUnknown)
+			Expect(result).To(BeFalse())
+		})
+	})
+
+	Describe("UpdateSkyhookPauseStatus", func() {
+		var mockSkyhookNodes *skyhookNodesMock.MockSkyhookNodes
+		var mockSkyhook *wrapper.Skyhook
+		var mockNode1 wrapper.SkyhookNode
+		var mockNode2 wrapper.SkyhookNode
+
+		BeforeEach(func() {
+			mockSkyhookNodes = &skyhookNodesMock.MockSkyhookNodes{}
+
+			// Create a real skyhook for testing
+			mockSkyhook = &wrapper.Skyhook{
+				Skyhook: &v1alpha1.Skyhook{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-skyhook",
+						Annotations: map[string]string{},
+					},
+					Status: v1alpha1.SkyhookStatus{
+						Status: v1alpha1.StatusInProgress,
+					},
+				},
+			}
+
+			// Create real nodes for testing
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node2"}}
+
+			var err error
+			mockNode1, err = wrapper.NewSkyhookNode(node1, mockSkyhook.Skyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			mockNode2, err = wrapper.NewSkyhookNode(node2, mockSkyhook.Skyhook)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should update status to paused when skyhook is paused and status is not already paused", func() {
+			// Set up the skyhook as paused
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = "true"
+
+			// Set up mock expectations
+			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
+			mockSkyhookNodes.EXPECT().Status().Return(v1alpha1.StatusInProgress)
+			mockSkyhookNodes.EXPECT().SetStatus(v1alpha1.StatusPaused).Once()
+			mockSkyhookNodes.EXPECT().GetNodes().Return([]wrapper.SkyhookNode{mockNode1, mockNode2})
+
+			// Call the function
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+
+			// Verify the result
+			Expect(result).To(BeTrue())
+		})
+
+		It("should not change status when skyhook is paused but status is already paused", func() {
+			// Set up the skyhook as paused with paused status
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = "true"
+
+			// Set up mock expectations
+			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
+			mockSkyhookNodes.EXPECT().Status().Return(v1alpha1.StatusPaused)
+
+			// Call the function
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+
+			// Verify the result
+			Expect(result).To(BeFalse())
+		})
+
+		It("should not change status when skyhook is not paused", func() {
+			// Set up the skyhook as not paused
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = "false"
+
+			// Set up mock expectations
+			mockSkyhookNodes.EXPECT().IsPaused().Return(false)
+
+			// Call the function
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+
+			// Verify the result
+			Expect(result).To(BeFalse())
+		})
+
+		It("should not change status when skyhook pause annotation is missing", func() {
+			// Set up mock expectations no pause annotation means not paused
+			mockSkyhookNodes.EXPECT().IsPaused().Return(false)
+
+			// Call the function
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+
+			// Verify the result
+			Expect(result).To(BeFalse())
+		})
+	})
 })
