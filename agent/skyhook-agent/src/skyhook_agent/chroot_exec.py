@@ -40,6 +40,7 @@ def chroot_exec(config: dict, chroot_dir: str):
     no_chmod = config["no_chmod"]
     skyhook_env = config["env"]
 
+    # Capture container environment before chroot
     container_env = dict(os.environ)
    
     if chroot_dir != "local":
@@ -49,8 +50,8 @@ def chroot_exec(config: dict, chroot_dir: str):
             # chmod +x the step
             os.chmod(cmds[0], os.stat(cmds[0]).st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
         # Re-import os to get the chroot environment
-        import os
-        process_env = _get_process_env(container_env, skyhook_env, os.environ)
+        import os as chroot_os
+        process_env = _get_process_env(container_env, skyhook_env, chroot_os.environ)
         subprocess.run(cmds, check=True, env=process_env)
     except:
         raise
