@@ -15,7 +15,8 @@
 # limitations under the License.
 
 import unittest
-from skyhook_agent.chroot_exec import _get_process_env
+from unittest import mock
+from skyhook_agent.chroot_exec import _get_process_env, _get_chroot_env
 
 
 class TestChrootExec(unittest.TestCase):
@@ -135,6 +136,97 @@ class TestChrootExec(unittest.TestCase):
         
         # Verify result is correct
         self.assertEqual(result, {"VAR": "skyhook"})
+
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    def test_get_chroot_env_basic_functionality(self, mock_subprocess):
+        """Test _get_chroot_env with typical environment output"""
+        mock_result = mock.MagicMock()
+        mock_result.stdout = "PATH=/usr/bin:/bin\nHOME=/root\nUSER=root\n"
+        mock_subprocess.return_value = mock_result
+        
+        result = _get_chroot_env()
+        
+        expected = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": "/root",
+            "USER": "root"
+        }
+        self.assertEqual(result, expected)
+        mock_subprocess.assert_called_once_with(["env"], capture_output=True, text=True)
+    
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    def test_get_chroot_env_with_multiple_equals(self, mock_subprocess):
+        """Test _get_chroot_env correctly handles lines with multiple '=' characters"""
+        mock_result = mock.MagicMock()
+        mock_result.stdout = "VAR1=value=with=equals\nVAR2=simple_value\n"
+        mock_subprocess.return_value = mock_result
+        
+        result = _get_chroot_env()
+        
+        expected = {
+            "VAR1": "value=with=equals",  # Should split only on first =
+            "VAR2": "simple_value"
+        }
+        self.assertEqual(result, expected)
+    
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    def test_get_chroot_env_ignores_lines_without_equals(self, mock_subprocess):
+        """Test _get_chroot_env ignores lines that don't contain '='"""
+        mock_result = mock.MagicMock()
+        mock_result.stdout = "PATH=/usr/bin\ninvalid_line_no_equals\nHOME=/root\n\n"
+        mock_subprocess.return_value = mock_result
+        
+        result = _get_chroot_env()
+        
+        expected = {
+            "PATH": "/usr/bin",
+            "HOME": "/root"
+        }
+        self.assertEqual(result, expected)
+    
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    def test_get_chroot_env_with_empty_output(self, mock_subprocess):
+        """Test _get_chroot_env with empty subprocess output"""
+        mock_result = mock.MagicMock()
+        mock_result.stdout = ""
+        mock_subprocess.return_value = mock_result
+        
+        result = _get_chroot_env()
+        
+        self.assertEqual(result, {})
+        mock_subprocess.assert_called_once_with(["env"], capture_output=True, text=True)
+    
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    def test_get_chroot_env_with_empty_values(self, mock_subprocess):
+        """Test _get_chroot_env handles environment variables with empty values"""
+        mock_result = mock.MagicMock()
+        mock_result.stdout = "EMPTY_VAR=\nNORM_VAR=value\nANOTHER_EMPTY=\n"
+        mock_subprocess.return_value = mock_result
+        
+        result = _get_chroot_env()
+        
+        expected = {
+            "EMPTY_VAR": "",
+            "NORM_VAR": "value", 
+            "ANOTHER_EMPTY": ""
+        }
+        self.assertEqual(result, expected)
+    
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    def test_get_chroot_env_with_whitespace_and_special_chars(self, mock_subprocess):
+        """Test _get_chroot_env handles values with whitespace and special characters"""
+        mock_result = mock.MagicMock()
+        mock_result.stdout = "VAR_WITH_SPACES=value with spaces\nSPECIAL_CHARS=!@#$%^&*()\nPATH=/usr/bin:/bin\n"
+        mock_subprocess.return_value = mock_result
+        
+        result = _get_chroot_env()
+        
+        expected = {
+            "VAR_WITH_SPACES": "value with spaces",
+            "SPECIAL_CHARS": "!@#$%^&*()",
+            "PATH": "/usr/bin:/bin"
+        }
+        self.assertEqual(result, expected)
 
 
 if __name__ == '__main__':
