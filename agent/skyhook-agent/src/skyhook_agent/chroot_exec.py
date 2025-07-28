@@ -45,6 +45,7 @@ def chroot_exec(config: dict, chroot_dir: str):
    
     if chroot_dir != "local":
         os.chroot(chroot_dir)
+        os.chdir("/")
     try:
         if not no_chmod:
             # chmod +x the step
