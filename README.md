@@ -127,6 +127,8 @@ operator to know which way the package is going while also enforcing best versio
 
 **For detailed information about our versioning strategy, git tagging conventions, and component release process, see [docs/versioning.md](docs/versioning.md) and [docs/release-process.md](docs/release-process.md).**
 
+**For definitions of Status, State, and Stage concepts used throughout the operator, see [docs/operator-status-definitions.md](docs/operator-status-definitions.md).**
+
 ## Packages
 Part of how the operator works is the [skyhook-agent](agent/README.md). Packages have to be created in way so the operator knows how to use them. This is where the agent comes into play, more on that later. A package is a container that meets these requirements:
 
