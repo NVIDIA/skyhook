@@ -21,6 +21,6 @@ metadata:
     skyhook.nvidia.com/test-node: skyhooke2e
   annotations:
     skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-b: in_progress
-    skyhook.nvidia.com/status_strict-order-skyhook-c: unknown
-    skyhook.nvidia.com/status_strict-order-skyhook-d: unknown
+    skyhook.nvidia.com/status_strict-order-skyhook-b: paused
+    skyhook.nvidia.com/status_strict-order-skyhook-c: waiting
+    skyhook.nvidia.com/status_strict-order-skyhook-d: disabled

@@ -232,15 +232,22 @@ func (s *skyhookNodes) CollectNodeStatus() v1alpha1.Status {
 		case v1alpha1.StatusInProgress:
 			status = v1alpha1.StatusInProgress
 		case v1alpha1.StatusErroring:
-			status = v1alpha1.StatusErroring
+			// only one erroring means erroring
+			return v1alpha1.StatusErroring
+		case v1alpha1.StatusBlocked:
+			// only one blocked means blocked
+			return v1alpha1.StatusBlocked
 		case v1alpha1.StatusUnknown:
 			// only one unknown means unknown
 			return v1alpha1.StatusUnknown
 		}
 	}
-	if complete == len(s.nodes) { // all need to be complete to be considered complete
+
+	// all need to be complete to be considered complete
+	if complete == len(s.nodes) {
 		return v1alpha1.StatusComplete
 	}
+
 	return status
 }
 
@@ -416,7 +423,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 		}
 	}
 
-	priority := []v1alpha1.Status{v1alpha1.StatusInProgress, v1alpha1.StatusUnknown, v1alpha1.StatusErroring}
+	priority := []v1alpha1.Status{v1alpha1.StatusInProgress, v1alpha1.StatusUnknown, v1alpha1.StatusBlocked, v1alpha1.StatusErroring}
 
 	nodesWithTaintTolerationIssue := make([]string, 0)
 	// look for progress first
@@ -444,6 +451,10 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 			np.upsertPick(node.GetNode().GetName(), s.GetSkyhook()) // track pick
 		} else {
 			nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
+
+			// Set status here (not in IntrospectNode) to avoid recalculating
+			// taints/tolerations on each introspection
+			node.SetStatus(v1alpha1.StatusBlocked)
 		}
 	}
 	skyhook_node_taint_tolerance_issue_count.WithLabelValues(s.GetSkyhook().Name).Set(float64(len(nodesWithTaintTolerationIssue)))
@@ -475,11 +486,27 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 // for SCR true, we need to look at all nodes and compare state to current SCR. This should be reflected in the SCR too.
 
 // IntrospectSkyhook checks the current state of nodes, and SCR if they are in a bad mix, update to be correct
-func IntrospectSkyhook(skyhook SkyhookNodes) bool {
+func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 	change := false
 
 	scrStatus := skyhook.Status()
 	collectNodeStatus := skyhook.CollectNodeStatus()
+
+	// override the node status if the skyhook is in a skyhook controlled state. (e.g. disabled, paused, waiting)
+	if collectNodeStatus != v1alpha1.StatusComplete {
+		switch {
+		case skyhook.IsDisabled():
+			collectNodeStatus = v1alpha1.StatusDisabled
+
+		case skyhook.IsPaused():
+			collectNodeStatus = v1alpha1.StatusPaused
+
+		default:
+			if nextSkyhook := GetNextSkyhook(allSkyhooks); nextSkyhook != nil && nextSkyhook != skyhook {
+				collectNodeStatus = v1alpha1.StatusWaiting
+			}
+		}
+	}
 
 	if scrStatus != collectNodeStatus {
 		skyhook.SetStatus(collectNodeStatus)
@@ -499,10 +526,31 @@ func IntrospectSkyhook(skyhook SkyhookNodes) bool {
 }
 
 func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes) bool {
+	skyhookStatus := skyhook.Status()
 
 	nodeStatus := node.Status()
 	node.SetStatus(nodeStatus)
 
+	// Check if skyhook status should override node status
+	if isSkyhookControlledNodeStatus(skyhookStatus) {
+		if nodeStatus != skyhookStatus {
+			node.SetStatus(skyhookStatus)
+		}
+		return node.Changed()
+	}
+
+	// need to move node out of Skyhook controlled status
+	if isSkyhookControlledNodeStatus(nodeStatus) {
+		if node.IsComplete() {
+			node.SetStatus(v1alpha1.StatusComplete)
+		} else {
+			// node will update to it's correct status on next reconcile
+			node.SetStatus(v1alpha1.StatusUnknown)
+		}
+		return node.Changed()
+	}
+
+	// For normal node state transitions
 	if nodeStatus != v1alpha1.StatusComplete && node.IsComplete() {
 		node.SetStatus(v1alpha1.StatusComplete)
 	}
@@ -512,6 +560,27 @@ func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes) bool {
 	}
 
 	return node.Changed()
+}
+
+func isSkyhookControlledNodeStatus(status v1alpha1.Status) bool {
+	return status == v1alpha1.StatusDisabled ||
+		status == v1alpha1.StatusPaused ||
+		status == v1alpha1.StatusWaiting
+}
+
+func UpdateSkyhookPauseStatus(skyhook SkyhookNodes) bool {
+	changed := false
+	if skyhook.IsPaused() && skyhook.Status() != v1alpha1.StatusPaused {
+		skyhook.SetStatus(v1alpha1.StatusPaused)
+
+		for _, node := range skyhook.GetNodes() {
+			node.SetStatus(v1alpha1.StatusPaused)
+		}
+
+		changed = true
+	}
+
+	return changed
 }
 
 // ReportState collects the current state of the skyhook and reports it to the skyhook status for printer columns

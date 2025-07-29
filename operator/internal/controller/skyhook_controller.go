@@ -305,6 +305,10 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		if skyhook.IsPaused() {
+			if yes, result, err := shouldReturn(r.UpdatePauseStatus(ctx, clusterState, skyhook)); yes {
+				return result, err
+			}
+
 			continue
 		}
 
@@ -320,7 +324,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return result, err
 		}
 
-		changed := IntrospectSkyhook(skyhook)
+		changed := IntrospectSkyhook(skyhook, clusterState.skyhooks)
 
 		if changed {
 			_, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
@@ -468,6 +472,20 @@ func (r *SkyhookReconciler) ReportState(ctx context.Context, clusterState *clust
 	return false, nil
 }
 
+func (r *SkyhookReconciler) UpdatePauseStatus(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes) (bool, error) {
+	changed := UpdateSkyhookPauseStatus(skyhook)
+
+	if changed {
+		_, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
+		if len(errs) > 0 {
+			return false, utilerrors.NewAggregate(errs)
+		}
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clusterState) (bool, error) {
 
 	updates := false
@@ -527,7 +545,7 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 		return nil, fmt.Errorf("error getting packages to uninstall: %w", err)
 	}
 
-	changed := IntrospectSkyhook(skyhook)
+	changed := IntrospectSkyhook(skyhook, clusterState.skyhooks)
 	if !changed && skyhook.IsComplete() {
 		return nil, nil
 	}

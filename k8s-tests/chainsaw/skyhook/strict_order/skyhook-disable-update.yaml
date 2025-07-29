@@ -23,6 +23,7 @@ metadata:
   name: strict-order-skyhook-zzz
   annotations:
     skyhook.nvidia.com/disable: "false"
+    skyhook.nvidia.com/pause: "false"
 spec:
   priority: 1
   nodeSelectors:
@@ -45,6 +46,7 @@ metadata:
   name: strict-order-skyhook-b
   annotations:
     skyhook.nvidia.com/disable: "false"
+    skyhook.nvidia.com/pause: "false"
 spec:
   priority: 2
   nodeSelectors:
@@ -67,6 +69,7 @@ metadata:
   name: strict-order-skyhook-c
   annotations:
     skyhook.nvidia.com/disable: "false"
+    skyhook.nvidia.com/pause: "false"
 spec:
   priority: 2
   nodeSelectors:
@@ -89,6 +92,7 @@ metadata:
   name: strict-order-skyhook-d
   annotations:
     skyhook.nvidia.com/disable: "false"
+    skyhook.nvidia.com/pause: "false"
 spec:
   priority: 2
   nodeSelectors:

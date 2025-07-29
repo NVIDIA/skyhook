@@ -22,5 +22,5 @@ metadata:
   annotations:
     skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
     skyhook.nvidia.com/status_strict-order-skyhook-b: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-c: in_progress
-    skyhook.nvidia.com/status_strict-order-skyhook-d: disabled
+    skyhook.nvidia.com/status_strict-order-skyhook-c: complete
+    skyhook.nvidia.com/status_strict-order-skyhook-d: complete

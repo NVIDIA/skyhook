@@ -55,13 +55,8 @@ func (s *Skyhook) SetStatus(status v1alpha1.Status) {
 		s.Status.ObservedGeneration = s.Generation // sort of the big... complete stamp
 		s.Updated = true
 	case v1alpha1.StatusUnknown:
-
 		if s.Status.NodeState != nil {
 			s.Status.NodeState = nil
-			s.Updated = true
-		}
-		if s.Status.NodeStatus != nil {
-			s.Status.NodeStatus = nil
 			s.Updated = true
 		}
 	}
