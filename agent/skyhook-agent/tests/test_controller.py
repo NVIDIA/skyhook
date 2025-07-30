@@ -244,9 +244,9 @@ class TestHelpers(unittest.TestCase):
                     ["copy_dir/skyhook_dir/foo", "a", "foo"],
                     log_file,
                     f"{log_file}.err",
-                    env=dict(**os.environ, **{"STEP_ROOT": "copy_dir/skyhook_dir", "FOO": "foo", "SKYHOOK_DIR": "copy_dir"}),
                     write_cmds=False,
-                    no_chmod=False
+                    no_chmod=False,
+                    env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"}
                 )
             ]
         )
@@ -690,9 +690,9 @@ class TestUseCases(unittest.TestCase):
                         controller.get_log_file(
                             f"{controller.get_host_path_for_steps(copy_dir)}/foo", f"/foo", config_data, root_dir
                         ),
-                        env=dict(**os.environ, 
-                                **{"PREVIOUS_VERSION": "0.0.9", "CURRENT_VERSION": "1.0.0"}, 
-                                **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
+                        env=dict(
+                            **{"PREVIOUS_VERSION": "0.0.9", "CURRENT_VERSION": "1.0.0"}, 
+                            **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
                     )
                 ])
 
@@ -729,9 +729,9 @@ class TestUseCases(unittest.TestCase):
                     controller.get_log_file(
                         f"{controller.get_host_path_for_steps(copy_dir)}/foo", f"/foo", config_data, root_dir
                     ),
-                    env=dict(**os.environ, 
-                            **{"PREVIOUS_VERSION": "2024.07.28", "CURRENT_VERSION": "1.0.0"}, 
-                            **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
+                    env=dict(
+                        **{"PREVIOUS_VERSION": "2024.07.28", "CURRENT_VERSION": "1.0.0"}, 
+                        **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
                 )
             ])
 

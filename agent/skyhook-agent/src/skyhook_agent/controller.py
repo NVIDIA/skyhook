@@ -130,7 +130,7 @@ async def _stream_process(
             break
 
 
-async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, no_chmod=False, **kwargs):
+async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, no_chmod=False, env: dict[str, str] = {}, **kwargs):
     """
     Run the cmd in a subprocess and keep the stream of stdout/stderr and merge both into
     the sink_path as a log.
@@ -142,7 +142,7 @@ async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sin
             sys.stdout.write(" ".join(cmd) + "\n")
             stdout_sink_f.write(" ".join(cmd) + "\n")
         with tempfile.NamedTemporaryFile(mode="w", delete=True) as f:
-            f.write(json.dumps({"cmd": cmd, "no_chmod": no_chmod}))
+            f.write(json.dumps({"cmd": cmd, "no_chmod": no_chmod, "env": env}))
             f.flush()
             
             # Run the special chroot_exec.py script to chroot into the directory and run the command
@@ -220,7 +220,7 @@ def set_flag(flag_file: str, msg: str = "") -> None:
         f.write(msg)
 
 
-def _run(chroot_dir: str, cmds: list[str], log_path: str, write_cmds=False, no_chmod=False,**kwargs) -> int:
+def _run(chroot_dir: str, cmds: list[str], log_path: str, write_cmds=False, no_chmod=False, env: dict[str, str] = {}, **kwargs) -> int:
     """
     Synchronous wrapper around the tee command to have logs written to disk
     """
@@ -234,6 +234,7 @@ def _run(chroot_dir: str, cmds: list[str], log_path: str, write_cmds=False, no_c
             f"{log_path}.err",
             write_cmds=write_cmds,
             no_chmod=no_chmod,
+            env=env,
             **kwargs
         )
     )
@@ -284,10 +285,11 @@ def run_step(
     time.sleep(1)
     log_file = get_log_file(step_path, copy_dir, config_data, chroot_dir)
 
-    # Make sure to include the original environment here or else things like path resolution dont work
-    env = dict(**os.environ)
+    # Compile additional environment variables
+    env = {}
     env.update(step.env)
     env.update({"STEP_ROOT": get_host_path_for_steps(copy_dir), "SKYHOOK_DIR": copy_dir})
+
     return_code = _run(
         chroot_dir,
         [step_path, *step.arguments],
