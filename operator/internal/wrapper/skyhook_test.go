@@ -19,7 +19,7 @@
 package wrapper
 
 import (
-	"github.com/NVIDIA/skyhook/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

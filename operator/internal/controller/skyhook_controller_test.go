@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/skyhook/api/v1alpha1"
-	skyhookNodesMock "github.com/NVIDIA/skyhook/internal/controller/mock"
-	"github.com/NVIDIA/skyhook/internal/wrapper"
+	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
+	skyhookNodesMock "github.com/NVIDIA/skyhook/operator/internal/controller/mock"
+	"github.com/NVIDIA/skyhook/operator/internal/wrapper"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"

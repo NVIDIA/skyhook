@@ -22,9 +22,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/skyhook/api/v1alpha1"
-	skyhookNodesMock "github.com/NVIDIA/skyhook/internal/controller/mock"
-	"github.com/NVIDIA/skyhook/internal/wrapper"
+	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
+	skyhookNodesMock "github.com/NVIDIA/skyhook/operator/internal/controller/mock"
+	"github.com/NVIDIA/skyhook/operator/internal/wrapper"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
