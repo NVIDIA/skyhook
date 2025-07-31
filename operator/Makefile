@@ -40,8 +40,8 @@ GIT_SHA 		:= $(shell git rev-parse --short HEAD)
 GIT_TAG_LAST 	:= $(shell git tag --list 'operator*' --sort=-v:refname | head -n 1 | cut -d/ -f2)
 
 ## GO Flags
-GO_LDFLAGS  := -ldflags "-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=$(GIT_SHA) \
-	-X github.com/NVIDIA/skyhook/internal/version.VERSION=$(VERSION)"
+GO_LDFLAGS  := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA) \
+	-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(VERSION)"
 GOFLAGS 	:= -mod=vendor
 
 # DOCKER_CMD defines the container tool to be used for building images.
@@ -230,7 +230,7 @@ merge-coverage:
 	echo "mode: set" > $(REPORTING)/cover.out
 	## skip first line with +2
 	tail -n +2 $(REPORTING)/temp-cover.out | sed  '/mode: set/d' >> $(REPORTING)/cover.out
-	$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/\1|g' $(REPORTING)/cover.out
+	$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/operator/\1|g' $(REPORTING)/cover.out
 
 .PHONY: lint
 lint: golangci-lint license-check ## Run golangci-lint linter & yamllint

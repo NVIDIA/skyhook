@@ -21,8 +21,8 @@ package controller
 import (
 	"context"
 
-	"github.com/NVIDIA/skyhook/api/v1alpha1"
-	"github.com/NVIDIA/skyhook/internal/dal"
+	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/operator/internal/dal"
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"

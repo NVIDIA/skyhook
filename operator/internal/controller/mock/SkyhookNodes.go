@@ -23,8 +23,8 @@
 package controller
 
 import (
-	"github.com/NVIDIA/skyhook/api/v1alpha1"
-	"github.com/NVIDIA/skyhook/internal/wrapper"
+	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/operator/internal/wrapper"
 	"github.com/go-logr/logr"
 	mock "github.com/stretchr/testify/mock"
 )

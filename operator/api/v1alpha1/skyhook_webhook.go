@@ -24,8 +24,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/NVIDIA/skyhook/internal/graph"
-	semver "github.com/NVIDIA/skyhook/internal/version"
+	"github.com/NVIDIA/skyhook/operator/internal/graph"
+	semver "github.com/NVIDIA/skyhook/operator/internal/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
