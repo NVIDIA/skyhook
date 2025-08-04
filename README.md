@@ -48,64 +48,131 @@ Skyhook works in any Kubernetes environment (self-managed, on-prem, cloud) and s
 
 There are a few pre-built generalist packages available at [NVIDIA/skyhook-packages](https://github.com/NVIDIA/skyhook-packages)
 
-## Quick Start
 
-### Install the operator
-  1. Create a secret for the operator to pull images `kubectl create secret generic node-init-secret --from-file=.dockerconfigjson=${HOME}/.config/containers/auth.json --type=kubernetes.io/dockerconfigjson -n  skyhook`
-  1. Install the operator `helm install skyhook ./chart --namespace skyhook`
+## Installation via Helm
 
-### Install a package
-Example package using shellscript, put this in a file called `demo.yaml` and apply it with `kubectl apply -f demo.yaml`
+Install Skyhook quickly using Helm without downloading the repository:
+
+### Prerequisites
+- Kubernetes cluster (tested on v1.30+)
+- Helm 3.x installed
+- Container registry access credentials (if using private registries)
+
+### Install Skyhook
+
+```bash
+# Add the NVIDIA Helm repository
+helm repo add skyhook https://helm.ngc.nvidia.com/nvidia/skyhook
+helm repo update
+helm repo search skyhook ## should show the latest version
+
+# basic install 
+helm install skyhook skyhook/skyhook-operator \
+  --version v0.8.1 \
+  --namespace skyhook \
+  --create-namespace 
 ```
+
+### Configure Image Pull Secrets (if needed)
+
+If you're using private container registries, create the necessary secrets:
+
+```bash
+kubectl create secret generic node-init-secret \
+  --from-file=.dockerconfigjson=${HOME}/.docker/config.json \
+  --type=kubernetes.io/dockerconfigjson \
+  --namespace skyhook
+```
+
+**Note:** Skyhook currently uses a single shared image pull secret for all packages, and agent/operator containers. If you need access to multiple registries, combine the credentials into one `dockerconfigjson` secret with multiple registry auths.
+
+### Verify Installation
+
+```bash
+# Check that the operator is running
+kubectl get pods -n skyhook
+
+# or Wait for the deployment to be available first
+kubectl wait --for=condition=Available deployment -l control-plane=controller-manager -n skyhook --timeout=300s
+
+# Then wait for the operator pod to be ready
+kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n skyhook --timeout=300s
+
+# Verify the Ready condition
+kubectl get pods -l control-plane=controller-manager -n skyhook -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}'
+
+# Verify the CRDs are installed
+kubectl get crd | grep skyhook 
+
+# Verify packages are working
+kubectl apply -f - <<EOF
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
 metadata:
-  labels:
-    app.kubernetes.io/part-of: skyhook-operator
-    app.kubernetes.io/created-by: skyhook-operator
-  name: demo
+  name: skyhook-sample
 spec:
   nodeSelectors:
-    matchLabels:
-      skyhook.nvidia.com/test-node: demo
+    matchExpressions:
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
   packages:
-    tuning:
-      version: 1.1.0
+    something-important:
+      version: 1.1.1
       image: ghcr.io/nvidia/skyhook-packages/shellscript
       configMap:
         apply.sh: |-
-            #!/bin/bash
-            echo "hello world" > /skyhook-hello-world
-            sleep 5
+          #!/bin/bash
+          echo "hello world" > /skyhook-hello-world
+          sleep 10
         apply_check.sh: |-
-            #!/bin/bash
-            cat /skyhook-hello-world
-            sleep 5
-        config.sh: |-
-            #!/bin/bash
-            echo "a config is run" >> /skyhook-hello-world
-            sleep 5
-        config_check.sh: |-
-            #!/bin/bash
-            grep "config" /skyhook-hello-world
-            sleep 5
+          #!/bin/bash
+                     cat /skyhook-hello-world | wc -l | grep -q 1
+           sleep 10
+EOF
+
+# Wait for the Skyhook to complete
+kubectl wait --for=jsonpath='{.status.status}'=complete skyhook/skyhook-sample --timeout=300s
+
+# Check the status
+kubectl describe skyhook skyhook-sample
 ```
 
-### Watch Skyhook apply the package
+### ⚠️ Important: Before Uninstalling **(really only important if you want to reinstall)**
+
+**Always delete all Skyhook Custom Resources before running `helm uninstall`:**
+
+```bash
+# Delete all Skyhook resources first (REQUIRED before uninstall)
+kubectl delete skyhooks --all --all-namespaces
+
+# Then uninstall the chart
+helm uninstall skyhook --namespace skyhook
+```
+
+**Why?** If you `helm uninstall` while Skyhook CRs still exist, finalizers will leave the CRD in a broken state, causing reinstalls to fail.
+
+## Monitoring and Troubleshooting
+
+### Watch Skyhook apply packages
 ```
 kubectl get pods -w -n skyhook
 ```
-There will a pod for each lifecycle stage (apply, config) in this case.
+There will be a pod for each lifecycle stage (apply, config, etc.) per package per node matching the selector.
 
-### Check the package
-```
-kubectl describe skyhooks.skyhook.nvidia.com/demo
+### Check Skyhook resource status
+```bash
+# Check overall status
+kubectl get skyhooks
+
+# Get detailed status of a specific Skyhook
+kubectl describe skyhook <skyhook-name>
 ```
 The Status will show the overall package status as well as the status of each node
 
-### Check the annotations on the node using the label
-```
-kubectl get nodes -o jsonpath='{range .items[?(@.metadata.labels.skyhook\.nvidia\.com/test-node=="demo")]}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_demo}{"\n"}{end}'
+### Check node annotations for package state
+```bash
+# View node state annotations for a specific Skyhook
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_<skyhook-name>}{"\n"}{end}'
 ```
   
 ### Stages
