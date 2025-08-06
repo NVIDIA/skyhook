@@ -36,10 +36,10 @@ spec:
     - script:
         content: |
           ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=delete-skyhook
-          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=delete-skyhook
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=delete-skyhook -t status=complete
+          ../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t state=complete
+          ../metrics_test.py skyhook_package_state_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t state=complete
+          ../metrics_test.py skyhook_package_state_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t state=complete
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t stage=config
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t stage=config
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t stage=config
@@ -48,10 +48,10 @@ spec:
     - script:
         content: |
           ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=delete-skyhook --not-found
-          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=delete-skyhook --not-found
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook --not-found
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook --not-found
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook --not-found
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=delete-skyhook -t status=complete --not-found
+          ../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t state=complete --not-found
+          ../metrics_test.py skyhook_package_state_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t state=complete --not-found
+          ../metrics_test.py skyhook_package_state_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t state=complete --not-found
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t stage=config --not-found
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t stage=config --not-found
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t stage=config --not-found

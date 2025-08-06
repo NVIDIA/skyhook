@@ -1939,19 +1939,6 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 		}
 	}
 
-	// update the metrics for each package, version, and stage
-	for package_name, package_map := range stages {
-		for version, stage_counts := range package_map {
-			for stage, count := range stage_counts {
-				skyhook_package_stage_count.WithLabelValues(
-					skyhook.GetSkyhook().Name,
-					package_name,
-					version,
-					string(stage)).Set(float64(count))
-			}
-		}
-	}
-
 	return update, utilerrors.NewAggregate(errs)
 }
 
