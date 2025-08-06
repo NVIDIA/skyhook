@@ -35,24 +35,24 @@ spec:
         file: skyhook.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_package_in_progress_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook
           ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=simple-skyhook
-          ../metrics_test.py skyhook_package_in_progress_count 0 -t package_name=spencer -t skyhook_name=simple-skyhook --not-found
-          ../metrics_test.py skyhook_package_in_progress_count 0 -t package_name=foobar -t skyhook_name=simple-skyhook --not-found
+          ../metrics_test.py skyhook_package_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=in_progress -t stage=config
+          ../metrics_test.py skyhook_package_count 0 -t package_name=spencer -t skyhook_name=simple-skyhook -t state=in_progress -t stage=config --not-found
+          ../metrics_test.py skyhook_package_count 0 -t package_name=foobar -t skyhook_name=simple-skyhook -t state=in_progress -t stage=config --not-found
     - assert:
         file: assert_pods.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook
-          ../metrics_test.py skyhook_package_in_progress_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook
-          ../metrics_test.py skyhook_package_in_progress_count 1 -t package_name=foobar -t skyhook_name=simple-skyhook
+          ../metrics_test.py skyhook_package_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=complete -t stage=config
+          ../metrics_test.py skyhook_package_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook -t state=in_progress -t stage=config
+          ../metrics_test.py skyhook_package_count 1 -t package_name=foobar -t skyhook_name=simple-skyhook -t state=in_progress -t stage=config
     - assert:
         file: assert.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t skyhook_name=simple-skyhook
-          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=simple-skyhook
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=simple-skyhook -t status=complete
+          ../metrics_test.py skyhook_package_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook -t state=complete -t stage=config
+          ../metrics_test.py skyhook_package_count 1 -t package_name=foobar -t skyhook_name=simple-skyhook -t state=complete -t stage=config
   - finally:
     - delete:
         file: limitrange.yaml

@@ -42,17 +42,21 @@ spec:
         file: skyhook.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_disabled_count 1 -t skyhook_name=strict-order-skyhook-d
-          ../metrics_test.py skyhook_paused_count 1 -t skyhook_name=strict-order-skyhook-b
-          ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-zzz
+          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=strict-order-skyhook-d
+          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=strict-order-skyhook-b
+          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=strict-order-skyhook-zzz
+          ../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-d -t status=disabled
+          ../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-b -t status=paused
+          ../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-c -t status=waiting
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-zzz -t status=in_progress
     - assert:
         file: assert-a.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_node_in_progress_count 0 -t skyhook_name=strict-order-skyhook-zzz
-          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=strict-order-skyhook-zzz
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz
-          ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t stage=config
+          ../metrics_test.py skyhook_node_status_count 0 -t skyhook_name=strict-order-skyhook-zzz -t status=in_progress
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-zzz -t status=complete
+          ../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-c -t status=waiting
+          ../metrics_test.py skyhook_package_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t state=complete -t stage=config
     # make sure that if it was going to start b it will start b
     - sleep:
         duration: 5s
@@ -65,10 +69,10 @@ spec:
         file: assert-b.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-c
-          ../metrics_test.py skyhook_node_complete_count 1 -t skyhook_name=strict-order-skyhook-b
-          ../metrics_test.py skyhook_disabled_count 1 -t skyhook_name=strict-order-skyhook-d
-          ../metrics_test.py skyhook_paused_count 0 -t skyhook_name=strict-order-skyhook-b
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-c -t status=in_progress
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-b -t status=complete
+          ../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-d -t status=disabled
+          ../metrics_test.py skyhook_status 0 -t skyhook_name=strict-order-skyhook-b -t status=paused
     - assert:
         file: assert-c.yaml
     - assert:
@@ -84,7 +88,7 @@ spec:
         file: skyhook-disable-update.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_node_in_progress_count 1 -t skyhook_name=strict-order-skyhook-d
-          ../metrics_test.py skyhook_disabled_count 0 -t skyhook_name=strict-order-skyhook-d
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-d -t status=in_progress
+          ../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-d -t status=disabled --not-found
     - assert:
         file: assert-e.yaml

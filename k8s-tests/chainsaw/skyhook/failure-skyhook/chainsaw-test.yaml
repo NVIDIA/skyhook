@@ -46,9 +46,7 @@ spec:
         file: node-assert.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_package_restarts_count 0 -t package_name=failure -t skyhook_name=failure-skyhook --not-found
-          ../metrics_test.py skyhook_node_error_count 1 -t skyhook_name=failure-skyhook
-          ../metrics_test.py skyhook_node_complete_count 0 -t skyhook_name=failure-skyhook
-          ../metrics_test.py skyhook_package_error_count 1 -t package_name=failure -t skyhook_name=failure-skyhook
-          ../metrics_test.py skyhook_package_complete_count 0 -t package_name=failure -t skyhook_name=failure-skyhook
-          ../metrics_test.py skyhook_package_complete_count 1 -t package_name=dexter -t skyhook_name=failure-skyhook
+          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=failure-skyhook
+          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=failure-skyhook -t status=erroring
+          ../metrics_test.py skyhook_package_count 1 -t package_name=dexter -t skyhook_name=failure-skyhook -t state=complete -t stage=config
+          ../metrics_test.py skyhook_package_count 1 -t package_name=failure -t skyhook_name=failure-skyhook -t state=erroring -t stage=apply

@@ -457,11 +457,9 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 			node.SetStatus(v1alpha1.StatusBlocked)
 		}
 	}
-	skyhook_node_taint_tolerance_issue_count.WithLabelValues(s.GetSkyhook().Name).Set(float64(len(nodesWithTaintTolerationIssue)))
 
 	// if we have nodes that are not tolerable, we need to add a condition to the skyhook
 	if len(nodesWithTaintTolerationIssue) > 0 {
-		skyhook_node_blocked_count.WithLabelValues(s.GetSkyhook().Name).Set(float64(len(nodesWithTaintTolerationIssue)))
 		s.GetSkyhook().AddCondition(metav1.Condition{
 			Type:               fmt.Sprintf("%s/TaintNotTolerable", v1alpha1.METADATA_PREFIX),
 			Status:             metav1.ConditionTrue,
@@ -585,116 +583,107 @@ func UpdateSkyhookPauseStatus(skyhook SkyhookNodes) bool {
 
 // ReportState collects the current state of the skyhook and reports it to the skyhook status for printer columns
 func (skyhook *skyhookNodes) ReportState() {
-
-	completeNodes, nodesInProgress, nodeErrorCount, nodeCount := 0, 0, 0, len(skyhook.nodes)
-
 	// Clean up nodes that no longer exist in the cluster
 	CleanupRemovedNodes(skyhook)
 
-	packageStatuses := make(map[string]map[string]map[v1alpha1.State]int)
+	nodeCount := len(skyhook.nodes)
+	nodeStatusCounts := make(map[v1alpha1.Status]int)
+	for _, status := range v1alpha1.Statuses {
+		nodeStatusCounts[status] = 0
+	}
+
+	// Initialize package status and restart maps
 	packageRestarts := make(map[string]map[string]int32)
-	// get current count of completed nodes
+	packageStatuses := make(map[string]map[string]map[v1alpha1.State]map[v1alpha1.Stage]int)
+
 	for _, node := range skyhook.nodes {
-		if node.IsComplete() {
-			completeNodes++
-		} else if node.Status() == v1alpha1.StatusInProgress {
-			nodesInProgress++
-		} else if node.Status() == v1alpha1.StatusErroring {
-			nodesInProgress++
-			nodeErrorCount++
+		status := node.Status()
+		if _, ok := nodeStatusCounts[status]; ok {
+			nodeStatusCounts[status]++
 		}
-		for _, _package := range node.GetSkyhook().Spec.Packages {
-			packageStatus, found := node.PackageStatus(_package.GetUniqueName())
+
+		for _, pkg := range node.GetSkyhook().Spec.Packages {
+			pkgStatus, found := node.PackageStatus(pkg.GetUniqueName())
 			if !found {
 				continue
-			} else {
-				_ = fmt.Sprintf("package status package %s version %s status %s", _package.Name, _package.Version, packageStatus.State)
 			}
-			if _, ok := packageStatuses[_package.Name]; !ok {
-				packageStatuses[_package.Name] = make(map[string]map[v1alpha1.State]int)
+			// Initialize nested maps as needed
+			if _, ok := packageStatuses[pkg.Name]; !ok {
+				packageStatuses[pkg.Name] = make(map[string]map[v1alpha1.State]map[v1alpha1.Stage]int)
 			}
-			if _, ok := packageStatuses[_package.Name][_package.Version]; !ok {
-				packageStatuses[_package.Name][_package.Version] = make(map[v1alpha1.State]int)
+			if _, ok := packageStatuses[pkg.Name][pkg.Version]; !ok {
+				packageStatuses[pkg.Name][pkg.Version] = make(map[v1alpha1.State]map[v1alpha1.Stage]int)
 				for _, state := range v1alpha1.States {
-					packageStatuses[_package.Name][_package.Version][state] = 0
+					packageStatuses[pkg.Name][pkg.Version][state] = make(map[v1alpha1.Stage]int)
+					for _, stage := range v1alpha1.Stages {
+						packageStatuses[pkg.Name][pkg.Version][state][stage] = 0
+					}
 				}
 			}
-			packageStatuses[_package.Name][_package.Version][packageStatus.State]++
-			// Report this as a metric
-			if _, ok := packageRestarts[_package.Name]; !ok {
-				packageRestarts[_package.Name] = make(map[string]int32)
+			packageStatuses[pkg.Name][pkg.Version][pkgStatus.State][pkgStatus.Stage]++
+
+			if _, ok := packageRestarts[pkg.Name]; !ok {
+				packageRestarts[pkg.Name] = make(map[string]int32)
 			}
-			if _, ok := packageRestarts[_package.Name][_package.Version]; !ok {
-				packageRestarts[_package.Name][_package.Version] = 0
-			}
-			packageRestarts[_package.Name][_package.Version] += packageStatus.Restarts
+			packageRestarts[pkg.Name][pkg.Version] += pkgStatus.Restarts
 		}
 	}
 
-	// metrics
-	skyhook_node_complete_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(completeNodes))
-	skyhook_node_in_progress_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(nodesInProgress))
-	skyhook_node_target_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(nodeCount))
-	skyhook_node_error_count.WithLabelValues(skyhook.skyhook.Name).Set(float64(nodeErrorCount))
+	skyhookName := skyhook.GetSkyhook().Name
 
-	if skyhook.IsDisabled() {
-		skyhook_disabled_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(1)
-		// skip the rest of the logic for this skyhook so it displays as disabled in the metrics
-	} else {
-		skyhook_disabled_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
-		if skyhook.IsPaused() {
-			skyhook_paused_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(1)
-			// skip the rest of the logic for this skyhook so it displays as paused in the metrics
-		} else {
-			skyhook_paused_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
-			if skyhook.IsComplete() {
-				skyhook_complete_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(1)
-			} else {
-				skyhook_complete_count.WithLabelValues(skyhook.GetSkyhook().Name).Set(0)
-			}
-		}
+	// Set node status metrics (reset all to 0 first)
+	for _, status := range v1alpha1.Statuses {
+		SetNodeStatusMetrics(skyhookName, status, 0)
+	}
+	for status, count := range nodeStatusCounts {
+		SetNodeStatusMetrics(skyhookName, status, float64(count))
 	}
 
+	// Set skyhook state metrics (reset all to false, then set the current state to true)
+	for _, status := range v1alpha1.Statuses {
+		SetSkyhookStatusMetrics(skyhookName, status, false)
+	}
+	SetSkyhookStatusMetrics(skyhookName, skyhook.Status(), true)
+
+	// set package state metrics
 	for _package, versions := range packageStatuses {
 		for version, states := range versions {
-			for state, count := range states {
-				switch state {
-				case v1alpha1.StateComplete:
-					skyhook_package_complete_count.WithLabelValues(skyhook.GetSkyhook().Name, _package, version).Set(float64(count))
-				case v1alpha1.StateInProgress:
-					skyhook_package_in_progress_count.WithLabelValues(skyhook.GetSkyhook().Name, _package, version).Set(float64(count))
-				case v1alpha1.StateErroring:
-					skyhook_package_error_count.WithLabelValues(skyhook.GetSkyhook().Name, _package, version).Set(float64(count))
+			for state, stages := range states {
+				for stage, count := range stages {
+					SetPackageStateMetrics(skyhookName, _package, version, state, stage, float64(count))
 				}
 			}
 		}
 	}
 
+	// set package restarts metrics
 	for packageName, versions := range packageRestarts {
 		for version, restarts := range versions {
-			skyhook_package_restarts_count.WithLabelValues(skyhook.GetSkyhook().Name, packageName, version).Set(float64(restarts))
+			SetPackageRestartsMetrics(skyhookName, packageName, version, restarts)
 		}
 	}
 
-	// set current count of completed nodes
-	nodeString := fmt.Sprintf("%d/%d", completeNodes, nodeCount)
+	// Set target count metric
+	SetNodeTargetCountMetrics(skyhookName, float64(nodeCount))
+
+	// Set current count of completed nodes
+	nodeString := fmt.Sprintf("%d/%d", nodeStatusCounts[v1alpha1.StatusComplete], nodeCount)
 	if nodeString != skyhook.skyhook.GetCompleteNodes() {
 		skyhook.skyhook.SetCompleteNodes(nodeString)
 		skyhook.skyhook.Updated = true
 	}
 
-	// set current nodes in progress
-	if skyhook.skyhook.GetNodesInProgress() != nodesInProgress {
-		skyhook.skyhook.SetNodesInProgress(nodesInProgress)
+	// Update nodes in progress count if changed
+	inProgress := nodeStatusCounts[v1alpha1.StatusInProgress] + nodeStatusCounts[v1alpha1.StatusErroring]
+	if skyhook.skyhook.GetNodesInProgress() != inProgress {
+		skyhook.skyhook.SetNodesInProgress(inProgress)
 	}
 
-	// get list of packages and versions in the skyhook
-	packageNames := make([]string, 0)
-	for _, _package := range skyhook.skyhook.Spec.Packages {
-		packageNames = append(packageNames, fmt.Sprintf("%s:%s", _package.Name, _package.Version))
+	// Get list of packages and versions in the skyhook
+	packageNames := make([]string, 0, len(skyhook.skyhook.Spec.Packages))
+	for _, pkg := range skyhook.skyhook.Spec.Packages {
+		packageNames = append(packageNames, fmt.Sprintf("%s:%s", pkg.Name, pkg.Version))
 	}
-
-	// turn the package list into a comma separated string
 	sort.Strings(packageNames)
 	packageList := strings.Join(packageNames, ",")
 	if packageList != skyhook.skyhook.GetPackageList() {

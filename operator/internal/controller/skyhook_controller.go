@@ -1943,11 +1943,13 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 	for package_name, package_map := range stages {
 		for version, stage_counts := range package_map {
 			for stage, count := range stage_counts {
-				skyhook_package_stage_count.WithLabelValues(
+				SetPackageStateMetrics(
 					skyhook.GetSkyhook().Name,
 					package_name,
 					version,
-					string(stage)).Set(float64(count))
+					v1alpha1.StateInProgress, // Running packages are in progress state
+					stage,
+					float64(count))
 			}
 		}
 	}
