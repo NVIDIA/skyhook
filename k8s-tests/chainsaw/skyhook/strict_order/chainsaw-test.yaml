@@ -56,8 +56,12 @@ spec:
           ../metrics_test.py skyhook_node_status_count 0 -t skyhook_name=strict-order-skyhook-zzz -t status=in_progress
           ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-zzz -t status=complete
           ../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-c -t status=waiting
+<<<<<<< HEAD
           ../metrics_test.py skyhook_package_state_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t state=complete
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t stage=config
+=======
+          ../metrics_test.py skyhook_package_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t state=complete -t stage=config
+>>>>>>> 00f04c7 (feature(operator): added turn key grafana dashboards with new metrics)
     # make sure that if it was going to start b it will start b
     - sleep:
         duration: 5s
