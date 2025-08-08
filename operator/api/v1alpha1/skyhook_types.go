@@ -596,8 +596,6 @@ const (
 	StateUnknown    State  = "unknown"
 )
 
-type Status string
-
 var (
 	States = []State{
 		StateComplete,
@@ -608,8 +606,21 @@ var (
 	}
 )
 
-// TODO: seems like we might be missing a waiting or queued status for nodes, not sure it makes sense at the upper level
-// unless we add a limit of number parallel packages, might be another good idea.
+type Status string
+
+var (
+	Statuses = []Status{
+		StatusComplete,
+		StatusBlocked,
+		StatusWaiting,
+		StatusDisabled,
+		StatusPaused,
+		StatusInProgress,
+		StatusErroring,
+		StatusUnknown,
+	}
+)
+
 const (
 	StatusComplete   Status = "complete"
 	StatusBlocked    Status = "blocked"

@@ -1,19 +1,31 @@
 # Metrics
-The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a Skyhook Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](operator/internal/controller/metrics.go). There are three primary flavors:
- * `skyhook_node_*` : Which give the count of nodes in given state for a SCR. Tags are:
+The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a Skyhook Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go). 
+
+## Skyhook Status Metrics
+ * `skyhook_status` : Binary metric indicating the status of the Skyhook Custom Resource (1 if in that status, 0 otherwise). Tags:
     * `skyhook_name` : The name of the Skyhook Custom Resource
- * `skyhook_[complete|disabled|pause]_count` : A 1 or 0 for if a given SCR is in this state
- * `skyhook_package_*` : Can be used to track the progress of packages through a deployment. Tags:
-    * `skyhook_name` : The of the SCR the package belongs to
+    * `status` : One of complete, disabled, paused
+
+## Node Metrics
+ * `skyhook_node_status_count` : Number of nodes in the cluster by status for the Skyhook Custom Resource. Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `status` : One of complete, in_progress, erroring, blocked, waiting
+ * `skyhook_node_target_count` : Total number of nodes targeted by this Skyhook Custom Resource. Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+
+## Package Metrics
+ * `skyhook_package_state_count` : Number of nodes in the cluster by state for this package. Tags:
+    * `skyhook_name` : The name of the SCR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
- * `skyhook_package_stage_count` : Allows the tracking of a package's lifecyle. Tags:
-    * `skyhook_name` : The of the SCR the package belongs to
+    * `state` : One of complete, in_progress, skipped, erroring, unknown
+ * `skyhook_package_stage_count` : Number of nodes in the cluster by stage for this package. Tags:
+    * `skyhook_name` : The name of the SCR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
-    * `stage` : One of apply, conifg, interrupt, post_interrupt, uninstall
-* `skyhook_package_restart-count`: Sum of restarts across all nodes for this package
-    * `skyhook_name` : The of the SCR the package belongs to
+    * `stage` : One of apply, config, interrupt, post_interrupt, uninstall, upgrade
+ * `skyhook_package_restarts_count`: Number of restarts for this package on this node. Tags:
+    * `skyhook_name` : The name of the SCR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
 
