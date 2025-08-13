@@ -1,5 +1,5 @@
 # Metrics
-The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a Skyhook Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go). 
+The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a Skyhook Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go).
 
 ## Skyhook Status Metrics
  * `skyhook_status` : Binary metric indicating the status of the Skyhook Custom Resource (1 if in that status, 0 otherwise). Tags:
@@ -44,6 +44,71 @@ kubectl port-forward svc/skyhook-operator-controller-manager-metrics-service -n 
 # Visualization
 The makefile provides the `metrics` command which will install prometheus and grafana as a starting point for visualization.
 
+## Dashboard
+A comprehensive Grafana dashboard is provided at [dashboards/skyhook-dashboard.json](dashboards/skyhook-dashboard.json) that consolidates all Skyhook monitoring into a single dashboard with a unified view that includes:
+
+### Skyhook Overview Section
+- Total Skyhooks count
+- Skyhook status distribution (Complete, In Progress, Erroring, Blocked, Other States)
+- Skyhook status trends over time
+- Detailed Skyhook status table
+
+![Skyhook Overview Example](images/skyhook-overview.png "Skyhook Overview Example")
+
+### Node Monitoring Section
+- Total target nodes count
+- Node status distribution (Complete, In Progress, Erroring, Blocked, Other States)
+- Node status trends over time
+- Detailed node status table
+
+![Node Monitoring Example](images/node-monitoring.png "Node Monitoring Example")
+
+### Package Monitoring Section
+- Package stage distribution across all packages
+- Package state distribution across all packages
+- Current package status table with detailed breakdown by package and version
+
+![Package Monitoring Example](images/package-monitoring.png "Package Monitoring Example")
+
+The dashboard can be imported directly into Grafana or deployed using the generated ConfigMap from the `generate-dashboards.sh` script.
+
+### Local Dashboard Setup
+Use the following steps to setup and use the dashboard locally:
+1. Move to the `operator` directory.
+2. Run the follwing commands:
+
+```bash
+#!/bin/bash
+
+# This assumes you already have a podman VM setup and
+# that you don't have a kind cluster already setup
+make create-kind-cluster
+
+# Install the operator through the helm chart so that
+# the /metrics endpoint is setup
+helm install skyhook ../chart --namespace skyhook
+
+# Setup prometheus and grafana on the cluster this will
+# automatically install the dashboard into the local Grafana
+# instance
+make metrics
+
+# WAIT UNTIL THE GRAFANA/PROMETHEUS PODS COME UP
+sleep 30
+
+# Port forward grafana so that you can access the
+# dashboard
+kubectl port-forward svc/grafana 3000:80 &
+
+# Copy the output from this as it will be the
+# admin password for the grafana
+make grafana-password
+
+```
+3. Go to your browser and navigate to `http://localhost:3000`
+4. Login using `admin` as the user and the output from the make command above as the password
+5. You should now be able to navigate to the local instance of the dashboard through grafana's UI
+
 ## Prometheus Configuration
 ### Scrape directly
 Use the file [prometheus_values.yaml](prometheus_values.yaml) as an example of configuring a scraper job for Skyhook. Note: This can be used directly with the prometheus community chart:
@@ -75,5 +140,19 @@ To change to https set the scheme to `https` and the port to `8443` but you will
 
 
 ## Grafana configuration
-After the chart is installed connect to the grafana instance and configure the prometheus datasource. An example that will work with the Makefile commands in operator is included here at [granfa_values.yaml](grafana_values.yaml)
+After the chart is installed connect to the grafana instance and configure the prometheus datasource. An example that will work with the Makefile commands in operator is included here at [grafana_values.yaml](grafana_values.yaml).
+
+### Dashboard Deployment
+You can deploy the dashboard in several ways:
+
+1. **Manual Import**: Import the `skyhook-dashboard.json` file directly through the Grafana UI
+2. **ConfigMap Deployment**: Use the generated ConfigMap to automatically provision the dashboard:
+   ```bash
+   # Generate the ConfigMap
+   ./generate-dashboards.sh
+
+   # Apply to your cluster
+   kubectl apply -f grafana-dashboards-configmap.yaml
+   ```
+3. **Makefile**: Running the `make metrics` target will automatically generate and apply the configmap so that every dashboard in the dashboards file will automatically be setup in grafana on sign-in.
 

@@ -15,20 +15,20 @@
 # limitations under the License.
 
 # Example of scraping the https endpoint
-extraScrapeConfigs: |
-  - job_name: 'skyhook'
-    metrics_path: /metrics
-    scheme: https
-    tls_config:
-      # This is required because the operator controller is using a self-signed certificate
-      # and the owner of the cert is the leader pod not the service
-      insecure_skip_verify: true
-    # tls_config:
-    #   ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-    static_configs:
-      - targets:
-        - skyhook-operator-controller-manager-metrics-service.skyhook.svc.cluster.local:8443
+# extraScrapeConfigs: |
+#   - job_name: 'skyhook'
+#     metrics_path: /metrics
+#     scheme: https
+#     tls_config:
+#       # This is required because the operator controller is using a self-signed certificate
+#       # and the owner of the cert is the leader pod not the service
+#       insecure_skip_verify: true
+#     # tls_config:
+#     #   ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+#     bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+#     static_configs:
+#       - targets:
+#         - skyhook-operator-controller-manager-metrics-service.skyhook.svc.cluster.local:8443
 
 global:
   scrape_interval: 5s
