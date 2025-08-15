@@ -19,6 +19,50 @@ kind: Node
 metadata:
   labels:
     skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_uninstall-upgrade-skyhook: in_progress
+  annotations:
+    ("skyhook.nvidia.com/nodeState_uninstall-upgrade-skyhook" && parse_json("skyhook.nvidia.com/nodeState_uninstall-upgrade-skyhook")):
+      {
+        "cats|6.2.0": {
+            "name": "cats",
+            "version": "6.2.0",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "apply",
+            "state": "in_progress"
+        },
+        "dogs|1.2.6": {
+            "name": "dogs",
+            "version": "1.2.6",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "apply",
+            "state": "in_progress"
+        },
+        "nullptr|2.0.0": {
+            "name": "nullptr",
+            "version": "2.0.0",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "apply",
+            "state": "in_progress"
+        }
+      }
+    skyhook.nvidia.com/status_uninstall-upgrade-skyhook: in_progress
+spec:
+  taints:
+  - effect: NoSchedule
+    key: node.kubernetes.io/unschedulable
+status:
+  (conditions[?type == 'skyhook.nvidia.com/uninstall-upgrade-skyhook/NotReady']):
+  - reason: "Incomplete"
+    status: "True"
+  (conditions[?type == 'skyhook.nvidia.com/uninstall-upgrade-skyhook/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
     skyhook.nvidia.com/status_uninstall-upgrade-skyhook: complete
   annotations:
     ("skyhook.nvidia.com/nodeState_uninstall-upgrade-skyhook" && parse_json("skyhook.nvidia.com/nodeState_uninstall-upgrade-skyhook")):

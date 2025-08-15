@@ -21,11 +21,18 @@ metadata:
     skyhook.nvidia.com/test-node: skyhooke2e
     skyhook.nvidia.com/status_config-skyhook: in_progress
   annotations:
-    ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")): 
+    ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")):
       {
         "baxter|3.2.1": {
             "name": "baxter",
             "version": "3.2.1",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "apply",
+            "state": "in_progress"
+        },
+        "spencer|3.2.3": {
+            "name": "spencer",
+            "version": "3.2.3",
             "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "apply",
             "state": "in_progress"
@@ -37,15 +44,12 @@ metadata:
             "stage": "apply",
             "state": "in_progress"
         },
-        "spencer|3.2.3": {
-            "name": "spencer",
-            "version": "3.2.3",
-            "image": "ghcr.io/nvidia/skyhook/agentless",
-            "stage": "apply",
-            "state": "in_progress"
-        }
       }
     skyhook.nvidia.com/status_config-skyhook: in_progress
+spec:
+  taints:
+  - effect: NoSchedule
+    key: node.kubernetes.io/unschedulable
 status:
   (conditions[?type == 'skyhook.nvidia.com/config-skyhook/NotReady']):
   - reason: "Incomplete"
@@ -62,13 +66,7 @@ status:
   status: in_progress
   nodeState:
     (values(@)):
-      - dexter|1.2.3:
-          name: dexter
-          state: in_progress
-          version: '1.2.3'
-          stage: apply
-          image: ghcr.io/nvidia/skyhook/agentless
-        baxter|3.2.1:
+      - baxter|3.2.1:
           name: baxter
           state: in_progress
           version: '3.2.1'
@@ -78,6 +76,12 @@ status:
           name: spencer
           state: in_progress
           version: '3.2.3'
+          stage: apply
+          image: ghcr.io/nvidia/skyhook/agentless
+        dexter|1.2.3:
+          name: dexter
+          state: in_progress
+          version: '1.2.3'
           stage: apply
           image: ghcr.io/nvidia/skyhook/agentless
   nodeStatus:

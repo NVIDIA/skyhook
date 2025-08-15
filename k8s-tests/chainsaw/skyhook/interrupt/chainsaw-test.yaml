@@ -69,4 +69,14 @@ spec:
     - create:
         file: skyhook.yaml
     - assert:
-        file: assert.yaml
+        file: assert-a.yaml
+    - assert:
+        file: assert-important-stuff.yaml
+    - assert:
+        file: assert-drain-me.yaml
+    - delete:
+        file: assert-important-stuff.yaml
+    - error:
+        file: assert-drain-me.yaml
+    - assert:
+        file: assert-b.yaml

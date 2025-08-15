@@ -186,8 +186,18 @@ The operator will apply steps in a package throughout different lifecycle stages
 
 The stages are applied in this order:
 
+**Without Interrupts:**
+- Uninstall -> Apply -> Config (No Upgrade)
+- Upgrade -> Config (With Upgrade)
+
+**With Interrupts:**
+For packages that require interrupts, the node is first cordoned and drained to ensure workloads are safely evacuated before package operations begin:
 - Uninstall -> Apply -> Config -> Interrupt -> Post-Interrupt (No Upgrade)
 - Upgrade -> Config -> Interrupt -> Post-Interrupt (With Upgrade)
+
+This ensures that when operations like kernel module unloading or system reboots are required, they happen after workloads have been safely removed and any necessary pre-interrupt package operations have completed.
+
+**NOTE**: If a package is removed from the SCR, then the uninstall stage for that package will solely be run.
 
 **Semantic versioning is strictly enforced in the operator** in order to support upgrade and uninstall. Semantic versioning allows the 
 operator to know which way the package is going while also enforcing best versioning practices.

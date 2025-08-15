@@ -29,7 +29,7 @@ spec:
   containers:
   - name: workload
     image: busybox:latest
-    command: ["sh", "-c", "sleep 20 && exit"]
+    command: ["sh", "-c", "sleep 1000 && exit"]
 ---
 apiVersion: v1
 kind: Pod
@@ -45,7 +45,7 @@ spec:
   containers:
   - name: workload
     image: busybox:latest
-    command: ["sh", "-c", "sleep 100 && exit"]
+    command: ["sh", "-c", "sleep 1000 && exit"]
 ---
 ## testing remove an old version that should, this pod is running from old version of of the SCR - this will be deleted
 apiVersion: v1

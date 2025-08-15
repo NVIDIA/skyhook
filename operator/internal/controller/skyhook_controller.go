@@ -64,9 +64,8 @@ const (
 	EventsReasonNodeReboot         = "Reboot"
 	EventTypeNormal                = "Normal"
 	// EventTypeWarning = "Warning"
-	TaintUnschedulable        = corev1.TaintNodeUnschedulable
-	SkyhookTaintUnschedulable = "skyhook.nvidia.com/unschedulable"
-	InterruptContainerName    = "interrupt"
+	TaintUnschedulable     = corev1.TaintNodeUnschedulable
+	InterruptContainerName = "interrupt"
 
 	SkyhookFinalizer = "skyhook.nvidia.com/skyhook"
 )
@@ -1107,7 +1106,6 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 				patch := client.StrategicMergeFrom(node.GetNode().DeepCopy())
 
 				node.Uncordon()
-				node.RemoveTaint(SkyhookTaintUnschedulable)
 
 				// if this doesn't change the node then don't patch
 				if !node.Changed() {
@@ -1191,25 +1189,33 @@ func (r *SkyhookReconciler) HasRunningPackages(ctx context.Context, skyhookNode 
 	return pods != nil && len(pods.Items) > 0, nil
 }
 
-func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.SkyhookNode) error {
-
-	// cordon node
-	skyhookNode.Cordon()
-
-	// adding this taint should help preventing things coming back, including new packages
-	// NOTE: might cause issues if we boot off something that really had to be there...
-	skyhookNode.Taint(SkyhookTaintUnschedulable)
+func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.SkyhookNode, _package *v1alpha1.Package) (bool, error) {
+	drained, err := r.IsDrained(ctx, skyhookNode)
+	if err != nil {
+		return false, err
+	}
+	if drained {
+		return true, nil
+	}
 
 	pods, err := r.dal.GetPods(ctx, client.MatchingFields{
 		"spec.nodeName": skyhookNode.GetNode().Name,
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if pods == nil || len(pods.Items) == 0 {
-		return nil
+		return true, nil
 	}
+
+	r.recorder.Eventf(skyhookNode.GetNode(), EventTypeNormal, EventsReasonSkyhookInterrupt,
+		"draining node [%s] package [%s:%s] from [skyhook:%s]",
+		skyhookNode.GetNode().Name,
+		_package.Name,
+		_package.Version,
+		skyhookNode.GetSkyhook().Name,
+	)
 
 	errs := make([]error, 0)
 	for _, pod := range pods.Items {
@@ -1223,13 +1229,20 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 		}
 	}
 
-	return utilerrors.NewAggregate(errs)
+	return len(errs) == 0, utilerrors.NewAggregate(errs)
 }
 
 // Interrupt should not be called unless safe to do so, IE already cordoned and drained
 func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.SkyhookNode, _package *v1alpha1.Package, _interrupt *v1alpha1.Interrupt) error {
 
-	skyhookNode.Taint(SkyhookTaintUnschedulable) // adding this to prevent race conditions between SCR instances
+	hasPackagesRunning, err := r.HasRunningPackages(ctx, skyhookNode)
+	if err != nil {
+		return err
+	}
+
+	if hasPackagesRunning { // keep waiting...
+		return nil
+	}
 
 	exists, err := r.PodExists(ctx, skyhookNode.GetNode().Name, skyhookNode.GetSkyhook().Name, _package)
 	if err != nil {
@@ -1517,12 +1530,6 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 				{
 					Key:      TaintUnschedulable,
 					Operator: corev1.TolerationOpExists,
-				},
-				{
-					Key:      SkyhookTaintUnschedulable,
-					Value:    skyhook.Name,
-					Operator: corev1.TolerationOpEqual,
-					Effect:   corev1.TaintEffectNoSchedule,
 				},
 				opts.GetRuntimeRequiredToleration(),
 			}, skyhook.Spec.AdditionalTolerations...),
@@ -1966,19 +1973,8 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 		return true, nil
 	}
 
-	// cordon node
-	skyhookNode.Cordon()
-
-	hasWork, err := r.HasNonInterruptWork(ctx, skyhookNode)
-	if err != nil {
-		return false, err
-	}
-
-	if hasWork { // has work, so we need to keep waiting to do
-		return false, nil
-	}
-
-	stage := v1alpha1.StageApply // default starting stage
+	// default starting stage
+	stage := v1alpha1.StageApply
 	nextStage := skyhookNode.NextStage(_package)
 	if nextStage != nil {
 		stage = *nextStage
@@ -1994,54 +1990,27 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 	// so we need to check if the pod exists and if it does, we need to recreate it
 	if status != nil && (status.State == v1alpha1.StateInProgress || status.State == v1alpha1.StateErroring) && status.Stage == v1alpha1.StageInterrupt {
 		// call interrupt to recreate the pod if missing
-		err = r.Interrupt(ctx, skyhookNode, _package, interrupt)
+		err := r.Interrupt(ctx, skyhookNode, _package, interrupt)
 		if err != nil {
 			return false, err
 		}
 	}
 
-	if nextStage != nil && *nextStage == v1alpha1.StageInterrupt && runInterrupt { // time to do the interrupt
-
-		hasWork, err := r.HasNonInterruptWork(ctx, skyhookNode)
+	// drain and cordon node before applying package that has an interrupt
+	if stage == v1alpha1.StageApply {
+		ready, err := r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, _package)
 		if err != nil {
 			return false, err
 		}
-		if hasWork { // keep waiting...
+
+		if !ready {
 			return false, nil
 		}
+	}
 
-		hasPackagesRunning, err := r.HasRunningPackages(ctx, skyhookNode)
-		if err != nil {
-			return false, err
-		}
-
-		if hasPackagesRunning { // keep waiting...
-			return false, nil
-		}
-
-		drained, err := r.IsDrained(ctx, skyhookNode)
-		if err != nil {
-			return false, err
-		}
-
-		// TODO: NOTE this could be a dead lock if IsDrained always returns true if it happens to not be correct
-		if !drained {
-			err := r.DrainNode(ctx, skyhookNode)
-			if err != nil {
-				return false, fmt.Errorf("error draining node [%s]: %w", skyhookNode.GetNode().Name, err)
-			}
-
-			r.recorder.Eventf(skyhookNode.GetNode(), EventTypeNormal, EventsReasonSkyhookInterrupt,
-				"draining node [%s] package [%s:%s] from [skyhook:%s]",
-				skyhookNode.GetNode().Name,
-				_package.Name,
-				_package.Version,
-				skyhookNode.GetSkyhook().Name,
-			)
-			return false, nil // need to wait for it to drain
-		}
-
-		err = r.Interrupt(ctx, skyhookNode, _package, interrupt)
+	// time to interrupt (once other packages have finished)
+	if stage == v1alpha1.StageInterrupt && runInterrupt {
+		err := r.Interrupt(ctx, skyhookNode, _package, interrupt)
 		if err != nil {
 			return false, err
 		}
@@ -2050,7 +2019,7 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 	}
 
 	//skipping
-	if nextStage != nil && *nextStage == v1alpha1.StageInterrupt && !runInterrupt {
+	if stage == v1alpha1.StageInterrupt && !runInterrupt {
 		err := skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateSkipped, stage, 0)
 		if err != nil {
 			return false, fmt.Errorf("error upserting to skip interrupt: %w", err)
@@ -2064,6 +2033,26 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 	}
 
 	return true, nil
+}
+
+func (r *SkyhookReconciler) EnsureNodeIsReadyForInterrupt(ctx context.Context, skyhookNode wrapper.SkyhookNode, _package *v1alpha1.Package) (bool, error) {
+	// cordon node
+	skyhookNode.Cordon()
+
+	hasWork, err := r.HasNonInterruptWork(ctx, skyhookNode)
+	if err != nil {
+		return false, err
+	}
+	if hasWork { // keep waiting...
+		return false, nil
+	}
+
+	ready, err := r.DrainNode(ctx, skyhookNode, _package)
+	if err != nil {
+		return false, fmt.Errorf("error draining node [%s]: %w", skyhookNode.GetNode().Name, err)
+	}
+
+	return ready, nil
 }
 
 // ApplyPackage starts a pod on node for the package
@@ -2082,12 +2071,8 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 	// which is why it needs to be here as well
 	if packageStatus, found := skyhookNode.PackageStatus(_package.GetUniqueName()); found {
 		switch packageStatus.Stage {
-		case v1alpha1.StageConfig:
-			stage = v1alpha1.StageConfig
-		case v1alpha1.StageUpgrade:
-			stage = v1alpha1.StageUpgrade
-		case v1alpha1.StageUninstall:
-			stage = v1alpha1.StageUninstall
+		case v1alpha1.StageConfig, v1alpha1.StageUpgrade, v1alpha1.StageUninstall:
+			stage = packageStatus.Stage
 		}
 	}
 
@@ -2169,12 +2154,6 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 	r.recorder.Eventf(skyhookNode.GetSkyhook(), EventTypeNormal, EventsReasonSkyhookApply, "Applying package [%s:%s] to node [%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetNode().Name, stage)
 
 	skyhookNode.GetSkyhook().Updated = true
-
-	// skyhook_package_in_progress_count.WithLabelValues(
-	// 	skyhookNode.GetSkyhook().Name,
-	// 	_package.Name,
-	// 	_package.Version,
-	// ).Inc()
 
 	return err
 }

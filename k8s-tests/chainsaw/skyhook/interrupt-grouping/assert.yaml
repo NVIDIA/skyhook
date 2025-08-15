@@ -13,7 +13,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+---
+kind: Node
+apiVersion: v1
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_interrupt-grouping: in_progress
+  annotations:
+    skyhook.nvidia.com/status_interrupt-grouping: in_progress
+spec:
+  taints:
+  - effect: NoSchedule
+    key: node.kubernetes.io/unschedulable
+status:
+  (conditions[?type == 'skyhook.nvidia.com/interrupt-grouping/NotReady']):
+  - reason: "Incomplete"
+    status: "True"
+  (conditions[?type == 'skyhook.nvidia.com/interrupt-grouping/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
 kind: Pod
 apiVersion: v1
 metadata:
