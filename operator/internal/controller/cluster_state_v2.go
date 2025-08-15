@@ -385,12 +385,6 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 			Operator: corev1.TolerationOpExists,
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
-		{
-			Key:      SkyhookTaintUnschedulable,
-			Value:    s.GetSkyhook().GetName(),
-			Operator: corev1.TolerationOpEqual,
-			Effect:   corev1.TaintEffectNoSchedule,
-		},
 	}, s.GetSkyhook().Spec.AdditionalTolerations...)
 
 	if s.GetSkyhook().Spec.RuntimeRequired {

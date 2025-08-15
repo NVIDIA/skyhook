@@ -191,9 +191,6 @@ func (r *SkyhookReconciler) HandleCompletePod(ctx context.Context, skyhookNode w
 	updated := false
 
 	if containerName == InterruptContainerName {
-		// cleanup special race preventing taint
-		skyhookNode.RemoveTaint(SkyhookTaintUnschedulable)
-
 		// in this one case do we need a skyhook instance to get packages
 		// kind of sucks, but does not update, just reads so that is better
 		// seems safer to leave it this way unfortunately.

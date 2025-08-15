@@ -14,6 +14,9 @@ This directory contains user and operator documentation for Skyhook. Here you'll
   - [Runtime Required](runtime_required.md):
     How to use the runtime required taint and feature in Skyhook.
 
+  - [Interrupt Flow and Ordering](interrupt_flow.md):
+    Detailed explanation of how Skyhook handles packages with interrupts, including the interrupt sequence.
+
   - [Strict Ordering](ordering_of_skyhooks.md): How and why the operator applies each Skyhook Custom Resource in a deterministic sequential order.
 
 - **Resources**

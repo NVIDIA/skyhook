@@ -68,8 +68,7 @@ spec:
       version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
       interrupt: 
-        type: service
-        services: [cron]
+        type: reboot
       env: 
         - name: SLEEP_LEN
           value: "3" ## making faster
@@ -84,3 +83,12 @@ spec:
           color.bad=yellow
           allow.textmode=true
           how.nice.to.look=fairlyNice
+    john:
+      version: "1.2.3"
+      image: ghcr.io/nvidia/skyhook/agentless
+      interrupt: 
+        type: service
+        services: [rsyslog]
+      env: 
+        - name: SLEEP_LEN
+          value: "3" ## making faster
