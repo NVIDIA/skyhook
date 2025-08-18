@@ -107,7 +107,8 @@ func (r *WebhookController) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // permissions
-//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations;mutatingwebhookconfigurations,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations;mutatingwebhookconfigurations,verbs=get;update;patch;delete,resourceNames=skyhook-operator-mutating-webhook;skyhook-operator-validating-webhook
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingwebhookconfigurations;mutatingwebhookconfigurations,verbs=list;watch;create
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is the main function that reconciles the webhook controller

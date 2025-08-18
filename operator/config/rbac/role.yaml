@@ -78,12 +78,21 @@ rules:
   - validatingwebhookconfigurations
   verbs:
   - create
+  - list
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resourceNames:
+  - skyhook-operator-mutating-webhook
+  - skyhook-operator-validating-webhook
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
   - delete
   - get
-  - list
   - patch
   - update
-  - watch
 - apiGroups:
   - skyhook.nvidia.com
   resources:

@@ -6,22 +6,11 @@ metadata:
   {{- include "chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
-  - admissionregistration.k8s.io
-  resources:
-  - mutatingwebhookconfigurations
-  - validatingwebhookconfigurations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - ""
   resources:
   - configmaps
+  - pods
+  - secrets
   verbs:
   - create
   - delete
@@ -58,18 +47,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - pods/eviction
   verbs:
   - create
@@ -80,17 +57,27 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - ""
+  - admissionregistration.k8s.io
   resources:
-  - secrets
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
   verbs:
   - create
+  - list
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resourceNames:
+  - skyhook-operator-mutating-webhook
+  - skyhook-operator-validating-webhook
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
   - delete
   - get
-  - list
   - patch
   - update
-  - watch
 - apiGroups:
   - skyhook.nvidia.com
   resources:
