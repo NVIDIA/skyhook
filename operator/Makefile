@@ -16,7 +16,7 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.24.5
+GO_VERSION ?= 1.24.6
 
 # Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location
