@@ -1068,8 +1068,8 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True),
-                mock.call(["systemctl", "restart", "containerd"], controller.get_log_file("interrupts/service_restart_1", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True)
+                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True),
+                mock.call(root_dir, ["systemctl", "restart", "containerd"], controller.get_log_file("interrupts/service_restart_1", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True)
             ])
 
     @mock.patch("skyhook_agent.controller._run")
@@ -1090,7 +1090,7 @@ class TestUseCases(unittest.TestCase):
         run_mock.return_value = 0
         SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
         with (self._setup_for_main() as (container_root_dir, config_data, root_dir, copy_dir),
-              set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
+            set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
             interrupt_dir = f"{controller.get_skyhook_directory(root_dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
             interrupt = interrupts.ServiceRestart(["foo", "bar"])
             controller.do_interrupt(interrupt.make_controller_input(), root_dir, copy_dir)
@@ -1103,7 +1103,7 @@ class TestUseCases(unittest.TestCase):
         run_mock.side_effect = [0,1,0]
         SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
         with (self._setup_for_main() as (container_root_dir, config_data, root_dir, copy_dir),
-              set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
+            set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
             interrupt_dir = f"{controller.get_skyhook_directory(root_dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
             interrupt = interrupts.ServiceRestart(["foo", "bar"])
             controller.do_interrupt(interrupt.make_controller_input(), root_dir, copy_dir)
@@ -1111,6 +1111,38 @@ class TestUseCases(unittest.TestCase):
             self.assertTrue(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_0.complete"))
             self.assertFalse(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_1.complete"))
             self.assertFalse(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_1.complete"))
+    
+    @mock.patch("skyhook_agent.controller._run")
+    def test_interrupt_reboot_SIGTERM_preserves_flag(self, run_mock):
+        run_mock.side_effect = [0, -15, 0]
+        SKYHOOK_RESOURCE_ID="scr-id-1_package_version"
+        with (self._setup_for_main() as (container_root_dir, config_data, root_dir, copy_dir),
+            set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
+            interrupt_dir = f"{controller.get_skyhook_directory(root_dir)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
+            interrupt = interrupts.NodeRestart()
+            controller.do_interrupt(interrupt.make_controller_input(), root_dir, copy_dir)
+
+            self.assertTrue(os.path.exists(f"{interrupt_dir}/{interrupt._type()}_0.complete"))
+
+    @mock.patch("skyhook_agent.controller._run")
+    def test_interrupt_calls_run_with_correct_parameters(self, run_mock):
+        run_mock.return_value = 0
+        SKYHOOK_RESOURCE_ID = "scr-id-1_package_version"
+        
+        with (self._setup_for_main() as (container_root_dir, config_data, root_dir, copy_dir),
+            set_env(SKYHOOK_RESOURCE_ID=SKYHOOK_RESOURCE_ID)):
+            
+            interrupt = interrupts.ServiceRestart(["foo", "bar"])
+            result = controller.do_interrupt(interrupt.make_controller_input(), root_dir, copy_dir)
+            
+            self.assertEqual(result, False)
+            expected_calls = [
+                mock.call(root_dir, ["systemctl", "daemon-reload"], mock.ANY, write_cmds=True, no_chmod=True),
+                mock.call(root_dir, ["systemctl", "restart", "foo"], mock.ANY, write_cmds=True, no_chmod=True),
+                mock.call(root_dir, ["systemctl", "restart", "bar"], mock.ANY, write_cmds=True, no_chmod=True)
+            ]
+            run_mock.assert_has_calls(expected_calls)
+            self.assertEqual(run_mock.call_count, 3)
 
     @mock.patch("skyhook_agent.controller.datetime")
     @mock.patch("skyhook_agent.controller._run")
@@ -1140,7 +1172,7 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
+                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
             ])
 
             self.assertEqual(result, True)
@@ -1173,7 +1205,7 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
+                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
             ])
 
     def test_interrupt_noop_makes_the_flag_file(self):
