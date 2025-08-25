@@ -442,10 +442,10 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
         return f"{interrupt_dir}/{interrupt_id}.complete"
     
     SKYHOOK_RESOURCE_ID, _, _, _ = _get_env_config()
-
     config_data = make_config_data_from_resource_id()
 
     interrupt = interrupts.inflate(interrupt_data)
+
     # Check if the interrupt has already been run for this particular skyhook resource
     interrupt_dir = f"{get_skyhook_directory(root_mount)}/interrupts/flags/{SKYHOOK_RESOURCE_ID}"
     os.makedirs(interrupt_dir, exist_ok=True)
@@ -469,6 +469,7 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
             f.write(str(time.time()))
 
         return_code = _run(
+            root_mount,
             cmd,
             get_log_file(f"interrupts/{interrupt_id}", copy_dir, config_data, root_mount),
             write_cmds=True,
@@ -476,10 +477,15 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
         )
 
         if return_code != 0:
-            print(f"INTERRUPT FAILED: {cmd} return_code: {return_code}")
-            # If this is not removed then we will skip all failing interrupts and it will look
-            # like the interrupt was successful when it was not.
-            os.remove(interrupt_flag)
+            # Special case: preserve flags only for reboot with a return code of -15 
+            # (SIGTERM signal sent to the process by OS because of reboot)
+            if not (interrupt.type == interrupts.NodeRestart._type() and return_code == -15):
+                print(f"INTERRUPT FAILED: {cmd} return_code: {return_code}")
+
+                # If this is not removed then we will skip all failing interrupts and it will look
+                # like the interrupt was successful when it was not.
+                os.remove(interrupt_flag)
+
             return True
         
     return False
