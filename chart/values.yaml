@@ -57,16 +57,16 @@ controllerManager:
         drop:
         - ALL
     env:
-      ## copyDirRoot is the directory for which the operator will work from on the host. 
+      ## copyDirRoot is the directory for which the operator will work from on the host.
       ## Some environments may require this to be set to a specific directory.
       copyDirRoot: /var/lib/skyhook
-      ## agentLogRoot is the directory for which the agent will write logs. 
+      ## agentLogRoot is the directory for which the agent will write logs.
       ## Some environments may require this to be set to a specific directory.
       agentLogRoot: /var/log/skyhook
       ## leaderElection: "true" will enable leader election for the operator controller
       ## Default is "true" and is required for production.
       leaderElection: "true"
-      ## logLevel: "info" is the log level for the operator controller. 
+      ## logLevel: "info" is the log level for the operator controller.
       ## If you want more or less logs, change this value to "debug" or "error".
       logLevel: info
       metricsPort: :8080
@@ -85,7 +85,7 @@ controllerManager:
     ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
     agent:
       repository: nvcr.io/nvidia/skyhook/agent
-      tag: "v6.3.0"
+      tag: "v6.3.1"
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
@@ -147,7 +147,7 @@ webhook:
   secretName: webhook-cert
   ## serviceName: name of the service to expose the webhook
   serviceName: skyhook-operator-webhook-service
-  ## enable: "true" will enable the webhook setup in the operator controller. 
+  ## enable: "true" will enable the webhook setup in the operator controller.
   ## Default is "true" and is required for production.
   enable: true
 
