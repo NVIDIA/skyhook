@@ -17,7 +17,7 @@ spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       containers:
       - name: cleanup
-        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}:{{ .Values.webhook.removalTag | default "latest" }}
+        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}@{{ .Values.webhook.removalDigest }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
         securityContext:
           runAsNonRoot: true
           runAsUser: 10001

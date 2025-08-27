@@ -43,6 +43,7 @@ controllerManager:
     image:
       repository: quay.io/brancz/kube-rbac-proxy
       tag: v0.15.0
+      digest: "sha256:b6c3624aedb4b785b3f92ac0fbb5efb0b0572b00cebde6c752e8aac522f9669c"
     resources:
       limits:
         cpu: 500m
@@ -82,10 +83,12 @@ controllerManager:
     image:
       repository: nvcr.io/nvidia/skyhook/operator
       tag: "" ## if omitted, default to the chart appVersion
+      digest: "sha256:928585ca0a0d4b314d121a738506f52e13dd520b3426d7a1d9685e76eee0ca9a"
     ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
     agent:
       repository: nvcr.io/nvidia/skyhook/agent
       tag: "v6.3.1"
+      digest: "sha256:b70d345b254e926a15320a3ba3095fbf3fb8249634cd39e5d88ed6dec7fd4d13"
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
@@ -153,7 +156,8 @@ webhook:
 
   ## uninstall image for cleaning up webhook resources
   removalImage: bitnami/kubectl
-  removalTag: latest
+  removalTag: 1.33.1
+  removalDigest: "sha256:2af8ed9feaeada845f4d60f1fe4db951df2e5334ea01bec4b5ef4f191ad20d65"
 
 metrics:
   addServiceAccountBinding: false

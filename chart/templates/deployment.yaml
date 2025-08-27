@@ -93,10 +93,11 @@ spec:
         - name: PAUSE_IMAGE
           value: {{ quote .Values.controllerManager.manager.env.pauseImage }}
         - name: AGENT_IMAGE
-          value: {{ .Values.controllerManager.manager.agent.repository }}:{{ .Values.controllerManager.manager.agent.tag}}
+          value: {{ .Values.controllerManager.manager.agent.repository }}{{- if .Values.controllerManager.manager.agent.digest }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else }}:{{ .Values.controllerManager.manager.agent.tag}}{{- end }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}
+        image: {{ .Values.controllerManager.manager.image.repository }}{{- if .Values.controllerManager.manager.image.digest }}@{{ .Values.controllerManager.manager.image.digest }}{{- else }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}{{- end }}
+        imagePullPolicy: Always
         livenessProbe:
           httpGet:
             path: /healthz
@@ -131,8 +132,8 @@ spec:
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag
-          | default .Chart.AppVersion }}
+        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
+        imagePullPolicy: Always
         name: kube-rbac-proxy
         ports:
         - containerPort: 8443
