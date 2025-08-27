@@ -18,6 +18,13 @@ spec:
       containers:
       - name: cleanup
         image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}:{{ .Values.webhook.removalTag | default "latest" }}
+        resources:
+          limits:
+            cpu: {{ .Values.limitRange.default.cpu }}
+            memory: {{ .Values.limitRange.default.memory }}
+          requests:
+            cpu: {{ .Values.limitRange.defaultRequest.cpu }}
+            memory: {{ .Values.limitRange.defaultRequest.memory }}
         command:
         - /bin/sh
         - -c
