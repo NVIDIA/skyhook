@@ -64,11 +64,11 @@ Install Skyhook quickly using Helm without downloading the repository:
 # Add the NVIDIA Helm repository
 helm repo add skyhook https://helm.ngc.nvidia.com/nvidia/skyhook
 helm repo update
-helm repo search skyhook ## should show the latest version
+helm search repo skyhook ## should show the latest version
 
 # basic install 
 helm install skyhook skyhook/skyhook-operator \
-  --version v0.8.1 \
+  --version v0.9.1 \
   --namespace skyhook \
   --create-namespace 
 ```
