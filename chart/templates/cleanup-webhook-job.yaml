@@ -20,6 +20,8 @@ spec:
         image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}:{{ .Values.webhook.removalTag | default "latest" }}
         securityContext:
           runAsNonRoot: true
+          runAsUser: 10001
+          allowPrivilegeEscalation: false
           drop:
             - NET_RAW
             - ALL

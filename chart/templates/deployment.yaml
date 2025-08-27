@@ -145,6 +145,7 @@ spec:
         - name: {{ quote .Values.imagePullSecret }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
 {{ if ((.Values.controllerManager.podDisruptionBudget).minAvailable) }}
