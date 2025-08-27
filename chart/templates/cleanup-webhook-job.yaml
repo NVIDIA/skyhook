@@ -16,19 +16,21 @@ spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: cleanup
         image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}@{{ .Values.webhook.removalDigest }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
         securityContext:
-          runAsNonRoot: true
-          runAsUser: 10001
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
-          drop:
-            - NET_RAW
-            - ALL
-          seccompProfile:
-            type: RuntimeDefault
+          capabilities:
+            drop:
+              - NET_RAW
+              - ALL
         resources:
           limits:
             cpu: {{ .Values.limitRange.default.cpu }}
