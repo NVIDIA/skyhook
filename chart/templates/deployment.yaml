@@ -134,6 +134,12 @@ spec:
           value: {{ quote .Values.kubernetesClusterDomain }}
         image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
         imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
         name: kube-rbac-proxy
         ports:
         - containerPort: 8443
