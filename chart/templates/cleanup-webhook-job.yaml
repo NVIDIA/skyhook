@@ -14,6 +14,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       containers:
       - name: cleanup
@@ -22,9 +23,12 @@ spec:
           runAsNonRoot: true
           runAsUser: 10001
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           drop:
             - NET_RAW
             - ALL
+          seccompProfile:
+            type: RuntimeDefault
         resources:
           limits:
             cpu: {{ .Values.limitRange.default.cpu }}

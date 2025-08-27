@@ -31,6 +31,7 @@ spec:
       {{- if and .Values.controllerManager.selectors .Values.controllerManager.nodeAffinity.matchExpressions }}
       {{- fail "Error: Cannot specify both controllerManager.selectors and controllerManager.nodeAffinity.matchExpressions. Use nodeAffinity.matchExpressions for complex node selection or selectors for simple key-value matching." }}
       {{- end }}
+      automountServiceAccountToken: false
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -140,6 +141,15 @@ spec:
             port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 20
+          successThreshold: 1
+          failureThreshold: 2
+          timeoutSeconds: 3
         name: kube-rbac-proxy
         ports:
         - containerPort: 8443
@@ -153,6 +163,9 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
+        readOnlyRootFilesystem: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
 {{ if ((.Values.controllerManager.podDisruptionBudget).minAvailable) }}
@@ -166,6 +179,7 @@ metadata:
   name: {{ include "chart.fullname" . }}-controller-manager-pdb
 spec:
   minAvailable: {{ .Values.controllerManager.podDisruptionBudget.minAvailable }}
+  automountServiceAccountToken: false
   selector:
     matchLabels:
       app: {{ include "chart.fullname" . }}-controller-manager
