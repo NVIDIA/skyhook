@@ -1,7 +1,11 @@
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ .Values.webhook.serviceName }}
+  namespace: "{{ .Release.Namespace }}"
   labels:
     app.kubernetes.io/component: webhook
     app.kubernetes.io/created-by: skyhook-operator

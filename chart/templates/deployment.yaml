@@ -1,7 +1,11 @@
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "chart.fullname" . }}-controller-manager
+  namespace: "{{ .Release.Namespace }}"
   labels:
     app: {{ include "chart.fullname" . }}-controller-manager
     app.kubernetes.io/component: manager

@@ -1,8 +1,12 @@
 {{- if .Values.webhook.enable }}
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ include "chart.fullname" . }}-webhook-cleanup"
+  namespace: "{{ .Release.Namespace }}"
   annotations:
     "helm.sh/hook": pre-delete
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
