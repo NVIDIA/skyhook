@@ -110,6 +110,14 @@ spec:
         - containerPort: 9443
           name: webhook-server
           protocol: TCP
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
+        {{- if .Values.webhook.enable }}
+        - mountPath: /tmp
+          name: webhook-certs
+        {{- end }}
         readinessProbe:
           httpGet:
             path: /readyz
@@ -155,15 +163,41 @@ spec:
         - containerPort: 8443
           name: https
           protocol: TCP
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
         resources: {{- toYaml .Values.controllerManager.kubeRbacProxy.resources | nindent 10 }}
         securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
           | nindent 10 }}
       imagePullSecrets:
         - name: {{ quote .Values.imagePullSecret }}
+      volumes:
+      - name: kube-api-access
+        projected:
+          defaultMode: 420
+          sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3607
+          - configMap:
+              items:
+              - key: ca.crt
+                path: ca.crt
+              name: kube-root-ca.crt
+          - downwardAPI:
+              items:
+              - fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+                path: namespace
+      {{- if .Values.webhook.enable }}
+      - name: webhook-certs
+        emptyDir: {}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
-        readOnlyRootFilesystem: true
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
@@ -179,7 +213,6 @@ metadata:
   name: {{ include "chart.fullname" . }}-controller-manager-pdb
 spec:
   minAvailable: {{ .Values.controllerManager.podDisruptionBudget.minAvailable }}
-  automountServiceAccountToken: false
   selector:
     matchLabels:
       app: {{ include "chart.fullname" . }}-controller-manager

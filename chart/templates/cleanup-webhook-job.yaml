@@ -21,6 +21,25 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+      - name: kube-api-access
+        projected:
+          defaultMode: 420
+          sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3607
+          - configMap:
+              items:
+              - key: ca.crt
+                path: ca.crt
+              name: kube-root-ca.crt
+          - downwardAPI:
+              items:
+              - fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+                path: namespace
       containers:
       - name: cleanup
         image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}@{{ .Values.webhook.removalDigest }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
@@ -29,8 +48,14 @@ spec:
           readOnlyRootFilesystem: true
           capabilities:
             drop:
-              - NET_RAW
-              - ALL
+            - NET_RAW
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
         resources:
           limits:
             cpu: {{ .Values.limitRange.default.cpu }}
