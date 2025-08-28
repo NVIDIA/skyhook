@@ -66,11 +66,11 @@ helm repo add skyhook https://helm.ngc.nvidia.com/nvidia/skyhook
 helm repo update
 helm search repo skyhook ## should show the latest version
 
-# basic install 
+# basic install
 helm install skyhook skyhook/skyhook-operator \
-  --version v0.9.1 \
+  --version v0.9.2 \
   --namespace skyhook \
-  --create-namespace 
+  --create-namespace
 ```
 
 ### Configure Image Pull Secrets (if needed)
@@ -102,7 +102,7 @@ kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n sk
 kubectl get pods -l control-plane=controller-manager -n skyhook -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}'
 
 # Verify the CRDs are installed
-kubectl get crd | grep skyhook 
+kubectl get crd | grep skyhook
 
 # Verify packages are working
 kubectl apply -f - <<EOF
@@ -174,13 +174,13 @@ The Status will show the overall package status as well as the status of each no
 # View node state annotations for a specific Skyhook
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_<skyhook-name>}{"\n"}{end}'
 ```
-  
+
 ### Stages
 The operator will apply steps in a package throughout different lifecycle stages. This ensures that the right steps are applied in the right situations and in the correct order.
 - Upgrade: This stage will be ran whenever a package's version is upgraded in the SCR.
 - Uninstall: This stage will be ran whenever a package's version is downgraded or it's removed from the SCR.
 - Apply: This stage will always be ran at least once.
-- Config: This stage will run when a configmap is changed and on the first SCR application. 
+- Config: This stage will run when a configmap is changed and on the first SCR application.
 - Interrupt: This stage will run when a package has an interrupt defined or a key's value in a packages configmap changes which has a config interrupt defined.
 - Post-Interrupt: This stage will run when a package's interrupt has finished.
 
@@ -199,7 +199,7 @@ This ensures that when operations like kernel module unloading or system reboots
 
 **NOTE**: If a package is removed from the SCR, then the uninstall stage for that package will solely be run.
 
-**Semantic versioning is strictly enforced in the operator** in order to support upgrade and uninstall. Semantic versioning allows the 
+**Semantic versioning is strictly enforced in the operator** in order to support upgrade and uninstall. Semantic versioning allows the
 operator to know which way the package is going while also enforcing best versioning practices.
 
 **For detailed information about our versioning strategy, git tagging conventions, and component release process, see [docs/versioning.md](docs/versioning.md) and [docs/release-process.md](docs/release-process.md).**
