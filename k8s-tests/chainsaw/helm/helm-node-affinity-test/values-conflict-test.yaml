@@ -29,5 +29,6 @@ controllerManager:
     image:
       repository: ghcr.io/nvidia/skyhook/operator
       tag: latest
+      digest: ""
 webhook:
   enable: false

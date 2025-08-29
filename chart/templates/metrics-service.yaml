@@ -1,7 +1,11 @@
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
   name: skyhook-operator-controller-manager-metrics-service
+  namespace: "{{ .Release.Namespace }}"
   labels:
     app.kubernetes.io/component: kube-rbac-proxy
     app.kubernetes.io/created-by: skyhook-operator

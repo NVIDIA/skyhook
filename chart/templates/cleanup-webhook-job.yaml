@@ -1,8 +1,12 @@
 {{- if .Values.webhook.enable }}
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ include "chart.fullname" . }}-webhook-cleanup"
+  namespace: "{{ .Release.Namespace }}"
   annotations:
     "helm.sh/hook": pre-delete
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -10,10 +14,55 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: kube-api-access
+        projected:
+          defaultMode: 420
+          sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3607
+          - configMap:
+              items:
+              - key: ca.crt
+                path: ca.crt
+              name: kube-root-ca.crt
+          - downwardAPI:
+              items:
+              - fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+                path: namespace
       containers:
       - name: cleanup
-        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}:{{ .Values.webhook.removalTag | default "latest" }}
+        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}@{{ .Values.webhook.removalDigest }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - NET_RAW
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
+        resources:
+          limits:
+            cpu: {{ .Values.limitRange.default.cpu }}
+            memory: {{ .Values.limitRange.default.memory }}
+          requests:
+            cpu: {{ .Values.limitRange.defaultRequest.cpu }}
+            memory: {{ .Values.limitRange.defaultRequest.memory }}
         command:
         - /bin/sh
         - -c
