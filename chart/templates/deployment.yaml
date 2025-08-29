@@ -144,13 +144,15 @@ spec:
         image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
         imagePullPolicy: Always
         livenessProbe:
-          tcpSocket:
-            port: 8443
+          httpGet:
+            path: /healthz
+            port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
         readinessProbe:
-          tcpSocket:
-            port: 8443
+          httpGet:
+            path: /readyz
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 20
           successThreshold: 1
