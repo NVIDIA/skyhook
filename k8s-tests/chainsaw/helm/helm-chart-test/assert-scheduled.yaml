@@ -97,7 +97,7 @@ spec:
     env:
     - name: KUBERNETES_CLUSTER_DOMAIN
       value: cluster.local
-    image: quay.io/brancz/kube-rbac-proxy@sha256:b6c3624aedb4b785b3f92ac0fbb5efb0b0572b00cebde6c752e8aac522f9669c
+    image: quay.io/brancz/kube-rbac-proxy@sha256:2c7b120590cbe9f634f5099f2cbb91d0b668569023a81505ca124a5c437e7663
     name: kube-rbac-proxy
     ports:
     - containerPort: 8443
