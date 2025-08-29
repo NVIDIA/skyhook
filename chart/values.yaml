@@ -85,12 +85,12 @@ controllerManager:
     image:
       repository: nvcr.io/nvidia/skyhook/operator
       tag: "" ## if omitted, default to the chart appVersion
-      digest: "sha256:928585ca0a0d4b314d121a738506f52e13dd520b3426d7a1d9685e76eee0ca9a"
+      digest: "sha256:69b01f2b644c5128515afe6288f30f16da5265882ba775f2f2bd56315d599098"
     ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
     agent:
       repository: nvcr.io/nvidia/skyhook/agent
       tag: "v6.3.1"
-      digest: "sha256:b70d345b254e926a15320a3ba3095fbf3fb8249634cd39e5d88ed6dec7fd4d13"
+      digest: "sha256:0aab1af6cc0432bae11ef72b4aea71dc65aa17561f5a37b49ae16e50b3f54166"
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
