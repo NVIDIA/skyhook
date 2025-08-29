@@ -44,7 +44,7 @@ controllerManager:
     image:
       repository: quay.io/brancz/kube-rbac-proxy
       tag: v0.15.0
-      digest: "sha256:b6c3624aedb4b785b3f92ac0fbb5efb0b0572b00cebde6c752e8aac522f9669c"
+      digest: "sha256:2c7b120590cbe9f634f5099f2cbb91d0b668569023a81505ca124a5c437e7663" # manifest list digest (multi-arch)
     resources:
       limits:
         cpu: 500m
@@ -85,12 +85,12 @@ controllerManager:
     image:
       repository: nvcr.io/nvidia/skyhook/operator
       tag: "" ## if omitted, default to the chart appVersion
-      digest: "sha256:69b01f2b644c5128515afe6288f30f16da5265882ba775f2f2bd56315d599098"
+      digest: "sha256:412880d97eab314275590068f993a371c772b19a1cb4b965fd6b9ca101f21b43" # manifest list digest (multi-arch)
     ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
     agent:
       repository: nvcr.io/nvidia/skyhook/agent
       tag: "v6.3.1"
-      digest: "sha256:0aab1af6cc0432bae11ef72b4aea71dc65aa17561f5a37b49ae16e50b3f54166"
+      digest: "sha256:9be67d86d06b2999937bacbfb5878ad54f34a25b2e3c0eca79c2f8a7dafc71f8" # manifest list digest (multi-arch)
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
