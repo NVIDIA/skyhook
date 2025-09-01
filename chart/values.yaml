@@ -159,7 +159,7 @@ webhook:
   ## uninstall image for cleaning up webhook resources
   removalImage: bitnami/kubectl
   removalTag: 1.33.1
-  removalDigest: "sha256:2af8ed9feaeada845f4d60f1fe4db951df2e5334ea01bec4b5ef4f191ad20d65"
+  removalDigest: ""
 
 metrics:
   addServiceAccountBinding: false
