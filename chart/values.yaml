@@ -90,7 +90,7 @@ controllerManager:
     agent:
       repository: nvcr.io/nvidia/skyhook/agent
       tag: "v6.3.1"
-      digest: "sha256:9be67d86d06b2999937bacbfb5878ad54f34a25b2e3c0eca79c2f8a7dafc71f8" # manifest list digest (multi-arch)
+      digest: "sha256:c034866d1382c3372989c09839e5a0c0837cf2836d2a20a038649469a9dae18b" # manifest list digest (multi-arch)
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
@@ -159,7 +159,7 @@ webhook:
   ## uninstall image for cleaning up webhook resources
   removalImage: bitnami/kubectl
   removalTag: 1.33.1
-  removalDigest: ""
+  removalDigest: "sha256:9081a6f83f4febf47369fc46b6f0f7683c7db243df5b43fc9defe51b0471a950"
 
 metrics:
   addServiceAccountBinding: false

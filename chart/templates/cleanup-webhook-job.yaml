@@ -43,6 +43,7 @@ spec:
       containers:
       - name: cleanup
         image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}@{{ .Values.webhook.removalDigest }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
+        imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
