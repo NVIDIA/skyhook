@@ -20,6 +20,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -1099,6 +1100,48 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(len(result)).To(BeNumerically("<=", 63), "configmap name should never exceed 63 characters")
 			Expect(result).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`), "configmap name should match kubernetes naming requirements")
 		}
+	})
+
+	It("should create metadata configmap with packages.json including agentVersion and packages", func() {
+		// build minimal skyhook and node
+		skyhookCR := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "skyhook-meta",
+				UID:  "uid-1234",
+			},
+			Spec: v1alpha1.SkyhookSpec{
+				Packages: v1alpha1.Packages{
+					"pkg1": {
+						PackageRef: v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"},
+						Image:      "ghcr.io/org/pkg1",
+					},
+				},
+			},
+		}
+		sw := wrapper.NewSkyhookWrapper(skyhookCR)
+
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a", Labels: map[string]string{"a": "b"}}}
+
+		// use initialized reconciler
+		r := operator
+
+		// upsert configmap
+		Expect(r.UpsertNodeLabelsAnnotationsPackages(ctx, sw, node)).To(Succeed())
+
+		// fetch configmap
+		cmName := generateSafeName(253, sw.Name, node.Name, "metadata")
+		var cm corev1.ConfigMap
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: cmName, Namespace: opts.Namespace}, &cm)).To(Succeed())
+
+		// validate packages.json exists and has expected agentVersion and packages
+		Expect(cm.Data).To(HaveKey("packages.json"))
+		var meta struct {
+			AgentVersion string         `json:"agentVersion"`
+			Packages     map[string]any `json:"packages"`
+		}
+		Expect(json.Unmarshal([]byte(cm.Data["packages.json"]), &meta)).To(Succeed())
+		Expect(meta.AgentVersion).To(Equal(opts.AgentVersion()))
+		Expect(meta.Packages).To(HaveKey("pkg1"))
 	})
 })
 

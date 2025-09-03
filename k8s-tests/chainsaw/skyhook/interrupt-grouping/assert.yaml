@@ -229,10 +229,13 @@ metadata:
     kind: Skyhook
     name: interrupt-grouping
 data:
-  (length(@)): 2
+  (length(@)): 3
   labels.json:
     (contains(@, 'skyhook.nvidia.com/test-node')): true
     (contains(@, 'skyhook.nvidia.com/status_interrupt-grouping')): true
   annotations.json:
     (contains(@, 'skyhook.nvidia.com/status_interrupt-grouping')): true
     (contains(@, 'skyhook.nvidia.com/nodeState_interrupt-grouping')): true
+  packages.json:
+    (contains(@, '"agentVersion"')): true
+    (contains(@, '"dax"')): true

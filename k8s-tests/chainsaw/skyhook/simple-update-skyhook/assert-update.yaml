@@ -151,10 +151,14 @@ metadata:
     kind: Skyhook
     name: simple-update-skyhook
 data:
-  (length(@)): 2
+  (length(@)): 3
   labels.json:
     (contains(@, 'skyhook.nvidia.com/test-node')): true
     (contains(@, 'skyhook.nvidia.com/status_simple-update-skyhook')): true
   annotations.json:
     (contains(@, 'skyhook.nvidia.com/status_simple-update-skyhook')): true
     (contains(@, 'skyhook.nvidia.com/nodeState_simple-update-skyhook')): true
+  packages.json:
+    (contains(@, '"agentVersion"')): true
+    (contains(@, '"baxter"')): true
+    (contains(@, '"2.3.1-test"')): true

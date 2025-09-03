@@ -135,6 +135,12 @@ func (o *SkyhookOperatorOptions) Validate() error {
 	return nil
 }
 
+// AgentVersion returns the image tag portion of AgentImage
+func (o *SkyhookOperatorOptions) AgentVersion() string {
+	parts := strings.Split(o.AgentImage, ":")
+	return parts[len(parts)-1]
+}
+
 func (o *SkyhookOperatorOptions) GetRuntimeRequiredTaint() corev1.Taint {
 	to_add, _, _ := taints.ParseTaints([]string{o.RuntimeRequiredTaint})
 	return to_add[0]
@@ -619,9 +625,9 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 			}
 			saved = true
 
-			err = r.UpsertNodeLabelsAnnotations(ctx, skyhook.GetSkyhook(), node.GetNode())
+			err = r.UpsertNodeLabelsAnnotationsPackages(ctx, skyhook.GetSkyhook(), node.GetNode())
 			if err != nil {
-				errs = append(errs, fmt.Errorf("error upserting labels and annotations config map for node [%s]: %w", node.GetNode().Name, err))
+				errs = append(errs, fmt.Errorf("error upserting labels, annotations, and packages config map for node [%s]: %w", node.GetNode().Name, err))
 			}
 
 			if node.IsComplete() {
@@ -792,7 +798,7 @@ func generateSafeName(maxLen int, nameParts ...string) string {
 	return strings.ToLower(fmt.Sprintf("%s-%s", name, uniqueStr))
 }
 
-func (r *SkyhookReconciler) UpsertNodeLabelsAnnotations(ctx context.Context, skyhook *wrapper.Skyhook, node *corev1.Node) error {
+func (r *SkyhookReconciler) UpsertNodeLabelsAnnotationsPackages(ctx context.Context, skyhook *wrapper.Skyhook, node *corev1.Node) error {
 	// No work to do if there is no labels or annotations for node
 	if len(node.Labels) == 0 && len(node.Annotations) == 0 {
 		return nil
@@ -806,6 +812,13 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotations(ctx context.Context, sky
 	labels, err := json.Marshal(node.Labels)
 	if err != nil {
 		return fmt.Errorf("error converting labels into byte array: %w", err)
+	}
+
+	// marshal intermediary package metadata for the agent
+	metadata := NewSkyhookMetadata(r.opts, skyhook)
+	packages, err := metadata.Marshal()
+	if err != nil {
+		return fmt.Errorf("error converting packages into byte array: %w", err)
 	}
 
 	configMapName := generateSafeName(253, skyhook.Name, node.Name, "metadata")
@@ -824,6 +837,7 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotations(ctx context.Context, sky
 		Data: map[string]string{
 			"annotations.json": string(annotations),
 			"labels.json":      string(labels),
+			"packages.json":    string(packages),
 		},
 	}
 
@@ -1397,6 +1411,37 @@ func (r *SkyhookReconciler) ValidateNodeConfigmaps(ctx context.Context, skyhookN
 			err := r.Delete(ctx, &v)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error deleting existing config map [%s]: %w", v.Name, err))
+			}
+		}
+	}
+
+	// Ensure packages.json is present and up-to-date for expected configmaps
+	skyhookCR, err := r.dal.GetSkyhook(ctx, skyhookName)
+	if err != nil {
+		return update, fmt.Errorf("error getting skyhook for metadata validation: %w", err)
+	}
+	skyhookWrapper := wrapper.NewSkyhookWrapper(skyhookCR)
+	metadata := NewSkyhookMetadata(r.opts, skyhookWrapper)
+	expectedBytes, err := metadata.Marshal()
+	if err != nil {
+		return update, fmt.Errorf("error marshalling metadata for validation: %w", err)
+	}
+	expected := string(expectedBytes)
+
+	for i := range list.Items {
+		cm := &list.Items[i]
+		if _, ok := shouldExist[cm.Name]; !ok {
+			continue
+		}
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
+		}
+		if cm.Data["packages.json"] != expected {
+			cm.Data["packages.json"] = expected
+			if err := r.Update(ctx, cm); err != nil {
+				errs = append(errs, fmt.Errorf("error updating packages.json on config map [%s]: %w", cm.Name, err))
+			} else {
+				update = true
 			}
 		}
 	}
