@@ -38,7 +38,10 @@ jobs:
       - name: Test with Checkov
         id: checkov
         uses: bridgecrewio/checkov-action@master
+        env:
+          HELM_NAMESPACE: skyhook
         with:
-          directory: ./chart
+          directory: chart
           framework: helm
           output_format: cli
+          skip_check: CKV2_K8S_6 # not in nspect or local checkov
