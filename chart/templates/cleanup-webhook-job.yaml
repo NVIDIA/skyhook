@@ -42,7 +42,7 @@ spec:
                 path: namespace
       containers:
       - name: cleanup
-        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}@{{ .Values.webhook.removalDigest }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
+        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "1.33.1" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
         imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
@@ -69,7 +69,6 @@ spec:
         - -c
         - |
           NAMESPACE="{{ .Release.Namespace }}"
-          WEBHOOK_SECRET_NAME="{{ .Values.webhook.secretName | default "webhook-cert" }}"
           VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
           MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
           kubectl delete secret -n $NAMESPACE "{{ .Values.webhook.secretName | default "webhook-cert" }}" || true

@@ -1,0 +1,38 @@
+{{- if .Values.webhook.enable }}
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: skyhook-operator-mutating-webhook
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    caBundle: ""
+    service:
+      name: skyhook-operator-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-skyhook-nvidia-com-v1alpha1-skyhook
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: mutate-skyhook.nvidia.com
+  namespaceSelector: {}
+  objectSelector: {}
+  reinvocationPolicy: Never
+  rules:
+  - apiGroups:
+    - skyhook.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - skyhooks
+    scope: '*'
+  sideEffects: None
+  timeoutSeconds: 10
+{{- end }}
