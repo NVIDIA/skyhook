@@ -27,20 +27,17 @@ on:
       - 'chart/**'
 
 jobs:
-  checkov:
+  build:
+    name: checkov
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
+      - uses: actions/setup-python@v5
         with:
-          version: v3.14.4
-
-      - name: Run Checkov (Helm)
+          python-version: "3.x"
+      - name: Test with Checkov
+        id: checkov
         uses: bridgecrewio/checkov-action@master
         with:
-          directory: chart
+          directory: ./chart
           framework: helm
-          output_format: cli
-          bc_cli_args: --helm-args '--namespace skyhook -f chart/values.yaml'
