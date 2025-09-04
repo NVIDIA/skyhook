@@ -115,6 +115,25 @@ git push origin chart/v1.2.3
 - [ ] Tests passing
 - [ ] Documentation updated
 
+### Pin multi-arch image digests in the chart
+
+Starting with digest pinning, the chart references images using tag@digest (or digest-only where applicable). For each image, fetch the multi-arch manifest digest and update `chart/values.yaml` so our releases are reproducible across architectures.
+
+Prerequisites:
+
+- Docker buildx (`docker-buildx version`)
+
+Fetch a multi-arch digest (example for bitnami/kubectl used by the webhook cleanup job):
+
+```bash
+docker-buildx imagetools inspect bitnami/kubectl:1.33.1
+```
+
+Update the digest in `chart/values.yaml` for kube-rbac-proxy, operator, and agent images:
+
+Note:
+- Always use the multi-arch manifest digest (top-level Digest from imagetools), not a single-arch child manifest digest.
+
 **After tagging:**
 - [ ] CI/CD pipeline completes
 - [ ] Images published successfully

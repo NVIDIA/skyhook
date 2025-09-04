@@ -94,11 +94,11 @@ spec:
         - name: PAUSE_IMAGE
           value: {{ quote .Values.controllerManager.manager.env.pauseImage }}
         - name: AGENT_IMAGE
-          value: {{ .Values.controllerManager.manager.agent.repository }}{{- if .Values.controllerManager.manager.agent.digest }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else }}:{{ .Values.controllerManager.manager.agent.tag}}{{- end }}
+          value: {{ .Values.controllerManager.manager.agent.repository }}{{- if and (.Values.controllerManager.manager.agent.tag) (.Values.controllerManager.manager.agent.digest) }}:{{ .Values.controllerManager.manager.agent.tag }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else if .Values.controllerManager.manager.agent.digest }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else }}:{{ .Values.controllerManager.manager.agent.tag }}{{- end }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.manager.image.repository }}{{- if .Values.controllerManager.manager.image.digest }}@{{ .Values.controllerManager.manager.image.digest }}{{- else }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}{{- end }}
-        imagePullPolicy: Always
+        image: {{ .Values.controllerManager.manager.image.repository }}{{- if .Values.controllerManager.manager.image.digest }}{{- if .Values.controllerManager.manager.image.tag }}:{{ .Values.controllerManager.manager.image.tag }}@{{ .Values.controllerManager.manager.image.digest }}{{- else }}@{{ .Values.controllerManager.manager.image.digest }}{{- end }}{{- else }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}{{- end }}
+        imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
             path: /healthz
@@ -141,7 +141,7 @@ spec:
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
+        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}{{- if .Values.controllerManager.kubeRbacProxy.image.tag }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- end }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
