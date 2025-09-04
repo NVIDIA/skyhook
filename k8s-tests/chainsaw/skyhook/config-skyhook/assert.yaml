@@ -152,10 +152,16 @@ metadata:
     kind: Skyhook
     name: config-skyhook
 data:
-  (length(@)): 2
+  (length(@)): 3
   labels.json:
     (contains(@, 'skyhook.nvidia.com/test-node')): true
     (contains(@, 'skyhook.nvidia.com/status_config-skyhook')): true
   annotations.json:
     (contains(@, 'skyhook.nvidia.com/status_config-skyhook')): true
     (contains(@, 'skyhook.nvidia.com/nodeState_config-skyhook')): true
+  packages.json:
+    (contains(@, '"agentVersion"')): true
+    (contains(@, '"dexter"')): true
+    (contains(@, '"baxter"')): true
+    (contains(@, '"spencer"')): true
+    (contains(@, '"3.2.3"')): true

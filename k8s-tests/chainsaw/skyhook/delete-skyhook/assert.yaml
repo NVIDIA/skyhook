@@ -124,10 +124,14 @@ metadata:
     kind: Skyhook
     name: delete-skyhook
 data:
-  (length(@)): 2
+  (length(@)): 3
   labels.json:
     (contains(@, 'skyhook.nvidia.com/test-node')): true
     (contains(@, 'skyhook.nvidia.com/status_delete-skyhook')): true
   annotations.json:
     (contains(@, 'skyhook.nvidia.com/status_delete-skyhook')): true
     (contains(@, 'skyhook.nvidia.com/nodeState_delete-skyhook')): true
+  packages.json:
+    (contains(@, '"agentVersion"')): true
+    (contains(@, '"dexter"')): true
+    (contains(@, '"3.2.3"')): true

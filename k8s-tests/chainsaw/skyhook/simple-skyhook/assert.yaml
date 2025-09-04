@@ -124,10 +124,13 @@ metadata:
     kind: Skyhook
     name: simple-skyhook
 data:
-  (length(@)): 2
+  (length(@)): 3
   labels.json:
     (contains(@, 'skyhook.nvidia.com/test-node')): true
     (contains(@, 'skyhook.nvidia.com/status_simple-skyhook')): true
   annotations.json:
     (contains(@, 'skyhook.nvidia.com/status_simple-skyhook')): true
     (contains(@, 'skyhook.nvidia.com/nodeState_simple-skyhook')): true
+  packages.json:
+    (contains(@, '"agentVersion"')): true
+    (contains(@, '"dexter"')): true
