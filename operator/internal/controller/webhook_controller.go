@@ -216,53 +216,61 @@ func (r *WebhookController) CheckOrUpdateWebhookCertSecret(ctx context.Context, 
 }
 
 func (r *WebhookController) CheckOrUpdateWebhookConfigurations(ctx context.Context, secret *corev1.Secret) (bool, error) {
+	// Update only CABundle fields of existing webhook configurations created by Helm
+	caBundle := secret.Data["ca.crt"]
+	changed := false
+
 	// ValidatingWebhookConfiguration
-	validatingWebhookConfiguration := webhookValidatingWebhookConfiguration(r.namespace, r.opts.ServiceName, secret)
-	existingValidatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{}
-	err := r.Get(ctx, types.NamespacedName{Name: validatingWebhookConfiguration.Name}, existingValidatingWebhookConfiguration)
-	if err != nil {
+	validatingName := webhookValidatingWebhookConfiguration(r.namespace, r.opts.ServiceName, secret).GetName()
+	existingValidating := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+	if err := r.Get(ctx, types.NamespacedName{Name: validatingName}, existingValidating); err != nil {
 		if errors.IsNotFound(err) {
-			err := r.Create(ctx, validatingWebhookConfiguration)
-			if err != nil && !errors.IsAlreadyExists(err) { // race condition, ignore
-				return false, err
-			}
-		} else {
-			return false, err
+			return false, nil
 		}
-	} else {
-		if compareValidatingWebhookConfigurations(existingValidatingWebhookConfiguration, validatingWebhookConfiguration) {
-			existingValidatingWebhookConfiguration.Webhooks = validatingWebhookConfiguration.Webhooks
-			err := r.Update(ctx, existingValidatingWebhookConfiguration)
-			if err != nil {
-				return false, err
-			}
+		return false, err
+	}
+
+	needUpdate := false
+	for i := range existingValidating.Webhooks {
+		if len(existingValidating.Webhooks[i].ClientConfig.CABundle) == 0 {
+			existingValidating.Webhooks[i].ClientConfig.CABundle = caBundle
+			needUpdate = true
+		}
+	}
+	if needUpdate {
+		if err := r.Update(ctx, existingValidating); err != nil {
+			return false, err
+		} else {
+			changed = true
 		}
 	}
 
 	// MutatingWebhookConfiguration
-	mutatingWebhookConfiguration := webhookMutatingWebhookConfiguration(r.namespace, r.opts.ServiceName, secret)
-	existingMutatingWebhookConfiguration := &admissionregistrationv1.MutatingWebhookConfiguration{}
-	err = r.Get(ctx, types.NamespacedName{Name: mutatingWebhookConfiguration.Name}, existingMutatingWebhookConfiguration)
-	if err != nil {
+	mutatingName := webhookMutatingWebhookConfiguration(r.namespace, r.opts.ServiceName, secret).GetName()
+	existingMutating := &admissionregistrationv1.MutatingWebhookConfiguration{}
+	if err := r.Get(ctx, types.NamespacedName{Name: mutatingName}, existingMutating); err != nil {
 		if errors.IsNotFound(err) {
-			err := r.Create(ctx, mutatingWebhookConfiguration)
-			if err != nil && !errors.IsAlreadyExists(err) { // race condition, ignore
-				return false, err
-			}
-		} else {
-			return false, err
+			return changed, nil
 		}
-	} else {
-		if compareMutatingWebhookConfigurations(existingMutatingWebhookConfiguration, mutatingWebhookConfiguration) {
-			existingMutatingWebhookConfiguration.Webhooks = mutatingWebhookConfiguration.Webhooks
-			err := r.Update(ctx, existingMutatingWebhookConfiguration)
-			if err != nil {
-				return false, err
-			}
+		return false, err
+	}
+
+	needUpdate = false
+	for i := range existingMutating.Webhooks {
+		if len(existingMutating.Webhooks[i].ClientConfig.CABundle) == 0 {
+			existingMutating.Webhooks[i].ClientConfig.CABundle = caBundle
+			needUpdate = true
+		}
+	}
+	if needUpdate {
+		if err := r.Update(ctx, existingMutating); err != nil {
+			return false, err
+		} else {
+			changed = true
 		}
 	}
 
-	return false, nil
+	return changed, nil
 }
 
 // webhookValidatingWebhookConfiguration returns a new validating webhook configuration.
@@ -383,6 +391,9 @@ func (r *WebhookController) WebhookSecretReadyzCheck(_ *http.Request) error {
 	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{}
 	err = r.Get(context.Background(), types.NamespacedName{Name: validatingWebhookName}, validatingWebhookConfiguration)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("ValidatingWebhookConfiguration %q not found. Either disable webhooks (not recommended) or reinstall the operator via the Helm chart to provision webhooks", validatingWebhookName)
+		}
 		return err
 	}
 
@@ -393,6 +404,9 @@ func (r *WebhookController) WebhookSecretReadyzCheck(_ *http.Request) error {
 	mutatingWebhookConfiguration := webhookMutatingWebhookConfiguration(r.namespace, r.opts.ServiceName, secret)
 	err = r.Get(context.Background(), types.NamespacedName{Name: mutatingWebhookConfiguration.Name}, mutatingWebhookConfiguration)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("MutatingWebhookConfiguration %q not found. Either disable webhooks (not recommended) or reinstall the operator via the Helm chart to provision webhooks", mutatingWebhookConfiguration.Name)
+		}
 		return err
 	}
 

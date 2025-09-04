@@ -2,6 +2,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: skyhook-operator-manager-role
+  annotations:
+    checkov.io/skip1: CKV_K8S_155=Operator must manage webhook configs for cert rotation
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 rules:
@@ -10,13 +12,19 @@ rules:
   resources:
   - mutatingwebhookconfigurations
   - validatingwebhookconfigurations
+  resourceNames:
+  - skyhook-operator-validating-webhook
+  - skyhook-operator-mutating-webhook
   verbs:
-  - create
-  - delete
   - get
-  - list
-  - patch
   - update
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - list
   - watch
 - apiGroups:
   - ""

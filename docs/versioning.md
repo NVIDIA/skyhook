@@ -47,6 +47,10 @@ image:
 image: "ghcr.io/nvidia/skyhook/operator:0.7.0"
 ```
 
+### Image Pinning: Tag vs Digest
+- You can specify either a tag or a digest for images.
+- If both are provided, the **digest takes precedence** and determines the image pulled. The rendered image reference may display as `:tag@sha256:...`, but the digest controls selection.
+
 ## Release Branching Strategy
 
 Skyhook uses **release branches** to manage patches and maintenance releases:

@@ -37,12 +37,14 @@ controllerManager:
     - --v=0
     containerSecurityContext:
       allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
       capabilities:
         drop:
         - ALL
     image:
       repository: quay.io/brancz/kube-rbac-proxy
       tag: v0.15.0
+      digest: "sha256:2c7b120590cbe9f634f5099f2cbb91d0b668569023a81505ca124a5c437e7663" # manifest list digest (multi-arch)
     resources:
       limits:
         cpu: 500m
@@ -53,6 +55,7 @@ controllerManager:
   manager:
     containerSecurityContext:
       allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
       capabilities:
         drop:
         - ALL
@@ -81,11 +84,13 @@ controllerManager:
       pauseImage: registry.k8s.io/pause:3.10
     image:
       repository: nvcr.io/nvidia/skyhook/operator
-      tag: "" ## if omitted, default to the chart appVersion
+      tag: "" ## if both tag and digest are omitted, defaults to the chart appVersion
+      digest: "sha256:412880d97eab314275590068f993a371c772b19a1cb4b965fd6b9ca101f21b43" # manifest list digest (multi-arch)
     ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
     agent:
       repository: nvcr.io/nvidia/skyhook/agent
       tag: "v6.3.1"
+      digest: "sha256:c034866d1382c3372989c09839e5a0c0837cf2836d2a20a038649469a9dae18b" # manifest list digest (multi-arch)
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
@@ -153,7 +158,8 @@ webhook:
 
   ## uninstall image for cleaning up webhook resources
   removalImage: bitnami/kubectl
-  removalTag: latest
+  removalTag: 1.33.1
+  removalDigest: "sha256:9081a6f83f4febf47369fc46b6f0f7683c7db243df5b43fc9defe51b0471a950"
 
 metrics:
   addServiceAccountBinding: false
