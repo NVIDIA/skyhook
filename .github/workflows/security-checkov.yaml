@@ -22,7 +22,7 @@ on:
     paths:
       - 'chart/**'
   push:
-    branches: [main]
+    branches: [main, checkov-testing]
     paths:
       - 'chart/**'
 
@@ -31,10 +31,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Run Checkov
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: Run Checkov (Helm)
         uses: bridgecrewio/checkov-action@master
         with:
           directory: chart
           framework: helm
           output_format: cli
+          bc_cli_args: --helm-args '--namespace skyhook -f chart/values.yaml'
