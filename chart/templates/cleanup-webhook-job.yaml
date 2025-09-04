@@ -72,7 +72,7 @@ spec:
           WEBHOOK_SECRET_NAME="{{ .Values.webhook.secretName | default "webhook-cert" }}"
           VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
           MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
-          kubectl delete secret -n $NAMESPACE $WEBHOOK_SECRET_NAME || true
+          kubectl delete secret -n $NAMESPACE "{{ .Values.webhook.secretName | default "webhook-cert" }}" || true
           kubectl delete validatingwebhookconfiguration $VALIDATING_WEBHOOK_CONFIGURATION_NAME || true
           kubectl delete mutatingwebhookconfiguration $MUTATING_WEBHOOK_CONFIGURATION_NAME || true
 {{- end }} 
