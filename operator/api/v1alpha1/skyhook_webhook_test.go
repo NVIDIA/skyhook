@@ -277,6 +277,51 @@ var _ = Describe("Skyhook Webhook", func() {
 			Expect(err).To(BeNil())
 		})
 
+		It("should allow glob patterns in configInterrupts that match at least one key", func() {
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+							ConfigMap: map[string]string{
+								"config.sh":  "abc",
+								"upgrade.sh": "def",
+							},
+							ConfigInterrupts: map[string]Interrupt{
+								"*.sh": {Type: SERVICE, Services: []string{"kubelet"}},
+							},
+						},
+					},
+				},
+			}
+
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).To(BeNil())
+		})
+
+		It("should reject glob patterns in configInterrupts that match no keys", func() {
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+							ConfigMap: map[string]string{
+								"config.txt": "abc",
+							},
+							ConfigInterrupts: map[string]Interrupt{
+								"*.sh": {Type: SERVICE, Services: []string{"kubelet"}},
+							},
+						},
+					},
+				},
+			}
+
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).ToNot(BeNil())
+		})
+
 		It("Should deny if ambiguous version match", func() {
 			skyhook := &Skyhook{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},

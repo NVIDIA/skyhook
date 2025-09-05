@@ -20,6 +20,8 @@ package wrapper
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/version"
@@ -140,13 +142,26 @@ func (s *Skyhook) GetConfigInterrupts() map[string][]*v1alpha1.Interrupt {
 	for _pkg := range s.Spec.Packages {
 		_package := s.Spec.Packages[_pkg]
 
-		for _, update := range s.Status.ConfigUpdates[_package.Name] {
-			if interrupt, exists := _package.ConfigInterrupts[update]; exists {
-				if interrupts[_package.Name] == nil {
-					interrupts[_package.Name] = make([]*v1alpha1.Interrupt, 0)
-				}
+		// Track duplicates to avoid adding the same interrupt multiple times per package
+		seen := make(map[string]struct{})
 
-				interrupts[_package.Name] = append(interrupts[_package.Name], &interrupt)
+		for _, update := range s.Status.ConfigUpdates[_package.Name] {
+			for pattern, interrupt := range _package.ConfigInterrupts {
+				// filepath.Match treats a non-glob pattern as a literal
+				if ok, err := filepath.Match(pattern, update); err == nil && ok {
+					if interrupts[_package.Name] == nil {
+						interrupts[_package.Name] = make([]*v1alpha1.Interrupt, 0)
+					}
+
+					key := fmt.Sprintf("%s|%s", interrupt.Type, strings.Join(interrupt.Services, ","))
+					if _, exists := seen[key]; exists {
+						continue
+					}
+					seen[key] = struct{}{}
+
+					intr := interrupt // copy to get stable address
+					interrupts[_package.Name] = append(interrupts[_package.Name], &intr)
+				}
 			}
 		}
 	}
