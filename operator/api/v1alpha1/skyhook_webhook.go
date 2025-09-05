@@ -21,6 +21,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -171,10 +172,30 @@ func (r *Skyhook) Validate() error {
 		}
 
 		// test to make sure that the config interrupts are for valid packages
-		for configMap := range v.ConfigInterrupts {
-			if _, exists := v.ConfigMap[configMap]; !exists {
-				return fmt.Errorf("error config interrupt for key that doesn't exist: %s doesn't exist as a configmap", configMap)
+		for pattern := range v.ConfigInterrupts {
+			// exact key present
+			if _, exists := v.ConfigMap[pattern]; exists {
+				continue
 			}
+
+			// Only '*' is supported as a glob meta character
+			isGlob := strings.Contains(pattern, "*")
+			if isGlob {
+				matchedAny := false
+				for key := range v.ConfigMap {
+					if ok, err := filepath.Match(pattern, key); err == nil && ok {
+						matchedAny = true
+						break
+					}
+				}
+				if matchedAny {
+					continue
+				}
+				return fmt.Errorf("error config interrupt glob %q does not match any configMap keys", pattern)
+			}
+
+			// not a glob and not an exact key
+			return fmt.Errorf("error config interrupt for key that doesn't exist: %s doesn't exist as a configmap", pattern)
 		}
 
 		image, version, found := strings.Cut(v.Image, ":")
