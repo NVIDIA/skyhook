@@ -16,6 +16,35 @@
 
 ---
 apiVersion: v1
+kind: Pod
+metadata:
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: config-skyhook
+    skyhook.nvidia.com/package: dexter-1.2.3
+  annotations:
+    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+      {
+        "name": "dexter",
+        "version": "1.2.3",
+        "skyhook": "config-skyhook",
+        "stage": "config"
+      }
+spec:
+  initContainers:
+    - name: dexter-init
+    - name: dexter-config
+      args:
+        ([0]): config
+        ([1]): /root
+        (length(@)): 3
+    - name: dexter-configcheck
+      args:
+        ([0]): config-check
+        ([1]): /root
+        (length(@)): 3
+---
+apiVersion: v1
 kind: Node
 metadata:
   labels:
