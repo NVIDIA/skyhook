@@ -25,9 +25,7 @@ spec:
       annotations:
         kubectl.kubernetes.io/default-container: manager
     spec:
-      {{- if and .Values.controllerManager.selectors .Values.controllerManager.nodeAffinity.matchExpressions }}
-      {{- fail "Error: Cannot specify both controllerManager.selectors and controllerManager.nodeAffinity.matchExpressions. Use nodeAffinity.matchExpressions for complex node selection or selectors for simple key-value matching." }}
-      {{- end }}
+      
       automountServiceAccountToken: false
       affinity:
         nodeAffinity:
@@ -198,9 +196,6 @@ spec:
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
 {{ if ((.Values.controllerManager.podDisruptionBudget).minAvailable) }}
-{{ if ge .Values.controllerManager.podDisruptionBudget.minAvailable .Values.controllerManager.replicas }}
-{{- $_ := required "minAvailable to be less than replicas" .nil }}
-{{ end }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
