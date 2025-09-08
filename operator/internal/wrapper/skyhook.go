@@ -159,8 +159,7 @@ func (s *Skyhook) GetConfigInterrupts() map[string][]*v1alpha1.Interrupt {
 					}
 					seen[key] = struct{}{}
 
-					intr := interrupt // copy to get stable address
-					interrupts[_package.Name] = append(interrupts[_package.Name], &intr)
+					interrupts[_package.Name] = append(interrupts[_package.Name], &interrupt)
 				}
 			}
 		}

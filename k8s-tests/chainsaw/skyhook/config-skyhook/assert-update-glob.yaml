@@ -1,0 +1,77 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+apiVersion: v1
+kind: Node
+metadata:
+  labels:
+    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/status_config-skyhook: complete
+  annotations:
+    ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")):
+      {
+        "dexter|1.2.3": {
+            "name": "dexter",
+            "version": "1.2.3",
+            "image": "ghcr.io/nvidia/skyhook/agentless",
+            "stage": "post-interrupt",
+            "state": "complete"
+        }
+      }
+    skyhook.nvidia.com/status_config-skyhook: complete
+status:
+  (conditions[?type == 'skyhook.nvidia.com/config-skyhook/NotReady']):
+  - reason: "Complete"
+    status: "False"
+  (conditions[?type == 'skyhook.nvidia.com/config-skyhook/Erroring']):
+  - reason: "Not Erroring"
+    status: "False"
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: config-skyhook
+status:
+  status: complete
+  nodeState:
+    (values(@)):
+      - dexter|1.2.3:
+          name: dexter
+          state: complete
+          version: '1.2.3'
+          stage: post-interrupt
+          image: ghcr.io/nvidia/skyhook/agentless
+  nodeStatus:
+    (values(@)):
+      - complete
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: config-skyhook-dexter-1.2.3
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: config-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: config-skyhook
+data:
+  game.properties: |
+    changed via glob

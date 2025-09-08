@@ -65,3 +65,8 @@ spec:
         file: update-no-interrupt.yaml
     - assert:
         file: assert-update-no-interrupt.yaml
+  - try:
+    - apply:
+        file: update-glob.yaml
+    - assert:
+        file: assert-update-glob.yaml
