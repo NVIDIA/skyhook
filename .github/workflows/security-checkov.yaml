@@ -44,4 +44,3 @@ jobs:
           directory: chart
           framework: helm
           output_format: cli
-          skip_check: CKV2_K8S_6 # not in nspect or local checkov

@@ -225,9 +225,9 @@ func (r *WebhookController) CheckOrUpdateWebhookConfigurations(ctx context.Conte
 	existingValidating := &admissionregistrationv1.ValidatingWebhookConfiguration{}
 	if err := r.Get(ctx, types.NamespacedName{Name: validatingName}, existingValidating); err != nil {
 		if errors.IsNotFound(err) {
-			return false, nil
+			return false, fmt.Errorf("ValidatingWebhookConfiguration %q not found; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", validatingName, err)
 		}
-		return false, err
+		return false, fmt.Errorf("failed to get ValidatingWebhookConfiguration %q: %w", validatingName, err)
 	}
 
 	needUpdate := false
@@ -250,9 +250,9 @@ func (r *WebhookController) CheckOrUpdateWebhookConfigurations(ctx context.Conte
 	existingMutating := &admissionregistrationv1.MutatingWebhookConfiguration{}
 	if err := r.Get(ctx, types.NamespacedName{Name: mutatingName}, existingMutating); err != nil {
 		if errors.IsNotFound(err) {
-			return changed, nil
+			return changed, fmt.Errorf("MutatingWebhookConfiguration %q not found; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", mutatingName, err)
 		}
-		return false, err
+		return false, fmt.Errorf("failed to get MutatingWebhookConfiguration %q: %w", mutatingName, err)
 	}
 
 	needUpdate = false

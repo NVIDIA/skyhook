@@ -1,0 +1,5 @@
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
+
+
