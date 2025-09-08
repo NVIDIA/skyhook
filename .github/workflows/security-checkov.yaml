@@ -14,23 +14,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+name: Checkov Security Scan
 
-controllerManager:
-  # Configure node affinity expressions for testing - this targets non-existent labels
-  nodeAffinity:
-    matchExpressions:
-      - key: skyhook.nvidia.com/test-node
-        operator: In
-        values:
-        - fooboar
-      - key: node-role.kubernetes.io/control-plane
-        operator: DoesNotExist
-  manager:
-    # telling the helm chart to use the test operator image
-    # for more info refer to the README
-    image:
-      repository: ghcr.io/nvidia/skyhook/operator
-      tag: latest ## THIS should change to be like a tag so it can point at a specific commit
-      digest: ""
-webhook:
-  enable: false
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'chart/**'
+  push:
+    branches: [main, checkov-testing]
+    paths:
+      - 'chart/**'
+
+jobs:
+  build:
+    name: checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Test with Checkov
+        id: checkov
+        uses: bridgecrewio/checkov-action@master
+        env:
+          HELM_NAMESPACE: skyhook
+        with:
+          directory: chart
+          framework: helm
+          output_format: cli

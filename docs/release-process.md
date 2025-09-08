@@ -115,6 +115,42 @@ git push origin chart/v1.2.3
 - [ ] Tests passing
 - [ ] Documentation updated
 
+### Pin multi-arch image digests in the chart
+
+Starting with digest pinning, the chart references images using tag@digest (or digest-only where applicable). For each image, fetch the multi-arch manifest digest and update `chart/values.yaml` so our releases are reproducible across architectures.
+
+Prerequisites:
+
+- Docker buildx (`docker-buildx version`)
+
+Fetch a multi-arch digest (example for bitnami/kubectl used by the webhook cleanup job):
+
+```bash
+docker-buildx imagetools inspect bitnami/kubectl:1.33.1
+```
+
+Example output (look for the top-level Digest):
+
+```
+Name:      docker.io/bitnami/kubectl:1.33.1
+MediaType: application/vnd.docker.distribution.manifest.list.v2+json
+Digest:    sha256:9081a6f83f4febf47369fc46b6f0f7683c7db243df5b43fc9defe51b0471a950
+
+Manifests:
+  Name:      docker.io/bitnami/kubectl:1.33.1@sha256:c8efec87588c7a2d84c760d54446b2e081e607a709f16f19283774d5612191b7
+  MediaType: application/vnd.docker.distribution.manifest.v2+json
+  Platform:  linux/amd64
+
+  Name:      docker.io/bitnami/kubectl:1.33.1@sha256:2af8ed9feaeada845f4d60f1fe4db951df2e5334ea01bec4b5ef4f191ad20d65
+  MediaType: application/vnd.docker.distribution.manifest.v2+json
+  Platform:  linux/arm64
+```
+
+Update the digest in `chart/values.yaml` for kube-rbac-proxy, operator, and agent images:
+
+Note:
+- Always use the multi-arch manifest digest (top-level Digest from imagetools), not a single-arch child manifest digest.
+
 **After tagging:**
 - [ ] CI/CD pipeline completes
 - [ ] Images published successfully

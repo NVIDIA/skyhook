@@ -1,0 +1,34 @@
+{{- if .Values.webhook.enable }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: skyhook-operator-validating-webhook
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    caBundle: ""
+    service:
+      name: skyhook-operator-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /validate-skyhook-nvidia-com-v1alpha1-skyhook
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: validate-skyhook.nvidia.com
+  namespaceSelector: {}
+  objectSelector: {}
+  rules:
+  - apiGroups:
+    - skyhook.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - skyhooks
+    scope: '*'
+  sideEffects: None
+  timeoutSeconds: 10
+{{- end }}

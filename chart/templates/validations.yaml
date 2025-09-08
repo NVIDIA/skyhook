@@ -1,0 +1,18 @@
+{{- if eq .Release.Namespace "default" }}
+{{- fail "Deployment to 'default' namespace is not allowed for security reasons. Please specify a different namespace." }}
+{{- end }}
+
+
+{{- /* Prevent conflicting node selection config */ -}}
+{{- if and .Values.controllerManager.selectors .Values.controllerManager.nodeAffinity.matchExpressions }}
+{{- fail "Error: Cannot specify both controllerManager.selectors and controllerManager.nodeAffinity.matchExpressions. Use nodeAffinity.matchExpressions for complex node selection or selectors for simple key-value matching." }}
+{{- end }}
+
+{{- /* Validate PodDisruptionBudget: minAvailable must be < replicas */ -}}
+{{- if ((.Values.controllerManager.podDisruptionBudget).minAvailable) -}}
+  {{- if ge .Values.controllerManager.podDisruptionBudget.minAvailable .Values.controllerManager.replicas -}}
+    {{- fail "Error: controllerManager.podDisruptionBudget.minAvailable must be less than controllerManager.replicas" -}}
+  {{- end -}}
+{{- end -}}
+
+

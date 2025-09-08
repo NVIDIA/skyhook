@@ -21,6 +21,7 @@ controllerManager:
     image:
       repository: ghcr.io/nvidia/skyhook/operator
       tag: latest ## THIS should change to be like a tag so it can point at a specific commit
+      digest: ""
 estimatedNodeCount: 400
 estimatedPackageCount: 5
 webhook:

@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "chart.fullname" . }}-controller-manager
+  namespace: "{{ .Release.Namespace }}"
   labels:
     app: {{ include "chart.fullname" . }}-controller-manager
     app.kubernetes.io/component: manager
@@ -24,9 +25,8 @@ spec:
       annotations:
         kubectl.kubernetes.io/default-container: manager
     spec:
-      {{- if and .Values.controllerManager.selectors .Values.controllerManager.nodeAffinity.matchExpressions }}
-      {{- fail "Error: Cannot specify both controllerManager.selectors and controllerManager.nodeAffinity.matchExpressions. Use nodeAffinity.matchExpressions for complex node selection or selectors for simple key-value matching." }}
-      {{- end }}
+      
+      automountServiceAccountToken: false
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -89,10 +89,11 @@ spec:
         - name: PAUSE_IMAGE
           value: {{ quote .Values.controllerManager.manager.env.pauseImage }}
         - name: AGENT_IMAGE
-          value: {{ .Values.controllerManager.manager.agent.repository }}:{{ .Values.controllerManager.manager.agent.tag}}
+          value: {{ .Values.controllerManager.manager.agent.repository }}{{- if and (.Values.controllerManager.manager.agent.tag) (.Values.controllerManager.manager.agent.digest) }}:{{ .Values.controllerManager.manager.agent.tag }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else if .Values.controllerManager.manager.agent.digest }}@{{ .Values.controllerManager.manager.agent.digest }}{{- else }}:{{ .Values.controllerManager.manager.agent.tag }}{{- end }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}
+        image: {{ .Values.controllerManager.manager.image.repository }}{{- if .Values.controllerManager.manager.image.digest }}{{- if .Values.controllerManager.manager.image.tag }}:{{ .Values.controllerManager.manager.image.tag }}@{{ .Values.controllerManager.manager.image.digest }}{{- else }}@{{ .Values.controllerManager.manager.image.digest }}{{- end }}{{- else }}:{{ .Values.controllerManager.manager.image.tag | default .Chart.AppVersion }}{{- end }}
+        imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
             path: /healthz
@@ -104,6 +105,14 @@ spec:
         - containerPort: 9443
           name: webhook-server
           protocol: TCP
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
+        {{- if .Values.webhook.enable }}
+        - mountPath: /tmp
+          name: webhook-certs
+        {{- end }}
         readinessProbe:
           httpGet:
             path: /readyz
@@ -127,26 +136,66 @@ spec:
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag
-          | default .Chart.AppVersion }}
+        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}{{- if .Values.controllerManager.kubeRbacProxy.image.tag }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- end }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
+        imagePullPolicy: Always
+        livenessProbe:
+          tcpSocket:
+            port: 8443
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          tcpSocket:
+            port: 8443
+          initialDelaySeconds: 5
+          periodSeconds: 20
+          successThreshold: 1
+          failureThreshold: 2
+          timeoutSeconds: 3
         name: kube-rbac-proxy
         ports:
         - containerPort: 8443
           name: https
           protocol: TCP
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
         resources: {{- toYaml .Values.controllerManager.kubeRbacProxy.resources | nindent 10 }}
         securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
           | nindent 10 }}
       imagePullSecrets:
         - name: {{ quote .Values.imagePullSecret }}
+      volumes:
+      - name: kube-api-access
+        projected:
+          defaultMode: 420
+          sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3607
+          - configMap:
+              items:
+              - key: ca.crt
+                path: ca.crt
+              name: kube-root-ca.crt
+          - downwardAPI:
+              items:
+              - fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+                path: namespace
+      {{- if .Values.webhook.enable }}
+      - name: webhook-certs
+        emptyDir: {}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
 {{ if ((.Values.controllerManager.podDisruptionBudget).minAvailable) }}
-{{ if ge .Values.controllerManager.podDisruptionBudget.minAvailable .Values.controllerManager.replicas }}
-{{- $_ := required "minAvailable to be less than replicas" .nil }}
-{{ end }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

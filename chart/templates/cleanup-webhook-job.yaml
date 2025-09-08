@@ -3,6 +3,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ include "chart.fullname" . }}-webhook-cleanup"
+  namespace: "{{ .Release.Namespace }}"
   annotations:
     "helm.sh/hook": pre-delete
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -10,19 +11,63 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: kube-api-access
+        projected:
+          defaultMode: 420
+          sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3607
+          - configMap:
+              items:
+              - key: ca.crt
+                path: ca.crt
+              name: kube-root-ca.crt
+          - downwardAPI:
+              items:
+              - fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+                path: namespace
       containers:
       - name: cleanup
-        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}:{{ .Values.webhook.removalTag | default "latest" }}
+        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "1.33.1" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
+        resources:
+          limits:
+            cpu: {{ .Values.limitRange.default.cpu }}
+            memory: {{ .Values.limitRange.default.memory }}
+          requests:
+            cpu: {{ .Values.limitRange.defaultRequest.cpu }}
+            memory: {{ .Values.limitRange.defaultRequest.memory }}
         command:
         - /bin/sh
         - -c
         - |
           NAMESPACE="{{ .Release.Namespace }}"
-          WEBHOOK_SECRET_NAME="{{ .Values.webhook.secretName | default "webhook-cert" }}"
           VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
           MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
-          kubectl delete secret -n $NAMESPACE $WEBHOOK_SECRET_NAME || true
+          kubectl delete secret -n $NAMESPACE "{{ .Values.webhook.secretName | default "webhook-cert" }}" || true
           kubectl delete validatingwebhookconfiguration $VALIDATING_WEBHOOK_CONFIGURATION_NAME || true
           kubectl delete mutatingwebhookconfiguration $MUTATING_WEBHOOK_CONFIGURATION_NAME || true
 {{- end }} 
