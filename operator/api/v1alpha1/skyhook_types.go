@@ -56,6 +56,10 @@ type SkyhookSpec struct {
 	// NodeSelector are a set of labels we want to monitor nodes for applying packages too
 	NodeSelector metav1.LabelSelector `json:"nodeSelectors,omitempty"`
 
+	// DeploymentPolicy is the name of a DeploymentPolicy for rollout settings
+	// +optional
+	DeploymentPolicy string `json:"deploymentPolicy,omitempty"`
+
 	// InterruptionBudget configures how many nodes that match node selectors that allowed to be interrupted at once.
 	InterruptionBudget InterruptionBudget `json:"interruptionBudget,omitempty"`
 
