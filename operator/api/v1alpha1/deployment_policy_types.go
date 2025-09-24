@@ -139,7 +139,7 @@ type DeploymentPolicySpec struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Namespaced
 
 // DeploymentPolicy configures safe rollout defaults and compartment overrides
 type DeploymentPolicy struct {
