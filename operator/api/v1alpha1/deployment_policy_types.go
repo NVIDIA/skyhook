@@ -24,65 +24,69 @@
 package v1alpha1
 
 import (
+	"fmt"
+	"reflect"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 // Strategy parameters
 type FixedStrategy struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	InitialBatch int `json:"initialBatch,omitempty"`
+	InitialBatch *int `json:"initialBatch,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	// +optional
-	BatchThreshold int `json:"batchThreshold,omitempty"`
+	BatchThreshold *int `json:"batchThreshold,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	FailureThreshold int `json:"failureThreshold,omitempty"`
+	FailureThreshold *int `json:"failureThreshold,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	// +optional
-	SafetyLimit int `json:"safetyLimit,omitempty"`
+	SafetyLimit *int `json:"safetyLimit,omitempty"`
 }
 
 type LinearStrategy struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	InitialBatch int `json:"initialBatch,omitempty"`
+	InitialBatch *int `json:"initialBatch,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	Delta int `json:"delta,omitempty"`
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=100
-	// +optional
-	BatchThreshold int `json:"batchThreshold,omitempty"`
-	// +kubebuilder:validation:Minimum=1
-	// +optional
-	FailureThreshold int `json:"failureThreshold,omitempty"`
+	Delta *int `json:"delta,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	// +optional
-	SafetyLimit int `json:"safetyLimit,omitempty"`
+	BatchThreshold *int `json:"batchThreshold,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	FailureThreshold *int `json:"failureThreshold,omitempty"`
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	SafetyLimit *int `json:"safetyLimit,omitempty"`
 }
 
 type ExponentialStrategy struct {
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	InitialBatch int `json:"initialBatch,omitempty"`
+	InitialBatch *int `json:"initialBatch,omitempty"`
 	// +kubebuilder:validation:Minimum=2
 	// +optional
-	GrowthFactor int `json:"growthFactor,omitempty"`
+	GrowthFactor *int `json:"growthFactor,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	// +optional
-	BatchThreshold int `json:"batchThreshold,omitempty"`
+	BatchThreshold *int `json:"batchThreshold,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +optional
-	FailureThreshold int `json:"failureThreshold,omitempty"`
+	FailureThreshold *int `json:"failureThreshold,omitempty"`
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	// +optional
-	SafetyLimit int `json:"safetyLimit,omitempty"`
+	SafetyLimit *int `json:"safetyLimit,omitempty"`
 }
 
 // DeploymentStrategy is a single-key sum-type: exactly one of fixed|linear|exponential must be set
@@ -150,6 +154,250 @@ type DeploymentPolicy struct {
 }
 
 // +kubebuilder:object:root=true
+
+// Validate validates the DeploymentBudget
+func (b *DeploymentBudget) Validate() error {
+	hasPercent := b.Percent != nil
+	hasCount := b.Count != nil
+
+	if !hasPercent && !hasCount {
+		return fmt.Errorf("exactly one of percent or count must be set")
+	}
+
+	if hasPercent && hasCount {
+		return fmt.Errorf("percent and count are mutually exclusive")
+	}
+
+	if hasPercent {
+		if *b.Percent < 1 || *b.Percent > 100 {
+			return fmt.Errorf("percent must be between 1 and 100, got %d", *b.Percent)
+		}
+	}
+
+	if hasCount {
+		if *b.Count < 1 {
+			return fmt.Errorf("count must be >= 1, got %d", *b.Count)
+		}
+	}
+
+	return nil
+}
+
+// Default applies default values to DeploymentStrategy
+func (s *DeploymentStrategy) Default() {
+	switch {
+	case s.Fixed != nil:
+		s.Fixed.Default()
+	case s.Linear != nil:
+		s.Linear.Default()
+	case s.Exponential != nil:
+		s.Exponential.Default()
+	}
+}
+
+// Validate validates the DeploymentStrategy
+func (s *DeploymentStrategy) Validate() error {
+	count := 0
+	var err error
+
+	if s.Fixed != nil {
+		count++
+		err = s.Fixed.Validate()
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.Linear != nil {
+		count++
+		err = s.Linear.Validate()
+		if err != nil {
+			return err
+		}
+	}
+
+	if s.Exponential != nil {
+		count++
+		err = s.Exponential.Validate()
+		if err != nil {
+			return err
+		}
+	}
+
+	if count != 1 {
+		return fmt.Errorf("exactly one of fixed, linear, or exponential must be set")
+	}
+
+	return nil
+}
+
+// defaultCommonStrategyFields applies default values to common strategy fields
+func defaultCommonStrategyFields(initialBatch, batchThreshold, failureThreshold, safetyLimit **int) {
+	if *initialBatch == nil {
+		*initialBatch = ptr.To(1)
+	}
+	if *batchThreshold == nil {
+		*batchThreshold = ptr.To(100)
+	}
+	if *failureThreshold == nil {
+		*failureThreshold = ptr.To(3)
+	}
+	if *safetyLimit == nil {
+		*safetyLimit = ptr.To(50)
+	}
+}
+
+// validateCommonStrategyFields validates common fields across all strategy types
+func validateCommonStrategyFields(initialBatch, batchThreshold, failureThreshold, safetyLimit *int) error {
+	if initialBatch != nil && *initialBatch < 1 {
+		return fmt.Errorf("initialBatch must be >= 1, got %d", *initialBatch)
+	}
+	if batchThreshold != nil && (*batchThreshold < 1 || *batchThreshold > 100) {
+		return fmt.Errorf("batchThreshold must be between 1 and 100, got %d", *batchThreshold)
+	}
+	if failureThreshold != nil && *failureThreshold < 1 {
+		return fmt.Errorf("failureThreshold must be >= 1, got %d", *failureThreshold)
+	}
+	if safetyLimit != nil && (*safetyLimit < 1 || *safetyLimit > 100) {
+		return fmt.Errorf("safetyLimit must be between 1 and 100, got %d", *safetyLimit)
+	}
+	return nil
+}
+
+// Default applies default values to FixedStrategy
+func (s *FixedStrategy) Default() {
+	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.FailureThreshold, &s.SafetyLimit)
+}
+
+// Validate validates the FixedStrategy
+func (s *FixedStrategy) Validate() error {
+	return validateCommonStrategyFields(s.InitialBatch, s.BatchThreshold, s.FailureThreshold, s.SafetyLimit)
+}
+
+// Default applies default values to LinearStrategy
+func (s *LinearStrategy) Default() {
+	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.FailureThreshold, &s.SafetyLimit)
+	if s.Delta == nil {
+		s.Delta = ptr.To(1)
+	}
+}
+
+// Validate validates the LinearStrategy
+func (s *LinearStrategy) Validate() error {
+	if err := validateCommonStrategyFields(s.InitialBatch, s.BatchThreshold, s.FailureThreshold, s.SafetyLimit); err != nil {
+		return err
+	}
+	if s.Delta != nil && *s.Delta < 1 {
+		return fmt.Errorf("delta must be >= 1, got %d", *s.Delta)
+	}
+	return nil
+}
+
+// Default applies default values to ExponentialStrategy
+func (s *ExponentialStrategy) Default() {
+	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.FailureThreshold, &s.SafetyLimit)
+	if s.GrowthFactor == nil {
+		s.GrowthFactor = ptr.To(2)
+	}
+}
+
+// Validate validates the ExponentialStrategy
+func (s *ExponentialStrategy) Validate() error {
+	if err := validateCommonStrategyFields(s.InitialBatch, s.BatchThreshold, s.FailureThreshold, s.SafetyLimit); err != nil {
+		return err
+	}
+	if s.GrowthFactor != nil && *s.GrowthFactor < 2 {
+		return fmt.Errorf("growthFactor must be >= 2, got %d", *s.GrowthFactor)
+	}
+	return nil
+}
+
+// Validate validates the Compartment
+func (c *Compartment) Validate() error {
+	// Validate compartment budget
+	if err := c.Budget.Validate(); err != nil {
+		return fmt.Errorf("compartment %q budget: %w", c.Name, err)
+	}
+
+	// Validate compartment strategy if present
+	if c.Strategy != nil {
+		if err := c.Strategy.Validate(); err != nil {
+			return fmt.Errorf("compartment %q strategy: %w", c.Name, err)
+		}
+	}
+
+	// Validate label selector syntax
+	if _, err := metav1.LabelSelectorAsSelector(&c.Selector); err != nil {
+		return fmt.Errorf("compartment %q has invalid selector: %w", c.Name, err)
+	}
+
+	return nil
+}
+
+// Default applies default values to DeploymentPolicy
+func (r *DeploymentPolicy) Default() {
+	// Apply defaults to the default strategy
+	if r.Spec.Default.Strategy != nil {
+		r.Spec.Default.Strategy.Default()
+	}
+
+	// Apply defaults to compartment strategies
+	for i := range r.Spec.Compartments {
+		compartment := &r.Spec.Compartments[i]
+
+		// If compartment has no strategy, inherit from default
+		if compartment.Strategy == nil && r.Spec.Default.Strategy != nil {
+			compartment.Strategy = r.Spec.Default.Strategy.DeepCopy()
+		}
+
+		// Apply defaults to compartment strategy
+		if compartment.Strategy != nil {
+			compartment.Strategy.Default()
+		}
+	}
+}
+
+// Validate validates the DeploymentPolicy
+func (r *DeploymentPolicy) Validate() error {
+	// Validate default budget
+	if err := r.Spec.Default.Budget.Validate(); err != nil {
+		return fmt.Errorf("default budget: %w", err)
+	}
+
+	// Validate default strategy
+	if r.Spec.Default.Strategy != nil {
+		if err := r.Spec.Default.Strategy.Validate(); err != nil {
+			return fmt.Errorf("default strategy: %w", err)
+		}
+	}
+
+	// Track compartment names for uniqueness
+	names := make(map[string]bool)
+	selectors := make(map[string]metav1.LabelSelector)
+
+	for _, compartment := range r.Spec.Compartments {
+		// Validate unique names
+		if names[compartment.Name] {
+			return fmt.Errorf("compartment name %q is not unique", compartment.Name)
+		}
+		names[compartment.Name] = true
+
+		// Validate the compartment itself
+		if err := compartment.Validate(); err != nil {
+			return err
+		}
+
+		// Check for identical selectors
+		for existingName, existingSelector := range selectors {
+			if reflect.DeepEqual(compartment.Selector, existingSelector) {
+				return fmt.Errorf("compartment %q has identical selector to compartment %q", compartment.Name, existingName)
+			}
+		}
+		selectors[compartment.Name] = compartment.Selector
+	}
+
+	return nil
+}
 
 func init() {
 	SchemeBuilder.Register(&DeploymentPolicy{})

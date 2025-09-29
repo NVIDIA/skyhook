@@ -29,7 +29,9 @@ import (
 	semver "github.com/NVIDIA/skyhook/operator/internal/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -42,7 +44,9 @@ var (
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
 func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	skyhookWebhook := &SkyhookWebhook{}
+	skyhookWebhook := &SkyhookWebhook{
+		client: mgr.GetClient(),
+	}
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
 		WithDefaulter(skyhookWebhook).
@@ -54,7 +58,10 @@ func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:webhook:path=/mutate-skyhook-nvidia-com-v1alpha1-skyhook,mutating=true,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=skyhooks,verbs=create;update,versions=v1alpha1,name=mskyhook.kb.io,admissionReviewVersions=v1
 
+// SkyhookWebhook handles validation and defaulting for Skyhook resources
+// +kubebuilder:object:generate=false
 type SkyhookWebhook struct {
+	client client.Client
 }
 
 var _ admission.CustomDefaulter = &SkyhookWebhook{}
@@ -90,7 +97,7 @@ func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, obj runtime.Object)
 
 	skyhooklog.Info("validate create", "name", skyhook.Name)
 
-	return nil, skyhook.Validate()
+	return nil, r.validateSkyhook(ctx, skyhook)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
@@ -103,7 +110,7 @@ func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runt
 
 	skyhooklog.Info("validate update", "name", skyhook.Name)
 
-	return nil, skyhook.Validate()
+	return nil, r.validateSkyhook(ctx, skyhook)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
@@ -140,6 +147,51 @@ func validateResourceOverrides(name string, res *ResourceRequirements) error {
 			return fmt.Errorf("package %q: all resource values must be positive", name)
 		}
 	}
+	return nil
+}
+
+// validateSkyhook validates a Skyhook with client access for cross-resource validation
+func (w *SkyhookWebhook) validateSkyhook(ctx context.Context, r *Skyhook) error {
+	// First run basic validation
+	if err := r.Validate(); err != nil {
+		return err
+	}
+
+	// DeploymentPolicy and InterruptionBudget are mutually exclusive
+	if r.Spec.DeploymentPolicy != "" && (r.Spec.InterruptionBudget.Percent != nil || r.Spec.InterruptionBudget.Count != nil) {
+		return fmt.Errorf("deploymentPolicy and interruptionBudget are mutually exclusive")
+	}
+
+	// If deploymentPolicy is specified, validate it exists and compartments match
+	if r.Spec.DeploymentPolicy != "" {
+		if err := w.validateDeploymentPolicyReference(ctx, r); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateDeploymentPolicyReference validates that the referenced DeploymentPolicy exists and is valid
+func (w *SkyhookWebhook) validateDeploymentPolicyReference(ctx context.Context, r *Skyhook) error {
+	// Get the referenced DeploymentPolicy
+	policy := &DeploymentPolicy{}
+	err := w.client.Get(ctx, types.NamespacedName{
+		Name:      r.Spec.DeploymentPolicy,
+		Namespace: r.Namespace,
+	}, policy)
+	if err != nil {
+		return fmt.Errorf("deploymentPolicy %q not found: %w", r.Spec.DeploymentPolicy, err)
+	}
+
+	// Apply defaults to the policy before validation
+	policy.Default()
+
+	// Validate the policy itself using its own Validate method
+	if err := policy.Validate(); err != nil {
+		return fmt.Errorf("deploymentPolicy %q is invalid: %w", r.Spec.DeploymentPolicy, err)
+	}
+
 	return nil
 }
 

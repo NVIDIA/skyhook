@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("Skyhook Webhook", func() {
@@ -534,5 +535,611 @@ var _ = Describe("Skyhook Webhook", func() {
 		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 		Expect(err).ToNot(BeNil())
 
+	})
+})
+
+var _ = Describe("DeploymentPolicy", func() {
+	Context("Strategy sum-type shape validation", func() {
+		It("should require exactly one strategy type", func() {
+			// No strategy set (invalid)
+			strategy := &DeploymentStrategy{}
+			err := strategy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("exactly one of fixed, linear, or exponential must be set"))
+
+			// Multiple strategies set (invalid)
+			strategy = &DeploymentStrategy{
+				Fixed:  &FixedStrategy{},
+				Linear: &LinearStrategy{},
+			}
+			err = strategy.Validate()
+			Expect(err).To(HaveOccurred())
+
+			strategy = &DeploymentStrategy{
+				Fixed:       &FixedStrategy{},
+				Linear:      &LinearStrategy{},
+				Exponential: &ExponentialStrategy{},
+			}
+			err = strategy.Validate()
+			Expect(err).To(HaveOccurred())
+
+			// Exactly one strategy set (valid)
+			strategy = &DeploymentStrategy{Fixed: &FixedStrategy{}}
+			strategy.Default()
+			err = strategy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+
+			strategy = &DeploymentStrategy{Linear: &LinearStrategy{}}
+			strategy.Default()
+			err = strategy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+
+			strategy = &DeploymentStrategy{Exponential: &ExponentialStrategy{}}
+			strategy.Default()
+			err = strategy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Per-type bounds validation", func() {
+		It("should validate FixedStrategy bounds", func() {
+			// Valid defaults
+			strategy := FixedStrategy{}
+			strategy.Default()
+			Expect(strategy.Validate()).ToNot(HaveOccurred())
+
+			// Valid custom values
+			Expect((&FixedStrategy{
+				InitialBatch:     ptr.To(5),
+				BatchThreshold:   ptr.To(75),
+				FailureThreshold: ptr.To(2),
+				SafetyLimit:      ptr.To(30),
+			}).Validate()).ToNot(HaveOccurred())
+
+			// Test invalid bounds for common fields
+			Expect((&FixedStrategy{InitialBatch: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&FixedStrategy{BatchThreshold: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&FixedStrategy{BatchThreshold: ptr.To(101)}).Validate()).To(HaveOccurred())
+			Expect((&FixedStrategy{FailureThreshold: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&FixedStrategy{SafetyLimit: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&FixedStrategy{SafetyLimit: ptr.To(101)}).Validate()).To(HaveOccurred())
+		})
+
+		It("should validate LinearStrategy bounds", func() {
+			// Valid defaults
+			strategy := LinearStrategy{}
+			strategy.Default()
+			Expect(strategy.Validate()).ToNot(HaveOccurred())
+
+			// Valid custom values
+			Expect((&LinearStrategy{
+				InitialBatch:     ptr.To(3),
+				Delta:            ptr.To(2),
+				BatchThreshold:   ptr.To(90),
+				FailureThreshold: ptr.To(5),
+				SafetyLimit:      ptr.To(25),
+			}).Validate()).ToNot(HaveOccurred())
+
+			// Test LinearStrategy-specific field
+			Expect((&LinearStrategy{Delta: ptr.To(0)}).Validate()).To(HaveOccurred())
+		})
+
+		It("should validate ExponentialStrategy bounds", func() {
+			// Valid defaults
+			strategy := ExponentialStrategy{}
+			strategy.Default()
+			Expect(strategy.Validate()).ToNot(HaveOccurred())
+
+			// Valid custom values
+			Expect((&ExponentialStrategy{
+				InitialBatch:     ptr.To(2),
+				GrowthFactor:     ptr.To(3),
+				BatchThreshold:   ptr.To(85),
+				FailureThreshold: ptr.To(4),
+				SafetyLimit:      ptr.To(40),
+			}).Validate()).ToNot(HaveOccurred())
+
+			// Test ExponentialStrategy-specific field
+			Expect((&ExponentialStrategy{GrowthFactor: ptr.To(1)}).Validate()).To(HaveOccurred())
+		})
+
+		It("should validate common strategy field bounds", func() {
+			// InitialBatch bounds
+			Expect((&FixedStrategy{InitialBatch: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&LinearStrategy{InitialBatch: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&ExponentialStrategy{InitialBatch: ptr.To(0)}).Validate()).To(HaveOccurred())
+
+			// BatchThreshold bounds
+			Expect((&FixedStrategy{BatchThreshold: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&FixedStrategy{BatchThreshold: ptr.To(101)}).Validate()).To(HaveOccurred())
+			Expect((&LinearStrategy{BatchThreshold: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&LinearStrategy{BatchThreshold: ptr.To(101)}).Validate()).To(HaveOccurred())
+
+			// FailureThreshold bounds
+			Expect((&FixedStrategy{FailureThreshold: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&LinearStrategy{FailureThreshold: ptr.To(0)}).Validate()).To(HaveOccurred())
+
+			// SafetyLimit bounds
+			Expect((&FixedStrategy{SafetyLimit: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&FixedStrategy{SafetyLimit: ptr.To(101)}).Validate()).To(HaveOccurred())
+			Expect((&ExponentialStrategy{SafetyLimit: ptr.To(0)}).Validate()).To(HaveOccurred())
+			Expect((&ExponentialStrategy{SafetyLimit: ptr.To(101)}).Validate()).To(HaveOccurred())
+		})
+	})
+
+	Context("Budget percent/count XOR validation", func() {
+		It("should require exactly one of percent or count", func() {
+			// Neither set (invalid)
+			budget := &DeploymentBudget{}
+			err := budget.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("exactly one of percent or count must be set"))
+
+			// Both set (invalid)
+			budget = &DeploymentBudget{
+				Percent: ptr.To(50),
+				Count:   ptr.To(10),
+			}
+			err = budget.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("percent and count are mutually exclusive"))
+
+			// Only percent set (valid)
+			budget = &DeploymentBudget{Percent: ptr.To(25)}
+			err = budget.Validate()
+			Expect(err).ToNot(HaveOccurred())
+
+			// Only count set (valid)
+			budget = &DeploymentBudget{Count: ptr.To(5)}
+			err = budget.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should validate percent bounds", func() {
+			tests := []struct {
+				percent   int
+				shouldErr bool
+			}{
+				{0, true},    // too low
+				{1, false},   // minimum valid
+				{50, false},  // middle valid
+				{100, false}, // maximum valid
+				{101, true},  // too high
+			}
+
+			for _, test := range tests {
+				budget := &DeploymentBudget{Percent: ptr.To(test.percent)}
+				err := budget.Validate()
+				if test.shouldErr {
+					Expect(err).To(HaveOccurred(), "Percent: %d", test.percent)
+				} else {
+					Expect(err).ToNot(HaveOccurred(), "Percent: %d", test.percent)
+				}
+			}
+		})
+
+		It("should validate count bounds", func() {
+			tests := []struct {
+				count     int
+				shouldErr bool
+			}{
+				{0, true},   // too low
+				{1, false},  // minimum valid
+				{10, false}, // valid
+			}
+
+			for _, test := range tests {
+				budget := &DeploymentBudget{Count: ptr.To(test.count)}
+				err := budget.Validate()
+				if test.shouldErr {
+					Expect(err).To(HaveOccurred(), "Count: %d", test.count)
+				} else {
+					Expect(err).ToNot(HaveOccurred(), "Count: %d", test.count)
+				}
+			}
+		})
+	})
+
+	Context("Compartment unique names validation", func() {
+		It("should require unique compartment names", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "system",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+						},
+						{
+							Name:     "system", // duplicate name
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "api"}},
+							Budget:   DeploymentBudget{Count: ptr.To(3)},
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`compartment name "system" is not unique`))
+		})
+
+		It("should allow different compartment names", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "system",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+						},
+						{
+							Name:     "gpu",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "api"}},
+							Budget:   DeploymentBudget{Count: ptr.To(3)},
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Compartment selector equality validation", func() {
+		It("should reject identical selectors", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "comp1",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+						},
+						{
+							Name:     "comp2",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}}, // identical selector
+							Budget:   DeploymentBudget{Count: ptr.To(3)},
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`compartment "comp2" has identical selector to compartment "comp1"`))
+		})
+
+		It("should allow different selectors", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "system",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+						},
+						{
+							Name:     "gpu",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "api"}},
+							Budget:   DeploymentBudget{Count: ptr.To(3)},
+						},
+						{
+							Name:     "storage",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "db", "env": "prod"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(10)},
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Default inheritance validation", func() {
+		It("should inherit strategy from default when compartment strategy is nil", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+						Strategy: &DeploymentStrategy{
+							Linear: &LinearStrategy{
+								InitialBatch: ptr.To(2),
+								Delta:        ptr.To(3),
+							},
+						},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "system",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+							// Strategy not specified, should inherit from default
+						},
+					},
+				},
+			}
+
+			// Apply defaults
+			policy.Default()
+
+			// Check that compartment inherited the strategy
+			Expect(policy.Spec.Compartments[0].Strategy).ToNot(BeNil())
+			Expect(policy.Spec.Compartments[0].Strategy.Linear).ToNot(BeNil())
+			Expect(*policy.Spec.Compartments[0].Strategy.Linear.InitialBatch).To(Equal(2))
+			Expect(*policy.Spec.Compartments[0].Strategy.Linear.Delta).To(Equal(3))
+
+			// Validate after applying defaults
+			err := policy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should not override explicit compartment strategy", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+						Strategy: &DeploymentStrategy{
+							Linear: &LinearStrategy{
+								InitialBatch: ptr.To(2),
+								Delta:        ptr.To(3),
+							},
+						},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "web-servers",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+							Strategy: &DeploymentStrategy{
+								Fixed: &FixedStrategy{
+									InitialBatch: ptr.To(5),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// Apply defaults
+			policy.Default()
+
+			// Check that compartment kept its explicit strategy
+			Expect(policy.Spec.Compartments[0].Strategy).ToNot(BeNil())
+			Expect(policy.Spec.Compartments[0].Strategy.Fixed).ToNot(BeNil())
+			Expect(policy.Spec.Compartments[0].Strategy.Linear).To(BeNil())
+			Expect(*policy.Spec.Compartments[0].Strategy.Fixed.InitialBatch).To(Equal(5))
+
+			// Validate after applying defaults
+			err := policy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Policy defaulting behavior", func() {
+		It("should apply defaults to strategies", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget:   DeploymentBudget{Percent: ptr.To(50)},
+						Strategy: &DeploymentStrategy{Fixed: &FixedStrategy{}},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "web-servers",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+							Strategy: &DeploymentStrategy{Linear: &LinearStrategy{}},
+						},
+					},
+				},
+			}
+
+			// Apply defaults
+			policy.Default()
+
+			// Check default strategy got defaults applied
+			fixed := policy.Spec.Default.Strategy.Fixed
+			Expect(fixed).ToNot(BeNil())
+			Expect(*fixed.InitialBatch).To(Equal(1))
+			Expect(*fixed.BatchThreshold).To(Equal(100))
+			Expect(*fixed.FailureThreshold).To(Equal(3))
+			Expect(*fixed.SafetyLimit).To(Equal(50))
+
+			// Check compartment strategy got defaults applied
+			linear := policy.Spec.Compartments[0].Strategy.Linear
+			Expect(linear).ToNot(BeNil())
+			Expect(*linear.InitialBatch).To(Equal(1))
+			Expect(*linear.Delta).To(Equal(1))
+			Expect(*linear.BatchThreshold).To(Equal(100))
+			Expect(*linear.FailureThreshold).To(Equal(3))
+			Expect(*linear.SafetyLimit).To(Equal(50))
+
+			// Validate after applying defaults
+			err := policy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("Complete policy validation", func() {
+		It("should validate a complete valid policy", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-policy"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+						Strategy: &DeploymentStrategy{
+							Exponential: &ExponentialStrategy{
+								InitialBatch:     ptr.To(1),
+								GrowthFactor:     ptr.To(2),
+								BatchThreshold:   ptr.To(75),
+								FailureThreshold: ptr.To(2),
+								SafetyLimit:      ptr.To(40),
+							},
+						},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "system",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"criticality": "high"}},
+							Budget:   DeploymentBudget{Count: ptr.To(1)},
+							Strategy: &DeploymentStrategy{
+								Fixed: &FixedStrategy{
+									InitialBatch:     ptr.To(1),
+									BatchThreshold:   ptr.To(100),
+									FailureThreshold: ptr.To(1),
+									SafetyLimit:      ptr.To(25),
+								},
+							},
+						},
+						{
+							Name:     "gpu",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"env": "dev"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(75)},
+							// Strategy inherited from default
+						},
+					},
+				},
+			}
+
+			// Apply defaults
+			policy.Default()
+
+			// Validate
+			err := policy.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should reject invalid default budget", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{}, // invalid - neither percent nor count
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("default budget"))
+		})
+
+		It("should reject invalid default strategy", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+						Strategy: &DeploymentStrategy{
+							Fixed: &FixedStrategy{
+								InitialBatch: ptr.To(0), // invalid
+							},
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("default strategy"))
+		})
+
+		It("should reject invalid compartment budget", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "invalid-comp",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{}, // invalid - neither percent nor count
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`compartment "invalid-comp" budget`))
+		})
+
+		It("should reject invalid compartment strategy", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "invalid-comp",
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+							Strategy: &DeploymentStrategy{
+								Linear: &LinearStrategy{
+									Delta: ptr.To(0), // invalid
+								},
+							},
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`compartment "invalid-comp" strategy`))
+		})
+
+		It("should reject invalid label selector", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(50)},
+					},
+					Compartments: []Compartment{
+						{
+							Name: "invalid-selector",
+							Selector: metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"invalid-key!": "value", // invalid label key
+								},
+							},
+							Budget: DeploymentBudget{Percent: ptr.To(25)},
+						},
+					},
+				},
+			}
+
+			err := policy.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`compartment "invalid-selector" has invalid selector`))
+		})
 	})
 })
