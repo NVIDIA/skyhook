@@ -179,6 +179,12 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Set up the webhook for DeploymentPolicy
+		if err = (&v1alpha1.DeploymentPolicy{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "DeploymentPolicy")
+			os.Exit(1)
+		}
+
 		if err := mgr.AddReadyzCheck("readyz", webhookController.WebhookSecretReadyzCheck); err != nil {
 			setupLog.Error(err, "unable to set up ready check")
 			os.Exit(1)
