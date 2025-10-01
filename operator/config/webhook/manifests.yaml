@@ -26,6 +26,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy
+  failurePolicy: Fail
+  name: mdeploymentpolicy.kb.io
+  rules:
+  - apiGroups:
+    - skyhook.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - deploymentpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-skyhook-nvidia-com-v1alpha1-skyhook
   failurePolicy: Fail
   name: mskyhook.kb.io
@@ -46,6 +66,26 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name: validating-webhook-configuration
 webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy
+  failurePolicy: Fail
+  name: vdeploymentpolicy.kb.io
+  rules:
+  - apiGroups:
+    - skyhook.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - deploymentpolicies
+  sideEffects: None
 - admissionReviewVersions:
   - v1
   clientConfig:

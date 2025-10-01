@@ -20,7 +20,7 @@ kind: Test
 metadata:
   name: helm-chart-webhook
 spec:
-  description: This test asserts that the helm chart is working as expected. Specifically it asserts that webhooks work as expected. Validating an invalid skyhook should fail.
+  description: This test asserts that the helm chart is working as expected. Specifically it asserts that webhooks work as expected. Validating an invalid skyhook should fail. Validating an invalid deployment policy should fail.
   concurrent: false
   timeouts:
     assert: 180s
@@ -45,6 +45,21 @@ spec:
           fi
           if ! grep -q "admission webhook \"validate-skyhook.nvidia.com\" denied the request" err.txt; then
             echo "ERROR: Did not get expected webhook validation error"
+            cat err.txt
+            exit 1
+          fi
+    - script:
+        content: |
+          ## Create invalid DeploymentPolicy
+          kubectl apply -f invalid-deploymentpolicy.yaml 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: invalid DeploymentPolicy was accepted"
+            exit 1
+          fi
+          if ! grep -q "admission webhook \"validate-deploymentpolicy.nvidia.com\" denied the request" err.txt; then
+            echo "ERROR: Did not get expected DeploymentPolicy webhook validation error"
             cat err.txt
             exit 1
           fi

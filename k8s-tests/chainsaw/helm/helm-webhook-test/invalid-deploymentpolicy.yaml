@@ -14,15 +14,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This kustomization.yaml is not intended to be run by itself,
-# since it depends on service name and namespace that are out of this kustomize package.
-# It should be run by config/default
-resources:
-- bases/skyhook.nvidia.com_skyhooks.yaml
-- bases/skyhook.nvidia.com_deploymentpolicies.yaml
-
-patches:
-- path: patches/webhook_in_skyhooks.yaml
-
-configurations:
-- kustomizeconfig.yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: DeploymentPolicy
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: invalid-deploymentpolicy
+spec:
+  default:
+    budget:
+      percent: 50
+    strategy:
+      fixed:
+        initialBatch: 5
+  compartments:
+  - name: duplicate-name
+    selector:
+      matchLabels:
+        zone: us-west-1
+    budget:
+      count: 10
+  - name: duplicate-name  # Invalid: duplicate compartment name
+    selector:
+      matchLabels:
+        zone: us-east-1
+    budget:
+      count: 5

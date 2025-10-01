@@ -149,6 +149,11 @@ func (r *Skyhook) Validate() error {
 		return err
 	}
 
+	// DeploymentPolicy and InterruptionBudget are mutually exclusive
+	if r.Spec.DeploymentPolicy != "" && (r.Spec.InterruptionBudget.Percent != nil || r.Spec.InterruptionBudget.Count != nil) {
+		return fmt.Errorf("deploymentPolicy and interruptionBudget are mutually exclusive")
+	}
+
 	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.NodeSelector); err != nil {
 		return fmt.Errorf("node selectors are not valid: %w", err)
 	}

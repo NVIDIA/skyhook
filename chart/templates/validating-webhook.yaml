@@ -31,4 +31,31 @@ webhooks:
     scope: '*'
   sideEffects: None
   timeoutSeconds: 10
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    caBundle: ""
+    service:
+      name: skyhook-operator-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: validate-deploymentpolicy.nvidia.com
+  namespaceSelector: {}
+  objectSelector: {}
+  rules:
+  - apiGroups:
+    - skyhook.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - deploymentpolicies
+    scope: '*'
+  sideEffects: None
+  timeoutSeconds: 10
 {{- end }}

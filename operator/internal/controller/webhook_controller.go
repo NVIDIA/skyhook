@@ -309,6 +309,14 @@ func webhookMutatingWebhookConfiguration(namespace, serviceName string, secret *
 				SideEffects:             ptr(admissionregistrationv1.SideEffectClassNone),
 				AdmissionReviewVersions: []string{"v1"},
 			},
+			{
+				Name:                    "mutate-deploymentpolicy.nvidia.com",
+				ClientConfig:            webhookClient(serviceName, namespace, "/mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy", secret),
+				FailurePolicy:           ptr(admissionregistrationv1.Fail),
+				Rules:                   webhookRule(),
+				SideEffects:             ptr(admissionregistrationv1.SideEffectClassNone),
+				AdmissionReviewVersions: []string{"v1"},
+			},
 		},
 	}
 
@@ -358,6 +366,14 @@ func webhookRule() []admissionregistrationv1.RuleWithOperations {
 				APIGroups:   []string{v1alpha1.GroupVersion.Group},
 				APIVersions: []string{v1alpha1.GroupVersion.Version},
 				Resources:   []string{"skyhooks"},
+			},
+		},
+		{
+			Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update},
+			Rule: admissionregistrationv1.Rule{
+				APIGroups:   []string{v1alpha1.GroupVersion.Group},
+				APIVersions: []string{v1alpha1.GroupVersion.Version},
+				Resources:   []string{"deploymentpolicies"},
 			},
 		},
 	}
