@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("Skyhook Webhook", func() {
@@ -534,5 +535,21 @@ var _ = Describe("Skyhook Webhook", func() {
 		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 		Expect(err).ToNot(BeNil())
 
+	})
+
+	It("should validate the deployment policy", func() {
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: SkyhookSpec{
+				DeploymentPolicy: "foobar",
+				InterruptionBudget: InterruptionBudget{
+					Percent: ptr.To(25),
+				},
+			},
+		}
+
+		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("deploymentPolicy and interruptionBudget are mutually exclusive"))
 	})
 })

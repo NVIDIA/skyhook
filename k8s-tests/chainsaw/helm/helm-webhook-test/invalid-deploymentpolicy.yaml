@@ -14,13 +14,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-controllerManager:
-  manager:
-    # telling the helm chart to use the test operator image
-    # for more info refer to the README
-    image:
-      repository: ghcr.io/nvidia/skyhook/operator
-      tag: v0.9.0-76cb952
-      digest: ""
-webhook:
-  enable: true
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: DeploymentPolicy
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: invalid-deploymentpolicy
+spec:
+  default:
+    budget:
+      percent: 50
+    strategy:
+      fixed:
+        initialBatch: 5
+  compartments:
+  - name: duplicate-name
+    selector:
+      matchLabels:
+        zone: us-west-1
+    budget:
+      count: 10
+  - name: duplicate-name  # Invalid: duplicate compartment name
+    selector:
+      matchLabels:
+        zone: us-east-1
+    budget:
+      count: 5

@@ -46,8 +46,6 @@ func (r *DeploymentPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:webhook:path=/mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy,mutating=true,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=deploymentpolicies,verbs=create;update,versions=v1alpha1,name=mdeploymentpolicy.kb.io,admissionReviewVersions=v1
 
-// DeploymentPolicyWebhook handles validation and defaulting for DeploymentPolicy resources
-// +kubebuilder:object:generate=false
 type DeploymentPolicyWebhook struct {
 }
 

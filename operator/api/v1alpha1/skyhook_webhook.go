@@ -54,8 +54,6 @@ func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:webhook:path=/mutate-skyhook-nvidia-com-v1alpha1-skyhook,mutating=true,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=skyhooks,verbs=create;update,versions=v1alpha1,name=mskyhook.kb.io,admissionReviewVersions=v1
 
-// SkyhookWebhook handles validation and defaulting for Skyhook resources
-// +kubebuilder:object:generate=false
 type SkyhookWebhook struct {
 }
 
@@ -149,6 +147,11 @@ func (r *Skyhook) Validate() error {
 
 	if err := r.Spec.InterruptionBudget.Validate(); err != nil {
 		return err
+	}
+
+	// DeploymentPolicy and InterruptionBudget are mutually exclusive
+	if r.Spec.DeploymentPolicy != "" && (r.Spec.InterruptionBudget.Percent != nil || r.Spec.InterruptionBudget.Count != nil) {
+		return fmt.Errorf("deploymentPolicy and interruptionBudget are mutually exclusive")
 	}
 
 	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.NodeSelector); err != nil {
