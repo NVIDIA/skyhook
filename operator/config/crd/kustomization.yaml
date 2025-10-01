@@ -19,6 +19,7 @@
 # It should be run by config/default
 resources:
 - bases/skyhook.nvidia.com_skyhooks.yaml
+- bases/skyhook.nvidia.com_deploymentpolicies.yaml
 
 patches:
 - path: patches/webhook_in_skyhooks.yaml
