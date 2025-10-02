@@ -140,6 +140,11 @@ func (r *DeploymentPolicy) Validate() error {
 	selectors := make(map[string]metav1.LabelSelector)
 
 	for _, compartment := range r.Spec.Compartments {
+		// Validate compartment name is not "default" (reserved)
+		if compartment.Name == "default" {
+			return fmt.Errorf("compartment name %q is reserved and cannot be used", compartment.Name)
+		}
+
 		// Validate unique names
 		if names[compartment.Name] {
 			return fmt.Errorf("compartment name %q is not unique", compartment.Name)

@@ -161,8 +161,9 @@ var _ = Describe("BuildState ordering", func() {
 				},
 			},
 		}
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
 		nodes := &corev1.NodeList{Items: []corev1.Node{}}
-		clusterState, err := BuildState(skyhooks, nodes)
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
 		Expect(err).ToNot(HaveOccurred())
 		ordered := clusterState.skyhooks
 		// Should be: a (priority 1), b (priority 2, name b), c (priority 2, name c)

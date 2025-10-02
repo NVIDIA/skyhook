@@ -190,6 +190,36 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
+		It("should reject compartment name 'default' as reserved", func() {
+			deploymentPolicy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "foobar"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{Percent: ptr.To(25)},
+						Strategy: &DeploymentStrategy{
+							Fixed: &FixedStrategy{},
+						},
+					},
+					Compartments: []Compartment{
+						{
+							Name:     "default", // reserved name
+							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
+							Budget:   DeploymentBudget{Percent: ptr.To(25)},
+						},
+					},
+				},
+			}
+
+			_, err := deploymentPolicyWebhook.ValidateCreate(ctx, deploymentPolicy)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(`compartment name "default" is reserved and cannot be used`))
+
+			// Fixed with different name
+			deploymentPolicy.Spec.Compartments[0].Name = "system"
+			_, err = deploymentPolicyWebhook.ValidateCreate(ctx, deploymentPolicy)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
 		It("should allow different selectors", func() {
 			deploymentPolicy := &DeploymentPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "foobar"},

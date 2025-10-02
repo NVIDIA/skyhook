@@ -153,6 +153,12 @@ type DeploymentPolicy struct {
 
 // +kubebuilder:object:root=true
 
+type DeploymentPolicyList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []DeploymentPolicy `json:"items"`
+}
+
 // Default applies default values to DeploymentStrategy
 func (s *DeploymentStrategy) Default() {
 	switch {
@@ -261,5 +267,5 @@ func (b *DeploymentBudget) Validate() error {
 }
 
 func init() {
-	SchemeBuilder.Register(&DeploymentPolicy{})
+	SchemeBuilder.Register(&DeploymentPolicy{}, &DeploymentPolicyList{})
 }

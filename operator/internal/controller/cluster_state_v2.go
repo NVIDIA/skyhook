@@ -70,7 +70,7 @@ type clusterState struct {
 	skyhooks []SkyhookNodes
 }
 
-func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList) (*clusterState, error) {
+func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deploymentPolicies *v1alpha1.DeploymentPolicyList) (*clusterState, error) {
 
 	ret := &clusterState{
 		tracker:  ObjectTracker{objects: make(map[string]client.Object)},
@@ -82,8 +82,9 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList) (*cluste
 		ret.tracker.Track(skyhook.DeepCopy())
 
 		ret.skyhooks[idx] = &skyhookNodes{
-			skyhook: wrapper.NewSkyhookWrapper(&skyhook),
-			nodes:   make([]wrapper.SkyhookNode, 0),
+			skyhook:      wrapper.NewSkyhookWrapper(&skyhook),
+			nodes:        make([]wrapper.SkyhookNode, 0),
+			compartments: make(map[string]*wrapper.Compartment),
 		}
 		for _, node := range nodes.Items {
 			skyNode, err := wrapper.NewSkyhookNode(&node, &skyhook)
@@ -98,6 +99,21 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList) (*cluste
 			if selector.Matches(labels.Set(node.Labels)) { // note: if selector is empty, it selects all
 				ret.tracker.Track(node.DeepCopy())
 				ret.skyhooks[idx].AddNode(skyNode)
+			}
+		}
+
+		// find deployment policy and all compartments + the default one
+		for _, deploymentPolicy := range deploymentPolicies.Items {
+			if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
+				for _, compartment := range deploymentPolicy.Spec.Compartments {
+					ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment))
+				}
+				// use policy default
+				ret.skyhooks[idx].AddCompartment("default", wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+					Name:     "default",
+					Budget:   deploymentPolicy.Spec.Default.Budget,
+					Strategy: deploymentPolicy.Spec.Default.Strategy,
+				}))
 			}
 		}
 	}
@@ -155,15 +171,20 @@ type SkyhookNodes interface {
 	UpdateCondition() bool
 	ReportState()
 	Migrate(logger logr.Logger) error
+
+	GetCompartments() map[string]*wrapper.Compartment
+	AddCompartment(name string, compartment *wrapper.Compartment)
+	AddCompartmentNode(name string, node wrapper.SkyhookNode)
 }
 
 var _ SkyhookNodes = &skyhookNodes{}
 
 // skyhookNodes impl's. SkyhookNodes
 type skyhookNodes struct {
-	skyhook     *wrapper.Skyhook
-	nodes       []wrapper.SkyhookNode
-	priorStatus v1alpha1.Status
+	skyhook      *wrapper.Skyhook
+	nodes        []wrapper.SkyhookNode
+	priorStatus  v1alpha1.Status
+	compartments map[string]*wrapper.Compartment
 }
 
 func (s *skyhookNodes) GetPriorStatus() v1alpha1.Status {
@@ -711,6 +732,18 @@ func (skyhook *skyhookNodes) Migrate(logger logr.Logger) error {
 	}
 
 	return nil
+}
+
+func (skyhook *skyhookNodes) GetCompartments() map[string]*wrapper.Compartment {
+	return skyhook.compartments
+}
+
+func (skyhook *skyhookNodes) AddCompartment(name string, compartment *wrapper.Compartment) {
+	skyhook.compartments[name] = compartment
+}
+
+func (skyhook *skyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) {
+	skyhook.compartments[name].AddNode(node)
 }
 
 // cleanupNodeMap removes nodes from the given map that no longer exist in currentNodes
