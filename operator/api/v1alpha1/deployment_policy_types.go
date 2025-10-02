@@ -109,6 +109,10 @@ type DeploymentBudget struct {
 	Count *int `json:"count,omitempty"`
 }
 
+const (
+	DefaultCompartmentName = "__default__"
+)
+
 // PolicyDefault defines default budget and strategy for unmatched nodes
 type PolicyDefault struct {
 	// Exactly one of percent or count

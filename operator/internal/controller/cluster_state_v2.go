@@ -103,14 +103,19 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		}
 
 		// find deployment policy and all compartments + the default one
+		// Skip skyhooks that don't have a deployment policy
+		if skyhook.Spec.DeploymentPolicy == "" {
+			continue
+		}
+
 		for _, deploymentPolicy := range deploymentPolicies.Items {
 			if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
 				for _, compartment := range deploymentPolicy.Spec.Compartments {
 					ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment))
 				}
 				// use policy default
-				ret.skyhooks[idx].AddCompartment("default", wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
-					Name:     "default",
+				ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+					Name:     v1alpha1.DefaultCompartmentName,
 					Budget:   deploymentPolicy.Spec.Default.Budget,
 					Strategy: deploymentPolicy.Spec.Default.Strategy,
 				}))

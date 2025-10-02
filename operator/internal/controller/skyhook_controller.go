@@ -294,7 +294,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// PARTITION nodes into compartments for each skyhook that uses deployment policies
-	err = partitionNodesIntoCompartments(ctx, clusterState)
+	err = partitionNodesIntoCompartments(clusterState)
 	if err != nil {
 		logger.Error(err, "error partitioning nodes into compartments")
 		return ctrl.Result{}, err
@@ -2296,23 +2296,19 @@ func setPodResources(pod *corev1.Pod, res *v1alpha1.ResourceRequirements) {
 }
 
 // PartitionNodesIntoCompartments partitions nodes for each skyhook that uses deployment policies
-func partitionNodesIntoCompartments(ctx context.Context, clusterState *clusterState) error {
+func partitionNodesIntoCompartments(clusterState *clusterState) error {
 	for _, skyhook := range clusterState.skyhooks {
+		// Skip skyhooks that don't have compartments (no deployment policy)
+		if len(skyhook.GetCompartments()) == 0 {
+			continue
+		}
+
 		for _, node := range skyhook.GetNodes() {
 			compartmentName, err := wrapper.AssignNodeToCompartment(node, skyhook.GetCompartments())
 			if err != nil {
 				return fmt.Errorf("error assigning node %s: %w", node.GetNode().Name, err)
 			}
 			skyhook.AddCompartmentNode(compartmentName, node)
-		}
-
-		// Log compartment assignments for observability
-		for compartmentName, state := range skyhook.GetCompartments() {
-			log.FromContext(ctx).Info("Compartment partitioned",
-				"skyhook", skyhook.GetSkyhook().Name,
-				"compartment", compartmentName,
-				"nodes", len(state.GetNodes()),
-			)
 		}
 	}
 

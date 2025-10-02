@@ -190,7 +190,7 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("should reject compartment name 'default' as reserved", func() {
+		It("should reject compartment name '__default__' as reserved", func() {
 			deploymentPolicy := &DeploymentPolicy{
 				ObjectMeta: metav1.ObjectMeta{Name: "foobar"},
 				Spec: DeploymentPolicySpec{
@@ -202,7 +202,7 @@ var _ = Describe("DeploymentPolicy", func() {
 					},
 					Compartments: []Compartment{
 						{
-							Name:     "default", // reserved name
+							Name:     DefaultCompartmentName, // reserved name
 							Selector: metav1.LabelSelector{MatchLabels: map[string]string{"tier": "web"}},
 							Budget:   DeploymentBudget{Percent: ptr.To(25)},
 						},
@@ -212,7 +212,7 @@ var _ = Describe("DeploymentPolicy", func() {
 
 			_, err := deploymentPolicyWebhook.ValidateCreate(ctx, deploymentPolicy)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring(`compartment name "default" is reserved and cannot be used`))
+			Expect(err.Error()).To(ContainSubstring(`compartment name "__default__" is reserved and cannot be used`))
 
 			// Fixed with different name
 			deploymentPolicy.Spec.Compartments[0].Name = "system"

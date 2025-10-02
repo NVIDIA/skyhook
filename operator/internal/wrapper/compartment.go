@@ -62,8 +62,13 @@ func (c *Compartment) AddNode(node SkyhookNode) {
 func AssignNodeToCompartment(node SkyhookNode, compartments map[string]*Compartment) (string, error) {
 	nodeLabels := labels.Set(node.GetNode().Labels)
 
-	// Find first compartment that matches this node
+	// Check all non-default compartments first
 	for _, compartment := range compartments {
+		// Skip the default compartment - it's a fallback
+		if compartment.Name == v1alpha1.DefaultCompartmentName {
+			continue
+		}
+
 		selector, err := metav1.LabelSelectorAsSelector(&compartment.Selector)
 		if err != nil {
 			return "", fmt.Errorf("invalid selector for compartment %s: %w", compartment.Name, err)
@@ -74,5 +79,5 @@ func AssignNodeToCompartment(node SkyhookNode, compartments map[string]*Compartm
 	}
 
 	// No matches - assign to default
-	return "default", nil
+	return v1alpha1.DefaultCompartmentName, nil
 }

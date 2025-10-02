@@ -59,7 +59,7 @@ func (r *DeploymentPolicyWebhook) Default(ctx context.Context, obj runtime.Objec
 		return fmt.Errorf("object is not a DeploymentPolicy")
 	}
 
-	deploymentPolicylog.Info("default", "name", deploymentPolicy.Name)
+	deploymentPolicylog.Info(DefaultCompartmentName, "name", deploymentPolicy.Name)
 
 	// Apply defaults to the default strategy
 	if deploymentPolicy.Spec.Default.Strategy != nil {
@@ -140,8 +140,8 @@ func (r *DeploymentPolicy) Validate() error {
 	selectors := make(map[string]metav1.LabelSelector)
 
 	for _, compartment := range r.Spec.Compartments {
-		// Validate compartment name is not "default" (reserved)
-		if compartment.Name == "default" {
+		// Validate compartment name is not "__default__" (reserved)
+		if compartment.Name == DefaultCompartmentName {
 			return fmt.Errorf("compartment name %q is reserved and cannot be used", compartment.Name)
 		}
 
