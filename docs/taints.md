@@ -1,4 +1,4 @@
-Just like any other scheduler Skyhook will not schedule packages on selected nodes when there are taints that the package does note explicitly tolerate. These nodes however are not just ignored as it is assumed that the user wanted their packages on these nodes due to their selection of nodeSelectors. In this case the following will happen:
+Just like any other scheduler Skyhook will not schedule packages on selected nodes when there are taints that the package does not explicitly tolerate. These nodes however are not just ignored as it is assumed that the user wanted their packages on these nodes due to their selection of nodeSelectors. In this case the following will happen:
 
 On the Skyhook Custom Resource containing the package(s) targeting the affected nodes:
 
