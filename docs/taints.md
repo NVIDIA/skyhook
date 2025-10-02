@@ -28,7 +28,7 @@ The following taints are always tolerated by Skyhook
 
 The following are common ways a user might know they have taint problem:
 
-1. A Skyhook Custom Resource has tatus as `unkown` (Operator < v0.9) or `blocked` (Operator >= v0.9)
+1. A Skyhook Custom Resource has status as `unkown` (Operator < v0.9) or `blocked` (Operator >= v0.9)
 2. A Skyhook Custom Resource is sitting with incomplete nodes.
 
 # Solutions
