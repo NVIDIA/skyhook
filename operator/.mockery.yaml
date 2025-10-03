@@ -20,12 +20,12 @@ template: testify
 template-data:
   unroll-variadic: true
 packages:
-  github.com/NVIDIA/skyhook/internal/controller:
+  github.com/NVIDIA/skyhook/operator/internal/controller:
     config:
       all: true
     interfaces:
       SkyhookNodes: {}
-  github.com/NVIDIA/skyhook/internal/dal:
+  github.com/NVIDIA/skyhook/operator/internal/dal:
     config:
       all: true
   k8s.io/client-go/tools/record:

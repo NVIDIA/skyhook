@@ -109,6 +109,10 @@ type DeploymentBudget struct {
 	Count *int `json:"count,omitempty"`
 }
 
+const (
+	DefaultCompartmentName = "__default__"
+)
+
 // PolicyDefault defines default budget and strategy for unmatched nodes
 type PolicyDefault struct {
 	// Exactly one of percent or count
@@ -152,6 +156,12 @@ type DeploymentPolicy struct {
 }
 
 // +kubebuilder:object:root=true
+
+type DeploymentPolicyList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []DeploymentPolicy `json:"items"`
+}
 
 // Default applies default values to DeploymentStrategy
 func (s *DeploymentStrategy) Default() {
@@ -261,5 +271,5 @@ func (b *DeploymentBudget) Validate() error {
 }
 
 func init() {
-	SchemeBuilder.Register(&DeploymentPolicy{})
+	SchemeBuilder.Register(&DeploymentPolicy{}, &DeploymentPolicyList{})
 }

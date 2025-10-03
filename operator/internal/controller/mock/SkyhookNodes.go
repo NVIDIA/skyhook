@@ -56,6 +56,98 @@ func (_m *MockSkyhookNodes) EXPECT() *MockSkyhookNodes_Expecter {
 	return &MockSkyhookNodes_Expecter{mock: &_m.Mock}
 }
 
+// AddCompartment provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) AddCompartment(name string, compartment *wrapper.Compartment) {
+	_mock.Called(name, compartment)
+	return
+}
+
+// MockSkyhookNodes_AddCompartment_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddCompartment'
+type MockSkyhookNodes_AddCompartment_Call struct {
+	*mock.Call
+}
+
+// AddCompartment is a helper method to define mock.On call
+//   - name string
+//   - compartment *wrapper.Compartment
+func (_e *MockSkyhookNodes_Expecter) AddCompartment(name interface{}, compartment interface{}) *MockSkyhookNodes_AddCompartment_Call {
+	return &MockSkyhookNodes_AddCompartment_Call{Call: _e.mock.On("AddCompartment", name, compartment)}
+}
+
+func (_c *MockSkyhookNodes_AddCompartment_Call) Run(run func(name string, compartment *wrapper.Compartment)) *MockSkyhookNodes_AddCompartment_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		var arg1 *wrapper.Compartment
+		if args[1] != nil {
+			arg1 = args[1].(*wrapper.Compartment)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AddCompartment_Call) Return() *MockSkyhookNodes_AddCompartment_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AddCompartment_Call) RunAndReturn(run func(name string, compartment *wrapper.Compartment)) *MockSkyhookNodes_AddCompartment_Call {
+	_c.Run(run)
+	return _c
+}
+
+// AddCompartmentNode provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) {
+	_mock.Called(name, node)
+	return
+}
+
+// MockSkyhookNodes_AddCompartmentNode_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddCompartmentNode'
+type MockSkyhookNodes_AddCompartmentNode_Call struct {
+	*mock.Call
+}
+
+// AddCompartmentNode is a helper method to define mock.On call
+//   - name string
+//   - node wrapper.SkyhookNode
+func (_e *MockSkyhookNodes_Expecter) AddCompartmentNode(name interface{}, node interface{}) *MockSkyhookNodes_AddCompartmentNode_Call {
+	return &MockSkyhookNodes_AddCompartmentNode_Call{Call: _e.mock.On("AddCompartmentNode", name, node)}
+}
+
+func (_c *MockSkyhookNodes_AddCompartmentNode_Call) Run(run func(name string, node wrapper.SkyhookNode)) *MockSkyhookNodes_AddCompartmentNode_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		var arg1 wrapper.SkyhookNode
+		if args[1] != nil {
+			arg1 = args[1].(wrapper.SkyhookNode)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AddCompartmentNode_Call) Return() *MockSkyhookNodes_AddCompartmentNode_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AddCompartmentNode_Call) RunAndReturn(run func(name string, node wrapper.SkyhookNode)) *MockSkyhookNodes_AddCompartmentNode_Call {
+	_c.Run(run)
+	return _c
+}
+
 // AddNode provides a mock function for the type MockSkyhookNodes
 func (_mock *MockSkyhookNodes) AddNode(node wrapper.SkyhookNode) {
 	_mock.Called(node)
@@ -136,6 +228,52 @@ func (_c *MockSkyhookNodes_CollectNodeStatus_Call) Return(status v1alpha1.Status
 }
 
 func (_c *MockSkyhookNodes_CollectNodeStatus_Call) RunAndReturn(run func() v1alpha1.Status) *MockSkyhookNodes_CollectNodeStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetCompartments provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) GetCompartments() map[string]*wrapper.Compartment {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCompartments")
+	}
+
+	var r0 map[string]*wrapper.Compartment
+	if returnFunc, ok := ret.Get(0).(func() map[string]*wrapper.Compartment); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string]*wrapper.Compartment)
+		}
+	}
+	return r0
+}
+
+// MockSkyhookNodes_GetCompartments_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCompartments'
+type MockSkyhookNodes_GetCompartments_Call struct {
+	*mock.Call
+}
+
+// GetCompartments is a helper method to define mock.On call
+func (_e *MockSkyhookNodes_Expecter) GetCompartments() *MockSkyhookNodes_GetCompartments_Call {
+	return &MockSkyhookNodes_GetCompartments_Call{Call: _e.mock.On("GetCompartments")}
+}
+
+func (_c *MockSkyhookNodes_GetCompartments_Call) Run(run func()) *MockSkyhookNodes_GetCompartments_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_GetCompartments_Call) Return(stringToCompartment map[string]*wrapper.Compartment) *MockSkyhookNodes_GetCompartments_Call {
+	_c.Call.Return(stringToCompartment)
+	return _c
+}
+
+func (_c *MockSkyhookNodes_GetCompartments_Call) RunAndReturn(run func() map[string]*wrapper.Compartment) *MockSkyhookNodes_GetCompartments_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -274,15 +274,29 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	// get all deployment policies
+	deploymentPolicies, err := r.dal.GetDeploymentPolicies(ctx)
+	if err != nil {
+		logger.Error(err, "error getting deployment policies")
+		return ctrl.Result{}, err
+	}
+
 	// TODO: this build state could error in a lot of ways, and I think we might want to move towards partial state
 	// mean if we cant get on SCR state, great, process that one and error
 
 	// BUILD cluster state from all skyhooks, and all nodes
 	// this filters and pairs up nodes to skyhooks, also provides help methods for introspection and mutation
-	clusterState, err := BuildState(skyhooks, nodes)
+	clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
 	if err != nil {
 		// error, going to requeue and backoff
 		logger.Error(err, "error building cluster state")
+		return ctrl.Result{}, err
+	}
+
+	// PARTITION nodes into compartments for each skyhook that uses deployment policies
+	err = partitionNodesIntoCompartments(clusterState)
+	if err != nil {
+		logger.Error(err, "error partitioning nodes into compartments")
 		return ctrl.Result{}, err
 	}
 
@@ -313,24 +327,14 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			if yes, result, err := shouldReturn(r.UpdatePauseStatus(ctx, clusterState, skyhook)); yes {
 				return result, err
 			}
-
 			continue
 		}
 
-		if yes, result, err := shouldReturn(r.ValidateRunningPackages(ctx, skyhook)); yes {
-			return result, err
-		}
-
-		if yes, result, err := shouldReturn(r.ValidateNodeConfigmaps(ctx, skyhook.GetSkyhook().Name, skyhook.GetNodes())); yes {
-			return result, err
-		}
-
-		if yes, result, err := shouldReturn(r.UpsertConfigmaps(ctx, skyhook, clusterState)); yes {
+		if yes, result, err := r.validateAndUpsertSkyhookData(ctx, skyhook, clusterState); yes {
 			return result, err
 		}
 
 		changed := IntrospectSkyhook(skyhook, clusterState.skyhooks)
-
 		if changed {
 			_, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
 			if len(errs) > 0 {
@@ -2289,4 +2293,41 @@ func setPodResources(pod *corev1.Pod, res *v1alpha1.ResourceRequirements) {
 			}
 		}
 	}
+}
+
+// PartitionNodesIntoCompartments partitions nodes for each skyhook that uses deployment policies
+func partitionNodesIntoCompartments(clusterState *clusterState) error {
+	for _, skyhook := range clusterState.skyhooks {
+		// Skip skyhooks that don't have compartments (no deployment policy)
+		if len(skyhook.GetCompartments()) == 0 {
+			continue
+		}
+
+		for _, node := range skyhook.GetNodes() {
+			compartmentName, err := wrapper.AssignNodeToCompartment(node, skyhook.GetCompartments())
+			if err != nil {
+				return fmt.Errorf("error assigning node %s: %w", node.GetNode().Name, err)
+			}
+			skyhook.AddCompartmentNode(compartmentName, node)
+		}
+	}
+
+	return nil
+}
+
+// validateAndUpsertSkyhookData performs validation and configmap operations for a skyhook
+func (r *SkyhookReconciler) validateAndUpsertSkyhookData(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, ctrl.Result, error) {
+	if yes, result, err := shouldReturn(r.ValidateRunningPackages(ctx, skyhook)); yes {
+		return yes, result, err
+	}
+
+	if yes, result, err := shouldReturn(r.ValidateNodeConfigmaps(ctx, skyhook.GetSkyhook().Name, skyhook.GetNodes())); yes {
+		return yes, result, err
+	}
+
+	if yes, result, err := shouldReturn(r.UpsertConfigmaps(ctx, skyhook, clusterState)); yes {
+		return yes, result, err
+	}
+
+	return false, ctrl.Result{}, nil
 }

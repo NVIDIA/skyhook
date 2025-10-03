@@ -43,6 +43,8 @@ type DAL interface {
 	GetNodes(ctx context.Context, opts ...client.ListOption) (*corev1.NodeList, error)
 	GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error)
 	GetPods(ctx context.Context, opts ...client.ListOption) (*corev1.PodList, error)
+	GetDeploymentPolicies(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.DeploymentPolicyList, error)
+	GetDeploymentPolicy(ctx context.Context, namespace, name string) (*skyhookv1alpha1.DeploymentPolicy, error)
 }
 
 type dal struct {
@@ -137,4 +139,29 @@ func (e *dal) GetPods(ctx context.Context, opts ...client.ListOption) (*corev1.P
 	}
 
 	return &pods, nil
+}
+
+func (e *dal) GetDeploymentPolicies(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.DeploymentPolicyList, error) {
+	var policies skyhookv1alpha1.DeploymentPolicyList
+	if err := e.client.List(ctx, &policies, opts...); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting deployment policies: %w", err)
+	}
+
+	return &policies, nil
+}
+
+func (e *dal) GetDeploymentPolicy(ctx context.Context, namespace, name string) (*skyhookv1alpha1.DeploymentPolicy, error) {
+	var policy skyhookv1alpha1.DeploymentPolicy
+
+	if err := e.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &policy); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting deployment policy [%s]: %w", name, err)
+	}
+
+	return &policy, nil
 }

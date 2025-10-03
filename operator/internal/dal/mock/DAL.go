@@ -58,6 +58,161 @@ func (_m *MockDAL) EXPECT() *MockDAL_Expecter {
 	return &MockDAL_Expecter{mock: &_m.Mock}
 }
 
+// GetDeploymentPolicies provides a mock function for the type MockDAL
+func (_mock *MockDAL) GetDeploymentPolicies(ctx context.Context, opts ...client.ListOption) (*v1alpha1.DeploymentPolicyList, error) {
+	// client.ListOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetDeploymentPolicies")
+	}
+
+	var r0 *v1alpha1.DeploymentPolicyList
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v1alpha1.DeploymentPolicyList, error)); ok {
+		return returnFunc(ctx, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v1alpha1.DeploymentPolicyList); ok {
+		r0 = returnFunc(ctx, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*v1alpha1.DeploymentPolicyList)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, ...client.ListOption) error); ok {
+		r1 = returnFunc(ctx, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDAL_GetDeploymentPolicies_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetDeploymentPolicies'
+type MockDAL_GetDeploymentPolicies_Call struct {
+	*mock.Call
+}
+
+// GetDeploymentPolicies is a helper method to define mock.On call
+//   - ctx context.Context
+//   - opts ...client.ListOption
+func (_e *MockDAL_Expecter) GetDeploymentPolicies(ctx interface{}, opts ...interface{}) *MockDAL_GetDeploymentPolicies_Call {
+	return &MockDAL_GetDeploymentPolicies_Call{Call: _e.mock.On("GetDeploymentPolicies",
+		append([]interface{}{ctx}, opts...)...)}
+}
+
+func (_c *MockDAL_GetDeploymentPolicies_Call) Run(run func(ctx context.Context, opts ...client.ListOption)) *MockDAL_GetDeploymentPolicies_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []client.ListOption
+		variadicArgs := make([]client.ListOption, len(args)-1)
+		for i, a := range args[1:] {
+			if a != nil {
+				variadicArgs[i] = a.(client.ListOption)
+			}
+		}
+		arg1 = variadicArgs
+		run(
+			arg0,
+			arg1...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDAL_GetDeploymentPolicies_Call) Return(deploymentPolicyList *v1alpha1.DeploymentPolicyList, err error) *MockDAL_GetDeploymentPolicies_Call {
+	_c.Call.Return(deploymentPolicyList, err)
+	return _c
+}
+
+func (_c *MockDAL_GetDeploymentPolicies_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v1alpha1.DeploymentPolicyList, error)) *MockDAL_GetDeploymentPolicies_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetDeploymentPolicy provides a mock function for the type MockDAL
+func (_mock *MockDAL) GetDeploymentPolicy(ctx context.Context, namespace string, name string) (*v1alpha1.DeploymentPolicy, error) {
+	ret := _mock.Called(ctx, namespace, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetDeploymentPolicy")
+	}
+
+	var r0 *v1alpha1.DeploymentPolicy
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (*v1alpha1.DeploymentPolicy, error)); ok {
+		return returnFunc(ctx, namespace, name)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) *v1alpha1.DeploymentPolicy); ok {
+		r0 = returnFunc(ctx, namespace, name)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*v1alpha1.DeploymentPolicy)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, namespace, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDAL_GetDeploymentPolicy_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetDeploymentPolicy'
+type MockDAL_GetDeploymentPolicy_Call struct {
+	*mock.Call
+}
+
+// GetDeploymentPolicy is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespace string
+//   - name string
+func (_e *MockDAL_Expecter) GetDeploymentPolicy(ctx interface{}, namespace interface{}, name interface{}) *MockDAL_GetDeploymentPolicy_Call {
+	return &MockDAL_GetDeploymentPolicy_Call{Call: _e.mock.On("GetDeploymentPolicy", ctx, namespace, name)}
+}
+
+func (_c *MockDAL_GetDeploymentPolicy_Call) Run(run func(ctx context.Context, namespace string, name string)) *MockDAL_GetDeploymentPolicy_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDAL_GetDeploymentPolicy_Call) Return(deploymentPolicy *v1alpha1.DeploymentPolicy, err error) *MockDAL_GetDeploymentPolicy_Call {
+	_c.Call.Return(deploymentPolicy, err)
+	return _c
+}
+
+func (_c *MockDAL_GetDeploymentPolicy_Call) RunAndReturn(run func(ctx context.Context, namespace string, name string) (*v1alpha1.DeploymentPolicy, error)) *MockDAL_GetDeploymentPolicy_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetNode provides a mock function for the type MockDAL
 func (_mock *MockDAL) GetNode(ctx context.Context, nodeName string) (*v1.Node, error) {
 	ret := _mock.Called(ctx, nodeName)
