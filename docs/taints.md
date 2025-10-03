@@ -11,6 +11,7 @@ status:
       - reason: TaintNotTolerable
         status: "True"
         type: skyhook.nvidia.com/TaintNotTolerable
+        message: Node [X, Y, Z, ...] has taints that are not tolerable. Skipping.
 ```
 
 Metrics:
