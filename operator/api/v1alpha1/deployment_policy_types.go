@@ -232,6 +232,161 @@ func (s *DeploymentStrategy) Validate() error {
 	return nil
 }
 
+// BatchProcessingState tracks the current state of batch processing for a compartment
+type BatchProcessingState struct {
+	// Current batch number (starts at 1)
+	CurrentBatch int `json:"currentBatch,omitempty"`
+	// Number of consecutive failures
+	ConsecutiveFailures int `json:"consecutiveFailures,omitempty"`
+	// Total number of nodes processed so far
+	ProcessedNodes int `json:"processedNodes,omitempty"`
+	// Number of successful nodes in current batch
+	SuccessfulInBatch int `json:"successfulInBatch,omitempty"`
+	// Number of failed nodes in current batch
+	FailedInBatch int `json:"failedInBatch,omitempty"`
+	// Whether the strategy should stop processing due to failures
+	ShouldStop bool `json:"shouldStop,omitempty"`
+	// Names of nodes in the current batch (persisted across reconciles)
+	CurrentBatchNodes []string `json:"currentBatchNodes,omitempty"`
+	// Last successful batch size (for slowdown calculations)
+	LastBatchSize int `json:"lastBatchSize,omitempty"`
+	// Whether the last batch failed (for slowdown logic)
+	LastBatchFailed bool `json:"lastBatchFailed,omitempty"`
+}
+
+// CalculateBatchSize calculates the next batch size based on the strategy
+func (s *DeploymentStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
+	switch {
+	case s.Fixed != nil:
+		return s.Fixed.CalculateBatchSize(totalNodes, state)
+	case s.Linear != nil:
+		return s.Linear.CalculateBatchSize(totalNodes, state)
+	case s.Exponential != nil:
+		return s.Exponential.CalculateBatchSize(totalNodes, state)
+	default:
+		return 1 // fallback
+	}
+}
+
+// EvaluateBatchResult evaluates the result of a batch and updates state
+func (s *DeploymentStrategy) EvaluateBatchResult(state *BatchProcessingState, batchSize int, successCount int, failureCount int, totalNodes int) {
+	state.SuccessfulInBatch = successCount
+	state.FailedInBatch = failureCount
+	state.ProcessedNodes += batchSize
+
+	successPercentage := (successCount * 100) / batchSize
+	progressPercent := (state.ProcessedNodes * 100) / totalNodes
+
+	if successPercentage >= s.getBatchThreshold() {
+		state.ConsecutiveFailures = 0
+		state.LastBatchFailed = false
+	} else {
+		state.ConsecutiveFailures++
+		state.LastBatchFailed = true
+		if progressPercent < s.getSafetyLimit() && state.ConsecutiveFailures >= s.getFailureThreshold() {
+			state.ShouldStop = true
+		}
+	}
+
+	state.LastBatchSize = batchSize
+	state.CurrentBatch++
+}
+
+// getBatchThreshold returns the batch threshold from the active strategy
+func (s *DeploymentStrategy) getBatchThreshold() int {
+	switch {
+	case s.Fixed != nil:
+		return *s.Fixed.BatchThreshold
+	case s.Linear != nil:
+		return *s.Linear.BatchThreshold
+	case s.Exponential != nil:
+		return *s.Exponential.BatchThreshold
+	default:
+		return 100
+	}
+}
+
+// getSafetyLimit returns the safety limit from the active strategy
+func (s *DeploymentStrategy) getSafetyLimit() int {
+	switch {
+	case s.Fixed != nil:
+		return *s.Fixed.SafetyLimit
+	case s.Linear != nil:
+		return *s.Linear.SafetyLimit
+	case s.Exponential != nil:
+		return *s.Exponential.SafetyLimit
+	default:
+		return 50
+	}
+}
+
+// getFailureThreshold returns the failure threshold from the active strategy
+func (s *DeploymentStrategy) getFailureThreshold() int {
+	switch {
+	case s.Fixed != nil:
+		return *s.Fixed.FailureThreshold
+	case s.Linear != nil:
+		return *s.Linear.FailureThreshold
+	case s.Exponential != nil:
+		return *s.Exponential.FailureThreshold
+	default:
+		return 3
+	}
+}
+
+func (s *FixedStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
+	// Fixed strategy doesn't change batch size, but respects remaining nodes
+	batchSize := *s.InitialBatch
+	remaining := totalNodes - state.ProcessedNodes
+	if batchSize > remaining {
+		batchSize = remaining
+	}
+	return max(1, batchSize)
+}
+
+func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
+	var batchSize int
+
+	// Check if we should slow down due to last batch failure
+	progressPercent := (state.ProcessedNodes * 100) / totalNodes
+	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 {
+		// Slow down: reduce by delta from last batch size
+		batchSize = max(1, state.LastBatchSize-*s.Delta)
+	} else {
+		// Normal growth: initialBatch + (currentBatch - 1) * delta
+		batchSize = *s.InitialBatch + (state.CurrentBatch-1)*(*s.Delta)
+	}
+
+	remaining := totalNodes - state.ProcessedNodes
+	if batchSize > remaining {
+		batchSize = remaining
+	}
+	return max(1, batchSize)
+}
+
+func (s *ExponentialStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
+	var batchSize int
+
+	// Check if we should slow down due to last batch failure
+	progressPercent := (state.ProcessedNodes * 100) / totalNodes
+	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 {
+		// Slow down: divide last batch size by growth factor
+		batchSize = max(1, state.LastBatchSize / *s.GrowthFactor)
+	} else {
+		// Normal growth: initialBatch * (growthFactor ^ (currentBatch - 1))
+		batchSize = *s.InitialBatch
+		for i := 1; i < state.CurrentBatch; i++ {
+			batchSize *= *s.GrowthFactor
+		}
+	}
+
+	remaining := totalNodes - state.ProcessedNodes
+	if batchSize > remaining {
+		batchSize = remaining
+	}
+	return max(1, batchSize)
+}
+
 // Validate validates the Compartment
 func (c *Compartment) Validate() error {
 	// Validate compartment budget
