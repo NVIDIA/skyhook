@@ -25,6 +25,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"math"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -274,8 +275,16 @@ func (s *DeploymentStrategy) EvaluateBatchResult(state *BatchProcessingState, ba
 	state.FailedInBatch = failureCount
 	state.ProcessedNodes += batchSize
 
+	// Avoid divide by zero
+	if batchSize == 0 {
+		return
+	}
+
 	successPercentage := (successCount * 100) / batchSize
-	progressPercent := (state.ProcessedNodes * 100) / totalNodes
+	var progressPercent int
+	if totalNodes > 0 {
+		progressPercent = (state.ProcessedNodes * 100) / totalNodes
+	}
 
 	if successPercentage >= s.getBatchThreshold() {
 		state.ConsecutiveFailures = 0
@@ -347,6 +356,11 @@ func (s *FixedStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessin
 func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
 	var batchSize int
 
+	// Avoid divide by zero
+	if totalNodes == 0 {
+		return 0
+	}
+
 	// Check if we should slow down due to last batch failure
 	progressPercent := (state.ProcessedNodes * 100) / totalNodes
 	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 {
@@ -367,16 +381,27 @@ func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessi
 func (s *ExponentialStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
 	var batchSize int
 
+	// Avoid divide by zero
+	if totalNodes == 0 {
+		return 0
+	}
+
 	// Check if we should slow down due to last batch failure
 	progressPercent := (state.ProcessedNodes * 100) / totalNodes
-	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 {
+	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 && *s.GrowthFactor > 0 {
 		// Slow down: divide last batch size by growth factor
 		batchSize = max(1, state.LastBatchSize / *s.GrowthFactor)
 	} else {
 		// Normal growth: initialBatch * (growthFactor ^ (currentBatch - 1))
-		batchSize = *s.InitialBatch
-		for i := 1; i < state.CurrentBatch; i++ {
-			batchSize *= *s.GrowthFactor
+		// Use math.Pow for efficiency and to avoid overflow issues with large batch numbers
+		exponent := state.CurrentBatch - 1
+		growthMultiplier := math.Pow(float64(*s.GrowthFactor), float64(exponent))
+		batchSize = int(float64(*s.InitialBatch) * growthMultiplier)
+
+		// Cap at remaining nodes to prevent unreasonably large batch sizes
+		// and potential integer overflow
+		if batchSize > totalNodes {
+			batchSize = totalNodes
 		}
 	}
 

@@ -519,6 +519,12 @@ spec:
                     failedInBatch:
                       description: Number of failed nodes in current batch
                       type: integer
+                    lastBatchFailed:
+                      description: Whether the last batch failed (for slowdown logic)
+                      type: boolean
+                    lastBatchSize:
+                      description: Last successful batch size (for slowdown calculations)
+                      type: integer
                     processedNodes:
                       description: Total number of nodes processed so far
                       type: integer

@@ -465,6 +465,34 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 	return selectedNodes
 }
 
+// PersistCompartmentBatchStates saves the current batch state for all compartments to the Skyhook status
+func PersistCompartmentBatchStates(skyhook SkyhookNodes) bool {
+	compartments := skyhook.GetCompartments()
+	if len(compartments) == 0 {
+		return false // No compartments, nothing to persist
+	}
+
+	// Initialize the batch states map if needed
+	if skyhook.GetSkyhook().Status.CompartmentBatchStates == nil {
+		skyhook.GetSkyhook().Status.CompartmentBatchStates = make(map[string]v1alpha1.BatchProcessingState)
+	}
+
+	changed := false
+	for _, compartment := range compartments {
+		// Only persist if there are nodes in the current batch
+		if len(compartment.GetBatchState().CurrentBatchNodes) > 0 {
+			skyhook.GetSkyhook().Status.CompartmentBatchStates[compartment.GetName()] = compartment.GetBatchState()
+			changed = true
+		}
+	}
+
+	if changed {
+		skyhook.GetSkyhook().Updated = true
+	}
+
+	return changed
+}
+
 // selectNodesLegacy implements the original node selection logic for backward compatibility
 func (np *NodePicker) selectNodesLegacy(s SkyhookNodes, tolerations []corev1.Toleration) []wrapper.SkyhookNode {
 	nodes := make([]wrapper.SkyhookNode, 0)
