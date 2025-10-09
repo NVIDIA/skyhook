@@ -316,6 +316,9 @@ type SkyhookStatus struct {
 	// ConfigUpdates tracks config updates
 	ConfigUpdates map[string][]string `json:"configUpdates,omitempty"`
 
+	// CompartmentBatchStates tracks batch processing state per compartment
+	CompartmentBatchStates map[string]BatchProcessingState `json:"compartmentBatchStates,omitempty"`
+
 	// +kubebuilder:example=3
 	// +kubebuilder:default=0
 	// NodesInProgress displays the number of nodes that are currently in progress and is

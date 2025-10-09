@@ -499,6 +499,39 @@ spec:
           status:
             description: SkyhookStatus defines the observed state of Skyhook
             properties:
+              compartmentBatchStates:
+                additionalProperties:
+                  description: BatchProcessingState tracks the current state of batch
+                    processing for a compartment
+                  properties:
+                    completedNodes:
+                      description: Total number of nodes that have completed successfully
+                        (cumulative across all batches)
+                      type: integer
+                    consecutiveFailures:
+                      description: Number of consecutive failures
+                      type: integer
+                    currentBatch:
+                      description: Current batch number (starts at 1)
+                      type: integer
+                    failedNodes:
+                      description: Total number of nodes that have failed (cumulative
+                        across all batches)
+                      type: integer
+                    lastBatchFailed:
+                      description: Whether the last batch failed (for slowdown logic)
+                      type: boolean
+                    lastBatchSize:
+                      description: Last batch size (for slowdown calculations)
+                      type: integer
+                    shouldStop:
+                      description: Whether the strategy should stop processing due
+                        to failures
+                      type: boolean
+                  type: object
+                description: CompartmentBatchStates tracks batch processing state
+                  per compartment
+                type: object
               completeNodes:
                 default: 0/0
                 description: |-
