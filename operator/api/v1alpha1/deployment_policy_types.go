@@ -239,17 +239,13 @@ type BatchProcessingState struct {
 	CurrentBatch int `json:"currentBatch,omitempty"`
 	// Number of consecutive failures
 	ConsecutiveFailures int `json:"consecutiveFailures,omitempty"`
-	// Total number of nodes processed so far
-	ProcessedNodes int `json:"processedNodes,omitempty"`
-	// Number of successful nodes in current batch
-	SuccessfulInBatch int `json:"successfulInBatch,omitempty"`
-	// Number of failed nodes in current batch
-	FailedInBatch int `json:"failedInBatch,omitempty"`
+	// Total number of nodes that have completed successfully (cumulative across all batches)
+	CompletedNodes int `json:"completedNodes,omitempty"`
+	// Total number of nodes that have failed (cumulative across all batches)
+	FailedNodes int `json:"failedNodes,omitempty"`
 	// Whether the strategy should stop processing due to failures
 	ShouldStop bool `json:"shouldStop,omitempty"`
-	// Names of nodes in the current batch (persisted across reconciles)
-	CurrentBatchNodes []string `json:"currentBatchNodes,omitempty"`
-	// Last successful batch size (for slowdown calculations)
+	// Last batch size (for slowdown calculations)
 	LastBatchSize int `json:"lastBatchSize,omitempty"`
 	// Whether the last batch failed (for slowdown logic)
 	LastBatchFailed bool `json:"lastBatchFailed,omitempty"`
@@ -271,19 +267,22 @@ func (s *DeploymentStrategy) CalculateBatchSize(totalNodes int, state *BatchProc
 
 // EvaluateBatchResult evaluates the result of a batch and updates state
 func (s *DeploymentStrategy) EvaluateBatchResult(state *BatchProcessingState, batchSize int, successCount int, failureCount int, totalNodes int) {
-	state.SuccessfulInBatch = successCount
-	state.FailedInBatch = failureCount
-	state.ProcessedNodes += batchSize
+	// Note: successCount and failureCount are deltas from the current batch
+	// CompletedNodes and FailedNodes are already updated in EvaluateCurrentBatch before this is called
 
 	// Avoid divide by zero
 	if batchSize == 0 {
 		return
 	}
 
+	// Calculate success percentage for this batch
 	successPercentage := (successCount * 100) / batchSize
+
+	// Calculate overall progress percentage
+	processedNodes := state.CompletedNodes + state.FailedNodes
 	var progressPercent int
 	if totalNodes > 0 {
-		progressPercent = (state.ProcessedNodes * 100) / totalNodes
+		progressPercent = (processedNodes * 100) / totalNodes
 	}
 
 	if successPercentage >= s.getBatchThreshold() {
@@ -346,7 +345,8 @@ func (s *DeploymentStrategy) getFailureThreshold() int {
 func (s *FixedStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
 	// Fixed strategy doesn't change batch size, but respects remaining nodes
 	batchSize := *s.InitialBatch
-	remaining := totalNodes - state.ProcessedNodes
+	processedNodes := state.CompletedNodes + state.FailedNodes
+	remaining := totalNodes - processedNodes
 	if batchSize > remaining {
 		batchSize = remaining
 	}
@@ -362,7 +362,8 @@ func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessi
 	}
 
 	// Check if we should slow down due to last batch failure
-	progressPercent := (state.ProcessedNodes * 100) / totalNodes
+	processedNodes := state.CompletedNodes + state.FailedNodes
+	progressPercent := (processedNodes * 100) / totalNodes
 	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 {
 		// Slow down: reduce by delta from last batch size
 		batchSize = max(1, state.LastBatchSize-*s.Delta)
@@ -371,7 +372,7 @@ func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessi
 		batchSize = *s.InitialBatch + (state.CurrentBatch-1)*(*s.Delta)
 	}
 
-	remaining := totalNodes - state.ProcessedNodes
+	remaining := totalNodes - processedNodes
 	if batchSize > remaining {
 		batchSize = remaining
 	}
@@ -387,7 +388,8 @@ func (s *ExponentialStrategy) CalculateBatchSize(totalNodes int, state *BatchPro
 	}
 
 	// Check if we should slow down due to last batch failure
-	progressPercent := (state.ProcessedNodes * 100) / totalNodes
+	processedNodes := state.CompletedNodes + state.FailedNodes
+	progressPercent := (processedNodes * 100) / totalNodes
 	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 && *s.GrowthFactor > 0 {
 		// Slow down: divide last batch size by growth factor
 		batchSize = max(1, state.LastBatchSize / *s.GrowthFactor)
@@ -405,7 +407,7 @@ func (s *ExponentialStrategy) CalculateBatchSize(totalNodes int, state *BatchPro
 		}
 	}
 
-	remaining := totalNodes - state.ProcessedNodes
+	remaining := totalNodes - processedNodes
 	if batchSize > remaining {
 		batchSize = remaining
 	}

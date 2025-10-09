@@ -100,24 +100,23 @@ func (c *Compartment) GetNodesForNextBatch() []SkyhookNode {
 		return nil
 	}
 
-	if len(c.BatchState.CurrentBatchNodes) > 0 {
-		return c.getCurrentBatchNodes()
+	// If there's a batch in progress (nodes are InProgress), don't start a new one
+	if c.getInProgressCount() > 0 {
+		return c.getInProgressNodes()
 	}
 
+	// No batch in progress, create a new one
 	return c.createNewBatch()
 }
 
-func (c *Compartment) getCurrentBatchNodes() []SkyhookNode {
-	currentBatchNodes := make([]SkyhookNode, 0)
-	for _, nodeName := range c.BatchState.CurrentBatchNodes {
-		for _, node := range c.Nodes {
-			if node.GetNode().Name == nodeName {
-				currentBatchNodes = append(currentBatchNodes, node)
-				break
-			}
+func (c *Compartment) getInProgressNodes() []SkyhookNode {
+	inProgressNodes := make([]SkyhookNode, 0)
+	for _, node := range c.Nodes {
+		if node.Status() == v1alpha1.StatusInProgress {
+			inProgressNodes = append(inProgressNodes, node)
 		}
 	}
-	return currentBatchNodes
+	return inProgressNodes
 }
 
 func (c *Compartment) createNewBatch() []SkyhookNode {
@@ -154,66 +153,54 @@ func (c *Compartment) createNewBatch() []SkyhookNode {
 		}
 	}
 
-	nodeNames := make([]string, len(selectedNodes))
-	for i, node := range selectedNodes {
-		nodeNames[i] = node.GetNode().Name
-	}
-	c.BatchState.CurrentBatchNodes = nodeNames
-
 	return selectedNodes
 }
 
 // IsBatchComplete checks if the current batch has reached terminal states
+// A batch is complete when there are no nodes in InProgress status
 func (c *Compartment) IsBatchComplete() bool {
-	if len(c.BatchState.CurrentBatchNodes) == 0 {
-		return true // No batch in progress
-	}
-
-	// Check if all batch nodes have reached terminal states
-	for _, nodeName := range c.BatchState.CurrentBatchNodes {
-		for _, node := range c.Nodes {
-			if node.GetNode().Name == nodeName {
-				if node.Status() == v1alpha1.StatusInProgress {
-					return false // Still processing
-				}
-				break
-			}
-		}
-	}
-	return true // All nodes are Complete or Erroring
+	return c.getInProgressCount() == 0
 }
 
 // EvaluateCurrentBatch evaluates the current batch result if it's complete
+// Uses delta-based tracking: compares current state to last checkpoint
 func (c *Compartment) EvaluateCurrentBatch() (bool, int, int) {
 	if !c.IsBatchComplete() {
 		return false, 0, 0 // Batch not complete yet
 	}
 
-	if len(c.BatchState.CurrentBatchNodes) == 0 {
-		return false, 0, 0 // No batch to evaluate
+	// If this is the first batch (nothing has been processed yet), skip evaluation
+	// The batch will be started in the next reconcile
+	if c.BatchState.CurrentBatch == 0 {
+		c.BatchState.CurrentBatch = 1
+		return false, 0, 0
 	}
 
-	successCount := 0
-	failureCount := 0
-
-	// Count successes and failures from the batch nodes
-	for _, nodeName := range c.BatchState.CurrentBatchNodes {
-		for _, node := range c.Nodes {
-			if node.GetNode().Name == nodeName {
-				if node.IsComplete() {
-					successCount++
-				} else if node.Status() == v1alpha1.StatusErroring {
-					failureCount++
-				}
-				break
-			}
+	// Count current state in the compartment
+	currentCompleted := 0
+	currentFailed := 0
+	for _, node := range c.Nodes {
+		if node.IsComplete() {
+			currentCompleted++
+		} else if node.Status() == v1alpha1.StatusErroring {
+			currentFailed++
 		}
 	}
 
-	// Clear the current batch since we're evaluating it
-	c.BatchState.CurrentBatchNodes = nil
+	// Calculate delta from last checkpoint
+	deltaCompleted := currentCompleted - c.BatchState.CompletedNodes
+	deltaFailed := currentFailed - c.BatchState.FailedNodes
 
-	return true, successCount, failureCount
+	// Only evaluate if there's actually a change (batch was processed)
+	if deltaCompleted == 0 && deltaFailed == 0 {
+		return false, 0, 0
+	}
+
+	// Update checkpoints
+	c.BatchState.CompletedNodes = currentCompleted
+	c.BatchState.FailedNodes = currentFailed
+
+	return true, deltaCompleted, deltaFailed
 }
 
 // EvaluateAndUpdateBatchState evaluates a completed batch and updates the persistent state
@@ -223,10 +210,8 @@ func (c *Compartment) EvaluateAndUpdateBatchState(batchSize int, successCount in
 		c.Strategy.EvaluateBatchResult(&c.BatchState, batchSize, successCount, failureCount, len(c.Nodes))
 	} else {
 		// No strategy: just update basic counters
-		c.BatchState.ProcessedNodes += batchSize
-		c.BatchState.SuccessfulInBatch = successCount
-		c.BatchState.FailedInBatch = failureCount
 		c.BatchState.CurrentBatch++
+		c.BatchState.LastBatchSize = batchSize
 	}
 }
 

@@ -92,7 +92,8 @@ var _ = Describe("Compartment", func() {
 			batchState := &v1alpha1.BatchProcessingState{
 				CurrentBatch:        3,
 				ConsecutiveFailures: 1,
-				ProcessedNodes:      5,
+				CompletedNodes:      4,
+				FailedNodes:         1,
 			}
 
 			compartment := NewCompartmentWrapper(&v1alpha1.Compartment{
@@ -103,7 +104,8 @@ var _ = Describe("Compartment", func() {
 			state := compartment.GetBatchState()
 			Expect(state.CurrentBatch).To(Equal(3))
 			Expect(state.ConsecutiveFailures).To(Equal(1))
-			Expect(state.ProcessedNodes).To(Equal(5))
+			Expect(state.CompletedNodes).To(Equal(4))
+			Expect(state.FailedNodes).To(Equal(1))
 		})
 
 		It("should create compartment with default batch state when nil", func() {
@@ -115,7 +117,8 @@ var _ = Describe("Compartment", func() {
 			state := compartment.GetBatchState()
 			Expect(state.CurrentBatch).To(Equal(1))
 			Expect(state.ConsecutiveFailures).To(Equal(0))
-			Expect(state.ProcessedNodes).To(Equal(0))
+			Expect(state.CompletedNodes).To(Equal(0))
+			Expect(state.FailedNodes).To(Equal(0))
 		})
 	})
 
@@ -126,16 +129,15 @@ var _ = Describe("Compartment", func() {
 				Budget: v1alpha1.DeploymentBudget{Count: ptr.To(10)},
 			}, &v1alpha1.BatchProcessingState{
 				CurrentBatch:   1,
-				ProcessedNodes: 0,
+				CompletedNodes: 0,
+				FailedNodes:    0,
 			})
 
 			compartment.EvaluateAndUpdateBatchState(3, 2, 1)
 
 			state := compartment.GetBatchState()
-			Expect(state.ProcessedNodes).To(Equal(3))
 			Expect(state.CurrentBatch).To(Equal(2))
-			Expect(state.SuccessfulInBatch).To(Equal(2))
-			Expect(state.FailedInBatch).To(Equal(1))
+			Expect(state.LastBatchSize).To(Equal(3))
 		})
 
 		It("should reset consecutive failures on successful batch", func() {
@@ -154,7 +156,8 @@ var _ = Describe("Compartment", func() {
 				Strategy: strategy,
 			}, &v1alpha1.BatchProcessingState{
 				CurrentBatch:        1,
-				ProcessedNodes:      0,
+				CompletedNodes:      4, // Simulating cumulative state after batch evaluation
+				FailedNodes:         1,
 				ConsecutiveFailures: 1, // Should reset on success
 			})
 
@@ -163,7 +166,7 @@ var _ = Describe("Compartment", func() {
 				compartment.Nodes = append(compartment.Nodes, nil)
 			}
 
-			// 80% success (4 out of 5)
+			// 80% success (4 out of 5) - using delta values
 			compartment.EvaluateAndUpdateBatchState(5, 4, 1)
 
 			state := compartment.GetBatchState()
@@ -187,7 +190,8 @@ var _ = Describe("Compartment", func() {
 				Strategy: strategy,
 			}, &v1alpha1.BatchProcessingState{
 				CurrentBatch:        2,
-				ProcessedNodes:      1, // After adding 3 more: (1+3)/10 = 40% (below 50% safety limit)
+				CompletedNodes:      1, // After this batch: (1+3)/10 = 40% (below 50% safety limit)
+				FailedNodes:         0, // Will add 2 more
 				ConsecutiveFailures: 1, // Will increment to 2 (threshold)
 			})
 
@@ -220,7 +224,8 @@ var _ = Describe("Compartment", func() {
 				Strategy: strategy,
 			}, &v1alpha1.BatchProcessingState{
 				CurrentBatch:        3,
-				ProcessedNodes:      6, // 60% progress (above 50% safety limit)
+				CompletedNodes:      4, // After this batch: (4+2+3)/10 = 90% but we use cumulative
+				FailedNodes:         2, // Total 6 processed, 60% (above 50% safety limit)
 				ConsecutiveFailures: 1,
 			})
 
@@ -230,6 +235,8 @@ var _ = Describe("Compartment", func() {
 			}
 
 			// 40% success (2 out of 5) - below 80% threshold, but above safety limit
+			// After evaluation: CompletedNodes would be 6, FailedNodes would be 5, total 11 processed
+			// For this test, we assume deltas add to existing: 4+2=6 complete, 2+3=5 failed = 11/10
 			compartment.EvaluateAndUpdateBatchState(5, 2, 3)
 
 			state := compartment.GetBatchState()

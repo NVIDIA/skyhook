@@ -479,9 +479,11 @@ func PersistCompartmentBatchStates(skyhook SkyhookNodes) bool {
 
 	changed := false
 	for _, compartment := range compartments {
-		// Only persist if there are nodes in the current batch
-		if len(compartment.GetBatchState().CurrentBatchNodes) > 0 {
-			skyhook.GetSkyhook().Status.CompartmentBatchStates[compartment.GetName()] = compartment.GetBatchState()
+		// Always persist batch state to maintain cumulative counters
+		batchState := compartment.GetBatchState()
+		// Only persist if there's meaningful state (batch has started or there are nodes)
+		if batchState.CurrentBatch > 0 || len(compartment.GetNodes()) > 0 {
+			skyhook.GetSkyhook().Status.CompartmentBatchStates[compartment.GetName()] = batchState
 			changed = true
 		}
 	}

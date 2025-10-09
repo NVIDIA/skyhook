@@ -504,37 +504,30 @@ spec:
                   description: BatchProcessingState tracks the current state of batch
                     processing for a compartment
                   properties:
+                    completedNodes:
+                      description: Total number of nodes that have completed successfully
+                        (cumulative across all batches)
+                      type: integer
                     consecutiveFailures:
                       description: Number of consecutive failures
                       type: integer
                     currentBatch:
                       description: Current batch number (starts at 1)
                       type: integer
-                    currentBatchNodes:
-                      description: Names of nodes in the current batch (persisted
-                        across reconciles)
-                      items:
-                        type: string
-                      type: array
-                    failedInBatch:
-                      description: Number of failed nodes in current batch
+                    failedNodes:
+                      description: Total number of nodes that have failed (cumulative
+                        across all batches)
                       type: integer
                     lastBatchFailed:
                       description: Whether the last batch failed (for slowdown logic)
                       type: boolean
                     lastBatchSize:
-                      description: Last successful batch size (for slowdown calculations)
-                      type: integer
-                    processedNodes:
-                      description: Total number of nodes processed so far
+                      description: Last batch size (for slowdown calculations)
                       type: integer
                     shouldStop:
                       description: Whether the strategy should stop processing due
                         to failures
                       type: boolean
-                    successfulInBatch:
-                      description: Number of successful nodes in current batch
-                      type: integer
                   type: object
                 description: CompartmentBatchStates tracks batch processing state
                   per compartment
