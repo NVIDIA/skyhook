@@ -25,7 +25,6 @@ package v1alpha1
 
 import (
 	"fmt"
-	"math"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -265,7 +264,7 @@ func (s *DeploymentStrategy) CalculateBatchSize(totalNodes int, state *BatchProc
 	}
 }
 
-// EvaluateBatchResult evaluates the result of a batch and updates state
+// EvaluateBatchResult evaluates the result of a batch and records the outcome
 func (s *DeploymentStrategy) EvaluateBatchResult(state *BatchProcessingState, batchSize int, successCount int, failureCount int, totalNodes int) {
 	// Note: successCount and failureCount are deltas from the current batch
 	// CompletedNodes and FailedNodes are already updated in EvaluateCurrentBatch before this is called
@@ -285,18 +284,21 @@ func (s *DeploymentStrategy) EvaluateBatchResult(state *BatchProcessingState, ba
 		progressPercent = (processedNodes * 100) / totalNodes
 	}
 
-	if successPercentage >= s.getBatchThreshold() {
-		state.ConsecutiveFailures = 0
-		state.LastBatchFailed = false
-	} else {
+	// Record the batch outcome
+	batchFailed := successPercentage < s.getBatchThreshold()
+	state.LastBatchSize = batchSize
+	state.LastBatchFailed = batchFailed
+
+	if batchFailed {
 		state.ConsecutiveFailures++
-		state.LastBatchFailed = true
+		// Check if we should stop processing
 		if progressPercent < s.getSafetyLimit() && state.ConsecutiveFailures >= s.getFailureThreshold() {
 			state.ShouldStop = true
 		}
+	} else {
+		state.ConsecutiveFailures = 0
 	}
 
-	state.LastBatchSize = batchSize
 	state.CurrentBatch++
 }
 
@@ -354,24 +356,30 @@ func (s *FixedStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessin
 }
 
 func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
-	var batchSize int
-
 	// Avoid divide by zero
 	if totalNodes == 0 {
 		return 0
 	}
 
-	// Check if we should slow down due to last batch failure
-	processedNodes := state.CompletedNodes + state.FailedNodes
-	progressPercent := (processedNodes * 100) / totalNodes
-	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 {
-		// Slow down: reduce by delta from last batch size
-		batchSize = max(1, state.LastBatchSize-*s.Delta)
+	var batchSize int
+	if state.LastBatchSize > 0 {
+		// Calculate next size based on last batch outcome
+		processedNodes := state.CompletedNodes + state.FailedNodes
+		progressPercent := (processedNodes * 100) / totalNodes
+
+		if state.LastBatchFailed && progressPercent < *s.SafetyLimit {
+			// Slow down: reduce by delta
+			batchSize = max(1, state.LastBatchSize-*s.Delta)
+		} else {
+			// Normal growth: grow by delta
+			batchSize = state.LastBatchSize + *s.Delta
+		}
 	} else {
-		// Normal growth: initialBatch + (currentBatch - 1) * delta
-		batchSize = *s.InitialBatch + (state.CurrentBatch-1)*(*s.Delta)
+		// First batch: use initial batch size
+		batchSize = *s.InitialBatch
 	}
 
+	processedNodes := state.CompletedNodes + state.FailedNodes
 	remaining := totalNodes - processedNodes
 	if batchSize > remaining {
 		batchSize = remaining
@@ -380,33 +388,35 @@ func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessi
 }
 
 func (s *ExponentialStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessingState) int {
-	var batchSize int
-
 	// Avoid divide by zero
 	if totalNodes == 0 {
 		return 0
 	}
 
-	// Check if we should slow down due to last batch failure
-	processedNodes := state.CompletedNodes + state.FailedNodes
-	progressPercent := (processedNodes * 100) / totalNodes
-	if state.LastBatchFailed && progressPercent < *s.SafetyLimit && state.LastBatchSize > 0 && *s.GrowthFactor > 0 {
-		// Slow down: divide last batch size by growth factor
-		batchSize = max(1, state.LastBatchSize / *s.GrowthFactor)
-	} else {
-		// Normal growth: initialBatch * (growthFactor ^ (currentBatch - 1))
-		// Use math.Pow for efficiency and to avoid overflow issues with large batch numbers
-		exponent := state.CurrentBatch - 1
-		growthMultiplier := math.Pow(float64(*s.GrowthFactor), float64(exponent))
-		batchSize = int(float64(*s.InitialBatch) * growthMultiplier)
+	var batchSize int
+	if state.LastBatchSize > 0 && *s.GrowthFactor > 0 {
+		// Calculate next size based on last batch outcome
+		processedNodes := state.CompletedNodes + state.FailedNodes
+		progressPercent := (processedNodes * 100) / totalNodes
 
-		// Cap at remaining nodes to prevent unreasonably large batch sizes
-		// and potential integer overflow
+		if state.LastBatchFailed && progressPercent < *s.SafetyLimit {
+			// Slow down: divide by growth factor
+			batchSize = max(1, state.LastBatchSize / *s.GrowthFactor)
+		} else {
+			// Normal growth: multiply by growth factor
+			batchSize = state.LastBatchSize * *s.GrowthFactor
+		}
+
+		// Cap at total nodes to prevent unreasonably large batch sizes
 		if batchSize > totalNodes {
 			batchSize = totalNodes
 		}
+	} else {
+		// First batch: use initial batch size
+		batchSize = *s.InitialBatch
 	}
 
+	processedNodes := state.CompletedNodes + state.FailedNodes
 	remaining := totalNodes - processedNodes
 	if batchSize > remaining {
 		batchSize = remaining
