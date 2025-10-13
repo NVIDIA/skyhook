@@ -30,6 +30,10 @@ import (
 	kptr "k8s.io/utils/ptr"
 )
 
+const (
+	annotationTrueValue = "true"
+)
+
 var _ = Describe("cluster state v2 tests", func() {
 
 	It("should check taint toleration", func() {
@@ -412,7 +416,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should update status to paused when skyhook is paused and status is not already paused", func() {
 			// Set up the skyhook as paused
-			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = "true"
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = annotationTrueValue
 
 			// Set up mock expectations
 			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
@@ -429,7 +433,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should not change status when skyhook is paused but status is already paused", func() {
 			// Set up the skyhook as paused with paused status
-			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = "true"
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = annotationTrueValue
 
 			// Set up mock expectations
 			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
@@ -630,7 +634,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should set status to disabled when skyhook is disabled", func() {
 			// Set up the skyhook as disabled
-			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = "true"
+			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = annotationTrueValue
 
 			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
 			Expect(err).NotTo(HaveOccurred())
@@ -650,7 +654,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should set status to paused when skyhook is paused", func() {
 			// Set up the skyhook as paused
-			testSkyhook.Annotations["skyhook.nvidia.com/pause"] = "true"
+			testSkyhook.Annotations["skyhook.nvidia.com/pause"] = annotationTrueValue
 
 			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
 			Expect(err).NotTo(HaveOccurred())
@@ -779,7 +783,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should handle multiple nodes correctly when disabled", func() {
 			// Set up the skyhook as disabled
-			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = "true"
+			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = annotationTrueValue
 
 			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
 			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}}
