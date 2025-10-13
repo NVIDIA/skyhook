@@ -193,6 +193,7 @@ type SkyhookNodes interface {
 	GetCompartments() map[string]*wrapper.Compartment
 	AddCompartment(name string, compartment *wrapper.Compartment)
 	AddCompartmentNode(name string, node wrapper.SkyhookNode)
+	PersistCompartmentBatchStates() bool
 }
 
 var _ SkyhookNodes = &skyhookNodes{}
@@ -466,15 +467,15 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 }
 
 // PersistCompartmentBatchStates saves the current batch state for all compartments to the Skyhook status
-func PersistCompartmentBatchStates(skyhook SkyhookNodes) bool {
-	compartments := skyhook.GetCompartments()
+func (s *skyhookNodes) PersistCompartmentBatchStates() bool {
+	compartments := s.GetCompartments()
 	if len(compartments) == 0 {
 		return false // No compartments, nothing to persist
 	}
 
 	// Initialize the batch states map if needed
-	if skyhook.GetSkyhook().Status.CompartmentBatchStates == nil {
-		skyhook.GetSkyhook().Status.CompartmentBatchStates = make(map[string]v1alpha1.BatchProcessingState)
+	if s.skyhook.Status.CompartmentBatchStates == nil {
+		s.skyhook.Status.CompartmentBatchStates = make(map[string]v1alpha1.BatchProcessingState)
 	}
 
 	changed := false
@@ -483,13 +484,13 @@ func PersistCompartmentBatchStates(skyhook SkyhookNodes) bool {
 		batchState := compartment.GetBatchState()
 		// Only persist if there's meaningful state (batch has started or there are nodes)
 		if batchState.CurrentBatch > 0 || len(compartment.GetNodes()) > 0 {
-			skyhook.GetSkyhook().Status.CompartmentBatchStates[compartment.GetName()] = batchState
+			s.skyhook.Status.CompartmentBatchStates[compartment.GetName()] = batchState
 			changed = true
 		}
 	}
 
 	if changed {
-		skyhook.GetSkyhook().Updated = true
+		s.skyhook.Updated = true
 	}
 
 	return changed

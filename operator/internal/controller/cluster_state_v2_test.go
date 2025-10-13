@@ -27,6 +27,7 @@ import (
 	"github.com/NVIDIA/skyhook/operator/internal/wrapper"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kptr "k8s.io/utils/ptr"
 )
 
 var _ = Describe("cluster state v2 tests", func() {
@@ -464,6 +465,136 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 			// Verify the result
 			Expect(result).To(BeFalse())
+		})
+	})
+
+	Describe("PersistCompartmentBatchStates", func() {
+		var skyhook *wrapper.Skyhook
+		var sn *skyhookNodes
+
+		BeforeEach(func() {
+			skyhook = &wrapper.Skyhook{
+				Skyhook: &v1alpha1.Skyhook{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-skyhook",
+					},
+					Status: v1alpha1.SkyhookStatus{},
+				},
+			}
+
+			sn = &skyhookNodes{
+				skyhook:      skyhook,
+				nodes:        []wrapper.SkyhookNode{},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+		})
+
+		It("should return false when there are no compartments", func() {
+			result := sn.PersistCompartmentBatchStates()
+			Expect(result).To(BeFalse())
+			Expect(skyhook.Updated).To(BeFalse())
+		})
+
+		It("should persist batch state when compartment has CurrentBatch > 0", func() {
+			// Create a compartment with batch state
+			batchState := &v1alpha1.BatchProcessingState{
+				CurrentBatch:   1,
+				CompletedNodes: 4,
+				FailedNodes:    1,
+			}
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(10),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{InitialBatch: kptr.To(5)},
+				},
+			}, batchState)
+
+			sn.AddCompartment("compartment1", compartment)
+
+			result := sn.PersistCompartmentBatchStates()
+
+			Expect(result).To(BeTrue())
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.CompartmentBatchStates).ToNot(BeNil())
+			Expect(skyhook.Status.CompartmentBatchStates).To(HaveKey("compartment1"))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment1"].CurrentBatch).To(Equal(1))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment1"].CompletedNodes).To(Equal(4))
+		})
+
+		It("should persist batch state when compartment has nodes", func() {
+			// Create a compartment with nodes but no batch started yet
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(10),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{InitialBatch: kptr.To(5)},
+				},
+			}, nil)
+
+			// Add a node to the compartment
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook.Skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			compartment.AddNode(skyhookNode)
+
+			sn.AddCompartment("compartment1", compartment)
+
+			result := sn.PersistCompartmentBatchStates()
+
+			Expect(result).To(BeTrue())
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.CompartmentBatchStates).ToNot(BeNil())
+			Expect(skyhook.Status.CompartmentBatchStates).To(HaveKey("compartment1"))
+		})
+
+		It("should persist multiple compartments with meaningful state", func() {
+			// Create multiple compartments
+			batchState1 := &v1alpha1.BatchProcessingState{
+				CurrentBatch:   1,
+				CompletedNodes: 5,
+				FailedNodes:    0,
+			}
+			compartment1 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(10),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{InitialBatch: kptr.To(5)},
+				},
+			}, batchState1)
+
+			batchState2 := &v1alpha1.BatchProcessingState{
+				CurrentBatch:   2,
+				CompletedNodes: 8,
+				FailedNodes:    2,
+			}
+			compartment2 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment2",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(5),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Linear: &v1alpha1.LinearStrategy{},
+				},
+			}, batchState2)
+
+			sn.AddCompartment("compartment1", compartment1)
+			sn.AddCompartment("compartment2", compartment2)
+
+			result := sn.PersistCompartmentBatchStates()
+
+			Expect(result).To(BeTrue())
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.CompartmentBatchStates).ToNot(BeNil())
+			Expect(skyhook.Status.CompartmentBatchStates).To(HaveLen(2))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment1"].CurrentBatch).To(Equal(1))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment2"].CurrentBatch).To(Equal(2))
 		})
 	})
 })
