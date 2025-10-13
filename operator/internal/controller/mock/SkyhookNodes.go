@@ -188,6 +188,66 @@ func (_c *MockSkyhookNodes_AddNode_Call) RunAndReturn(run func(node wrapper.Skyh
 	return _c
 }
 
+// AssignNodeToCompartment provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) AssignNodeToCompartment(node wrapper.SkyhookNode) (string, error) {
+	ret := _mock.Called(node)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AssignNodeToCompartment")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(wrapper.SkyhookNode) (string, error)); ok {
+		return returnFunc(node)
+	}
+	if returnFunc, ok := ret.Get(0).(func(wrapper.SkyhookNode) string); ok {
+		r0 = returnFunc(node)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(wrapper.SkyhookNode) error); ok {
+		r1 = returnFunc(node)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockSkyhookNodes_AssignNodeToCompartment_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AssignNodeToCompartment'
+type MockSkyhookNodes_AssignNodeToCompartment_Call struct {
+	*mock.Call
+}
+
+// AssignNodeToCompartment is a helper method to define mock.On call
+//   - node wrapper.SkyhookNode
+func (_e *MockSkyhookNodes_Expecter) AssignNodeToCompartment(node interface{}) *MockSkyhookNodes_AssignNodeToCompartment_Call {
+	return &MockSkyhookNodes_AssignNodeToCompartment_Call{Call: _e.mock.On("AssignNodeToCompartment", node)}
+}
+
+func (_c *MockSkyhookNodes_AssignNodeToCompartment_Call) Run(run func(node wrapper.SkyhookNode)) *MockSkyhookNodes_AssignNodeToCompartment_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 wrapper.SkyhookNode
+		if args[0] != nil {
+			arg0 = args[0].(wrapper.SkyhookNode)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AssignNodeToCompartment_Call) Return(s string, err error) *MockSkyhookNodes_AssignNodeToCompartment_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockSkyhookNodes_AssignNodeToCompartment_Call) RunAndReturn(run func(node wrapper.SkyhookNode) (string, error)) *MockSkyhookNodes_AssignNodeToCompartment_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CollectNodeStatus provides a mock function for the type MockSkyhookNodes
 func (_mock *MockSkyhookNodes) CollectNodeStatus() v1alpha1.Status {
 	ret := _mock.Called()

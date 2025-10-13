@@ -2303,9 +2303,8 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 			continue
 		}
 
-		allNodes := skyhook.GetNodes()
-		for _, node := range allNodes {
-			compartmentName, err := wrapper.AssignNodeToCompartment(node, skyhook.GetCompartments(), allNodes)
+		for _, node := range skyhook.GetNodes() {
+			compartmentName, err := skyhook.AssignNodeToCompartment(node)
 			if err != nil {
 				return fmt.Errorf("error assigning node %s: %w", node.GetNode().Name, err)
 			}
