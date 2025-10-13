@@ -2295,7 +2295,7 @@ func setPodResources(pod *corev1.Pod, res *v1alpha1.ResourceRequirements) {
 	}
 }
 
-// PartitionNodesIntoCompartments partitions nodes for each skyhook that uses deployment policies
+// PartitionNodesIntoCompartments partitions nodes for each skyhook that uses deployment policies.
 func partitionNodesIntoCompartments(clusterState *clusterState) error {
 	for _, skyhook := range clusterState.skyhooks {
 		// Skip skyhooks that don't have compartments (no deployment policy)
@@ -2304,7 +2304,7 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 		}
 
 		for _, node := range skyhook.GetNodes() {
-			compartmentName, err := wrapper.AssignNodeToCompartment(node, skyhook.GetCompartments())
+			compartmentName, err := skyhook.AssignNodeToCompartment(node)
 			if err != nil {
 				return fmt.Errorf("error assigning node %s: %w", node.GetNode().Name, err)
 			}

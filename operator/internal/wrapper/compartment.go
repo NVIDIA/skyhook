@@ -19,11 +19,7 @@
 package wrapper
 
 import (
-	"fmt"
-
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 func NewCompartmentWrapper(c *v1alpha1.Compartment) *Compartment {
@@ -58,26 +54,51 @@ func (c *Compartment) AddNode(node SkyhookNode) {
 	c.Nodes = append(c.Nodes, node)
 }
 
-// AssignNodeToCompartment assigns a single node to the appropriate compartment
-func AssignNodeToCompartment(node SkyhookNode, compartments map[string]*Compartment) (string, error) {
-	nodeLabels := labels.Set(node.GetNode().Labels)
+// strategySafetyOrder defines the safety ordering of strategies
+// Lower values indicate safer strategies (less aggressive rollout)
+// Strategy safety order: Fixed (0) > Linear (1) > Exponential (2)
+var strategySafetyOrder = map[v1alpha1.StrategyType]int{
+	v1alpha1.StrategyTypeFixed:       0,
+	v1alpha1.StrategyTypeLinear:      1,
+	v1alpha1.StrategyTypeExponential: 2,
+	v1alpha1.StrategyTypeUnknown:     999, // Unknown is least safe
+}
 
-	// Check all non-default compartments first
-	for _, compartment := range compartments {
-		// Skip the default compartment - it's a fallback
-		if compartment.Name == v1alpha1.DefaultCompartmentName {
-			continue
-		}
-
-		selector, err := metav1.LabelSelectorAsSelector(&compartment.Selector)
-		if err != nil {
-			return "", fmt.Errorf("invalid selector for compartment %s: %w", compartment.Name, err)
-		}
-		if selector.Matches(nodeLabels) {
-			return compartment.Name, nil
-		}
+// GetStrategyType returns the strategy type for a compartment
+func GetStrategyType(strategy *v1alpha1.DeploymentStrategy) v1alpha1.StrategyType {
+	if strategy == nil {
+		return v1alpha1.StrategyTypeUnknown
 	}
+	if strategy.Fixed != nil {
+		return v1alpha1.StrategyTypeFixed
+	}
+	if strategy.Linear != nil {
+		return v1alpha1.StrategyTypeLinear
+	}
+	if strategy.Exponential != nil {
+		return v1alpha1.StrategyTypeExponential
+	}
+	return v1alpha1.StrategyTypeUnknown
+}
 
-	// No matches - assign to default
-	return v1alpha1.DefaultCompartmentName, nil
+// StrategyIsSafer returns true if strategy a is safer than strategy b
+// Strategy safety order: Fixed > Linear > Exponential
+func StrategyIsSafer(a, b v1alpha1.StrategyType) bool {
+	return strategySafetyOrder[a] < strategySafetyOrder[b]
+}
+
+// ComputeEffectiveCapacity calculates the effective ceiling for a compartment's budget
+// given the number of matched nodes
+func ComputeEffectiveCapacity(budget v1alpha1.DeploymentBudget, matchedNodes int) int {
+	if budget.Count != nil {
+		return *budget.Count
+	}
+	if budget.Percent != nil {
+		// capacity = max(1, floor(percent/100 × matched))
+		// Use floor for safer rollouts - never exceed the intended percentage
+		capacity := float64(*budget.Percent) / 100.0 * float64(matchedNodes)
+		return max(1, int(capacity))
+	}
+	// Should not happen due to validation
+	return 0
 }

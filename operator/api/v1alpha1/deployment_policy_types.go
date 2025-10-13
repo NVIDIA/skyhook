@@ -109,6 +109,16 @@ type DeploymentBudget struct {
 	Count *int `json:"count,omitempty"`
 }
 
+// StrategyType represents the type of deployment strategy
+type StrategyType string
+
+const (
+	StrategyTypeFixed       StrategyType = "fixed"
+	StrategyTypeLinear      StrategyType = "linear"
+	StrategyTypeExponential StrategyType = "exponential"
+	StrategyTypeUnknown     StrategyType = "unknown"
+)
+
 const (
 	DefaultCompartmentName = "__default__"
 )
