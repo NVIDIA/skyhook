@@ -597,4 +597,212 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			Expect(skyhook.Status.CompartmentBatchStates["compartment2"].CurrentBatch).To(Equal(2))
 		})
 	})
+
+	Describe("IntrospectSkyhook", func() {
+		var testSkyhook *v1alpha1.Skyhook
+		var testNode *corev1.Node
+
+		BeforeEach(func() {
+			testSkyhook = &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-skyhook",
+					Annotations: map[string]string{},
+				},
+				Spec: v1alpha1.SkyhookSpec{
+					Packages: map[string]v1alpha1.Package{
+						"test-package": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package", Version: "1.0.0"},
+							Image:      "test-image",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.StatusInProgress,
+				},
+			}
+
+			testNode = &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			}
+		})
+
+		It("should set status to disabled when skyhook is disabled", func() {
+			// Set up the skyhook as disabled
+			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = "true"
+
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusDisabled))
+		})
+
+		It("should set status to paused when skyhook is paused", func() {
+			// Set up the skyhook as paused
+			testSkyhook.Annotations["skyhook.nvidia.com/pause"] = "true"
+
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusPaused))
+		})
+
+		It("should set status to waiting when another skyhook has higher priority", func() {
+			// Create higher priority skyhook (priority 1)
+			higherPrioritySkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-1"},
+				Spec: v1alpha1.SkyhookSpec{
+					Priority: 1,
+					Packages: map[string]v1alpha1.Package{
+						"test-package-1": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package-1", Version: "1.0.0"},
+							Image:      "test-image-1",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+			}
+
+			// Create lower priority skyhook (priority 2)
+			lowerPrioritySkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-2"},
+				Spec: v1alpha1.SkyhookSpec{
+					Priority: 2,
+					Packages: map[string]v1alpha1.Package{
+						"test-package-2": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package-2", Version: "1.0.0"},
+							Image:      "test-image-2",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+			}
+
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, higherPrioritySkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, lowerPrioritySkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes1 := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(higherPrioritySkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode1},
+			}
+
+			skyhookNodes2 := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(lowerPrioritySkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode2},
+			}
+
+			allSkyhooks := []SkyhookNodes{skyhookNodes1, skyhookNodes2}
+
+			// Call the function - skyhook2 should be waiting because skyhook1 has higher priority
+			changed := IntrospectSkyhook(skyhookNodes2, allSkyhooks)
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes2.Status()).To(Equal(v1alpha1.StatusWaiting))
+		})
+
+		It("should not change status when skyhook is complete", func() {
+			// Create a complete skyhook with no packages
+			completeSkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Status:     v1alpha1.SkyhookStatus{Status: v1alpha1.StatusComplete},
+			}
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+				Status: corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{
+						{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+					},
+				},
+			}
+
+			skyhookNode, err := wrapper.NewSkyhookNode(node, completeSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode.SetStatus(v1alpha1.StatusComplete)
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(completeSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			_ = IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result - status should stay complete
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusComplete))
+		})
+
+		It("should return true when node status changes", func() {
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode.SetStatus(v1alpha1.StatusUnknown)
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+		})
+
+		It("should handle multiple nodes correctly when disabled", func() {
+			// Set up the skyhook as disabled
+			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = "true"
+
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode1, skyhookNode2},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusDisabled))
+			Expect(skyhookNode1.Status()).To(Equal(v1alpha1.StatusDisabled))
+			Expect(skyhookNode2.Status()).To(Equal(v1alpha1.StatusDisabled))
+		})
+	})
 })
