@@ -60,37 +60,37 @@ func (c *Compartment) AddNode(node SkyhookNode) {
 	c.Nodes = append(c.Nodes, node)
 }
 
-// strategyType represents the type of deployment strategy
-type strategyType int
-
-const (
-	strategyFixed strategyType = iota
-	strategyLinear
-	strategyExponential
-	strategyUnknown
-)
+// strategySafetyOrder defines the safety ordering of strategies
+// Lower values indicate safer strategies (less aggressive rollout)
+// Strategy safety order: Fixed (0) > Linear (1) > Exponential (2)
+var strategySafetyOrder = map[v1alpha1.StrategyType]int{
+	v1alpha1.StrategyTypeFixed:       0,
+	v1alpha1.StrategyTypeLinear:      1,
+	v1alpha1.StrategyTypeExponential: 2,
+	v1alpha1.StrategyTypeUnknown:     999, // Unknown is least safe
+}
 
 // getStrategyType returns the strategy type for a compartment
-func getStrategyType(strategy *v1alpha1.DeploymentStrategy) strategyType {
+func getStrategyType(strategy *v1alpha1.DeploymentStrategy) v1alpha1.StrategyType {
 	if strategy == nil {
-		return strategyUnknown
+		return v1alpha1.StrategyTypeUnknown
 	}
 	if strategy.Fixed != nil {
-		return strategyFixed
+		return v1alpha1.StrategyTypeFixed
 	}
 	if strategy.Linear != nil {
-		return strategyLinear
+		return v1alpha1.StrategyTypeLinear
 	}
 	if strategy.Exponential != nil {
-		return strategyExponential
+		return v1alpha1.StrategyTypeExponential
 	}
-	return strategyUnknown
+	return v1alpha1.StrategyTypeUnknown
 }
 
 // strategyIsSafer returns true if strategy a is safer than strategy b
 // Strategy safety order: Fixed > Linear > Exponential
-func strategyIsSafer(a, b strategyType) bool {
-	return a < b
+func strategyIsSafer(a, b v1alpha1.StrategyType) bool {
+	return strategySafetyOrder[a] < strategySafetyOrder[b]
 }
 
 // computeEffectiveCapacity calculates the effective ceiling for a compartment's budget
@@ -111,7 +111,7 @@ func computeEffectiveCapacity(budget v1alpha1.DeploymentBudget, matchedNodes int
 // compartmentMatch represents a compartment that matches a node
 type compartmentMatch struct {
 	name         string
-	strategyType strategyType
+	strategyType v1alpha1.StrategyType
 	capacity     int
 }
 
