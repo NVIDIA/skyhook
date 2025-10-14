@@ -16,11 +16,6 @@
  * limitations under the License.
  */
 
-/*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
- * SPDX-License-Identifier: Apache-2.0
- */
-
 package v1alpha1
 
 import (
@@ -108,6 +103,16 @@ type DeploymentBudget struct {
 	// +optional
 	Count *int `json:"count,omitempty"`
 }
+
+// StrategyType represents the type of deployment strategy
+type StrategyType string
+
+const (
+	StrategyTypeFixed       StrategyType = "fixed"
+	StrategyTypeLinear      StrategyType = "linear"
+	StrategyTypeExponential StrategyType = "exponential"
+	StrategyTypeUnknown     StrategyType = "unknown"
+)
 
 const (
 	DefaultCompartmentName = "__default__"
