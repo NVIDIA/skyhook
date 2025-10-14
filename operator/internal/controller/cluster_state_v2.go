@@ -106,43 +106,6 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		// Handle backwards compatibility: if no deployment policy is set,
 		// create a synthetic default compartment with FixedStrategy based on InterruptionBudget
 		if skyhook.Spec.DeploymentPolicy == "" {
-			// Create a synthetic budget from InterruptionBudget
-			// If InterruptionBudget is not set, default to 100% (all nodes at once)
-			var budget v1alpha1.DeploymentBudget
-			if skyhook.Spec.InterruptionBudget.Percent != nil {
-				budget.Percent = skyhook.Spec.InterruptionBudget.Percent
-			} else if skyhook.Spec.InterruptionBudget.Count != nil {
-				budget.Count = skyhook.Spec.InterruptionBudget.Count
-			} else {
-				// Default to 100% for backwards compatibility (process all nodes at once)
-				budget.Percent = ptr[int](100)
-			}
-
-			// Calculate the ceiling to maintain backwards-compatible batch size
-			// This ensures the FixedStrategy processes the same number of nodes per batch
-			// as the legacy InterruptionBudget behavior
-			nodeCount := len(ret.skyhooks[idx].GetNodes())
-			var initialBatch int
-			if budget.Count != nil {
-				// Count budget: use the count directly
-				initialBatch = max(1, min(nodeCount, *budget.Count))
-			} else if budget.Percent != nil {
-				// Percent budget: calculate based on total nodes
-				if nodeCount > 0 {
-					limit := float64(*budget.Percent) / 100
-					initialBatch = max(1, int(float64(nodeCount)*limit))
-				} else {
-					initialBatch = 1
-				}
-			} else {
-				initialBatch = 1
-			}
-
-			// Create a FixedStrategy with InitialBatch matching the legacy ceiling behavior
-			fixedStrategy := &v1alpha1.FixedStrategy{}
-			fixedStrategy.Default()
-			fixedStrategy.InitialBatch = &initialBatch
-
 			// Load persisted batch state if it exists
 			var defaultBatchState *v1alpha1.BatchProcessingState
 			if skyhook.Status.CompartmentBatchStates != nil {
@@ -151,14 +114,10 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 				}
 			}
 
-			// Add the synthetic default compartment
-			ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
-				Name:   v1alpha1.DefaultCompartmentName,
-				Budget: budget,
-				Strategy: &v1alpha1.DeploymentStrategy{
-					Fixed: fixedStrategy,
-				},
-			}, defaultBatchState))
+			// Create the legacy default compartment
+			nodeCount := len(ret.skyhooks[idx].GetNodes())
+			legacyCompartment := createLegacyDefaultCompartment(skyhook.Spec, nodeCount)
+			ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(legacyCompartment, defaultBatchState))
 
 			// Assign all nodes to the default compartment for backwards compatibility
 			for _, node := range ret.skyhooks[idx].GetNodes() {
@@ -211,6 +170,55 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 	}
 
 	return ret, nil
+}
+
+// createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility
+// when no DeploymentPolicy is specified. It translates the legacy InterruptionBudget into a
+// FixedStrategy compartment that behaves the same way.
+func createLegacyDefaultCompartment(spec v1alpha1.SkyhookSpec, nodeCount int) *v1alpha1.Compartment {
+	// Create a synthetic budget from InterruptionBudget
+	// If InterruptionBudget is not set, default to 100% (all nodes at once)
+	var budget v1alpha1.DeploymentBudget
+	if spec.InterruptionBudget.Percent != nil {
+		budget.Percent = spec.InterruptionBudget.Percent
+	} else if spec.InterruptionBudget.Count != nil {
+		budget.Count = spec.InterruptionBudget.Count
+	} else {
+		// Default to 100% for backwards compatibility (process all nodes at once)
+		budget.Percent = ptr[int](100)
+	}
+
+	// Calculate the ceiling to maintain backwards-compatible batch size
+	// This ensures the FixedStrategy processes the same number of nodes per batch
+	// as the legacy InterruptionBudget behavior
+	var initialBatch int
+	if budget.Count != nil {
+		// Count budget: use the count directly
+		initialBatch = max(1, min(nodeCount, *budget.Count))
+	} else if budget.Percent != nil {
+		// Percent budget: calculate based on total nodes
+		if nodeCount > 0 {
+			limit := float64(*budget.Percent) / 100
+			initialBatch = max(1, int(float64(nodeCount)*limit))
+		} else {
+			initialBatch = 1
+		}
+	} else {
+		initialBatch = 1
+	}
+
+	// Create a FixedStrategy with InitialBatch matching the legacy ceiling behavior
+	fixedStrategy := &v1alpha1.FixedStrategy{}
+	fixedStrategy.Default()
+	fixedStrategy.InitialBatch = &initialBatch
+
+	return &v1alpha1.Compartment{
+		Name:   v1alpha1.DefaultCompartmentName,
+		Budget: budget,
+		Strategy: &v1alpha1.DeploymentStrategy{
+			Fixed: fixedStrategy,
+		},
+	}
 }
 
 func GetNextSkyhook(skyhooks []SkyhookNodes) SkyhookNodes {
