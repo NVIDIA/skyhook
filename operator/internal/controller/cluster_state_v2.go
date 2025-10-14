@@ -111,14 +111,27 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		for _, deploymentPolicy := range deploymentPolicies.Items {
 			if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
 				for _, compartment := range deploymentPolicy.Spec.Compartments {
-					ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment))
+					// Load persisted batch state if it exists
+					var batchState *v1alpha1.BatchProcessingState
+					if skyhook.Status.CompartmentBatchStates != nil {
+						if state, exists := skyhook.Status.CompartmentBatchStates[compartment.Name]; exists {
+							batchState = &state
+						}
+					}
+					ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
 				}
 				// use policy default
+				var defaultBatchState *v1alpha1.BatchProcessingState
+				if skyhook.Status.CompartmentBatchStates != nil {
+					if state, exists := skyhook.Status.CompartmentBatchStates[v1alpha1.DefaultCompartmentName]; exists {
+						defaultBatchState = &state
+					}
+				}
 				ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
 					Name:     v1alpha1.DefaultCompartmentName,
 					Budget:   deploymentPolicy.Spec.Default.Budget,
 					Strategy: deploymentPolicy.Spec.Default.Strategy,
-				}))
+				}, defaultBatchState))
 			}
 		}
 	}
@@ -180,6 +193,7 @@ type SkyhookNodes interface {
 	GetCompartments() map[string]*wrapper.Compartment
 	AddCompartment(name string, compartment *wrapper.Compartment)
 	AddCompartmentNode(name string, node wrapper.SkyhookNode)
+	PersistCompartmentBatchStates() bool
 	AssignNodeToCompartment(node wrapper.SkyhookNode) (string, error)
 }
 
@@ -403,8 +417,6 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 
 	np.primeAndPruneNodes(s)
 
-	nodes := make([]wrapper.SkyhookNode, 0)
-
 	// Straight from skyhook_controller CreatePodForPackage
 	tolerations := append([]corev1.Toleration{ // tolerate all cordon
 		{
@@ -417,6 +429,77 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 	if s.GetSkyhook().Spec.RuntimeRequired {
 		tolerations = append(tolerations, np.runtimeRequiredToleration)
 	}
+
+	// Check if this skyhook uses deployment policies with compartments
+	compartments := s.GetCompartments()
+	if len(compartments) > 0 {
+		return np.selectNodesWithCompartments(s, compartments, tolerations)
+	}
+
+	// Fallback to original logic for skyhooks without deployment policies
+	return np.selectNodesLegacy(s, tolerations)
+}
+
+// selectNodesWithCompartments selects nodes using compartment-based batch processing
+func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments map[string]*wrapper.Compartment, tolerations []corev1.Toleration) []wrapper.SkyhookNode {
+	selectedNodes := make([]wrapper.SkyhookNode, 0)
+	nodesWithTaintTolerationIssue := make([]string, 0)
+
+	// Process each compartment according to its strategy
+	for _, compartment := range compartments {
+		batchNodes := compartment.GetNodesForNextBatch()
+
+		for _, node := range batchNodes {
+			// Check taint toleration
+			if CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
+				selectedNodes = append(selectedNodes, node)
+				np.upsertPick(node.GetNode().GetName(), s.GetSkyhook())
+			} else {
+				nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
+				node.SetStatus(v1alpha1.StatusBlocked)
+			}
+		}
+	}
+
+	// Add condition about taint toleration issues
+	np.updateTaintToleranceCondition(s, nodesWithTaintTolerationIssue)
+
+	return selectedNodes
+}
+
+// PersistCompartmentBatchStates saves the current batch state for all compartments to the Skyhook status
+func (s *skyhookNodes) PersistCompartmentBatchStates() bool {
+	compartments := s.GetCompartments()
+	if len(compartments) == 0 {
+		return false // No compartments, nothing to persist
+	}
+
+	// Initialize the batch states map if needed
+	if s.skyhook.Status.CompartmentBatchStates == nil {
+		s.skyhook.Status.CompartmentBatchStates = make(map[string]v1alpha1.BatchProcessingState)
+	}
+
+	changed := false
+	for _, compartment := range compartments {
+		// Always persist batch state to maintain cumulative counters
+		batchState := compartment.GetBatchState()
+		// Only persist if there's meaningful state (batch has started or there are nodes)
+		if batchState.CurrentBatch > 0 || len(compartment.GetNodes()) > 0 {
+			s.skyhook.Status.CompartmentBatchStates[compartment.GetName()] = batchState
+			changed = true
+		}
+	}
+
+	if changed {
+		s.skyhook.Updated = true
+	}
+
+	return changed
+}
+
+// selectNodesLegacy implements the original node selection logic for backward compatibility
+func (np *NodePicker) selectNodesLegacy(s SkyhookNodes, tolerations []corev1.Toleration) []wrapper.SkyhookNode {
+	nodes := make([]wrapper.SkyhookNode, 0)
 
 	var nodeCount int
 	if s.GetSkyhook().Spec.InterruptionBudget.Percent != nil {
@@ -480,6 +563,13 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 	}
 
 	// if we have nodes that are not tolerable, we need to add a condition to the skyhook
+	np.updateTaintToleranceCondition(s, nodesWithTaintTolerationIssue)
+
+	return final_nodes
+}
+
+// updateTaintToleranceCondition updates the taint tolerance condition on the skyhook
+func (np *NodePicker) updateTaintToleranceCondition(s SkyhookNodes, nodesWithTaintTolerationIssue []string) {
 	if len(nodesWithTaintTolerationIssue) > 0 {
 		s.GetSkyhook().AddCondition(metav1.Condition{
 			Type:               fmt.Sprintf("%s/TaintNotTolerable", v1alpha1.METADATA_PREFIX),
@@ -497,8 +587,6 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 			LastTransitionTime: metav1.Now(),
 		})
 	}
-
-	return final_nodes
 }
 
 // for node/package source of true, its on the node (we true to reflect this on the skyhook status)
@@ -537,11 +625,44 @@ func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 		}
 	}
 
+	// Evaluate completed batches for compartments with deployment policies
+	if evaluateCompletedBatches(skyhook) {
+		change = true
+	}
+
 	skyhook.UpdateCondition()
 	if skyhook.GetSkyhook().Updated {
 		change = true
 	}
 	return change
+}
+
+// evaluateCompletedBatches checks if any compartment batches are complete and evaluates them
+func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
+	compartments := skyhook.GetCompartments()
+	if len(compartments) == 0 {
+		return false // No compartments to evaluate
+	}
+
+	changed := false
+	for _, compartment := range compartments {
+		if isComplete, successCount, failureCount := compartment.EvaluateCurrentBatch(); isComplete {
+			batchSize := successCount + failureCount
+
+			// Update the compartment's batch state using strategy logic
+			compartment.EvaluateAndUpdateBatchState(batchSize, successCount, failureCount)
+
+			// Persist the updated batch state to the skyhook status
+			if skyhook.GetSkyhook().Status.CompartmentBatchStates == nil {
+				skyhook.GetSkyhook().Status.CompartmentBatchStates = make(map[string]v1alpha1.BatchProcessingState)
+			}
+			skyhook.GetSkyhook().Status.CompartmentBatchStates[compartment.GetName()] = compartment.GetBatchState()
+			skyhook.GetSkyhook().Updated = true
+			changed = true
+		}
+	}
+
+	return changed
 }
 
 func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes) bool {

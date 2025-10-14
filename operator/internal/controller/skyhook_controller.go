@@ -560,6 +560,10 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 	}
 
 	selectedNode := nodePicker.SelectNodes(skyhook)
+
+	// Persist compartment batch states after node selection
+	skyhook.PersistCompartmentBatchStates()
+
 	for _, node := range selectedNode {
 
 		if node.IsComplete() && !node.Changed() {

@@ -27,6 +27,11 @@ import (
 	"github.com/NVIDIA/skyhook/operator/internal/wrapper"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kptr "k8s.io/utils/ptr"
+)
+
+const (
+	annotationTrueValue = "true"
 )
 
 var _ = Describe("cluster state v2 tests", func() {
@@ -411,7 +416,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should update status to paused when skyhook is paused and status is not already paused", func() {
 			// Set up the skyhook as paused
-			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = "true"
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = annotationTrueValue
 
 			// Set up mock expectations
 			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
@@ -428,7 +433,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should not change status when skyhook is paused but status is already paused", func() {
 			// Set up the skyhook as paused with paused status
-			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = "true"
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = annotationTrueValue
 
 			// Set up mock expectations
 			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
@@ -467,6 +472,344 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		})
 	})
 
+	Describe("PersistCompartmentBatchStates", func() {
+		var skyhook *wrapper.Skyhook
+		var sn *skyhookNodes
+
+		BeforeEach(func() {
+			skyhook = &wrapper.Skyhook{
+				Skyhook: &v1alpha1.Skyhook{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-skyhook",
+					},
+					Status: v1alpha1.SkyhookStatus{},
+				},
+			}
+
+			sn = &skyhookNodes{
+				skyhook:      skyhook,
+				nodes:        []wrapper.SkyhookNode{},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+		})
+
+		It("should return false when there are no compartments", func() {
+			result := sn.PersistCompartmentBatchStates()
+			Expect(result).To(BeFalse())
+			Expect(skyhook.Updated).To(BeFalse())
+		})
+
+		It("should persist batch state when compartment has CurrentBatch > 0", func() {
+			// Create a compartment with batch state
+			batchState := &v1alpha1.BatchProcessingState{
+				CurrentBatch:   1,
+				CompletedNodes: 4,
+				FailedNodes:    1,
+			}
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(10),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{InitialBatch: kptr.To(5)},
+				},
+			}, batchState)
+
+			sn.AddCompartment("compartment1", compartment)
+
+			result := sn.PersistCompartmentBatchStates()
+
+			Expect(result).To(BeTrue())
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.CompartmentBatchStates).ToNot(BeNil())
+			Expect(skyhook.Status.CompartmentBatchStates).To(HaveKey("compartment1"))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment1"].CurrentBatch).To(Equal(1))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment1"].CompletedNodes).To(Equal(4))
+		})
+
+		It("should persist batch state when compartment has nodes", func() {
+			// Create a compartment with nodes but no batch started yet
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(10),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{InitialBatch: kptr.To(5)},
+				},
+			}, nil)
+
+			// Add a node to the compartment
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook.Skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			compartment.AddNode(skyhookNode)
+
+			sn.AddCompartment("compartment1", compartment)
+
+			result := sn.PersistCompartmentBatchStates()
+
+			Expect(result).To(BeTrue())
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.CompartmentBatchStates).ToNot(BeNil())
+			Expect(skyhook.Status.CompartmentBatchStates).To(HaveKey("compartment1"))
+		})
+
+		It("should persist multiple compartments with meaningful state", func() {
+			// Create multiple compartments
+			batchState1 := &v1alpha1.BatchProcessingState{
+				CurrentBatch:   1,
+				CompletedNodes: 5,
+				FailedNodes:    0,
+			}
+			compartment1 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(10),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{InitialBatch: kptr.To(5)},
+				},
+			}, batchState1)
+
+			batchState2 := &v1alpha1.BatchProcessingState{
+				CurrentBatch:   2,
+				CompletedNodes: 8,
+				FailedNodes:    2,
+			}
+			compartment2 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment2",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: kptr.To(5),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Linear: &v1alpha1.LinearStrategy{},
+				},
+			}, batchState2)
+
+			sn.AddCompartment("compartment1", compartment1)
+			sn.AddCompartment("compartment2", compartment2)
+
+			result := sn.PersistCompartmentBatchStates()
+
+			Expect(result).To(BeTrue())
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.CompartmentBatchStates).ToNot(BeNil())
+			Expect(skyhook.Status.CompartmentBatchStates).To(HaveLen(2))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment1"].CurrentBatch).To(Equal(1))
+			Expect(skyhook.Status.CompartmentBatchStates["compartment2"].CurrentBatch).To(Equal(2))
+		})
+	})
+
+	Describe("IntrospectSkyhook", func() {
+		var testSkyhook *v1alpha1.Skyhook
+		var testNode *corev1.Node
+
+		BeforeEach(func() {
+			testSkyhook = &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-skyhook",
+					Annotations: map[string]string{},
+				},
+				Spec: v1alpha1.SkyhookSpec{
+					Packages: map[string]v1alpha1.Package{
+						"test-package": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package", Version: "1.0.0"},
+							Image:      "test-image",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.StatusInProgress,
+				},
+			}
+
+			testNode = &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			}
+		})
+
+		It("should set status to disabled when skyhook is disabled", func() {
+			// Set up the skyhook as disabled
+			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = annotationTrueValue
+
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusDisabled))
+		})
+
+		It("should set status to paused when skyhook is paused", func() {
+			// Set up the skyhook as paused
+			testSkyhook.Annotations["skyhook.nvidia.com/pause"] = annotationTrueValue
+
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusPaused))
+		})
+
+		It("should set status to waiting when another skyhook has higher priority", func() {
+			// Create higher priority skyhook (priority 1)
+			higherPrioritySkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-1"},
+				Spec: v1alpha1.SkyhookSpec{
+					Priority: 1,
+					Packages: map[string]v1alpha1.Package{
+						"test-package-1": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package-1", Version: "1.0.0"},
+							Image:      "test-image-1",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+			}
+
+			// Create lower priority skyhook (priority 2)
+			lowerPrioritySkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-2"},
+				Spec: v1alpha1.SkyhookSpec{
+					Priority: 2,
+					Packages: map[string]v1alpha1.Package{
+						"test-package-2": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package-2", Version: "1.0.0"},
+							Image:      "test-image-2",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+			}
+
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, higherPrioritySkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, lowerPrioritySkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes1 := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(higherPrioritySkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode1},
+			}
+
+			skyhookNodes2 := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(lowerPrioritySkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode2},
+			}
+
+			allSkyhooks := []SkyhookNodes{skyhookNodes1, skyhookNodes2}
+
+			// Call the function - skyhook2 should be waiting because skyhook1 has higher priority
+			changed := IntrospectSkyhook(skyhookNodes2, allSkyhooks)
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes2.Status()).To(Equal(v1alpha1.StatusWaiting))
+		})
+
+		It("should not change status when skyhook is complete", func() {
+			// Create a complete skyhook with no packages
+			completeSkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Status:     v1alpha1.SkyhookStatus{Status: v1alpha1.StatusComplete},
+			}
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+				Status: corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{
+						{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+					},
+				},
+			}
+
+			skyhookNode, err := wrapper.NewSkyhookNode(node, completeSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode.SetStatus(v1alpha1.StatusComplete)
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(completeSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			_ = IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result - status should stay complete
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusComplete))
+		})
+
+		It("should return true when node status changes", func() {
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode.SetStatus(v1alpha1.StatusUnknown)
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+		})
+
+		It("should handle multiple nodes correctly when disabled", func() {
+			// Set up the skyhook as disabled
+			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = annotationTrueValue
+
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode1, skyhookNode2},
+			}
+
+			// Call the function
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the result
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusDisabled))
+			Expect(skyhookNode1.Status()).To(Equal(v1alpha1.StatusDisabled))
+			Expect(skyhookNode2.Status()).To(Equal(v1alpha1.StatusDisabled))
+		})
+	})
+
 	Describe("AssignNodeToCompartment", func() {
 		It("should assign node to compartment", func() {
 			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
@@ -474,7 +817,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label": "test-value"},
 				},
-			})
+			}, nil)
 
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -510,11 +853,11 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label": "test-value"},
 				},
-			})
+			}, nil)
 
 			defaultCompartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
 				Name: v1alpha1.DefaultCompartmentName,
-			})
+			}, nil)
 
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -556,7 +899,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label-1": "test-value-1"},
 				},
-			})
+			}, nil)
 
 			compartment2 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
 				Name: "test-compartment-2",
@@ -568,7 +911,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label-2": "test-value-2"},
 				},
-			})
+			}, nil)
 
 			compartment3 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
 				Name: "test-compartment-3",
@@ -580,7 +923,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label-3": "test-value-3"},
 				},
-			})
+			}, nil)
 
 			fixedNode := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -645,7 +988,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label-1": "test-value-1"},
 				},
-			})
+			}, nil)
 
 			compartment2 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
 				Name: "test-compartment-2",
@@ -655,7 +998,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label-2": "test-value-2"},
 				},
-			})
+			}, nil)
 
 			node1 := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -695,7 +1038,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label-1": "test-value-1"},
 				},
-			})
+			}, nil)
 
 			compartment2 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
 				Name: "test-compartment-2",
@@ -705,7 +1048,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Selector: metav1.LabelSelector{
 					MatchLabels: map[string]string{"test-label-2": "test-value-2"},
 				},
-			})
+			}, nil)
 
 			node1 := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -750,7 +1093,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 					MatchLabels: map[string]string{"test-label-1": "test-value-1"},
 				},
 				Strategy: &v1alpha1.DeploymentStrategy{Fixed: &v1alpha1.FixedStrategy{}},
-			})
+			}, nil)
 
 			// Compartment B: 80% budget, matches only 2 nodes total
 			compartmentB := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
@@ -762,7 +1105,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 					MatchLabels: map[string]string{"test-label-2": "test-value-2"},
 				},
 				Strategy: &v1alpha1.DeploymentStrategy{Fixed: &v1alpha1.FixedStrategy{}},
-			})
+			}, nil)
 
 			// Target node matches both compartments
 			targetNode := &corev1.Node{
@@ -874,7 +1217,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 						MatchLabels: tc.selectorA,
 					},
 					Strategy: &v1alpha1.DeploymentStrategy{Fixed: &v1alpha1.FixedStrategy{}},
-				})
+				}, nil)
 
 				compartmentB := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
 					Name: tc.compartmentB,
@@ -885,7 +1228,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 						MatchLabels: tc.selectorB,
 					},
 					Strategy: &v1alpha1.DeploymentStrategy{Fixed: &v1alpha1.FixedStrategy{}}, // Same strategy
-				})
+				}, nil)
 
 				skyhookNodes := &skyhookNodes{
 					skyhook:      wrapper.NewSkyhookWrapper(skyhook),
