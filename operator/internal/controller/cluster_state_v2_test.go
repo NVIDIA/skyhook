@@ -19,6 +19,8 @@
 package controller
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -175,6 +177,94 @@ var _ = Describe("BuildState ordering", func() {
 		Expect(ordered[0].GetSkyhook().Name).To(Equal("a"))
 		Expect(ordered[1].GetSkyhook().Name).To(Equal("b"))
 		Expect(ordered[2].GetSkyhook().Name).To(Equal("c"))
+	})
+})
+
+var _ = Describe("Safe rollouts backwards compatibility", func() {
+	It("creates synthetic FixedStrategy compartment when InterruptionBudget is set but no DeploymentPolicy", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+					Spec: v1alpha1.SkyhookSpec{
+						InterruptionBudget: v1alpha1.InterruptionBudget{
+							Count: kptr.To(5),
+						},
+					},
+				},
+			},
+		}
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
+		// Create 10 nodes, but budget count is 5
+		nodes := &corev1.NodeList{Items: make([]corev1.Node, 10)}
+		for i := 0; i < 10; i++ {
+			nodes.Items[i] = corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node-%d", i)},
+			}
+		}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		// Verify the synthetic default compartment was created
+		compartments := clusterState.skyhooks[0].GetCompartments()
+		Expect(compartments).To(HaveLen(1))
+		Expect(compartments).To(HaveKey(v1alpha1.DefaultCompartmentName))
+
+		defaultComp := compartments[v1alpha1.DefaultCompartmentName]
+		// Verify budget was copied from InterruptionBudget
+		Expect(defaultComp.Budget.Count).ToNot(BeNil())
+		Expect(*defaultComp.Budget.Count).To(Equal(5))
+
+		// Verify FixedStrategy was created with InitialBatch matching the count
+		Expect(defaultComp.Strategy).ToNot(BeNil())
+		Expect(defaultComp.Strategy.Fixed).ToNot(BeNil())
+		Expect(*defaultComp.Strategy.Fixed.InitialBatch).To(Equal(5), "InitialBatch should match count budget")
+
+		// Verify all nodes were assigned to the compartment
+		Expect(len(defaultComp.GetNodes())).To(Equal(10))
+	})
+
+	It("Creates default 100% compartment when no InterruptionBudget and no DeploymentPolicy", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+					Spec:       v1alpha1.SkyhookSpec{},
+				},
+			},
+		}
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
+		// Create 10 nodes to test 100% behavior
+		nodes := &corev1.NodeList{Items: make([]corev1.Node, 10)}
+		for i := 0; i < 10; i++ {
+			nodes.Items[i] = corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node-%d", i)},
+			}
+		}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		// Verify default compartment was created with 100% budget (all nodes at once)
+		compartments := clusterState.skyhooks[0].GetCompartments()
+		Expect(compartments).To(HaveLen(1))
+		Expect(compartments).To(HaveKey(v1alpha1.DefaultCompartmentName))
+
+		defaultComp := compartments[v1alpha1.DefaultCompartmentName]
+		// Verify 100% budget
+		Expect(defaultComp.Budget.Percent).ToNot(BeNil())
+		Expect(*defaultComp.Budget.Percent).To(Equal(100), "Should default to 100% budget")
+
+		// Verify FixedStrategy with InitialBatch = all nodes (100% of 10 = 10)
+		Expect(defaultComp.Strategy).ToNot(BeNil())
+		Expect(defaultComp.Strategy.Fixed).ToNot(BeNil())
+		Expect(*defaultComp.Strategy.Fixed.InitialBatch).To(Equal(10), "InitialBatch should be all nodes")
+
+		// Verify all nodes were assigned to the compartment
+		Expect(len(defaultComp.GetNodes())).To(Equal(10))
 	})
 })
 

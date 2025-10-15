@@ -103,9 +103,26 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		}
 
 		// find deployment policy and all compartments + the default one
-		// Skip skyhooks that don't have a deployment policy
+		// Handle backwards compatibility: if no deployment policy is set,
+		// create a synthetic default compartment with FixedStrategy based on InterruptionBudget
 		if skyhook.Spec.DeploymentPolicy == "" {
-			continue
+			// Load persisted batch state if it exists
+			var defaultBatchState *v1alpha1.BatchProcessingState
+			if skyhook.Status.CompartmentBatchStates != nil {
+				if state, exists := skyhook.Status.CompartmentBatchStates[v1alpha1.DefaultCompartmentName]; exists {
+					defaultBatchState = &state
+				}
+			}
+
+			// Create the legacy default compartment
+			nodeCount := len(ret.skyhooks[idx].GetNodes())
+			legacyCompartment := createLegacyDefaultCompartment(skyhook.Spec, nodeCount)
+			ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(legacyCompartment, defaultBatchState))
+
+			// Assign all nodes to the default compartment for backwards compatibility
+			for _, node := range ret.skyhooks[idx].GetNodes() {
+				ret.skyhooks[idx].AddCompartmentNode(v1alpha1.DefaultCompartmentName, node)
+			}
 		}
 
 		for _, deploymentPolicy := range deploymentPolicies.Items {
@@ -153,6 +170,55 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 	}
 
 	return ret, nil
+}
+
+// createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility
+// when no DeploymentPolicy is specified. It translates the legacy InterruptionBudget into a
+// FixedStrategy compartment that behaves the same way.
+func createLegacyDefaultCompartment(spec v1alpha1.SkyhookSpec, nodeCount int) *v1alpha1.Compartment {
+	// Create a synthetic budget from InterruptionBudget
+	// If InterruptionBudget is not set, default to 100% (all nodes at once)
+	var budget v1alpha1.DeploymentBudget
+	if spec.InterruptionBudget.Percent != nil {
+		budget.Percent = spec.InterruptionBudget.Percent
+	} else if spec.InterruptionBudget.Count != nil {
+		budget.Count = spec.InterruptionBudget.Count
+	} else {
+		// Default to 100% for backwards compatibility (process all nodes at once)
+		budget.Percent = ptr[int](100)
+	}
+
+	// Calculate the ceiling to maintain backwards-compatible batch size
+	// This ensures the FixedStrategy processes the same number of nodes per batch
+	// as the legacy InterruptionBudget behavior
+	var initialBatch int
+	if budget.Count != nil {
+		// Count budget: use the count directly
+		initialBatch = max(1, min(nodeCount, *budget.Count))
+	} else if budget.Percent != nil {
+		// Percent budget: calculate based on total nodes
+		if nodeCount > 0 {
+			limit := float64(*budget.Percent) / 100
+			initialBatch = max(1, int(float64(nodeCount)*limit))
+		} else {
+			initialBatch = 1
+		}
+	} else {
+		initialBatch = 1
+	}
+
+	// Create a FixedStrategy with InitialBatch matching the legacy ceiling behavior
+	fixedStrategy := &v1alpha1.FixedStrategy{}
+	fixedStrategy.Default()
+	fixedStrategy.InitialBatch = &initialBatch
+
+	return &v1alpha1.Compartment{
+		Name:   v1alpha1.DefaultCompartmentName,
+		Budget: budget,
+		Strategy: &v1alpha1.DeploymentStrategy{
+			Fixed: fixedStrategy,
+		},
+	}
 }
 
 func GetNextSkyhook(skyhooks []SkyhookNodes) SkyhookNodes {
@@ -430,20 +496,25 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 		tolerations = append(tolerations, np.runtimeRequiredToleration)
 	}
 
-	// Check if this skyhook uses deployment policies with compartments
+	// All skyhooks now use compartments (with a default 100% compartment if none specified)
 	compartments := s.GetCompartments()
-	if len(compartments) > 0 {
-		return np.selectNodesWithCompartments(s, compartments, tolerations)
-	}
-
-	// Fallback to original logic for skyhooks without deployment policies
-	return np.selectNodesLegacy(s, tolerations)
+	return np.selectNodesWithCompartments(s, compartments, tolerations)
 }
 
 // selectNodesWithCompartments selects nodes using compartment-based batch processing
 func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments map[string]*wrapper.Compartment, tolerations []corev1.Toleration) []wrapper.SkyhookNode {
 	selectedNodes := make([]wrapper.SkyhookNode, 0)
 	nodesWithTaintTolerationIssue := make([]string, 0)
+
+	// First, check ALL nodes for taint issues to set the condition correctly
+	// This ensures the condition reflects the true state even when no batch is being processed
+	for _, compartment := range compartments {
+		for _, node := range compartment.GetNodes() {
+			if !CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
+				nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
+			}
+		}
+	}
 
 	// Process each compartment according to its strategy
 	for _, compartment := range compartments {
@@ -455,7 +526,6 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 				selectedNodes = append(selectedNodes, node)
 				np.upsertPick(node.GetNode().GetName(), s.GetSkyhook())
 			} else {
-				nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
 				node.SetStatus(v1alpha1.StatusBlocked)
 			}
 		}
@@ -495,77 +565,6 @@ func (s *skyhookNodes) PersistCompartmentBatchStates() bool {
 	}
 
 	return changed
-}
-
-// selectNodesLegacy implements the original node selection logic for backward compatibility
-func (np *NodePicker) selectNodesLegacy(s SkyhookNodes, tolerations []corev1.Toleration) []wrapper.SkyhookNode {
-	nodes := make([]wrapper.SkyhookNode, 0)
-
-	var nodeCount int
-	if s.GetSkyhook().Spec.InterruptionBudget.Percent != nil {
-		limit := float64(*s.GetSkyhook().Spec.InterruptionBudget.Percent) / 100
-		nodeCount = max(1, int(float64(s.NodeCount())*limit))
-	}
-	if s.GetSkyhook().Spec.InterruptionBudget.Count != nil {
-		nodeCount = max(1, min(s.NodeCount(), *s.GetSkyhook().Spec.InterruptionBudget.Count))
-	}
-
-	// if we don't have a setting still, set it to all
-	if nodeCount == 0 {
-		nodeCount = s.NodeCount()
-	}
-
-	// first check prior picks if we can
-	for pnode := range np.priorityNodes {
-		status, pick := s.GetNode(pnode)
-		if status != v1alpha1.StatusComplete && pick != nil {
-			if len(nodes) >= nodeCount {
-				break
-			}
-			nodes = append(nodes, pick)
-			// np.upsertPick(pick.GetNode().Name, s.skyhook) // track pick
-		}
-	}
-
-	priority := []v1alpha1.Status{v1alpha1.StatusInProgress, v1alpha1.StatusUnknown, v1alpha1.StatusBlocked, v1alpha1.StatusErroring}
-
-	nodesWithTaintTolerationIssue := make([]string, 0)
-	// look for progress first
-	for _, order := range priority {
-		for _, node := range s.GetNodes() {
-
-			if len(nodes) >= nodeCount {
-				break
-			}
-
-			if node.Status() != order {
-				continue
-			}
-
-			nodes = append(nodes, node)
-			// np.upsertPick(node.GetNode().GetName(), s.skyhook)
-		}
-	}
-
-	// loop through the selected node list and remove any nodes that are not tolerable
-	final_nodes := make([]wrapper.SkyhookNode, 0)
-	for _, node := range nodes {
-		if CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
-			final_nodes = append(final_nodes, node)
-			np.upsertPick(node.GetNode().GetName(), s.GetSkyhook()) // track pick
-		} else {
-			nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
-
-			// Set status here (not in IntrospectNode) to avoid recalculating
-			// taints/tolerations on each introspection
-			node.SetStatus(v1alpha1.StatusBlocked)
-		}
-	}
-
-	// if we have nodes that are not tolerable, we need to add a condition to the skyhook
-	np.updateTaintToleranceCondition(s, nodesWithTaintTolerationIssue)
-
-	return final_nodes
 }
 
 // updateTaintToleranceCondition updates the taint tolerance condition on the skyhook

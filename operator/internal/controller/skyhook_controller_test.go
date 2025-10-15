@@ -81,6 +81,14 @@ var _ = Describe("skyhook controller tests", func() {
 								InterruptionBudget: v1alpha1.InterruptionBudget{
 									Percent: ptr[int](percent),
 								},
+								Packages: v1alpha1.Packages{
+									"test-package": v1alpha1.Package{
+										PackageRef: v1alpha1.PackageRef{
+											Name:    "test-package",
+											Version: "1.0.0",
+										},
+									},
+								},
 							},
 						},
 					},
@@ -131,6 +139,14 @@ var _ = Describe("skyhook controller tests", func() {
 							Spec: v1alpha1.SkyhookSpec{
 								InterruptionBudget: v1alpha1.InterruptionBudget{
 									Count: ptr[int](count),
+								},
+								Packages: v1alpha1.Packages{
+									"test-package": v1alpha1.Package{
+										PackageRef: v1alpha1.PackageRef{
+											Name:    "test-package",
+											Version: "1.0.0",
+										},
+									},
 								},
 							},
 						},

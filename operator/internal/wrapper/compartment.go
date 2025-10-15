@@ -130,7 +130,7 @@ func (c *Compartment) createNewBatch() []SkyhookNode {
 	}
 
 	selectedNodes := make([]SkyhookNode, 0)
-	priority := []v1alpha1.Status{v1alpha1.StatusInProgress, v1alpha1.StatusUnknown, v1alpha1.StatusErroring}
+	priority := []v1alpha1.Status{v1alpha1.StatusInProgress, v1alpha1.StatusUnknown, v1alpha1.StatusBlocked, v1alpha1.StatusErroring}
 
 	for _, status := range priority {
 		for _, node := range c.Nodes {
