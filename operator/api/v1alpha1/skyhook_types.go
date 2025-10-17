@@ -280,6 +280,28 @@ const (
 	RESTART_ALL_SERVICES InterruptType = "restartAllServices"
 )
 
+// CompartmentStatus tracks the detailed state of a compartment
+type CompartmentStatus struct {
+	// Matched is the number of nodes that match this compartment's selector
+	Matched int `json:"matched"`
+
+	// Ceiling is the maximum number of nodes that can be in progress at once
+	Ceiling int `json:"ceiling"`
+
+	// InProgress is the number of nodes currently in progress
+	InProgress int `json:"inProgress"`
+
+	// Completed is the number of nodes that have completed successfully
+	Completed int `json:"completed"`
+
+	// ProgressPercent is the percentage of nodes completed (0-100)
+	ProgressPercent int `json:"progressPercent"`
+
+	// BatchState tracks the batch processing state for this compartment
+	// +optional
+	BatchState *BatchProcessingState `json:"batchState,omitempty"`
+}
+
 // SkyhookStatus defines the observed state of Skyhook
 type SkyhookStatus struct {
 
@@ -316,8 +338,9 @@ type SkyhookStatus struct {
 	// ConfigUpdates tracks config updates
 	ConfigUpdates map[string][]string `json:"configUpdates,omitempty"`
 
-	// CompartmentBatchStates tracks batch processing state per compartment
-	CompartmentBatchStates map[string]BatchProcessingState `json:"compartmentBatchStates,omitempty"`
+	// CompartmentStatuses tracks the detailed status of each compartment
+	// +optional
+	CompartmentStatuses map[string]CompartmentStatus `json:"compartmentStatuses,omitempty"`
 
 	// +kubebuilder:example=3
 	// +kubebuilder:default=0
