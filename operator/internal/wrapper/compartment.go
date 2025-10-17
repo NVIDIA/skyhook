@@ -66,16 +66,16 @@ func (c *Compartment) AddNode(node SkyhookNode) {
 	c.Nodes = append(c.Nodes, node)
 }
 
-func (c *Compartment) calculateCeiling() int {
-	if c.Budget.Count != nil {
-		return *c.Budget.Count
+// CalculateCeiling is a public helper to calculate ceiling from budget and matched nodes
+func CalculateCeiling(budget v1alpha1.DeploymentBudget, matched int) int {
+	if budget.Count != nil {
+		return *budget.Count
 	}
-	if c.Budget.Percent != nil {
-		matched := len(c.Nodes)
+	if budget.Percent != nil {
 		if matched == 0 {
 			return 0
 		}
-		limit := float64(*c.Budget.Percent) / 100
+		limit := float64(*budget.Percent) / 100
 		return max(1, int(float64(matched)*limit))
 	}
 	return 0
@@ -120,7 +120,7 @@ func (c *Compartment) createNewBatch() []SkyhookNode {
 	if c.Strategy != nil {
 		batchSize = c.Strategy.CalculateBatchSize(len(c.Nodes), &c.BatchState)
 	} else {
-		ceiling := c.calculateCeiling()
+		ceiling := CalculateCeiling(c.Budget, len(c.Nodes))
 		availableCapacity := ceiling - c.getInProgressCount()
 		batchSize = max(0, availableCapacity)
 	}
@@ -247,20 +247,4 @@ func GetStrategyType(strategy *v1alpha1.DeploymentStrategy) v1alpha1.StrategyTyp
 // Strategy safety order: Fixed > Linear > Exponential
 func StrategyIsSafer(a, b v1alpha1.StrategyType) bool {
 	return strategySafetyOrder[a] < strategySafetyOrder[b]
-}
-
-// ComputeEffectiveCapacity calculates the effective ceiling for a compartment's budget
-// given the number of matched nodes
-func ComputeEffectiveCapacity(budget v1alpha1.DeploymentBudget, matchedNodes int) int {
-	if budget.Count != nil {
-		return *budget.Count
-	}
-	if budget.Percent != nil {
-		// capacity = max(1, floor(percent/100 × matched))
-		// Use floor for safer rollouts - never exceed the intended percentage
-		capacity := float64(*budget.Percent) / 100.0 * float64(matchedNodes)
-		return max(1, int(capacity))
-	}
-	// Should not happen due to validation
-	return 0
 }
