@@ -6,7 +6,7 @@ This document outlines Skyhook's approach to supporting different Kubernetes ver
 
 | Kubernetes Version | Skyhook Version | Status | Notes |
 |--------------------|-----------------|---------|-------|
-| 1.33, 1.32, 1.31  | v0.9.0+         | ✅ Fully Supported | Current stable versions |
+| 1.34, 1.33, 1.32, 1.31  | v0.9.0+         | ✅ Fully Supported | Current stable versions |
 | 1.30               | v0.8.x          | ⚠️ Use older Skyhook | K8s 1.30 EOL: June 28, 2025 |
 | 1.29 and older    | v0.8.x or older | ⚠️ Use older Skyhook | No longer maintained |
 
@@ -57,21 +57,21 @@ We understand many installations run slightly older Kubernetes versions. Our str
 
 **Choose your Skyhook version based on your Kubernetes version:**
 
-- **Kubernetes 1.33, 1.32, or 1.31:** Use latest Skyhook (v0.9.0+)
+- **Kubernetes 1.34, 1.33, 1.32, or 1.31:** Use latest Skyhook (v0.9.0+)
 - **Kubernetes 1.30:** Use Skyhook v0.8.x (K8s 1.30 is EOL but v0.8.x still works)
 - **Kubernetes 1.29 or older:** Use Skyhook v0.8.x or older (check release notes for compatibility)
 
 ### Migration Path
 
 **If you're on an older Kubernetes version:**
-1. **First:** Upgrade your Kubernetes cluster to a supported version (1.31, 1.32, or 1.33)
+1. **First:** Upgrade your Kubernetes cluster to a supported version (1.31, 1.32, 1.33, or 1.34)
 2. **Then:** Upgrade to the latest Skyhook version
 
 **If you're on Kubernetes 1.30:**
-- **Option A:** Upgrade to K8s 1.31/1.32/1.33, then use latest Skyhook
+- **Option A:** Upgrade to K8s 1.31/1.32/1.33/1.34, then use latest Skyhook
 - **Option B:** Stay on Skyhook v0.8.x until you can upgrade Kubernetes
 
-**Recommended:** If you can choose your Kubernetes version, use 1.33 or 1.32 for the longest support runway.
+**Recommended:** If you can choose your Kubernetes version, use 1.34, 1.33, or 1.32 for the longest support runway.
 
 ## FAQ
 
@@ -102,7 +102,7 @@ Waiting 4+ weeks lets the ecosystem stabilize and gives us confidence in support
 ### How do you test compatibility?
 
 For each Skyhook release, we test against all supported Kubernetes versions using:
-- GitHub Actions matrix builds with multiple K8s versions (currently 1.31, 1.32, 1.33)
+- GitHub Actions matrix builds with multiple K8s versions (currently 1.31, 1.32, 1.33, 1.34)
 - Local testing with [kind](https://kind.sigs.k8s.io/)
 - Basic functionality and integration tests
 
