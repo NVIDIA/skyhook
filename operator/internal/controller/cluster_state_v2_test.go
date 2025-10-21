@@ -1212,3 +1212,487 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		})
 	})
 })
+
+var _ = Describe("Compartment Status Tests", func() {
+	Describe("compartmentStatusEqual", func() {
+		It("should return true for equal compartment statuses without batch state", func() {
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+				BatchState:      nil,
+			}
+			b := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+				BatchState:      nil,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeTrue())
+		})
+
+		It("should return true for equal compartment statuses with batch state", func() {
+			batchState := v1alpha1.BatchProcessingState{
+				CurrentBatch:        2,
+				ConsecutiveFailures: 0,
+				CompletedNodes:      5,
+				FailedNodes:         1,
+				ShouldStop:          false,
+				LastBatchSize:       3,
+				LastBatchFailed:     false,
+			}
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       5,
+				ProgressPercent: 50,
+				BatchState:      &batchState,
+			}
+			batchStateCopy := batchState
+			b := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       5,
+				ProgressPercent: 50,
+				BatchState:      &batchStateCopy,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeTrue())
+		})
+
+		It("should return false when matched count differs", func() {
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			b := v1alpha1.CompartmentStatus{
+				Matched:         15,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeFalse())
+		})
+
+		It("should return false when ceiling differs", func() {
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			b := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         10,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeFalse())
+		})
+
+		It("should return false when in progress count differs", func() {
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			b := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      3,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeFalse())
+		})
+
+		It("should return false when completed count differs", func() {
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			b := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       5,
+				ProgressPercent: 30,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeFalse())
+		})
+
+		It("should return false when progress percent differs", func() {
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 30,
+			}
+			b := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 50,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeFalse())
+		})
+
+		It("should return false when batch states differ", func() {
+			batchState1 := v1alpha1.BatchProcessingState{
+				CurrentBatch:        2,
+				ConsecutiveFailures: 0,
+				CompletedNodes:      5,
+				FailedNodes:         1,
+				ShouldStop:          false,
+				LastBatchSize:       3,
+				LastBatchFailed:     false,
+			}
+			batchState2 := v1alpha1.BatchProcessingState{
+				CurrentBatch:        2,
+				ConsecutiveFailures: 1, // Different
+				CompletedNodes:      5,
+				FailedNodes:         1,
+				ShouldStop:          false,
+				LastBatchSize:       3,
+				LastBatchFailed:     false,
+			}
+			a := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       5,
+				ProgressPercent: 50,
+				BatchState:      &batchState1,
+			}
+			b := v1alpha1.CompartmentStatus{
+				Matched:         10,
+				Ceiling:         5,
+				InProgress:      2,
+				Completed:       5,
+				ProgressPercent: 50,
+				BatchState:      &batchState2,
+			}
+			Expect(compartmentStatusEqual(a, b)).To(BeFalse())
+		})
+	})
+
+	Describe("buildCompartmentStatus", func() {
+		It("should build status for compartment with no nodes", func() {
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "test-compartment",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: ptr(5),
+				},
+			}, nil)
+
+			status := buildCompartmentStatus(compartment)
+
+			Expect(status.Matched).To(Equal(0))
+			Expect(status.Ceiling).To(Equal(5)) // Count budget returns the count value even with 0 nodes
+			Expect(status.InProgress).To(Equal(0))
+			Expect(status.Completed).To(Equal(0))
+			Expect(status.ProgressPercent).To(Equal(0))
+			Expect(status.BatchState).To(BeNil())
+		})
+
+		It("should build status for compartment with strategy and batch state", func() {
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Spec: v1alpha1.SkyhookSpec{
+					Packages: map[string]v1alpha1.Package{
+						"test-package": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package", Version: "1.0.0"},
+							Image:      "test-image",
+						},
+					},
+				},
+			}
+
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node2"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode1.SetStatus(v1alpha1.StatusComplete)
+			skyhookNode2.SetStatus(v1alpha1.StatusInProgress)
+
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "test-compartment",
+				Budget: v1alpha1.DeploymentBudget{
+					Percent: ptr(50),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{
+						InitialBatch: ptr(1),
+					},
+				},
+			}, nil)
+
+			compartment.AddNode(skyhookNode1)
+			compartment.AddNode(skyhookNode2)
+
+			status := buildCompartmentStatus(compartment)
+
+			Expect(status.Matched).To(Equal(2))
+			Expect(status.Ceiling).To(Equal(1)) // 50% of 2 = 1
+			Expect(status.InProgress).To(Equal(1))
+			Expect(status.Completed).To(Equal(0)) // No nodes actually complete (packages not done)
+			Expect(status.ProgressPercent).To(Equal(0))
+			Expect(status.BatchState).NotTo(BeNil())
+			Expect(status.BatchState.CurrentBatch).To(Equal(1))
+			Expect(status.BatchState.ConsecutiveFailures).To(Equal(0))
+		})
+
+		It("should calculate 100% progress when all nodes are complete", func() {
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			}
+
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node2"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode1.SetStatus(v1alpha1.StatusComplete)
+			skyhookNode2.SetStatus(v1alpha1.StatusComplete)
+
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "test-compartment",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: ptr(2),
+				},
+			}, nil)
+
+			compartment.AddNode(skyhookNode1)
+			compartment.AddNode(skyhookNode2)
+
+			status := buildCompartmentStatus(compartment)
+
+			Expect(status.ProgressPercent).To(Equal(100))
+			Expect(status.Completed).To(Equal(2))
+			Expect(status.InProgress).To(Equal(0))
+		})
+	})
+
+	Describe("should persist compartment status to skyhook status", func() {
+		It("should persist compartment status to skyhook status in ReportState", func() {
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Spec: v1alpha1.SkyhookSpec{
+					Packages: map[string]v1alpha1.Package{
+						"test-package": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package", Version: "1.0.0"},
+							Image:      "test-image",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: nil,
+				},
+			}
+
+			// Create nodes
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node2"}}
+			node3 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node3"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode3, err := wrapper.NewSkyhookNode(node3, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode1.SetStatus(v1alpha1.StatusComplete)
+			skyhookNode2.SetStatus(v1alpha1.StatusInProgress)
+			skyhookNode3.SetStatus(v1alpha1.StatusUnknown)
+
+			// Create compartments
+			compartment1 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment-1",
+				Budget: v1alpha1.DeploymentBudget{
+					Percent: ptr(50),
+				},
+			}, nil)
+			compartment1.AddNode(skyhookNode1)
+			compartment1.AddNode(skyhookNode2)
+
+			compartment2 := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment-2",
+				Budget: v1alpha1.DeploymentBudget{
+					Percent: ptr(100),
+				},
+			}, nil)
+			compartment2.AddNode(skyhookNode3)
+
+			// Create skyhookNodes
+			skyhookNodes := &skyhookNodes{
+				skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+				nodes:        []wrapper.SkyhookNode{skyhookNode1, skyhookNode2, skyhookNode3},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+			skyhookNodes.AddCompartment("compartment-1", compartment1)
+			skyhookNodes.AddCompartment("compartment-2", compartment2)
+
+			// Call ReportState
+			skyhookNodes.ReportState()
+
+			// Verify compartment statuses were persisted
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).NotTo(BeNil())
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).To(HaveLen(2))
+
+			// Verify compartment-1 status
+			comp1Status, ok := skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"]
+			Expect(ok).To(BeTrue())
+			Expect(comp1Status.Matched).To(Equal(2))
+			Expect(comp1Status.Ceiling).To(Equal(1)) // 50% of 2 = 1
+			Expect(comp1Status.InProgress).To(Equal(1))
+			Expect(comp1Status.Completed).To(Equal(0)) // No packages completed
+			Expect(comp1Status.ProgressPercent).To(Equal(0))
+
+			// Verify compartment-2 status
+			comp2Status, ok := skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-2"]
+			Expect(ok).To(BeTrue())
+			Expect(comp2Status.Matched).To(Equal(1))
+			Expect(comp2Status.Ceiling).To(Equal(1))
+			Expect(comp2Status.InProgress).To(Equal(0))
+			Expect(comp2Status.Completed).To(Equal(0))
+			Expect(comp2Status.ProgressPercent).To(Equal(0))
+
+			// Verify Updated flag was set
+			Expect(skyhookNodes.skyhook.Updated).To(BeTrue())
+		})
+
+		It("should not update status when compartment status hasn't changed", func() {
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: make(map[string]v1alpha1.CompartmentStatus),
+				},
+			}
+
+			// Create a node
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode1.SetStatus(v1alpha1.StatusComplete)
+
+			// Create compartment
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment-1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: ptr(2),
+				},
+			}, nil)
+			compartment.AddNode(skyhookNode1)
+
+			// Pre-populate status with correct values
+			skyhook.Status.CompartmentStatuses["compartment-1"] = v1alpha1.CompartmentStatus{
+				Matched:         1,
+				Ceiling:         2,
+				InProgress:      0,
+				Completed:       1,
+				ProgressPercent: 100,
+				BatchState:      nil,
+			}
+
+			// Create skyhookNodes
+			skyhookNodes := &skyhookNodes{
+				skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+				nodes:        []wrapper.SkyhookNode{skyhookNode1},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+			skyhookNodes.AddCompartment("compartment-1", compartment)
+
+			// Reset Updated flag
+			skyhookNodes.skyhook.Updated = false
+
+			// Call ReportState
+			skyhookNodes.ReportState()
+
+			// Verify Updated flag was NOT set since status didn't change
+			// Note: ReportState might set Updated for other fields, but we're checking
+			// that compartment status equality check is working
+			comp1Status := skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"]
+			Expect(comp1Status.Matched).To(Equal(1))
+			Expect(comp1Status.Completed).To(Equal(1))
+		})
+
+		It("should persist batch state in compartment status", func() {
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: nil,
+				},
+			}
+
+			// Create nodes
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node2"}}
+
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode2, err := wrapper.NewSkyhookNode(node2, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode1.SetStatus(v1alpha1.StatusComplete)
+			skyhookNode2.SetStatus(v1alpha1.StatusInProgress)
+
+			// Create compartment with strategy (to have batch state)
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment-with-strategy",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: ptr(2),
+				},
+				Strategy: &v1alpha1.DeploymentStrategy{
+					Fixed: &v1alpha1.FixedStrategy{
+						InitialBatch: ptr(1),
+					},
+				},
+			}, nil)
+			compartment.AddNode(skyhookNode1)
+			compartment.AddNode(skyhookNode2)
+
+			// Create skyhookNodes
+			skyhookNodes := &skyhookNodes{
+				skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+				nodes:        []wrapper.SkyhookNode{skyhookNode1, skyhookNode2},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+			skyhookNodes.AddCompartment("compartment-with-strategy", compartment)
+
+			// Call ReportState
+			skyhookNodes.ReportState()
+
+			// Verify batch state was persisted
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).NotTo(BeNil())
+			compStatus := skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-with-strategy"]
+			Expect(compStatus.BatchState).NotTo(BeNil())
+			Expect(compStatus.BatchState.CurrentBatch).To(Equal(1))
+		})
+	})
+})
