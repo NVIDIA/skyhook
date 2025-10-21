@@ -39,7 +39,7 @@ spec:
                 path: namespace
       containers:
       - name: cleanup
-        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "1.33.1" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "1.33.1" }}{{- end }}
+        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "latest" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "latest" }}{{- end }}
         imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false

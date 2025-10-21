@@ -24,7 +24,7 @@ IMG_REPO ?= ghcr.io/nvidia/skyhook
 IMG ?= $(IMG_REPO)/operator
 
 ## default version of kind to use
-KIND_VERSION?=1.33.1
+KIND_VERSION?=1.34.0
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook
