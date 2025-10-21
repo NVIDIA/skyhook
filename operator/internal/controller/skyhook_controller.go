@@ -561,9 +561,6 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 
 	selectedNode := nodePicker.SelectNodes(skyhook)
 
-	// Persist compartment batch states after node selection
-	skyhook.PersistCompartmentBatchStates()
-
 	for _, node := range selectedNode {
 
 		if node.IsComplete() && !node.Changed() {
@@ -2302,8 +2299,8 @@ func setPodResources(pod *corev1.Pod, res *v1alpha1.ResourceRequirements) {
 // PartitionNodesIntoCompartments partitions nodes for each skyhook that uses deployment policies.
 func partitionNodesIntoCompartments(clusterState *clusterState) error {
 	for _, skyhook := range clusterState.skyhooks {
-		// Skip skyhooks that don't have compartments (no deployment policy)
-		if len(skyhook.GetCompartments()) == 0 {
+		// Skip skyhooks without a deployment policy (they use the default compartment created in BuildState)
+		if skyhook.GetSkyhook().Spec.DeploymentPolicy == "" {
 			continue
 		}
 

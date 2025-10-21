@@ -108,9 +108,9 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		if skyhook.Spec.DeploymentPolicy == "" {
 			// Load persisted batch state if it exists
 			var defaultBatchState *v1alpha1.BatchProcessingState
-			if skyhook.Status.CompartmentBatchStates != nil {
-				if state, exists := skyhook.Status.CompartmentBatchStates[v1alpha1.DefaultCompartmentName]; exists {
-					defaultBatchState = &state
+			if skyhook.Status.CompartmentStatuses != nil {
+				if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
+					defaultBatchState = status.BatchState
 				}
 			}
 
@@ -128,20 +128,20 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		for _, deploymentPolicy := range deploymentPolicies.Items {
 			if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
 				for _, compartment := range deploymentPolicy.Spec.Compartments {
-					// Load persisted batch state if it exists
+					// Load persisted batch state from CompartmentStatuses if it exists
 					var batchState *v1alpha1.BatchProcessingState
-					if skyhook.Status.CompartmentBatchStates != nil {
-						if state, exists := skyhook.Status.CompartmentBatchStates[compartment.Name]; exists {
-							batchState = &state
+					if skyhook.Status.CompartmentStatuses != nil {
+						if status, exists := skyhook.Status.CompartmentStatuses[compartment.Name]; exists && status.BatchState != nil {
+							batchState = status.BatchState
 						}
 					}
 					ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
 				}
 				// use policy default
 				var defaultBatchState *v1alpha1.BatchProcessingState
-				if skyhook.Status.CompartmentBatchStates != nil {
-					if state, exists := skyhook.Status.CompartmentBatchStates[v1alpha1.DefaultCompartmentName]; exists {
-						defaultBatchState = &state
+				if skyhook.Status.CompartmentStatuses != nil {
+					if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
+						defaultBatchState = status.BatchState
 					}
 				}
 				ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
@@ -259,7 +259,6 @@ type SkyhookNodes interface {
 	GetCompartments() map[string]*wrapper.Compartment
 	AddCompartment(name string, compartment *wrapper.Compartment)
 	AddCompartmentNode(name string, node wrapper.SkyhookNode)
-	PersistCompartmentBatchStates() bool
 	AssignNodeToCompartment(node wrapper.SkyhookNode) (string, error)
 }
 
@@ -537,36 +536,6 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 	return selectedNodes
 }
 
-// PersistCompartmentBatchStates saves the current batch state for all compartments to the Skyhook status
-func (s *skyhookNodes) PersistCompartmentBatchStates() bool {
-	compartments := s.GetCompartments()
-	if len(compartments) == 0 {
-		return false // No compartments, nothing to persist
-	}
-
-	// Initialize the batch states map if needed
-	if s.skyhook.Status.CompartmentBatchStates == nil {
-		s.skyhook.Status.CompartmentBatchStates = make(map[string]v1alpha1.BatchProcessingState)
-	}
-
-	changed := false
-	for _, compartment := range compartments {
-		// Always persist batch state to maintain cumulative counters
-		batchState := compartment.GetBatchState()
-		// Only persist if there's meaningful state (batch has started or there are nodes)
-		if batchState.CurrentBatch > 0 || len(compartment.GetNodes()) > 0 {
-			s.skyhook.Status.CompartmentBatchStates[compartment.GetName()] = batchState
-			changed = true
-		}
-	}
-
-	if changed {
-		s.skyhook.Updated = true
-	}
-
-	return changed
-}
-
 // updateTaintToleranceCondition updates the taint tolerance condition on the skyhook
 func (np *NodePicker) updateTaintToleranceCondition(s SkyhookNodes, nodesWithTaintTolerationIssue []string) {
 	if len(nodesWithTaintTolerationIssue) > 0 {
@@ -651,11 +620,14 @@ func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
 			// Update the compartment's batch state using strategy logic
 			compartment.EvaluateAndUpdateBatchState(batchSize, successCount, failureCount)
 
-			// Persist the updated batch state to the skyhook status
-			if skyhook.GetSkyhook().Status.CompartmentBatchStates == nil {
-				skyhook.GetSkyhook().Status.CompartmentBatchStates = make(map[string]v1alpha1.BatchProcessingState)
+			// Persist the updated batch state to the skyhook status immediately
+			if skyhook.GetSkyhook().Status.CompartmentStatuses == nil {
+				skyhook.GetSkyhook().Status.CompartmentStatuses = make(map[string]v1alpha1.CompartmentStatus)
 			}
-			skyhook.GetSkyhook().Status.CompartmentBatchStates[compartment.GetName()] = compartment.GetBatchState()
+			// Build and persist the compartment status with the updated batch state
+			newStatus := buildCompartmentStatus(compartment)
+			skyhook.GetSkyhook().Status.CompartmentStatuses[compartment.GetName()] = newStatus
+
 			skyhook.GetSkyhook().Updated = true
 			changed = true
 		}
@@ -722,6 +694,73 @@ func UpdateSkyhookPauseStatus(skyhook SkyhookNodes) bool {
 	return changed
 }
 
+// compartmentStatusEqual compares two CompartmentStatus for equality
+func compartmentStatusEqual(a, b v1alpha1.CompartmentStatus) bool {
+	if a.Matched != b.Matched || a.Ceiling != b.Ceiling || a.InProgress != b.InProgress ||
+		a.Completed != b.Completed || a.ProgressPercent != b.ProgressPercent {
+		return false
+	}
+
+	// Compare BatchState if present
+	if (a.BatchState == nil) != (b.BatchState == nil) {
+		return false
+	}
+	if a.BatchState != nil && b.BatchState != nil {
+		return *a.BatchState == *b.BatchState
+	}
+	return true
+}
+
+// buildCompartmentStatus creates a CompartmentStatus for a given compartment
+func buildCompartmentStatus(compartment *wrapper.Compartment) v1alpha1.CompartmentStatus {
+	matched := len(compartment.GetNodes())
+	ceiling := wrapper.CalculateCeiling(compartment.Budget, matched)
+
+	// Count inProgress and completed nodes
+	inProgress := 0
+	completed := 0
+	for _, node := range compartment.GetNodes() {
+		if node.Status() == v1alpha1.StatusInProgress {
+			inProgress++
+		}
+		if node.IsComplete() {
+			completed++
+		}
+	}
+
+	// Calculate progress percentage
+	progressPercent := 0
+	if matched > 0 {
+		progressPercent = (completed * 100) / matched
+	}
+
+	// Get batch state
+	batchState := compartment.GetBatchState()
+
+	// Copy batch state for status
+	var batchStateCopy *v1alpha1.BatchProcessingState
+	if compartment.Strategy != nil {
+		batchStateCopy = &v1alpha1.BatchProcessingState{
+			CurrentBatch:        batchState.CurrentBatch,
+			ConsecutiveFailures: batchState.ConsecutiveFailures,
+			CompletedNodes:      batchState.CompletedNodes,
+			FailedNodes:         batchState.FailedNodes,
+			ShouldStop:          batchState.ShouldStop,
+			LastBatchSize:       batchState.LastBatchSize,
+			LastBatchFailed:     batchState.LastBatchFailed,
+		}
+	}
+
+	return v1alpha1.CompartmentStatus{
+		Matched:         matched,
+		Ceiling:         ceiling,
+		InProgress:      inProgress,
+		Completed:       completed,
+		ProgressPercent: progressPercent,
+		BatchState:      batchStateCopy,
+	}
+}
+
 // ReportState collects the current state of the skyhook and reports it to the skyhook status for printer columns
 func (skyhook *skyhookNodes) ReportState() {
 	CleanupRemovedNodes(skyhook)
@@ -764,6 +803,21 @@ func (skyhook *skyhookNodes) ReportState() {
 				packageRestarts[_package.Name] = make(map[string]int32)
 			}
 			packageRestarts[_package.Name][_package.Version] += packageStatus.Restarts
+		}
+	}
+
+	// Update compartment statuses if compartments exist
+	if len(skyhook.compartments) > 0 {
+		if skyhook.skyhook.Status.CompartmentStatuses == nil {
+			skyhook.skyhook.Status.CompartmentStatuses = make(map[string]v1alpha1.CompartmentStatus)
+		}
+
+		for name, compartment := range skyhook.compartments {
+			newStatus := buildCompartmentStatus(compartment)
+			if existing, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; !ok || !compartmentStatusEqual(existing, newStatus) {
+				skyhook.skyhook.Status.CompartmentStatuses[name] = newStatus
+				skyhook.skyhook.Updated = true
+			}
 		}
 	}
 
@@ -931,7 +985,7 @@ func (skyhook *skyhookNodes) AssignNodeToCompartment(node wrapper.SkyhookNode) (
 			}
 
 			stratType := wrapper.GetStrategyType(compartment.Strategy)
-			capacity := wrapper.ComputeEffectiveCapacity(compartment.Budget, matchedCount)
+			capacity := wrapper.CalculateCeiling(compartment.Budget, matchedCount)
 
 			matches = append(matches, compartmentMatch{
 				name:         compartment.Name,

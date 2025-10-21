@@ -499,38 +499,69 @@ spec:
           status:
             description: SkyhookStatus defines the observed state of Skyhook
             properties:
-              compartmentBatchStates:
+              compartmentStatuses:
                 additionalProperties:
-                  description: BatchProcessingState tracks the current state of batch
-                    processing for a compartment
+                  description: CompartmentStatus tracks the detailed state of a compartment
                   properties:
-                    completedNodes:
-                      description: Total number of nodes that have completed successfully
-                        (cumulative across all batches)
+                    batchState:
+                      description: BatchState tracks the batch processing state for
+                        this compartment
+                      properties:
+                        completedNodes:
+                          description: Total number of nodes that have completed successfully
+                            (cumulative across all batches)
+                          type: integer
+                        consecutiveFailures:
+                          description: Number of consecutive failures
+                          type: integer
+                        currentBatch:
+                          description: Current batch number (starts at 1)
+                          type: integer
+                        failedNodes:
+                          description: Total number of nodes that have failed (cumulative
+                            across all batches)
+                          type: integer
+                        lastBatchFailed:
+                          description: Whether the last batch failed (for slowdown
+                            logic)
+                          type: boolean
+                        lastBatchSize:
+                          description: Last batch size (for slowdown calculations)
+                          type: integer
+                        shouldStop:
+                          description: Whether the strategy should stop processing
+                            due to failures
+                          type: boolean
+                      type: object
+                    ceiling:
+                      description: Ceiling is the maximum number of nodes that can
+                        be in progress at once
                       type: integer
-                    consecutiveFailures:
-                      description: Number of consecutive failures
+                    completed:
+                      description: Completed is the number of nodes that have completed
+                        successfully
                       type: integer
-                    currentBatch:
-                      description: Current batch number (starts at 1)
+                    inProgress:
+                      description: InProgress is the number of nodes currently in
+                        progress
                       type: integer
-                    failedNodes:
-                      description: Total number of nodes that have failed (cumulative
-                        across all batches)
+                    matched:
+                      description: Matched is the number of nodes that match this
+                        compartment's selector
                       type: integer
-                    lastBatchFailed:
-                      description: Whether the last batch failed (for slowdown logic)
-                      type: boolean
-                    lastBatchSize:
-                      description: Last batch size (for slowdown calculations)
+                    progressPercent:
+                      description: ProgressPercent is the percentage of nodes completed
+                        (0-100)
                       type: integer
-                    shouldStop:
-                      description: Whether the strategy should stop processing due
-                        to failures
-                      type: boolean
+                  required:
+                  - ceiling
+                  - completed
+                  - inProgress
+                  - matched
+                  - progressPercent
                   type: object
-                description: CompartmentBatchStates tracks batch processing state
-                  per compartment
+                description: CompartmentStatuses tracks the detailed status of each
+                  compartment
                 type: object
               completeNodes:
                 default: 0/0

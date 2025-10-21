@@ -39,7 +39,7 @@ var _ = Describe("Compartment", func() {
 				compartment.Nodes = append(compartment.Nodes, nil)
 			}
 
-			ceiling := compartment.calculateCeiling()
+			ceiling := CalculateCeiling(compartment.Budget, len(compartment.Nodes))
 			Expect(ceiling).To(Equal(3))
 		})
 
@@ -55,7 +55,7 @@ var _ = Describe("Compartment", func() {
 				compartment.Nodes = append(compartment.Nodes, nil)
 			}
 
-			ceiling := compartment.calculateCeiling()
+			ceiling := CalculateCeiling(compartment.Budget, len(compartment.Nodes))
 			Expect(ceiling).To(Equal(3)) // max(1, int(10 * 0.3)) = 3
 		})
 
@@ -71,7 +71,7 @@ var _ = Describe("Compartment", func() {
 				compartment.Nodes = append(compartment.Nodes, nil)
 			}
 
-			ceiling := compartment.calculateCeiling()
+			ceiling := CalculateCeiling(compartment.Budget, len(compartment.Nodes))
 			Expect(ceiling).To(Equal(1)) // max(1, int(2 * 0.3)) = max(1, 0) = 1
 		})
 
@@ -82,7 +82,7 @@ var _ = Describe("Compartment", func() {
 				},
 			}
 
-			ceiling := compartment.calculateCeiling()
+			ceiling := CalculateCeiling(compartment.Budget, len(compartment.Nodes))
 			Expect(ceiling).To(Equal(0))
 		})
 	})
