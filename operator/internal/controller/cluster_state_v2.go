@@ -852,6 +852,21 @@ func (skyhook *skyhookNodes) ReportState() {
 		}
 	}
 
+	// Set rollout metrics for each compartment (follows same pattern as other metrics)
+	if len(skyhook.compartments) > 0 {
+		policyName := skyhook.GetSkyhook().Spec.DeploymentPolicy
+		if policyName == "" {
+			policyName = LegacyPolicyName
+		}
+
+		for name, compartment := range skyhook.compartments {
+			if status, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; ok {
+				strategy := getStrategyType(compartment)
+				SetRolloutMetrics(skyhookName, policyName, name, strategy, status)
+			}
+		}
+	}
+
 	// Set current count of completed nodes
 	completeNodes := fmt.Sprintf("%d/%d", nodeStatusCounts[v1alpha1.StatusComplete], nodeCount)
 	if completeNodes != skyhook.skyhook.GetCompleteNodes() {
