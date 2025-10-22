@@ -84,7 +84,7 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(pkgs[1].Name).To(Equal("b-package"))
 
 			// Complete b-package
-			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "b-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
+			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "b-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")
 			Expect(err).NotTo(HaveOccurred())
 			// Should still get a-package since c-package depends on both a and b
 			pkgs, err = skyhookNode.RunNext()
@@ -93,7 +93,7 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(pkgs[0].Name).To(Equal("a-package"))
 
 			// Complete a-package
-			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "a-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
+			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "a-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")
 			Expect(err).NotTo(HaveOccurred())
 			// Now should get c-package since both dependencies are complete
 			pkgs, err = skyhookNode.RunNext()
@@ -102,7 +102,7 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(pkgs[0].Name).To(Equal("c-package"))
 
 			// Complete c-package
-			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "c-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
+			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "c-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")
 			Expect(err).NotTo(HaveOccurred())
 			// Now should get d-package since c-package is complete
 			pkgs, err = skyhookNode.RunNext()
@@ -112,7 +112,7 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(pkgs[1].Name).To(Equal("e-package"))
 
 			// Complete e-package
-			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "e-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
+			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "e-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")
 			Expect(err).NotTo(HaveOccurred())
 			// Now should get d-package since c-package and e-package are complete
 			pkgs, err = skyhookNode.RunNext()
@@ -121,7 +121,7 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(pkgs[0].Name).To(Equal("d-package"))
 
 			// Complete d-package
-			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "d-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
+			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "d-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")
 			Expect(err).NotTo(HaveOccurred())
 			// Now should get f-package since both d-package and e-package are complete
 			pkgs, err = skyhookNode.RunNext()
@@ -130,7 +130,7 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(pkgs[0].Name).To(Equal("f-package"))
 
 			// Complete f-package
-			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "f-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0)
+			err = skyhookNode.Upsert(v1alpha1.PackageRef{Name: "f-package", Version: "1.0"}, "image", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")
 			Expect(err).NotTo(HaveOccurred())
 			// Now should get nothing since all packages are complete
 			pkgs, err = skyhookNode.RunNext()

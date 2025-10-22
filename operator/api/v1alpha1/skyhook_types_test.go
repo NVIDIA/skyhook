@@ -298,19 +298,19 @@ var _ = Describe("Skyhook Types", func() {
 		Expect(nodeState.Upsert(PackageRef{
 			Name:    "foo",
 			Version: "1.2.3",
-		}, "", StateComplete, stage, 2)).To(BeTrue())
+		}, "", StateComplete, stage, 2, "")).To(BeTrue())
 		Expect(nodeState.Upsert(PackageRef{
 			Name:    "bar",
 			Version: "2.3",
-		}, "", StateComplete, stage, 2)).To(BeTrue())
+		}, "", StateComplete, stage, 2, "")).To(BeTrue())
 		Expect(nodeState.Upsert(PackageRef{ // replace
 			Name:    "bar",
 			Version: "2",
-		}, "", StateComplete, stage, 2)).To(BeTrue())
+		}, "", StateComplete, stage, 2, "")).To(BeTrue())
 		Expect(nodeState.Upsert(PackageRef{ // exists
 			Name:    "bar",
 			Version: "2",
-		}, "", StateComplete, stage, 2)).To(BeFalse())
+		}, "", StateComplete, stage, 2, "")).To(BeFalse())
 
 		interrupts := map[string][]*Interrupt{}
 		configUpdates := map[string][]string{}

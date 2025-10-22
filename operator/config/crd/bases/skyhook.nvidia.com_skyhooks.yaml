@@ -225,6 +225,13 @@ spec:
                         The keys stored in Data must not overlap with the keys in
                         the BinaryData field, this is enforced during validation process.
                       type: object
+                    containerSHA:
+                      description: |-
+                        ContainerSHA is the SHA256 digest of the container image for verification purposes.
+                        When specified, this will be used instead of the version tag to pull the exact image.
+                        Format: sha256:1234567890abcdef...
+                      example: sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+                      type: string
                     dependsOn:
                       additionalProperties:
                         type: string
@@ -695,6 +702,10 @@ spec:
                 additionalProperties:
                   additionalProperties:
                     properties:
+                      containerSHA:
+                        description: ContainerSHA is the SHA256 digest that was actually
+                          deployed
+                        type: string
                       image:
                         description: Image for the package
                         type: string
