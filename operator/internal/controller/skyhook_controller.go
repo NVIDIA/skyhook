@@ -707,7 +707,7 @@ func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 
 			if !exists && packageStatus.Stage != v1alpha1.StageUninstall {
 				// Start uninstall of old package
-				err := node.Upsert(packageStatusRef, packageStatus.Image, v1alpha1.StateInProgress, v1alpha1.StageUninstall, 0)
+				err := node.Upsert(packageStatusRef, packageStatus.Image, v1alpha1.StateInProgress, v1alpha1.StageUninstall, 0, "")
 				if err != nil {
 					return nil, fmt.Errorf("error updating node status: %w", err)
 				}
@@ -724,7 +724,7 @@ func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 					}
 
 					// start upgrade of package
-					err := node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageUpgrade, 0)
+					err := node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageUpgrade, 0, _package.ContainerSHA)
 					if err != nil {
 						return nil, fmt.Errorf("error updating node status: %w", err)
 					}
@@ -732,13 +732,13 @@ func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 					upgrade = true
 				} else if comparison == -1 && packageStatus.Stage != v1alpha1.StageUninstall {
 					// Start uninstall of old package
-					err := node.Upsert(packageStatusRef, packageStatus.Image, v1alpha1.StateInProgress, v1alpha1.StageUninstall, 0)
+					err := node.Upsert(packageStatusRef, packageStatus.Image, v1alpha1.StateInProgress, v1alpha1.StageUninstall, 0, "")
 					if err != nil {
 						return nil, fmt.Errorf("error updating node status: %w", err)
 					}
 
 					// If version changed then update new version to wait
-					err = node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateSkipped, v1alpha1.StageUninstall, 0)
+					err = node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateSkipped, v1alpha1.StageUninstall, 0, _package.ContainerSHA)
 					if err != nil {
 						return nil, fmt.Errorf("error updating node status: %w", err)
 					}
@@ -949,7 +949,7 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 			skyhook.GetSkyhook().AddConfigUpdates(_package.Name, newConfigUpdates...)
 
 			for _, node := range skyhook.GetNodes() {
-				err := node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageConfig, 0)
+				err := node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageConfig, 0, _package.ContainerSHA)
 				if err != nil {
 					return false, fmt.Errorf("error upserting node status [%s]: %w", node.GetNode().Name, err)
 				}
@@ -1291,7 +1291,7 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 		return fmt.Errorf("error creating interruption pod: %w", err)
 	}
 
-	_ = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageInterrupt, 0)
+	_ = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageInterrupt, 0, _package.ContainerSHA)
 
 	r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, EventTypeNormal, EventsReasonSkyhookInterrupt,
 		"Interrupting node [%s] package [%s:%s] from [skyhook:%s]",
@@ -1603,6 +1603,16 @@ func getAgentImage(opts SkyhookOperatorOptions, _package *v1alpha1.Package) stri
 	return opts.AgentImage
 }
 
+// getPackageImage returns the full image reference for a package, using the digest if specified
+func getPackageImage(_package *v1alpha1.Package) string {
+	if _package.ContainerSHA != "" {
+		// When containerSHA is specified, use it instead of the version tag for immutable image reference
+		return fmt.Sprintf("%s@%s", _package.Image, _package.ContainerSHA)
+	}
+	// Fall back to version tag
+	return fmt.Sprintf("%s:%s", _package.Image, _package.Version)
+}
+
 func getAgentConfigEnvVars(opts SkyhookOperatorOptions, packageName string, packageVersion string, resourceID string, skyhookName string) []corev1.EnvVar {
 	return []corev1.EnvVar{
 		{
@@ -1712,7 +1722,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 			InitContainers: []corev1.Container{
 				{
 					Name:            fmt.Sprintf("%s-init", trunstr(_package.Name, 43)),
-					Image:           fmt.Sprintf("%s:%s", _package.Image, _package.Version),
+					Image:           getPackageImage(_package),
 					ImagePullPolicy: "Always",
 					Command:         []string{"/bin/sh"},
 					Args: []string{
@@ -2070,7 +2080,7 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 
 	//skipping
 	if stage == v1alpha1.StageInterrupt && !runInterrupt {
-		err := skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateSkipped, stage, 0)
+		err := skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateSkipped, stage, 0, _package.ContainerSHA)
 		if err != nil {
 			return false, fmt.Errorf("error upserting to skip interrupt: %w", err)
 		}
@@ -2185,7 +2195,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 		return fmt.Errorf("error creating pod: %w", err)
 	}
 
-	if err = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, stage, 0); err != nil {
+	if err = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, stage, 0, _package.ContainerSHA); err != nil {
 		err = fmt.Errorf("error upserting package: %w", err) // want to keep going in this case, but don't want to lose the err
 	}
 

@@ -34,6 +34,7 @@ metadata:
             "name": "foobar",
             "version": "1.2",
             "image": "ghcr.io/nvidia/skyhook/agentless",
+            "containerSHA": "sha256:a9cc86f68d73e874bf2dfbabab5e8a8f710ad78411a03764d1b42aa1b5cda7dd",
             "stage": "config",
             "state": "complete"
         },
@@ -74,6 +75,7 @@ status:
           state: complete
           version: '1.2'
           image: ghcr.io/nvidia/skyhook/agentless
+          containerSHA: sha256:a9cc86f68d73e874bf2dfbabab5e8a8f710ad78411a03764d1b42aa1b5cda7dd
           stage: config
         spencer|3.2.3:
           name: spencer

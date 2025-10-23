@@ -164,7 +164,7 @@ func (r *SkyhookReconciler) UpdateNodeState(ctx context.Context, pod *corev1.Pod
 	}
 
 	if !updated {
-		err = skyhookNode.Upsert(packagePtr.PackageRef, packagePtr.Image, state, packagePtr.Stage, restarts)
+		err = skyhookNode.Upsert(packagePtr.PackageRef, packagePtr.Image, state, packagePtr.Stage, restarts, packagePtr.ContainerSHA)
 		if err != nil {
 			return false, err
 		}
@@ -240,7 +240,7 @@ func (r *SkyhookReconciler) HandleCompletePod(ctx context.Context, skyhookNode w
 			if exists {
 				// If the uninstall was caused by a version changed progress forward the new version that was waiting
 				// on the uninstall to finish
-				err = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateComplete, v1alpha1.StageUninstall, 0)
+				err = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateComplete, v1alpha1.StageUninstall, 0, _package.ContainerSHA)
 				if err != nil {
 					return false, fmt.Errorf("error updating node status: %w", err)
 				}

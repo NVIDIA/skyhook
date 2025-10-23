@@ -42,7 +42,7 @@ func migrateNodeTo_0_5_0(node *skyhookNode, logger logr.Logger) error {
 			if exists && packageStatus.Version == _package.Version {
 
 				// upsert to migrate
-				err := node.Upsert(packageStatusRef, _package.Image, packageStatus.State, packageStatus.Stage, packageStatus.Restarts)
+				err := node.Upsert(packageStatusRef, _package.Image, packageStatus.State, packageStatus.Stage, packageStatus.Restarts, "")
 				if err != nil {
 					return err
 				}

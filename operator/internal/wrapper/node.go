@@ -62,7 +62,7 @@ type SkyhookNodeOnly interface {
 	State() (v1alpha1.NodeState, error)
 	SetState(state v1alpha1.NodeState) error
 	RemoveState(_package v1alpha1.PackageRef) error
-	Upsert(_package v1alpha1.PackageRef, image string, state v1alpha1.State, stage v1alpha1.Stage, restarts int32) error
+	Upsert(_package v1alpha1.PackageRef, image string, state v1alpha1.State, stage v1alpha1.Stage, restarts int32, containerSHA string) error
 	GetNode() *corev1.Node
 	Taint(key string)
 	RemoveTaint(key string)
@@ -283,8 +283,8 @@ func (node *skyhookNode) RemoveState(_package v1alpha1.PackageRef) error {
 	return nil
 }
 
-func (node *skyhookNode) Upsert(_package v1alpha1.PackageRef, image string, state v1alpha1.State, stage v1alpha1.Stage, restarts int32) error {
-	changed := node.nodeState.Upsert(_package, image, state, stage, restarts)
+func (node *skyhookNode) Upsert(_package v1alpha1.PackageRef, image string, state v1alpha1.State, stage v1alpha1.Stage, restarts int32, containerSHA string) error {
+	changed := node.nodeState.Upsert(_package, image, state, stage, restarts, containerSHA)
 	if changed {
 		if node.skyhook != nil {
 			node.skyhook.Updated = true

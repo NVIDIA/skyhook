@@ -196,6 +196,13 @@ type Package struct {
 	//+kubebuilder:validation:Required
 	Image string `json:"image"`
 
+	// ContainerSHA is the SHA256 digest of the container image for verification purposes.
+	// When specified, this will be used instead of the version tag to pull the exact image.
+	// Format: sha256:1234567890abcdef...
+	//+kubebuilder:example="sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	//+optional
+	ContainerSHA string `json:"containerSHA,omitempty"`
+
 	// Agent Image Override is the container image to override at the package level. Full qualified image with tag.
 	// This overrides the image provided via ENV to the operator.
 	//+kubebuilder:example="alpine:3.21.0"
@@ -365,19 +372,20 @@ type SkyhookStatus struct {
 type NodeState map[string]PackageStatus
 
 // Upsert adds or updates specified state for package in the node state
-func (ns *NodeState) Upsert(_package PackageRef, image string, state State, stage Stage, restarts int32) bool {
+func (ns *NodeState) Upsert(_package PackageRef, image string, state State, stage Stage, restarts int32, containerSHA string) bool {
 
 	if *ns == nil {
 		*ns = make(map[string]PackageStatus)
 	}
 
 	status := PackageStatus{
-		Name:     _package.Name,
-		Version:  _package.Version,
-		State:    state,
-		Image:    image,
-		Stage:    stage,
-		Restarts: restarts,
+		Name:         _package.Name,
+		Version:      _package.Version,
+		State:        state,
+		Image:        image,
+		Stage:        stage,
+		Restarts:     restarts,
+		ContainerSHA: containerSHA,
 	}
 
 	existing, ok := (*ns)[_package.GetUniqueName()]
@@ -567,6 +575,10 @@ type PackageStatus struct {
 	//+kubebuilder:validation:Required
 	Image string `json:"image"`
 
+	// ContainerSHA is the SHA256 digest that was actually deployed
+	//+optional
+	ContainerSHA string `json:"containerSHA,omitempty"`
+
 	// Stage is where in the package install process is currently for a node.
 	// these stages encapsulate checks. Both Apply and PostInterrupt also run checks,
 	// these are all or nothing, meaning both need to be successful in order to transition
@@ -583,10 +595,11 @@ type PackageStatus struct {
 	Restarts int32 `json:"restarts,omitempty"`
 }
 
-// Equal checks name, version, state, state (not restarts)
+// Equal checks name, version, image, containerSHA, stage, state, and restarts
 func (left *PackageStatus) Equal(right *PackageStatus) bool {
 	return left.Name == right.Name &&
 		left.Version == right.Version &&
+		left.ContainerSHA == right.ContainerSHA &&
 		left.Stage == right.Stage &&
 		left.State == right.State &&
 		left.Restarts == right.Restarts

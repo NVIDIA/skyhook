@@ -31,6 +31,7 @@ type PackageSkyhook struct {
 	Skyhook             string         `json:"skyhook"`
 	Stage               v1alpha1.Stage `json:"stage"`
 	Image               string         `json:"image"`
+	ContainerSHA        string         `json:"containerSHA,omitempty"`
 	Invalid             bool           `json:"invalid,omitempty"`
 }
 
@@ -59,10 +60,11 @@ func SetPackages(pod *corev1.Pod, skyhook *v1alpha1.Skyhook, image string, stage
 	}
 
 	strk := &PackageSkyhook{
-		Skyhook:    skyhook.Name,
-		Stage:      stage,
-		PackageRef: _package.PackageRef,
-		Image:      image,
+		Skyhook:      skyhook.Name,
+		Stage:        stage,
+		PackageRef:   _package.PackageRef,
+		Image:        image,
+		ContainerSHA: _package.ContainerSHA,
 	}
 
 	data, err := json.Marshal(strk)
