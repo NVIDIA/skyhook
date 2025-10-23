@@ -43,6 +43,10 @@ spec:
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t stage=config
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t stage=config
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t stage=config
+          # Rollout metrics checks
+          ../metrics_test.py skyhook_rollout_matched_nodes 1 -t skyhook_name=delete-skyhook -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+          ../metrics_test.py skyhook_rollout_completed 1 -t skyhook_name=delete-skyhook -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=delete-skyhook -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
     - delete:
         file: skyhook.yaml
     - script:
@@ -55,6 +59,11 @@ spec:
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=delete-skyhook -t stage=config --not-found
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=spencer -t skyhook_name=delete-skyhook -t stage=config --not-found
           ../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t skyhook_name=delete-skyhook -t stage=config --not-found
+          # Rollout metrics should be cleaned up after deletion
+          ../metrics_test.py skyhook_rollout_matched_nodes 1 -t skyhook_name=delete-skyhook -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed --not-found
+          ../metrics_test.py skyhook_rollout_ceiling 1 -t skyhook_name=delete-skyhook -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed --not-found
+          ../metrics_test.py skyhook_rollout_completed 1 -t skyhook_name=delete-skyhook -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed --not-found
+          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=delete-skyhook -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed --not-found
   - finally:
     - delete:
         file: skyhook.yaml
