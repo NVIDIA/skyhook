@@ -19,12 +19,13 @@ before the nodes that it targets are considered available for general use.
 
 # Details
 ## When is a node considered ready
-When all of the following conditions are true per node:
-1. All SCRs with `runtimeRequired: true` are complete
+When all of the following is true per node:
+1. All SCRs with `runtimeRequired: true` are complete (ie complete on all nodes)
 
 ## What happens happens when a node is considered ready
 1. The runtime required taint is removed from the node if it exists.
 
-
 # Why would you use runtime required
 This is useful when you want to gate other work behind the successful completion of some set of Skyhook Packages. This can be for security reasons or for scheduling.
+
+**NOTE:** No additional toleration is required, skyhook auto tolerates this (env:`runtimeRequiredTaint`) taint.
