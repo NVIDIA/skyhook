@@ -1,0 +1,229 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: overlapping-selectors-deployment-policy
+spec:
+  description: |
+    Tests deployment policy with overlapping compartment selectors.
+    Verifies that nodes matching multiple compartments are assigned correctly
+    based on the most specific match (most labels matched).
+  timeouts:
+    assert: 600s
+    exec: 300s
+  steps:
+  
+  - name: setup-nodes
+    try:
+    - script:
+        content: |
+          chmod +x setup-nodes.sh cleanup-nodes.sh
+          ./setup-nodes.sh
+  
+  - name: apply-resources
+    try:
+    - apply:
+        file: deployment-policy.yaml
+    - apply:
+        file: skyhook.yaml
+    - script:
+        content: |
+          echo "Waiting for Skyhook to initialize..."
+          sleep 10
+  
+  - name: verify-compartment-assignment
+    try:
+    - script:
+        content: |
+          echo "=== Verifying compartment assignment with overlaps ==="
+          
+          # Get all compartments
+          COMPARTMENTS=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses}' | jq -r 'keys[]' | sort)
+          echo "Compartments found:"
+          echo "$COMPARTMENTS"
+          echo ""
+          
+          # Check us-west compartment (should have 2 nodes: only region=us-west)
+          USWEST_MATCHED=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.us-west.matched}')
+          echo "us-west compartment: $USWEST_MATCHED nodes (expected: 2)"
+          
+          # Check production compartment (should have 2 nodes: only env=production)
+          PROD_MATCHED=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.production.matched}')
+          echo "production compartment: $PROD_MATCHED nodes (expected: 2)"
+          
+          # Check prod-us-west compartment (should have 2 nodes: both labels)
+          PROD_USWEST_MATCHED=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.prod-us-west.matched}')
+          echo "prod-us-west compartment: $PROD_USWEST_MATCHED nodes (expected: 2)"
+          echo ""
+          
+          # Verify expected distribution
+          if [ "$USWEST_MATCHED" != "2" ]; then
+            echo "ERROR: us-west compartment should have 2 nodes, got $USWEST_MATCHED"
+            kubectl get skyhook overlapping-selectors-test -o yaml
+            exit 1
+          fi
+          
+          if [ "$PROD_MATCHED" != "2" ]; then
+            echo "ERROR: production compartment should have 2 nodes, got $PROD_MATCHED"
+            kubectl get skyhook overlapping-selectors-test -o yaml
+            exit 1
+          fi
+          
+          if [ "$PROD_USWEST_MATCHED" != "2" ]; then
+            echo "ERROR: prod-us-west compartment should have 2 nodes (the overlapping ones), got $PROD_USWEST_MATCHED"
+            kubectl get skyhook overlapping-selectors-test -o yaml
+            exit 1
+          fi
+          
+          echo "✓ Compartment assignment correct!"
+          echo "✓ Overlapping nodes (with both labels) correctly assigned to most-specific compartment (prod-us-west)"
+    - script:
+        content: |
+          echo "=== Verifying compartment metrics ==="
+          
+          # Verify matched nodes for each compartment
+          ../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+
+          # Verify ceiling (budget) for each compartment
+          # us-west: count=2
+          # production: count=2
+          # prod-us-west: count=1
+          ../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_ceiling 1 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          
+          echo "✓ Compartment metrics verified"
+  
+  - name: monitor-rollout
+    try:
+    - script:
+        content: |
+          echo "=== Monitoring rollout progress ==="
+          
+          for i in {1..120}; do
+            COMPLETE_NODES=$(kubectl get skyhook overlapping-selectors-test \
+              -o jsonpath='{.status.completeNodes}' 2>/dev/null || echo "0/6")
+            TOTAL_COMPLETE=$(echo "$COMPLETE_NODES" | cut -d'/' -f1)
+            TOTAL_IN_PROGRESS=$(kubectl get skyhook overlapping-selectors-test \
+              -o jsonpath='{.status.nodesInProgress}' 2>/dev/null || echo "0")
+            
+            USWEST_COMPLETE=$(kubectl get skyhook overlapping-selectors-test \
+              -o jsonpath='{.status.compartmentStatuses.us-west.completed}' 2>/dev/null || echo "0")
+            PROD_COMPLETE=$(kubectl get skyhook overlapping-selectors-test \
+              -o jsonpath='{.status.compartmentStatuses.production.completed}' 2>/dev/null || echo "0")
+            PROD_USWEST_COMPLETE=$(kubectl get skyhook overlapping-selectors-test \
+              -o jsonpath='{.status.compartmentStatuses.prod-us-west.completed}' 2>/dev/null || echo "0")
+            
+            echo "[$i/120] Complete: $TOTAL_COMPLETE/6 | InProgress: $TOTAL_IN_PROGRESS | Compartments: us-west=$USWEST_COMPLETE prod=$PROD_COMPLETE prod-uswest=$PROD_USWEST_COMPLETE"
+            
+            if [ "$TOTAL_COMPLETE" == "6" ]; then
+              echo "✓ All nodes completed!"
+              break
+            fi
+            
+            if [ $i -eq 120 ]; then
+              echo "ERROR: Timeout waiting for completion"
+              kubectl get skyhook overlapping-selectors-test -o yaml
+              exit 1
+            fi
+            
+            sleep 5
+          done
+  
+  - name: verify-final-state
+    try:
+    - script:
+        content: |
+          echo "=== Verifying final state ==="
+          
+          echo "us-west compartment:"
+          kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.us-west}' | jq .
+          
+          echo ""
+          echo "production compartment:"
+          kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.production}' | jq .
+          
+          echo ""
+          echo "prod-us-west compartment:"
+          kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.prod-us-west}' | jq .
+          
+          # Verify all completed
+          USWEST_COMPLETE=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.us-west.completed}')
+          PROD_COMPLETE=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.production.completed}')
+          PROD_USWEST_COMPLETE=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.compartmentStatuses.prod-us-west.completed}')
+          
+          if [ "$USWEST_COMPLETE" != "2" ] || [ "$PROD_COMPLETE" != "2" ] || [ "$PROD_USWEST_COMPLETE" != "2" ]; then
+            echo "ERROR: Not all compartments completed successfully"
+            echo "us-west: $USWEST_COMPLETE/2, production: $PROD_COMPLETE/2, prod-us-west: $PROD_USWEST_COMPLETE/2"
+            exit 1
+          fi
+          
+          TOTAL_COMPLETE=$(kubectl get skyhook overlapping-selectors-test -o jsonpath='{.status.completeNodes}' | cut -d'/' -f1)
+          if [ "$TOTAL_COMPLETE" != "6" ]; then
+            echo "ERROR: Expected 6 total complete nodes, got $TOTAL_COMPLETE"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✓✓✓ Overlapping selectors handled correctly! ✓✓✓"
+          echo "✓ Nodes with multiple matching labels assigned to most-specific compartment"
+          echo "✓ No double-counting across compartments"
+    - script:
+        content: |
+          echo "=== Verifying final metrics ==="
+          
+          # All compartments should be 100% complete
+          ../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+
+          ../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+
+          ../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+
+          # Verify no consecutive failures
+          ../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          
+          echo "✓ All final metrics verified!"
+  
+  - name: cleanup
+    try:
+    - script:
+        content: ./cleanup-nodes.sh || true
+    - delete:
+        ref:
+          apiVersion: skyhook.nvidia.com/v1alpha1
+          kind: Skyhook
+          name: overlapping-selectors-test
+    - delete:
+        ref:
+          apiVersion: skyhook.nvidia.com/v1alpha1
+          kind: DeploymentPolicy
+          name: overlapping-selector-policy

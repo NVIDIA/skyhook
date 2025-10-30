@@ -110,10 +110,67 @@ jobs:
           make setup-kind-cluster
           make test
   
+  # Test deployment policies on 15-node cluster
+  deployment-policy-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+      - name: Setup Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: operator/go.sum
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create 15-node Kind Cluster
+        id: kind
+        uses: helm/kind-action@v1
+        with:
+          version: v0.30.0
+          node_image: kindest/node:v1.33.4
+          config: k8s-tests/chainsaw/deployment-policy/kind-config.yaml
+          cluster_name: skyhook-dp-test
+      # Cache build tools and dependencies for faster builds
+      - name: Restore cached Binaries
+        id: cached-binaries
+        uses: actions/cache/restore@v4
+        with:
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
+          path: |
+            ${{ github.workspace }}/operator/bin
+            ~/.cache/go-build
+      - name: Install dependencies
+        if: steps.cached-binaries.outputs.cache-hit != 'true'
+        run: |
+          cd operator
+          make install-deps
+      - name: Save cached Binaries
+        id: save-cached-binaries
+        if: steps.cached-binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          path: |
+            ${{ github.workspace }}/operator/bin
+            ~/.cache/go-build
+      # Run deployment policy E2E tests
+      - name: deployment-policy-e2e-tests
+        run: |
+          cd operator
+          make deployment-policy-tests
+  
   # Build multi-platform container image and push to registry
   build-and-push-operator:
     runs-on: ubuntu-latest
-    needs: [tests] # Don't run the build and push if the k8s tests fail
+    needs: [tests, deployment-policy-tests] # Don't run the build and push if tests fail
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:
       contents: read
