@@ -92,8 +92,9 @@ spec:
           echo "=== Monitoring linear ramp-up rollout ==="
           
           LAST_BATCH_SIZE=0
+          i=1
           
-          for i in {1..120}; do
+          while [ $i -le 120 ]; do
             COMPLETE_NODES=$(kubectl get skyhook linear-strategy-test \
               -o jsonpath='{.status.completeNodes}' 2>/dev/null || echo "0/8")
             TOTAL_COMPLETE=$(echo "$COMPLETE_NODES" | cut -d'/' -f1)
@@ -115,7 +116,7 @@ spec:
               LAST_BATCH_SIZE=$BATCH_SIZE
             fi
             
-            if [ "$TOTAL_COMPLETE" == "8" ]; then
+            if [ "$TOTAL_COMPLETE" = "8" ]; then
               echo "✓ All nodes completed!"
               break
             fi
@@ -127,6 +128,7 @@ spec:
             fi
             
             sleep 5
+            i=$((i + 1))
           done
   
   - name: verify-linear-progression
