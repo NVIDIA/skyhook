@@ -95,7 +95,7 @@ spec:
           fi
           
           echo "✓ Compartment assignment correct!"
-          echo "✓ Overlapping nodes (with both labels) correctly assigned to most-specific compartment (prod-us-west)"
+          echo "✓ Overlapping nodes correctly assigned using safety-first strategy (Fixed > Linear > Exponential)"
     - script:
         content: |
           echo "=== Verifying compartment metrics ==="
@@ -189,7 +189,8 @@ spec:
           
           echo ""
           echo "✓✓✓ Overlapping selectors handled correctly! ✓✓✓"
-          echo "✓ Nodes with multiple matching labels assigned to most-specific compartment"
+          echo "✓ Nodes with overlapping labels assigned using safety-first strategy"
+          echo "✓ Strategy precedence: Fixed (safest) > Linear > Exponential (fastest)"
           echo "✓ No double-counting across compartments"
     - script:
         content: |
