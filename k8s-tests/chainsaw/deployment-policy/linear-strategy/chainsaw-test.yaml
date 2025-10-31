@@ -35,8 +35,11 @@ spec:
     try:
     - script:
         content: |
-          chmod +x setup-nodes.sh cleanup-nodes.sh
-          ./setup-nodes.sh
+          chmod +x ../label-nodes.sh
+          # Label nodes for linear strategy test
+          ../label-nodes.sh add 0-7 tier=production skyhook.nvidia.com/test-node=skyhooke2e
+          echo "✓ Node labeling complete"
+          kubectl get nodes -L tier,skyhook.nvidia.com/test-node --no-headers | grep production | sort
   
   - name: apply-resources
     try:
@@ -44,36 +47,13 @@ spec:
         file: deployment-policy.yaml
     - apply:
         file: skyhook.yaml
-    - script:
-        content: |
-          echo "Waiting for Skyhook to initialize..."
-          sleep 10
+    - sleep:
+        duration: 10s
   
-  - name: verify-compartment-created
+  - name: verify-compartment
     try:
-    - script:
-        content: |
-          echo "=== Verifying production compartment ==="
-          
-          COMPARTMENTS=$(kubectl get skyhook linear-strategy-test -o jsonpath='{.status.compartmentStatuses}' | jq -r 'keys[]' | sort)
-          echo "Compartments found: $COMPARTMENTS"
-          
-          PRODUCTION=$(echo "$COMPARTMENTS" | grep -c "production" || echo "0")
-          
-          if [ "$PRODUCTION" != "1" ]; then
-            echo "ERROR: Production compartment not found"
-            exit 1
-          fi
-          
-          PROD_NODES=$(kubectl get skyhook linear-strategy-test -o jsonpath='{.status.compartmentStatuses.production.matched}')
-          echo "Production nodes: $PROD_NODES (expected: 8)"
-          
-          if [ "$PROD_NODES" != "8" ]; then
-            echo "ERROR: Expected 8 production nodes, got $PROD_NODES"
-            exit 1
-          fi
-          
-          echo "✓ Compartment verified"
+    - assert:
+        file: assert-compartment.yaml
     - script:
         content: |
           echo "=== Verifying initial metrics ==="
@@ -85,82 +65,14 @@ spec:
           
           echo "✓ Initial metrics verified"
   
-  - name: monitor-linear-rollout
+  - name: wait-for-completion
     try:
-    - script:
-        content: |
-          echo "=== Monitoring linear ramp-up rollout ==="
-          
-          LAST_BATCH_SIZE=0
-          i=1
-          
-          while [ $i -le 120 ]; do
-            COMPLETE_NODES=$(kubectl get skyhook linear-strategy-test \
-              -o jsonpath='{.status.completeNodes}' 2>/dev/null || echo "0/8")
-            TOTAL_COMPLETE=$(echo "$COMPLETE_NODES" | cut -d'/' -f1)
-            TOTAL_IN_PROGRESS=$(kubectl get skyhook linear-strategy-test \
-              -o jsonpath='{.status.nodesInProgress}' 2>/dev/null || echo "0")
-            
-            CURRENT_BATCH=$(kubectl get skyhook linear-strategy-test \
-              -o jsonpath='{.status.compartmentStatuses.production.batchState.currentBatch}' 2>/dev/null || echo "0")
-            BATCH_SIZE=$(kubectl get skyhook linear-strategy-test \
-              -o jsonpath='{.status.compartmentStatuses.production.batchState.lastBatchSize}' 2>/dev/null || echo "0")
-            PROD_COMPLETE=$(kubectl get skyhook linear-strategy-test \
-              -o jsonpath='{.status.compartmentStatuses.production.completed}' 2>/dev/null || echo "0")
-            
-            echo "[$i/120] Complete: $TOTAL_COMPLETE/8 | InProgress: $TOTAL_IN_PROGRESS | Batch: $CURRENT_BATCH (size: $BATCH_SIZE) | ProdComplete: $PROD_COMPLETE"
-            
-            # Track batch size changes to verify linear growth
-            if [ "$BATCH_SIZE" != "0" ] && [ "$BATCH_SIZE" != "$LAST_BATCH_SIZE" ]; then
-              echo "  → Batch size changed: $LAST_BATCH_SIZE → $BATCH_SIZE"
-              LAST_BATCH_SIZE=$BATCH_SIZE
-            fi
-            
-            if [ "$TOTAL_COMPLETE" = "8" ]; then
-              echo "✓ All nodes completed!"
-              break
-            fi
-            
-            if [ $i -eq 120 ]; then
-              echo "ERROR: Timeout waiting for completion"
-              kubectl get skyhook linear-strategy-test -o yaml
-              exit 1
-            fi
-            
-            sleep 5
-            i=$((i + 1))
-          done
+    - assert:
+        timeout: 10m
+        file: assert-complete.yaml
   
-  - name: verify-linear-progression
+  - name: verify-final-metrics
     try:
-    - script:
-        content: |
-          echo "=== Verifying linear batch progression ==="
-          
-          kubectl get skyhook linear-strategy-test -o jsonpath='{.status.compartmentStatuses.production.batchState}' | jq .
-          
-          COMPLETED_NODES=$(kubectl get skyhook linear-strategy-test -o jsonpath='{.status.compartmentStatuses.production.batchState.completedNodes}')
-          CURRENT_BATCH=$(kubectl get skyhook linear-strategy-test -o jsonpath='{.status.compartmentStatuses.production.batchState.currentBatch}')
-          
-          echo "Completed nodes: $COMPLETED_NODES"
-          echo "Total batches: $CURRENT_BATCH"
-          
-          if [ "$COMPLETED_NODES" != "8" ]; then
-            echo "ERROR: Expected 8 completed nodes, got $COMPLETED_NODES"
-            exit 1
-          fi
-          
-          # Linear strategy was used - verify batch counter exists and is > 1
-          # (In fast execution, we may not observe multiple in-progress batches, but the 
-          # counter will show that linear progression was configured)
-          if [ "$CURRENT_BATCH" -lt "1" ]; then
-            echo "ERROR: Expected at least 1 batch for linear strategy, got $CURRENT_BATCH"
-            exit 1
-          fi
-          
-          echo "✓ Linear strategy completed successfully in $CURRENT_BATCH batch(es)"
-          echo ""
-          echo "✓✓✓ Linear ramp-up strategy verified! ✓✓✓"
     - script:
         content: |
           echo "=== Verifying final metrics ==="
@@ -182,7 +94,9 @@ spec:
   - name: cleanup
     try:
     - script:
-        content: ./cleanup-nodes.sh || true
+        content: |
+          ../label-nodes.sh clean-all tier
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
     - delete:
         ref:
           apiVersion: skyhook.nvidia.com/v1alpha1

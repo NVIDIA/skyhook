@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -19,25 +17,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-set -e
-
-echo "Cleaning up any existing labels from previous tests..."
-kubectl label nodes --all skyhook.nvidia.com/test-node- --overwrite 2>/dev/null || true
-
-echo "Labeling nodes for legacy compatibility test..."
-
-# Get all worker nodes (excluding control-plane) and label the first 6
-WORKERS=($(kubectl get nodes --no-headers -o custom-columns=NAME:.metadata.name | grep -v control-plane | sort))
-
-# Label first 6 worker nodes for the test
-echo "Labeling test nodes (first 6 workers)..."
-for i in {0..5}; do
-  if [ -n "${WORKERS[$i]}" ]; then
-    kubectl label node/${WORKERS[$i]} skyhook.nvidia.com/test-node=skyhooke2e --overwrite
-  fi
-done
-
-echo ""
-echo "✓ Node labeling complete!"
-echo ""
-kubectl get nodes -L skyhook.nvidia.com/test-node --sort-by=.metadata.name | head -8
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: linear-strategy-test
+status:
+  compartmentStatuses:
+    production:
+      matched: 8
+      ceiling: 4

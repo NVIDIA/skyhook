@@ -37,99 +37,28 @@ spec:
     try:
     - script:
         content: |
-          chmod +x setup-nodes.sh cleanup-nodes.sh
-          ./setup-nodes.sh
+          chmod +x ../label-nodes.sh
+          # Clean up any existing labels from previous tests
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          # Label first 6 worker nodes
+          ../label-nodes.sh add 0-5 skyhook.nvidia.com/test-node=skyhooke2e
+          echo "✓ Node labeling complete"
+          kubectl get nodes -L skyhook.nvidia.com/test-node --sort-by=.metadata.name | head -8
 
   - name: apply-skyhook
     try:
     - apply:
         file: skyhook.yaml
-    - script:
-        content: |
-          echo "Waiting for Skyhook to initialize..."
-          sleep 10
+    - sleep:
+        duration: 10s
 
-  - name: verify-default-compartment-created
+  - name: verify-default-compartment
     try:
-    - script:
-        content: |
-          echo "=== Verifying synthetic __default__ compartment ==="
-          
-          COMPARTMENTS=$(kubectl get skyhook legacy-interruption-budget-test -o jsonpath='{.status.compartmentStatuses}' | jq -r 'keys[]')
-          echo "Compartments found: $COMPARTMENTS"
-          
-          DEFAULT=$(echo "$COMPARTMENTS" | grep -c "__default__" || echo "0")
-          
-          if [ "$DEFAULT" != "1" ]; then
-            echo "ERROR: Expected __default__ compartment to be created"
-            echo "Found compartments: $COMPARTMENTS"
-            kubectl get skyhook legacy-interruption-budget-test -o yaml
-            exit 1
-          fi
-          
-          echo "✓ Synthetic __default__ compartment created"
+    - assert:
+        file: assert-default-compartment.yaml
 
-  - name: verify-compartment-uses-fixed-strategy
+  - name: verify-metrics
     try:
-    - script:
-        content: |
-          echo "=== Verifying FixedStrategy is used ==="
-          
-          # Get the compartment details from status
-          MATCHED=$(kubectl get skyhook legacy-interruption-budget-test \
-            -o jsonpath='{.status.compartmentStatuses.__default__.matched}')
-          
-          echo "Nodes matched: $MATCHED (expected: 6)"
-          
-          if [ "$MATCHED" != "6" ]; then
-            echo "ERROR: Expected 6 nodes in default compartment, got $MATCHED"
-            kubectl get skyhook legacy-interruption-budget-test -o yaml
-            exit 1
-          fi
-          
-          echo "✓ All nodes assigned to __default__ compartment"
-
-  - name: verify-budget-ceiling-configured
-    try:
-    - script:
-        content: |
-          echo "=== Verifying budget ceiling is configured ==="
-          
-          CEILING=$(kubectl get skyhook legacy-interruption-budget-test \
-            -o jsonpath='{.status.compartmentStatuses.__default__.ceiling}')
-          
-          echo "Configured ceiling: $CEILING (expected: 3)"
-          
-          if [ "$CEILING" != "3" ]; then
-            echo "ERROR: Expected ceiling of 3 (from interruptionBudget count), got $CEILING"
-            kubectl get skyhook legacy-interruption-budget-test -o yaml
-            exit 1
-          fi
-          
-          echo "✓ Budget ceiling configured correctly from InterruptionBudget"
-
-  - name: verify-final-state
-    try:
-    - script:
-        content: |
-          echo "=== Verifying legacy compatibility ==="
-          
-          CEILING=$(kubectl get skyhook legacy-interruption-budget-test -o jsonpath='{.status.compartmentStatuses.__default__.ceiling}')
-          MATCHED=$(kubectl get skyhook legacy-interruption-budget-test -o jsonpath='{.status.compartmentStatuses.__default__.matched}')
-          
-          echo "Final verification:"
-          echo "  - Synthetic __default__ compartment: ✓"
-          echo "  - Budget ceiling from interruptionBudget: $CEILING"
-          echo "  - Matched nodes: $MATCHED"
-          
-          if [ "$CEILING" != "3" ] || [ "$MATCHED" != "6" ]; then
-            echo "ERROR: Legacy compatibility verification failed"
-            exit 1
-          fi
-          
-          echo ""
-          echo "✓✓✓ Legacy InterruptionBudget compatibility verified! ✓✓✓"
-          echo "Existing customers can continue using interruptionBudget safely."
     - script:
         content: |
           echo "=== Verifying legacy compatibility metrics ==="
@@ -146,4 +75,4 @@ spec:
     try:
     - script:
         content: |
-          ./cleanup-nodes.sh || true
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node

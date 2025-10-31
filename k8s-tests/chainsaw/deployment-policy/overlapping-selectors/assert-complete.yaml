@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -19,10 +17,22 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-set -e
-
-echo "Cleaning up node labels..."
-kubectl label nodes --all region- 2>/dev/null || true
-kubectl label nodes --all env- 2>/dev/null || true
-kubectl label nodes --all skyhook.nvidia.com/test-node- 2>/dev/null || true
-echo "✓ Cleanup complete"
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: overlapping-selectors-test
+status:
+  status: complete
+  compartmentStatuses:
+    us-west:
+      completed: 2
+      inProgress: 0
+      progressPercent: 100
+    production:
+      completed: 2
+      inProgress: 0
+      progressPercent: 100
+    prod-us-west:
+      completed: 2
+      inProgress: 0
+      progressPercent: 100

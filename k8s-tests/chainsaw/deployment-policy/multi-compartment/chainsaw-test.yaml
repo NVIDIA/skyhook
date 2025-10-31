@@ -35,8 +35,13 @@ spec:
     try:
     - script:
         content: |
-          chmod +x setup-nodes.sh cleanup-nodes.sh
-          ./setup-nodes.sh
+          chmod +x ../label-nodes.sh
+          # Label nodes for multi-compartment test
+          ../label-nodes.sh add 0-4 priority=critical skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 5-10 priority=standard skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 11-14 priority=test skyhook.nvidia.com/test-node=skyhooke2e
+          echo "✓ Node labeling complete"
+          kubectl get nodes -L priority,skyhook.nvidia.com/test-node --no-headers | grep -E "critical|standard|test" | sort -k6
   
   - name: apply-resources
     try:
@@ -44,34 +49,13 @@ spec:
         file: deployment-policy.yaml
     - apply:
         file: skyhook.yaml
-    - script:
-        content: |
-          echo "Waiting for Skyhook to initialize..."
-          sleep 10
+    - sleep:
+        duration: 10s
   
-  - name: verify-compartments-created
+  - name: verify-compartments
     try:
-    - script:
-        content: |
-          echo "=== Verifying compartments ==="
-          
-          # Check that all expected compartments exist
-          COMPARTMENTS=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses}' | jq -r 'keys[]' | sort)
-          echo "Compartments found: $COMPARTMENTS"
-          
-          # Should have: critical, standard, test (possibly __default__ if any nodes unmatched)
-          CRITICAL=$(echo "$COMPARTMENTS" | grep -c "critical" || echo "0")
-          STANDARD=$(echo "$COMPARTMENTS" | grep -c "standard" || echo "0")
-          TEST=$(echo "$COMPARTMENTS" | grep -c "test" || echo "0")
-          
-          if [ "$CRITICAL" != "1" ] || [ "$STANDARD" != "1" ] || [ "$TEST" != "1" ]; then
-            echo "ERROR: Missing expected compartments"
-            echo "Expected: critical, standard, test"
-            echo "Found: $COMPARTMENTS"
-            exit 1
-          fi
-          
-          echo "✓ All compartments created"
+    - assert:
+        file: assert-compartments.yaml
     - script:
         content: |
           echo "=== Verifying compartment metrics ==="
@@ -81,29 +65,7 @@ spec:
           ../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
           ../metrics_test.py skyhook_rollout_matched_nodes 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
-          echo "✓ Compartment metrics verified"
-  
-  - name: verify-node-counts
-    try:
-    - script:
-        content: |
-          echo "=== Verifying node distribution ==="
-          
-          CRITICAL_NODES=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.critical.matched}')
-          STANDARD_NODES=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.standard.matched}')
-          TEST_NODES=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.test.matched}')
-          
-          echo "Critical nodes: $CRITICAL_NODES (expected: 5)"
-          echo "Standard nodes: $STANDARD_NODES (expected: 6)"
-          echo "Test nodes: $TEST_NODES (expected: 4)"
-          
-          if [ "$CRITICAL_NODES" != "5" ] || [ "$STANDARD_NODES" != "6" ] || [ "$TEST_NODES" != "4" ]; then
-            echo "ERROR: Incorrect node distribution"
-            kubectl get skyhook multi-compartment-test -o yaml
-            exit 1
-          fi
-          
-          echo "✓ Node distribution correct"
+          echo "✓ Compartment matched nodes metrics verified"
     - script:
         content: |
           echo "=== Verifying ceiling metrics ==="
@@ -118,98 +80,14 @@ spec:
           
           echo "✓ Ceiling metrics verified"
   
-  - name: monitor-rollout
+  - name: wait-for-completion
     try:
-    - script:
-        content: |
-          echo "=== Monitoring rollout progress ==="
-          
-          i=1
-          while [ $i -le 120 ]; do
-            COMPLETE_NODES=$(kubectl get skyhook multi-compartment-test \
-              -o jsonpath='{.status.completeNodes}' 2>/dev/null || echo "0/15")
-            TOTAL_COMPLETE=$(echo "$COMPLETE_NODES" | cut -d'/' -f1)
-            TOTAL_IN_PROGRESS=$(kubectl get skyhook multi-compartment-test \
-              -o jsonpath='{.status.nodesInProgress}' 2>/dev/null || echo "0")
-            
-            # Get compartment progress
-            CRIT_COMPLETE=$(kubectl get skyhook multi-compartment-test \
-              -o jsonpath='{.status.compartmentStatuses.critical.completed}' 2>/dev/null || echo "0")
-            STD_COMPLETE=$(kubectl get skyhook multi-compartment-test \
-              -o jsonpath='{.status.compartmentStatuses.standard.completed}' 2>/dev/null || echo "0")
-            TEST_COMPLETE=$(kubectl get skyhook multi-compartment-test \
-              -o jsonpath='{.status.compartmentStatuses.test.completed}' 2>/dev/null || echo "0")
-            
-            echo "[$i/120] Complete: $TOTAL_COMPLETE/15 | InProgress: $TOTAL_IN_PROGRESS | Compartments: crit=$CRIT_COMPLETE std=$STD_COMPLETE test=$TEST_COMPLETE"
-            
-            if [ "$TOTAL_COMPLETE" = "15" ]; then
-              echo "✓ All nodes completed!"
-              break
-            fi
-            
-            if [ $i -eq 120 ]; then
-              echo "ERROR: Timeout waiting for completion"
-              kubectl get skyhook multi-compartment-test -o yaml
-              exit 1
-            fi
-            
-            sleep 5
-            i=$((i + 1))
-          done
+    - assert:
+        timeout: 10m
+        file: assert-complete.yaml
   
-  - name: verify-final-state
+  - name: verify-final-metrics
     try:
-    - script:
-        content: |
-          echo "=== Verifying final state ==="
-          
-          # Critical compartment
-          echo "Critical compartment:"
-          kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.critical}' | jq .
-          
-          CRIT_COMPLETE=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.critical.completed}')
-          CRIT_FAILED=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.critical.failed}' || echo "0")
-          
-          if [ "$CRIT_COMPLETE" != "5" ]; then
-            echo "ERROR: Critical compartment - completed: $CRIT_COMPLETE (expected 5), failed: $CRIT_FAILED"
-            exit 1
-          fi
-          
-          # Standard compartment
-          echo "Standard compartment:"
-          kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.standard}' | jq .
-          
-          STD_COMPLETE=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.standard.completed}')
-          STD_FAILED=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.standard.failed}' || echo "0")
-          
-          if [ "$STD_COMPLETE" != "6" ]; then
-            echo "ERROR: Standard compartment - completed: $STD_COMPLETE (expected 6), failed: $STD_FAILED"
-            exit 1
-          fi
-          
-          # Test compartment
-          echo "Test compartment:"
-          kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.test}' | jq .
-          
-          TEST_COMPLETE=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.test.completed}')
-          TEST_FAILED=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.compartmentStatuses.test.failed}' || echo "0")
-          
-          if [ "$TEST_COMPLETE" != "4" ]; then
-            echo "ERROR: Test compartment - completed: $TEST_COMPLETE (expected 4), failed: $TEST_FAILED"
-            exit 1
-          fi
-          
-          # Overall status
-          COMPLETE_NODES=$(kubectl get skyhook multi-compartment-test -o jsonpath='{.status.completeNodes}')
-          TOTAL_COMPLETE=$(echo "$COMPLETE_NODES" | cut -d'/' -f1)
-          
-          if [ "$TOTAL_COMPLETE" != "15" ]; then
-            echo "ERROR: Expected 15 complete nodes, got $TOTAL_COMPLETE (from $COMPLETE_NODES)"
-            exit 1
-          fi
-          
-          echo ""
-          echo "✓✓✓ All compartments completed successfully! ✓✓✓"
     - script:
         content: |
           echo "=== Verifying final metrics ==="
@@ -237,7 +115,9 @@ spec:
   - name: cleanup
     try:
     - script:
-        content: ./cleanup-nodes.sh || true
+        content: |
+          ../label-nodes.sh clean-all priority
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
     - delete:
         ref:
           apiVersion: skyhook.nvidia.com/v1alpha1
