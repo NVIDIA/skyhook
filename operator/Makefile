@@ -223,7 +223,7 @@ endif
 
 setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook namespace
 	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
-	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e
+	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e --overwrite
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	$(KUBECTL) create secret generic node-init-secret --type=kubernetes.io/dockerconfigjson -n $(SKYHOOK_NAMESPACE) \
 		--from-file=.dockerconfigjson=$(DOCKER_AUTH_FILE)
