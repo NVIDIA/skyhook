@@ -78,8 +78,10 @@ spec:
           value: {{ quote .Values.webhook.enable }}
         - name: NAMESPACE
           value: {{ .Release.Namespace }}
-        - name: IMAGE_PULL_SECRET
-          value: {{ quote .Values.imagePullSecret }}
+        - name: PACKAGE_IMAGE_PULL_SECRET
+          value: {{ quote .Values.packageImagePullSecret }}
+        - name: SKYHOOK_IMAGE_PULL_SECRET
+          value: {{ quote .Values.skyhookImagePullSecret }}
         - name: COPY_DIR_ROOT
           value: {{ quote .Values.controllerManager.manager.env.copyDirRoot }}
         - name: REAPPLY_ON_REBOOT
@@ -138,7 +140,7 @@ spec:
         securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
           | nindent 10 }}
       imagePullSecrets:
-        - name: {{ quote .Values.imagePullSecret }}
+        - name: {{ quote .Values.skyhookImagePullSecret }}
       securityContext:
         runAsNonRoot: true
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager

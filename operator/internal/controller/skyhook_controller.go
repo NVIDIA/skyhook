@@ -72,15 +72,16 @@ const (
 )
 
 type SkyhookOperatorOptions struct {
-	Namespace            string        `env:"NAMESPACE, default=skyhook"`
-	MaxInterval          time.Duration `env:"DEFAULT_INTERVAL, default=10m"`
-	ImagePullSecret      string        `env:"IMAGE_PULL_SECRET, default=node-init-secret"` //TODO: should this be defaulted?
-	CopyDirRoot          string        `env:"COPY_DIR_ROOT, default=/var/lib/skyhook"`
-	ReapplyOnReboot      bool          `env:"REAPPLY_ON_REBOOT, default=false"`
-	RuntimeRequiredTaint string        `env:"RUNTIME_REQUIRED_TAINT, default=skyhook.nvidia.com=runtime-required:NoSchedule"`
-	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
-	AgentImage           string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/skyhook/agent:latest"` // TODO: this needs to be updated with a working default
-	AgentLogRoot         string        `env:"AGENT_LOG_ROOT, default=/var/log/skyhook"`
+	Namespace              string        `env:"NAMESPACE, default=skyhook"`
+	MaxInterval            time.Duration `env:"DEFAULT_INTERVAL, default=10m"`
+	PackageImagePullSecret string        `env:"PACKAGE_IMAGE_PULL_SECRET"`
+	SkyhookImagePullSecret string        `env:"SKYHOOK_IMAGE_PULL_SECRET"`
+	CopyDirRoot            string        `env:"COPY_DIR_ROOT, default=/var/lib/skyhook"`
+	ReapplyOnReboot        bool          `env:"REAPPLY_ON_REBOOT, default=false"`
+	RuntimeRequiredTaint   string        `env:"RUNTIME_REQUIRED_TAINT, default=skyhook.nvidia.com=runtime-required:NoSchedule"`
+	PauseImage             string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
+	AgentImage             string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/skyhook/agent:latest"` // TODO: this needs to be updated with a working default
+	AgentLogRoot           string        `env:"AGENT_LOG_ROOT, default=/var/log/skyhook"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {
@@ -1507,7 +1508,7 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 			},
 			ImagePullSecrets: []corev1.LocalObjectReference{
 				{
-					Name: opts.ImagePullSecret,
+					Name: opts.SkyhookImagePullSecret,
 				},
 			},
 			HostPID:     true,
@@ -1714,7 +1715,10 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 			},
 			ImagePullSecrets: []corev1.LocalObjectReference{
 				{
-					Name: opts.ImagePullSecret,
+					Name: opts.PackageImagePullSecret,
+				},
+				{
+					Name: opts.SkyhookImagePullSecret,
 				},
 			},
 			Volumes:     volumes,

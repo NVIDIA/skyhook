@@ -457,15 +457,16 @@ var _ = Describe("skyhook controller tests", func() {
 
 	It("Ensure all the config env vars are set", func() {
 		opts := SkyhookOperatorOptions{
-			Namespace:            "skyhook",
-			MaxInterval:          time.Second * 61,
-			ImagePullSecret:      "foo",
-			CopyDirRoot:          "/tmp",
-			ReapplyOnReboot:      true,
-			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
-			AgentImage:           "foo:bar",
-			PauseImage:           "foo:bar",
-			AgentLogRoot:         "/log",
+			Namespace:              "skyhook",
+			MaxInterval:            time.Second * 61,
+			PackageImagePullSecret: "foo",
+			SkyhookImagePullSecret: "foo",
+			CopyDirRoot:            "/tmp",
+			ReapplyOnReboot:        true,
+			RuntimeRequiredTaint:   "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:             "foo:bar",
+			PauseImage:             "foo:bar",
+			AgentLogRoot:           "/log",
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -558,14 +559,15 @@ var _ = Describe("skyhook controller tests", func() {
 	It("Check validations of skyhook options", func() {
 		// good options
 		opts := SkyhookOperatorOptions{
-			Namespace:            "skyhook",
-			MaxInterval:          time.Second * 61,
-			ImagePullSecret:      "foo",
-			CopyDirRoot:          "/tmp",
-			ReapplyOnReboot:      true,
-			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
-			AgentImage:           "foo:bar",
-			PauseImage:           "foo:bar",
+			Namespace:              "skyhook",
+			MaxInterval:            time.Second * 61,
+			PackageImagePullSecret: "foo",
+			SkyhookImagePullSecret: "foo",
+			CopyDirRoot:            "/tmp",
+			ReapplyOnReboot:        true,
+			RuntimeRequiredTaint:   "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:             "foo:bar",
+			PauseImage:             "foo:bar",
 		}
 		Expect(opts.Validate()).To(BeNil())
 

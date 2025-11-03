@@ -97,7 +97,9 @@ spec:
             value: "true"
           - name: NAMESPACE
             value: skyhook-operator-system
-          - name: IMAGE_PULL_SECRET
+          - name: SKYHOOK_IMAGE_PULL_SECRET
+            value: node-init-secret
+          - name: PACKAGE_IMAGE_PULL_SECRET
             value: node-init-secret
           - name: COPY_DIR_ROOT
             value: /var/lib/skyhook
