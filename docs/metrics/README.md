@@ -29,6 +29,50 @@ The current metrics supplied by the Operator are intended to be sufficient to de
     * `package_name` : The name of the package
     * `package_version`: The version of the package
 
+## Rollout Metrics (Deployment Policy)
+These metrics track the rollout progress and health of compartments defined in a DeploymentPolicy. See [Deployment Policy documentation](../deployment_policy.md) for details on compartments and strategies.
+
+ * `skyhook_rollout_matched_nodes` : Number of nodes matched by this compartment's selector. Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy (or "legacy" if using interruptionBudget)
+    * `compartment_name` : The name of the compartment (or "__default__" for unmatched nodes)
+    * `strategy` : The rollout strategy type (fixed, linear, exponential, or unknown)
+ * `skyhook_rollout_ceiling` : Maximum number of nodes that can be in progress at once in this compartment. Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy
+    * `compartment_name` : The name of the compartment
+    * `strategy` : The rollout strategy type
+ * `skyhook_rollout_in_progress` : Number of nodes currently in progress in this compartment. Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy
+    * `compartment_name` : The name of the compartment
+    * `strategy` : The rollout strategy type
+ * `skyhook_rollout_completed` : Number of nodes completed in this compartment. Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy
+    * `compartment_name` : The name of the compartment
+    * `strategy` : The rollout strategy type
+ * `skyhook_rollout_progress_percent` : Percentage of nodes completed in this compartment (0-100). Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy
+    * `compartment_name` : The name of the compartment
+    * `strategy` : The rollout strategy type
+ * `skyhook_rollout_current_batch` : Current batch number in the rollout strategy (0 if no batch processing). Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy
+    * `compartment_name` : The name of the compartment
+    * `strategy` : The rollout strategy type
+ * `skyhook_rollout_consecutive_failures` : Number of consecutive batch failures in this compartment. Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy
+    * `compartment_name` : The name of the compartment
+    * `strategy` : The rollout strategy type
+ * `skyhook_rollout_should_stop` : Binary metric indicating if rollout should be stopped due to failures (1 = stopped, 0 = continuing). Tags:
+    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `policy_name` : The name of the DeploymentPolicy
+    * `compartment_name` : The name of the compartment
+    * `strategy` : The rollout strategy type
+
 Note: When a Skyhook is deleted all metrics for that Skyhook are no longer reported.
 
 # Testing

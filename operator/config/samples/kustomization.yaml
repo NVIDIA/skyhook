@@ -20,4 +20,5 @@ resources:
 - skyhook_testing.yaml
 - bcp_examples.yaml
 - interrupt_group.yaml
+- deploymentpolicy_v1alpha1_deploymentpolicy.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

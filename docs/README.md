@@ -19,6 +19,9 @@ This directory contains user and operator documentation for Skyhook. Here you'll
 
   - [Strict Ordering](ordering_of_skyhooks.md): How and why the operator applies each Skyhook Custom Resource in a deterministic sequential order.
 
+  - [Deployment Policy and Compartments](deployment_policy.md): 
+    Fine-grained rollout control with compartments, budgets, and strategies. Includes overlap resolution, safety mechanisms, and migration from interruptionBudget.
+
 - **Resources**
   - [Resource Management](resource_management.md):
   How Skyhook manages CPU/memory resources using LimitRange, per-package overrides, and validation rules.
