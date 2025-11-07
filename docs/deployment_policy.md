@@ -40,7 +40,7 @@ spec:
       matchLabels:
         env: production
     budget:
-      count: 2
+      percent: 25  # Scales with cluster size
     strategy:
       exponential:
         initialBatch: 1
@@ -198,7 +198,7 @@ compartments:
     matchLabels:
       region: us-west
   budget:
-    count: 5          # Ceiling = 5
+    count: 20         # Ceiling = 20
   strategy:
     exponential: {}
 
@@ -207,16 +207,16 @@ compartments:
     matchLabels:
       env: production
   budget:
-    count: 2          # Ceiling = 2 (smaller)
+    count: 10         # Ceiling = 10 (smaller)
   strategy:
-    exponential: {}
+    linear: {}
 
 - name: critical
   selector:
     matchLabels:
       priority: critical
   budget:
-    count: 1
+    count: 3
   strategy:
     fixed: {}         # Fixed (safest)
 ```
@@ -226,9 +226,8 @@ compartments:
 - **Winner**: `critical` (fixed strategy is safest)
 
 **Node with labels** `region=us-west, env=production`:
-- Matches `us-west` and `production`
-- Both use exponential strategy
-- **Winner**: `production` (ceiling=2 is smaller than ceiling=5)
+- Matches `us-west` (exponential) and `production` (linear)
+- **Winner**: `production` (linear is safer than exponential)
 
 ---
 
