@@ -59,11 +59,22 @@ spec:
           echo "=== Verifying initial metrics ==="
           
           # Verify matched nodes and ceiling for production compartment
-          ../metrics_test.py skyhook_rollout_matched_nodes 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+          ../../metrics_test.py skyhook_rollout_matched_nodes 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           # Budget is count=4
-          ../metrics_test.py skyhook_rollout_ceiling 4 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+          ../../metrics_test.py skyhook_rollout_ceiling 4 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           
           echo "✓ Initial metrics verified"
+  
+  - name: track-batch-progression
+    try:
+    - assert:
+        file: assert-batch-1.yaml
+    - assert:
+        file: assert-batch-2.yaml
+    - assert:
+        file: assert-batch-3.yaml
+    - assert:
+        file: assert-batch-4.yaml
   
   - name: wait-for-completion
     try:
@@ -78,16 +89,16 @@ spec:
           echo "=== Verifying final metrics ==="
           
           # All nodes should be completed
-          ../metrics_test.py skyhook_rollout_completed 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
-          ../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
-          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+          ../../metrics_test.py skyhook_rollout_completed 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           
           # Verify no consecutive failures
-          ../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           
           # Verify current_batch metric exists and is greater than 0
           CURRENT_BATCH=$(kubectl get skyhook linear-strategy-test -o jsonpath='{.status.compartmentStatuses.production.batchState.currentBatch}')
-          ../metrics_test.py skyhook_rollout_current_batch "$CURRENT_BATCH" -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+          ../../metrics_test.py skyhook_rollout_current_batch "$CURRENT_BATCH" -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           
           echo "✓ All final metrics verified!"
   
@@ -95,6 +106,9 @@ spec:
     try:
     - script:
         content: |
+          # Clean up node annotations
+          ../../skyhook/rest_test.sh linear-strategy-test
+          # Clean up labels
           ../label-nodes.sh clean-all tier
           ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
     - delete:

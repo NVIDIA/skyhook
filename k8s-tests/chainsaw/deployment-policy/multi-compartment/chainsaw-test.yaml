@@ -61,9 +61,9 @@ spec:
           echo "=== Verifying compartment metrics ==="
           
           # Verify matched nodes metrics for each compartment
-          ../metrics_test.py skyhook_rollout_matched_nodes 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_matched_nodes 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_matched_nodes 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_matched_nodes 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
           echo "✓ Compartment matched nodes metrics verified"
     - script:
@@ -74,11 +74,18 @@ spec:
           # Critical: count=2 (explicit)
           # Standard: 33% of 6 = 1.98 → floor = 1
           # Test: 50% of 4 = 2
-          ../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_ceiling 1 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_ceiling 1 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
           echo "✓ Ceiling metrics verified"
+  
+  - name: track-batch-progression
+    try:
+    - assert:
+        file: assert-batch-1.yaml
+    - assert:
+        file: assert-batch-2.yaml
   
   - name: wait-for-completion
     try:
@@ -93,22 +100,22 @@ spec:
           echo "=== Verifying final metrics ==="
           
           # All compartments should have 100% completion and 0 in progress
-          ../metrics_test.py skyhook_rollout_completed 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_completed 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
           
-          ../metrics_test.py skyhook_rollout_completed 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_completed 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
           
-          ../metrics_test.py skyhook_rollout_completed 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_completed 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
           # Verify batch state metrics exist (current_batch and consecutive_failures should be present)
-          ../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
           echo "✓ All final metrics verified!"
   
@@ -116,6 +123,9 @@ spec:
     try:
     - script:
         content: |
+          # Clean up node annotations
+          ../../skyhook/rest_test.sh multi-compartment-test
+          # Clean up labels
           ../label-nodes.sh clean-all priority
           ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
     - delete:
