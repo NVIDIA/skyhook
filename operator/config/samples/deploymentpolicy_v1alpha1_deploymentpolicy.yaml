@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Sample DeploymentPolicy showing all features
+# See docs/deployment-policy.md for detailed documentation
+
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: DeploymentPolicy
+metadata:
+  name: sample-policy
+  namespace: skyhook
+spec:
+  # Default applies to nodes that don't match any compartment selector
+  default:
+    budget:
+      percent: 100  # Process all unmatched nodes at once
+    strategy:
+      fixed:
+        initialBatch: 1         # Start with 1 node
+        batchThreshold: 100     # Require 100% success
+        failureThreshold: 3     # Stop after 3 consecutive failures
+        safetyLimit: 50         # Only apply failure threshold below 50% progress
+
+  # Compartments define specific node groups with custom rollout behavior
+  compartments:
+  # Critical nodes: Most conservative rollout
+  - name: critical
+    selector:
+      matchLabels:
+        priority: critical
+    budget:
+      count: 1  # Only 1 critical node at a time
+    strategy:
+      fixed:
+        initialBatch: 1
+        batchThreshold: 100     # Require 100% success
+        failureThreshold: 1     # Stop after 1 failure
+        safetyLimit: 30         # Lower safety limit for critical nodes
+
+  # Production nodes: Conservative with linear ramp-up
+  - name: production
+    selector:
+      matchLabels:
+        env: production
+    budget:
+      count: 3  # Max 3 production nodes at once
+    strategy:
+      linear:
+        initialBatch: 1
+        delta: 1                # Increase by 1 on success
+        batchThreshold: 100
+        failureThreshold: 2
+        safetyLimit: 50
+
+  # Test nodes: Fast exponential rollout
+  - name: test
+    selector:
+      matchLabels:
+        env: test
+    budget:
+      percent: 50  # 50% of test nodes at once
+    strategy:
+      exponential:
+        initialBatch: 2         # Start with 2 nodes
+        growthFactor: 2
+        batchThreshold: 90      # Allow 10% failures
+        failureThreshold: 3
+        safetyLimit: 60         # Higher safety limit (more tolerant)
+
