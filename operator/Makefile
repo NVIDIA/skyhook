@@ -192,6 +192,29 @@ operator-agent-tests: chainsaw install ## Run operator agent tests.
 	$(MAKE) kill
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
 
+deployment-policy-tests: chainsaw install run ## Run all deployment policy E2E tests (requires 15-node cluster).
+	## requires a 15-node cluster to be running with access
+	## use 'make create-deployment-policy-cluster' to create the cluster
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
+	$(MAKE) kill
+
+create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deployment policy tests.
+	@echo "🔧 Creating 15-node Kind cluster for deployment policy tests..."
+	@# Fix for Podman: increase kernel keyring quota
+	@if command -v podman >/dev/null 2>&1; then \
+		echo "📝 Detected Podman - increasing kernel keyring quota..."; \
+		if [ "$$(uname)" = "Darwin" ]; then \
+			podman machine ssh sudo sysctl -w kernel.keys.maxkeys=20000 2>/dev/null || true; \
+			podman machine ssh sudo sysctl -w kernel.keys.maxbytes=400000 2>/dev/null || true; \
+		else \
+			sudo sysctl -w kernel.keys.maxkeys=20000 2>/dev/null || true; \
+			sudo sysctl -w kernel.keys.maxbytes=400000 2>/dev/null || true; \
+		fi; \
+	fi
+	kind delete cluster --name skyhook-dp-test 2>/dev/null || true
+	kind create cluster --name skyhook-dp-test --config ../k8s-tests/chainsaw/deployment-policy/kind-config.yaml
+	@echo "✅ Cluster created! Use 'kubectl config use-context kind-skyhook-dp-test' to switch to it."
+
 ifeq ($(DOCKER_CMD),docker)
 DOCKER_AUTH_FILE=${HOME}/.docker/config.json
 else
@@ -200,7 +223,7 @@ endif
 
 setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook namespace
 	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
-	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e
+	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e --overwrite
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	$(KUBECTL) create secret generic node-init-secret --type=kubernetes.io/dockerconfigjson -n $(SKYHOOK_NAMESPACE) \
 		--from-file=.dockerconfigjson=$(DOCKER_AUTH_FILE)

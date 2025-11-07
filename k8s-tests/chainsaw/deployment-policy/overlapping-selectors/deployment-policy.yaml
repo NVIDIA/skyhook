@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: DeploymentPolicy
+metadata:
+  name: overlapping-selector-policy
+spec:
+  default:
+    budget:
+      percent: 100
+    strategy:
+      fixed:
+        initialBatch: 1
+        batchThreshold: 100
+        failureThreshold: 3
+        safetyLimit: 50
+
+  compartments:
+  # First compartment: matches region=us-west
+  - name: us-west
+    selector:
+      matchLabels:
+        region: us-west
+    budget:
+      count: 2
+    strategy:
+      exponential:
+        initialBatch: 1
+        growthFactor: 2
+        batchThreshold: 100
+        failureThreshold: 1
+        safetyLimit: 50
+
+  # Second compartment: matches env=production
+  - name: production
+    selector:
+      matchLabels:
+        env: production
+    budget:
+      count: 2
+    strategy:
+      exponential:
+        initialBatch: 1
+        growthFactor: 2
+        batchThreshold: 100
+        failureThreshold: 1
+        safetyLimit: 50
+
+  # Third compartment: matches both region=us-west AND env=production
+  - name: prod-us-west
+    selector:
+      matchLabels:
+        region: us-west
+        env: production
+    budget:
+      count: 1
+    strategy:
+      fixed:
+        initialBatch: 1
+        batchThreshold: 100
+        failureThreshold: 3
+        safetyLimit: 50

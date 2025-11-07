@@ -47,18 +47,18 @@ spec:
         file: assert.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling
-          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
-          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
+          ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling
+          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
+          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
     - patch:
         file: update-skyhook.yaml
     - assert:
         file: assert-update.yaml
     - script:
         content: |
-          ../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling
-          ../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=complete
-          ../metrics_test.py skyhook_node_status_count 0 -t skyhook_name=taint-scheduling -t status=blocked
+          ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling
+          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=complete
+          ../../metrics_test.py skyhook_node_status_count 0 -t skyhook_name=taint-scheduling -t status=blocked
     finally:
     - script:
         content: |

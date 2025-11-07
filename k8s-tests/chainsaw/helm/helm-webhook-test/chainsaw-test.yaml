@@ -33,6 +33,10 @@ spec:
           ../install-helm-chart.sh webhooks
     - assert:
         file: assert-scheduled.yaml
+    - assert:
+        file: assert-webhook.yaml
+    - sleep:
+        duration: 5s
     - script:
         content: |
           ## Create invalid skyhook

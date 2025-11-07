@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: legacy-interruption-budget-compatibility
+spec:
+  description: |
+    Tests backwards compatibility with legacy InterruptionBudget.
+    - Creates Skyhook with interruptionBudget (count: 3) instead of deploymentPolicy
+    - Verifies that a synthetic __default__ compartment is created
+    - Verifies that the budget ceiling is respected (max 3 nodes in progress)
+    - Ensures existing customers' configurations continue to work
+  timeouts:
+    exec: 180s
+    assert: 120s
+  steps:
+  - name: setup-nodes
+    try:
+    - script:
+        content: |
+          chmod +x ../label-nodes.sh
+          # Clean up any existing labels from previous tests
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          # Label first 6 worker nodes
+          ../label-nodes.sh add 0-5 skyhook.nvidia.com/test-node=skyhooke2e
+          echo "✓ Node labeling complete"
+          kubectl get nodes -L skyhook.nvidia.com/test-node --sort-by=.metadata.name | head -8
+
+  - name: apply-skyhook
+    try:
+    - apply:
+        file: skyhook.yaml
+    - sleep:
+        duration: 10s
+
+  - name: verify-default-compartment
+    try:
+    - assert:
+        file: assert-default-compartment.yaml
+
+  - name: verify-metrics
+    try:
+    - script:
+        content: |
+          echo "=== Verifying legacy compatibility metrics ==="
+          
+          # Verify metrics for synthetic __default__ compartment
+          ../../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+          ../../metrics_test.py skyhook_rollout_ceiling 3 -t skyhook_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+          
+          # Verify that the legacy policy name is "legacy" and not a real policy
+          echo "✓ Legacy compatibility metrics verified!"
+          echo "✓ Metrics use policy_name=legacy for backwards compatibility"
+
+  - name: cleanup
+    try:
+    - script:
+        content: |
+          # Clean up node annotations
+          ../../skyhook/rest_test.sh legacy-interruption-budget-test
+          # Clean up labels
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
