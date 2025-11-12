@@ -18,7 +18,6 @@ spec:
       fixed:
         initialBatch: 1         # Start with 1 node
         batchThreshold: 100     # Require 100% success
-        failureThreshold: 3     # Stop after 3 consecutive failures
         safetyLimit: 50         # Only apply failure threshold below 50% progress
 
   # Compartments define specific node groups with custom rollout behavior
@@ -52,7 +51,6 @@ spec:
         failureThreshold: 2
         safetyLimit: 50
 
-  # Test nodes: Fast exponential rollout
   - name: test
     selector:
       matchLabels:
@@ -64,6 +62,4 @@ spec:
         initialBatch: 2         # Start with 2 nodes
         growthFactor: 2
         batchThreshold: 90      # Allow 10% failures
-        failureThreshold: 3
         safetyLimit: 60         # Higher safety limit (more tolerant)
-

@@ -11,6 +11,8 @@ A **DeploymentPolicy** is a Kubernetes Custom Resource that separates rollout co
 - Apply different strategies to different node groups (e.g., production vs. test)
 - Control rollout speed and safety with configurable thresholds
 
+**Important**: DeploymentPolicy controls **all node updates** in a Skyhook rollout, not just interrupt handling.
+
 ---
 
 ## Basic Structure
@@ -30,9 +32,7 @@ spec:
       fixed:        # or linear, exponential
         initialBatch: 1
         batchThreshold: 100
-        failureThreshold: 3
         safetyLimit: 50
-
   # Compartments define specific node groups
   compartments:
   - name: production
@@ -141,20 +141,30 @@ All strategies share these parameters:
 
 - **`initialBatch`** (≥1): Starting number of nodes (default: 1)
 - **`batchThreshold`** (1-100): Minimum success percentage to continue (default: 100)
-- **`failureThreshold`** (≥1): Max consecutive failures before stopping (default: 3)
+- **`failureThreshold`** (≥1, optional): Max consecutive failures before stopping (default: none/unlimited)
 - **`safetyLimit`** (1-100): Progress threshold for failure handling (default: 50)
+
+### Default Values
+
+When strategy parameters are not specified, the operator applies these defaults:
+- `initialBatch`: 1
+- `batchThreshold`: 100
+- `safetyLimit`: 50
+- `failureThreshold`: **none** (rollout never stops due to consecutive failures)
+
+**Note**: `failureThreshold` is **nullable**. If omitted, the rollout will continue despite consecutive failures, only respecting batch success thresholds but never stopping the entire rollout.
 
 ### Safety Limit Behavior
 
 **Before safetyLimit** (e.g., < 50% progress):
-- Failures count toward `failureThreshold`
+- Failures count toward `failureThreshold` (if set)
 - Batch sizes slow down (linear/exponential)
-- Reaching `failureThreshold` stops the rollout
+- Reaching `failureThreshold` stops the rollout (if set)
 
 **After safetyLimit** (e.g., ≥ 50% progress):
 - Rollout continues despite failures
 - Batch sizes don't slow down
-- Assumes rollout is "safe enough" to complete
+- `failureThreshold` is ignored (rollout assumed "safe enough" to complete)
 
 **Rationale**: Early failures indicate a problem. Late failures are less critical since most nodes are updated.
 
@@ -283,7 +293,6 @@ spec:
       fixed:
         initialBatch: 1
         batchThreshold: 100
-        failureThreshold: 3
         safetyLimit: 50
 ```
 
