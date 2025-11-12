@@ -181,15 +181,12 @@ func (s *DeploymentStrategy) Default() {
 }
 
 // defaultCommonStrategyFields applies default values to common strategy fields
-func defaultCommonStrategyFields(initialBatch, batchThreshold, failureThreshold, safetyLimit **int) {
+func defaultCommonStrategyFields(initialBatch, batchThreshold, safetyLimit **int) {
 	if *initialBatch == nil {
 		*initialBatch = ptr.To(1)
 	}
 	if *batchThreshold == nil {
 		*batchThreshold = ptr.To(100)
-	}
-	if *failureThreshold == nil {
-		*failureThreshold = ptr.To(3)
 	}
 	if *safetyLimit == nil {
 		*safetyLimit = ptr.To(50)
@@ -198,12 +195,12 @@ func defaultCommonStrategyFields(initialBatch, batchThreshold, failureThreshold,
 
 // Default applies default values to FixedStrategy
 func (s *FixedStrategy) Default() {
-	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.FailureThreshold, &s.SafetyLimit)
+	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.SafetyLimit)
 }
 
 // Default applies default values to LinearStrategy
 func (s *LinearStrategy) Default() {
-	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.FailureThreshold, &s.SafetyLimit)
+	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.SafetyLimit)
 	if s.Delta == nil {
 		s.Delta = ptr.To(1)
 	}
@@ -211,7 +208,7 @@ func (s *LinearStrategy) Default() {
 
 // Default applies default values to ExponentialStrategy
 func (s *ExponentialStrategy) Default() {
-	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.FailureThreshold, &s.SafetyLimit)
+	defaultCommonStrategyFields(&s.InitialBatch, &s.BatchThreshold, &s.SafetyLimit)
 	if s.GrowthFactor == nil {
 		s.GrowthFactor = ptr.To(2)
 	}
@@ -297,7 +294,8 @@ func (s *DeploymentStrategy) EvaluateBatchResult(state *BatchProcessingState, ba
 	if batchFailed {
 		state.ConsecutiveFailures++
 		// Check if we should stop processing
-		if progressPercent < s.getSafetyLimit() && state.ConsecutiveFailures >= s.getFailureThreshold() {
+		failureThreshold := s.getFailureThreshold()
+		if failureThreshold != nil && progressPercent < s.getSafetyLimit() && state.ConsecutiveFailures >= *failureThreshold {
 			state.ShouldStop = true
 		}
 	} else {
@@ -336,16 +334,17 @@ func (s *DeploymentStrategy) getSafetyLimit() int {
 }
 
 // getFailureThreshold returns the failure threshold from the active strategy
-func (s *DeploymentStrategy) getFailureThreshold() int {
+// Returns nil if failureThreshold is not set (indicating no limit on consecutive failures)
+func (s *DeploymentStrategy) getFailureThreshold() *int {
 	switch {
 	case s.Fixed != nil:
-		return *s.Fixed.FailureThreshold
+		return s.Fixed.FailureThreshold
 	case s.Linear != nil:
-		return *s.Linear.FailureThreshold
+		return s.Linear.FailureThreshold
 	case s.Exponential != nil:
-		return *s.Exponential.FailureThreshold
+		return s.Exponential.FailureThreshold
 	default:
-		return 3
+		return nil
 	}
 }
 

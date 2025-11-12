@@ -64,7 +64,7 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(deploymentPolicy.Spec.Default.Strategy.Fixed).ToNot(BeNil())
 			Expect(*deploymentPolicy.Spec.Default.Strategy.Fixed.InitialBatch).To(Equal(1))
 			Expect(*deploymentPolicy.Spec.Default.Strategy.Fixed.BatchThreshold).To(Equal(100))
-			Expect(*deploymentPolicy.Spec.Default.Strategy.Fixed.FailureThreshold).To(Equal(3))
+			Expect(deploymentPolicy.Spec.Default.Strategy.Fixed.FailureThreshold).To(BeNil())
 			Expect(*deploymentPolicy.Spec.Default.Strategy.Fixed.SafetyLimit).To(Equal(50))
 
 			Expect(deploymentPolicy.Spec.Compartments[0].Strategy).ToNot(BeNil())
@@ -72,7 +72,7 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(*deploymentPolicy.Spec.Compartments[0].Strategy.Linear.InitialBatch).To(Equal(1))
 			Expect(*deploymentPolicy.Spec.Compartments[0].Strategy.Linear.Delta).To(Equal(1))
 			Expect(*deploymentPolicy.Spec.Compartments[0].Strategy.Linear.BatchThreshold).To(Equal(100))
-			Expect(*deploymentPolicy.Spec.Compartments[0].Strategy.Linear.FailureThreshold).To(Equal(3))
+			Expect(deploymentPolicy.Spec.Compartments[0].Strategy.Linear.FailureThreshold).To(BeNil())
 			Expect(*deploymentPolicy.Spec.Compartments[0].Strategy.Linear.SafetyLimit).To(Equal(50))
 
 			Expect(deploymentPolicy.Spec.Compartments[1].Strategy).ToNot(BeNil())
@@ -80,7 +80,7 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(*deploymentPolicy.Spec.Compartments[1].Strategy.Exponential.InitialBatch).To(Equal(1))
 			Expect(*deploymentPolicy.Spec.Compartments[1].Strategy.Exponential.GrowthFactor).To(Equal(2))
 			Expect(*deploymentPolicy.Spec.Compartments[1].Strategy.Exponential.BatchThreshold).To(Equal(100))
-			Expect(*deploymentPolicy.Spec.Compartments[1].Strategy.Exponential.FailureThreshold).To(Equal(3))
+			Expect(deploymentPolicy.Spec.Compartments[1].Strategy.Exponential.FailureThreshold).To(BeNil())
 			Expect(*deploymentPolicy.Spec.Compartments[1].Strategy.Exponential.SafetyLimit).To(Equal(50))
 		})
 	})
