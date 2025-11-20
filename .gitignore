@@ -3,5 +3,4 @@
 .pytest_cache
 .idea
 **/err.txt
-plugin/bin/
 coverage.out
