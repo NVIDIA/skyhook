@@ -266,6 +266,96 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 		// Verify all nodes were assigned to the compartment
 		Expect(len(defaultComp.GetNodes())).To(Equal(10))
 	})
+
+	It("Creates default compartment when DeploymentPolicy is specified but not found", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+					Spec: v1alpha1.SkyhookSpec{
+						DeploymentPolicy: "non-existent-policy",
+						InterruptionBudget: v1alpha1.InterruptionBudget{
+							Percent: kptr.To(50),
+						},
+					},
+				},
+			},
+		}
+		// Empty deployment policies list - policy doesn't exist
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
+		// Create 10 nodes
+		nodes := &corev1.NodeList{Items: make([]corev1.Node, 10)}
+		for i := 0; i < 10; i++ {
+			nodes.Items[i] = corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node-%d", i)},
+			}
+		}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		// Verify default compartment was created (fallback to InterruptionBudget)
+		compartments := clusterState.skyhooks[0].GetCompartments()
+		Expect(compartments).To(HaveLen(1))
+		Expect(compartments).To(HaveKey(v1alpha1.DefaultCompartmentName))
+
+		defaultComp := compartments[v1alpha1.DefaultCompartmentName]
+		// Verify it used InterruptionBudget (50%)
+		Expect(defaultComp.Budget.Percent).ToNot(BeNil())
+		Expect(*defaultComp.Budget.Percent).To(Equal(50), "Should use InterruptionBudget when policy not found")
+
+		// Verify FixedStrategy with InitialBatch matching 50% of nodes
+		Expect(defaultComp.Strategy).ToNot(BeNil())
+		Expect(defaultComp.Strategy.Fixed).ToNot(BeNil())
+		Expect(*defaultComp.Strategy.Fixed.InitialBatch).To(Equal(5), "InitialBatch should be 50% of 10 nodes")
+	})
+
+	It("Creates default 100% compartment when DeploymentPolicy is specified but not found and no InterruptionBudget", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+					Spec: v1alpha1.SkyhookSpec{
+						DeploymentPolicy: "non-existent-policy",
+						// No InterruptionBudget specified
+					},
+				},
+			},
+		}
+		// Empty deployment policies list - policy doesn't exist
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
+		// Create 10 nodes
+		nodes := &corev1.NodeList{Items: make([]corev1.Node, 10)}
+		for i := 0; i < 10; i++ {
+			nodes.Items[i] = corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node-%d", i)},
+			}
+		}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		// Verify default compartment was created (fallback to 100%)
+		compartments := clusterState.skyhooks[0].GetCompartments()
+		Expect(compartments).To(HaveLen(1))
+		Expect(compartments).To(HaveKey(v1alpha1.DefaultCompartmentName))
+
+		defaultComp := compartments[v1alpha1.DefaultCompartmentName]
+		// Verify 100% budget (default when no InterruptionBudget)
+		Expect(defaultComp.Budget.Percent).ToNot(BeNil())
+		Expect(*defaultComp.Budget.Percent).To(Equal(100), "Should default to 100% when policy not found and no InterruptionBudget")
+
+		// Verify FixedStrategy with InitialBatch = all nodes
+		Expect(defaultComp.Strategy).ToNot(BeNil())
+		Expect(defaultComp.Strategy.Fixed).ToNot(BeNil())
+		Expect(*defaultComp.Strategy.Fixed.InitialBatch).To(Equal(10), "InitialBatch should be all nodes (100% of 10)")
+
+		// Verify partitionNodesIntoCompartments doesn't panic (this was the original bug)
+		err = partitionNodesIntoCompartments(clusterState)
+		Expect(err).ToNot(HaveOccurred())
+	})
 })
 
 var _ = Describe("CleanupRemovedNodes", func() {

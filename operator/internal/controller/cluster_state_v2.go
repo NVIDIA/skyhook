@@ -102,54 +102,9 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 			}
 		}
 
-		// find deployment policy and all compartments + the default one
-		// Handle backwards compatibility: if no deployment policy is set,
-		// create a synthetic default compartment with FixedStrategy based on InterruptionBudget
-		if skyhook.Spec.DeploymentPolicy == "" {
-			// Load persisted batch state if it exists
-			var defaultBatchState *v1alpha1.BatchProcessingState
-			if skyhook.Status.CompartmentStatuses != nil {
-				if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
-					defaultBatchState = status.BatchState
-				}
-			}
-
-			// Create the legacy default compartment
-			nodeCount := len(ret.skyhooks[idx].GetNodes())
-			legacyCompartment := createLegacyDefaultCompartment(skyhook.Spec, nodeCount)
-			ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(legacyCompartment, defaultBatchState))
-
-			// Assign all nodes to the default compartment for backwards compatibility
-			for _, node := range ret.skyhooks[idx].GetNodes() {
-				ret.skyhooks[idx].AddCompartmentNode(v1alpha1.DefaultCompartmentName, node)
-			}
-		}
-
-		for _, deploymentPolicy := range deploymentPolicies.Items {
-			if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
-				for _, compartment := range deploymentPolicy.Spec.Compartments {
-					// Load persisted batch state from CompartmentStatuses if it exists
-					var batchState *v1alpha1.BatchProcessingState
-					if skyhook.Status.CompartmentStatuses != nil {
-						if status, exists := skyhook.Status.CompartmentStatuses[compartment.Name]; exists && status.BatchState != nil {
-							batchState = status.BatchState
-						}
-					}
-					ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
-				}
-				// use policy default
-				var defaultBatchState *v1alpha1.BatchProcessingState
-				if skyhook.Status.CompartmentStatuses != nil {
-					if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
-						defaultBatchState = status.BatchState
-					}
-				}
-				ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
-					Name:     v1alpha1.DefaultCompartmentName,
-					Budget:   deploymentPolicy.Spec.Default.Budget,
-					Strategy: deploymentPolicy.Spec.Default.Strategy,
-				}, defaultBatchState))
-			}
+		// Setup compartments for this skyhook
+		if err := setupCompartments(ret.skyhooks[idx], &skyhook, deploymentPolicies); err != nil {
+			return nil, err
 		}
 	}
 
@@ -172,9 +127,171 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 	return ret, nil
 }
 
-// createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility
-// when no DeploymentPolicy is specified. It translates the legacy InterruptionBudget into a
-// FixedStrategy compartment that behaves the same way.
+// setupCompartments initializes compartments for a skyhook. Always ensures a default compartment exists.
+// The default compartment is created from:
+// 1. DeploymentPolicy if specified and found
+// 2. Legacy InterruptionBudget if no DeploymentPolicy is specified, or if DeploymentPolicy is specified but not found
+// 3. Safe fallback defaults if neither DeploymentPolicy nor InterruptionBudget is available
+func setupCompartments(skyhookNodes SkyhookNodes, skyhook *v1alpha1.Skyhook, deploymentPolicies *v1alpha1.DeploymentPolicyList) error {
+	var defaultCompartment *v1alpha1.Compartment
+	var defaultBatchState *v1alpha1.BatchProcessingState
+
+	// Load persisted batch state for default compartment if it exists
+	if skyhook.Status.CompartmentStatuses != nil {
+		if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
+			defaultBatchState = status.BatchState
+		}
+	}
+
+	// Try to find and apply deployment policy if specified
+	if skyhook.Spec.DeploymentPolicy != "" {
+		policyFound := false
+		for _, deploymentPolicy := range deploymentPolicies.Items {
+			if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
+				policyFound = true
+
+				// Check for orphaned batch state from renamed compartments
+				checkForOrphanedBatchState(skyhookNodes, skyhook, &deploymentPolicy)
+
+				// Add all compartments from the policy
+				for _, compartment := range deploymentPolicy.Spec.Compartments {
+					var batchState *v1alpha1.BatchProcessingState
+					if skyhook.Status.CompartmentStatuses != nil {
+						if status, exists := skyhook.Status.CompartmentStatuses[compartment.Name]; exists && status.BatchState != nil {
+							batchState = status.BatchState
+						}
+					}
+					skyhookNodes.AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
+				}
+				// Use policy's default compartment specification
+				defaultCompartment = &v1alpha1.Compartment{
+					Name:     v1alpha1.DefaultCompartmentName,
+					Budget:   deploymentPolicy.Spec.Default.Budget,
+					Strategy: deploymentPolicy.Spec.Default.Strategy,
+				}
+				// Clear condition if policy is found
+				skyhookNodes.GetSkyhook().AddCondition(metav1.Condition{
+					Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+					Status:             metav1.ConditionFalse,
+					Reason:             "DeploymentPolicyFound",
+					Message:            fmt.Sprintf("DeploymentPolicy %q found and applied", skyhook.Spec.DeploymentPolicy),
+					LastTransitionTime: metav1.Now(),
+					ObservedGeneration: skyhook.Generation,
+				})
+				break
+			}
+		}
+
+		// If policy not found, fall back to legacy InterruptionBudget-based compartment
+		if !policyFound {
+			// Add condition to warn user
+			skyhookNodes.GetSkyhook().AddCondition(metav1.Condition{
+				Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+				Status:             metav1.ConditionTrue,
+				Reason:             "DeploymentPolicyNotFound",
+				Message:            fmt.Sprintf("DeploymentPolicy %q not found, falling back to InterruptionBudget", skyhook.Spec.DeploymentPolicy),
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: skyhook.Generation,
+			})
+			nodeCount := len(skyhookNodes.GetNodes())
+			defaultCompartment = createLegacyDefaultCompartment(skyhook.Spec, nodeCount)
+		}
+	} else {
+		// No deployment policy specified - use legacy InterruptionBudget-based compartment
+		// Clear condition if it exists (user intentionally not using deployment policy)
+		skyhookNodes.GetSkyhook().AddCondition(metav1.Condition{
+			Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+			Status:             metav1.ConditionFalse,
+			Reason:             "NoDeploymentPolicySpecified",
+			Message:            "No DeploymentPolicy specified, using InterruptionBudget",
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: skyhook.Generation,
+		})
+		nodeCount := len(skyhookNodes.GetNodes())
+		defaultCompartment = createLegacyDefaultCompartment(skyhook.Spec, nodeCount)
+	}
+
+	// Always add the default compartment
+	skyhookNodes.AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(defaultCompartment, defaultBatchState))
+
+	// For legacy mode (no deployment policy), assign all nodes to default compartment
+	// Node assignment happens here for legacy mode, and later in partitionNodesIntoCompartments for policy mode
+	if skyhook.Spec.DeploymentPolicy == "" {
+		for _, node := range skyhookNodes.GetNodes() {
+			skyhookNodes.AddCompartmentNode(v1alpha1.DefaultCompartmentName, node)
+		}
+	}
+	// Note: If using deployment policy, nodes are NOT assigned here
+	// They will be assigned in partitionNodesIntoCompartments
+
+	return nil
+}
+
+// checkForOrphanedBatchState detects when compartment names have changed (renaming)
+// and warns the user that batch state may be lost
+func checkForOrphanedBatchState(skyhookNodes SkyhookNodes, skyhook *v1alpha1.Skyhook, policy *v1alpha1.DeploymentPolicy) {
+	if len(skyhook.Status.CompartmentStatuses) == 0 {
+		return // No previous state to check
+	}
+
+	// Build set of current compartment names from policy
+	currentCompartments := make(map[string]bool)
+	for _, compartment := range policy.Spec.Compartments {
+		currentCompartments[compartment.Name] = true
+	}
+	currentCompartments[v1alpha1.DefaultCompartmentName] = true // Always exists
+
+	// Find orphaned compartment statuses (in status but not in current policy)
+	orphanedNames := make([]string, 0)
+	orphanedWithBatchState := make([]string, 0)
+
+	for name, status := range skyhook.Status.CompartmentStatuses {
+		if !currentCompartments[name] {
+			orphanedNames = append(orphanedNames, name)
+			// Check if this orphaned compartment has active batch state that will be lost
+			if status.BatchState != nil &&
+				(status.BatchState.CurrentBatch > 1 || status.InProgress > 0 || status.BatchState.CompletedNodes > 0) {
+				orphanedWithBatchState = append(orphanedWithBatchState, name)
+			}
+		}
+	}
+
+	// Warn if compartments with active rollout state are missing
+	if len(orphanedWithBatchState) > 0 {
+		skyhookNodes.GetSkyhook().AddCondition(metav1.Condition{
+			Type:               fmt.Sprintf("%s/CompartmentBatchStateLost", v1alpha1.METADATA_PREFIX),
+			Status:             metav1.ConditionTrue,
+			Reason:             "CompartmentRenamed",
+			Message:            fmt.Sprintf("Compartments %v from previous policy not found in current policy. Batch state will be lost. This typically happens when compartments are renamed.", orphanedWithBatchState),
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: skyhook.Generation,
+		})
+	} else if len(orphanedNames) > 0 {
+		// Info-level: compartments removed but no active state lost
+		skyhookNodes.GetSkyhook().AddCondition(metav1.Condition{
+			Type:               fmt.Sprintf("%s/CompartmentBatchStateLost", v1alpha1.METADATA_PREFIX),
+			Status:             metav1.ConditionFalse,
+			Reason:             "CompartmentsRemoved",
+			Message:            fmt.Sprintf("Compartments %v from previous policy removed (no active rollout state lost)", orphanedNames),
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: skyhook.Generation,
+		})
+	} else {
+		// Clear condition if no issues
+		skyhookNodes.GetSkyhook().AddCondition(metav1.Condition{
+			Type:               fmt.Sprintf("%s/CompartmentBatchStateLost", v1alpha1.METADATA_PREFIX),
+			Status:             metav1.ConditionFalse,
+			Reason:             "NoOrphanedState",
+			Message:            "All compartments match between policy and status",
+			LastTransitionTime: metav1.Now(),
+			ObservedGeneration: skyhook.Generation,
+		})
+	}
+}
+
+// createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility.
+// It translates the legacy InterruptionBudget into a FixedStrategy compartment that behaves the same way.
+// Used when no DeploymentPolicy is specified, or when DeploymentPolicy is specified but not found.
 func createLegacyDefaultCompartment(spec v1alpha1.SkyhookSpec, nodeCount int) *v1alpha1.Compartment {
 	// Create a synthetic budget from InterruptionBudget
 	// If InterruptionBudget is not set, default to 100% (all nodes at once)
@@ -185,7 +302,7 @@ func createLegacyDefaultCompartment(spec v1alpha1.SkyhookSpec, nodeCount int) *v
 		budget.Count = spec.InterruptionBudget.Count
 	} else {
 		// Default to 100% for backwards compatibility (process all nodes at once)
-		budget.Percent = ptr[int](100)
+		budget.Percent = ptr(100)
 	}
 
 	// Calculate the ceiling to maintain backwards-compatible batch size
@@ -617,6 +734,12 @@ func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
 		if isComplete, successCount, failureCount := compartment.EvaluateCurrentBatch(); isComplete {
 			batchSize := successCount + failureCount
 
+			// Skip evaluation if batch size is zero (no nodes actually processed)
+			// This can happen when nodes transition to Blocked or other non-terminal states
+			if batchSize == 0 {
+				continue
+			}
+
 			// Update the compartment's batch state using strategy logic
 			compartment.EvaluateAndUpdateBatchState(batchSize, successCount, failureCount)
 
@@ -812,10 +935,21 @@ func (skyhook *skyhookNodes) ReportState() {
 			skyhook.skyhook.Status.CompartmentStatuses = make(map[string]v1alpha1.CompartmentStatus)
 		}
 
+		// Track which compartments are currently active
+		activeCompartments := make(map[string]bool)
 		for name, compartment := range skyhook.compartments {
+			activeCompartments[name] = true
 			newStatus := buildCompartmentStatus(compartment)
 			if existing, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; !ok || !compartmentStatusEqual(existing, newStatus) {
 				skyhook.skyhook.Status.CompartmentStatuses[name] = newStatus
+				skyhook.skyhook.Updated = true
+			}
+		}
+
+		// Remove statuses for compartments that no longer exist
+		for name := range skyhook.skyhook.Status.CompartmentStatuses {
+			if !activeCompartments[name] {
+				delete(skyhook.skyhook.Status.CompartmentStatuses, name)
 				skyhook.skyhook.Updated = true
 			}
 		}

@@ -184,15 +184,29 @@ func (c *Compartment) EvaluateCurrentBatch() (bool, int, int) {
 	}
 
 	// Calculate delta from last checkpoint
+	// IMPORTANT: Deltas can be negative if nodes moved out of this compartment after being counted
+	// This can happen when:
+	// - DeploymentPolicy compartment selectors change
+	// - Node labels change
+	// We must handle negative deltas gracefully
 	deltaCompleted := currentCompleted - c.BatchState.CompletedNodes
 	deltaFailed := currentFailed - c.BatchState.FailedNodes
+
+	// If deltas are negative, nodes left this compartment after completing/failing
+	// Clamp to zero to avoid incorrect batch evaluation
+	if deltaCompleted < 0 {
+		deltaCompleted = 0
+	}
+	if deltaFailed < 0 {
+		deltaFailed = 0
+	}
 
 	// Only evaluate if there's actually a change (batch was processed)
 	if deltaCompleted == 0 && deltaFailed == 0 {
 		return false, 0, 0
 	}
 
-	// Update checkpoints
+	// Update checkpoints to current state
 	c.BatchState.CompletedNodes = currentCompleted
 	c.BatchState.FailedNodes = currentFailed
 

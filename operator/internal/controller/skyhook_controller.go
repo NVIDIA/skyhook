@@ -2307,6 +2307,7 @@ func setPodResources(pod *corev1.Pod, res *v1alpha1.ResourceRequirements) {
 }
 
 // PartitionNodesIntoCompartments partitions nodes for each skyhook that uses deployment policies.
+// Nodes that are currently InProgress or recently completed are NOT reassigned to prevent batch accounting issues.
 func partitionNodesIntoCompartments(clusterState *clusterState) error {
 	for _, skyhook := range clusterState.skyhooks {
 		// Skip skyhooks without a deployment policy (they use the default compartment created in BuildState)
@@ -2314,10 +2315,58 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 			continue
 		}
 
+		// Track which nodes should stay in their current compartment to maintain batch state integrity
+		// This includes:
+		// 1. Nodes currently InProgress
+		// 2. Nodes that completed/failed in the last batch (their counts are in BatchState)
+		nodesToKeep := make(map[string]string) // node name -> compartment name
+		
+		if skyhook.GetSkyhook().Status.CompartmentStatuses != nil {
+			for compartmentName, status := range skyhook.GetSkyhook().Status.CompartmentStatuses {
+				// Keep nodes that are in progress
+				if status.InProgress > 0 {
+					for _, node := range skyhook.GetNodes() {
+						if node.Status() == v1alpha1.StatusInProgress {
+							nodesToKeep[node.GetNode().Name] = compartmentName
+						}
+					}
+				}
+				
+				// Keep nodes that are part of the current batch state counts
+				// These nodes' completion/failure was counted in the last batch evaluation
+				// Moving them would break the delta calculation in the next evaluation
+				if status.BatchState != nil && status.BatchState.CurrentBatch > 0 {
+					// If there are completed or failed nodes tracked in batch state,
+					// we need to keep those nodes in this compartment until the next batch completes
+					// This ensures delta calculations remain accurate
+					if status.BatchState.CompletedNodes > 0 || status.BatchState.FailedNodes > 0 {
+						for _, node := range skyhook.GetNodes() {
+							// Keep completed/erroring nodes that might be in the batch state counts
+							if node.IsComplete() || node.Status() == v1alpha1.StatusErroring {
+								// Only if not already assigned to another compartment
+								if _, exists := nodesToKeep[node.GetNode().Name]; !exists {
+									nodesToKeep[node.GetNode().Name] = compartmentName
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
 		for _, node := range skyhook.GetNodes() {
+			nodeName := node.GetNode().Name
+			
+			// If node should be kept in its current compartment, keep it there
+			if existingCompartment, shouldKeep := nodesToKeep[nodeName]; shouldKeep {
+				skyhook.AddCompartmentNode(existingCompartment, node)
+				continue
+			}
+			
+			// For all other nodes, assign based on current policy
 			compartmentName, err := skyhook.AssignNodeToCompartment(node)
 			if err != nil {
-				return fmt.Errorf("error assigning node %s: %w", node.GetNode().Name, err)
+				return fmt.Errorf("error assigning node %s: %w", nodeName, err)
 			}
 			skyhook.AddCompartmentNode(compartmentName, node)
 		}
