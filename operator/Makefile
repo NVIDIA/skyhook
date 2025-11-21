@@ -161,7 +161,7 @@ watch-tests: ## watch unit tests and auto run on changes.
 
 .PHONY: unit-test
 unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) $(GOFLAGS)  --coverprofile=$(REPORTING)/unit.coverprofile -vv --trace --junit-report=$(REPORTING)/unit.xml --keep-going --timeout=180s ./...
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) $(GOFLAGS) --cover --coverprofile=unit.coverprofile --output-dir=$(REPORTING) -vv --trace --junit-report=$(REPORTING)/unit.xml --keep-going --timeout=180s ./...
 
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
 ## https://kyverno.github.io/chainsaw/latest/reference/commands/chainsaw_test/
@@ -266,8 +266,16 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet lint ## Build manager binary.
-	go build $(GOFLAGS) $(GO_LDFLAGS) -o bin/manager cmd/main.go
+build: build-manager build-cli ## Build manager and CLI binaries.
+
+.PHONY: build-manager
+build-manager: manifests generate fmt vet lint ## Build manager binary.
+	go build $(GOFLAGS) $(GO_LDFLAGS) -o bin/manager cmd/manager/main.go
+
+.PHONY: build-cli
+CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(VERSION) -X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA)"
+build-cli: fmt vet ## Build CLI binary.
+	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/skyhook cmd/cli/main.go
 
 .PHONY: run
 ENABLE_WEBHOOKS?=false
@@ -277,7 +285,7 @@ LOG_LEVEL?=info
 run: manifests generate fmt vet lint reporting install kill ## Run a controller from your host.
 	mkdir -p $(REPORTING)/int
 	rm -rf $(REPORTING)/int/*
-	go build $(GOFLAGS) -cover $(GO_LDFLAGS) -o $(LOCALBIN)/manager cmd/main.go
+	go build $(GOFLAGS) -cover $(GO_LDFLAGS) -o $(LOCALBIN)/manager cmd/manager/main.go
 ifeq ($(BACKGROUND),true)
 	LOG_LEVEL=$(LOG_LEVEL) AGENT_IMAGE=$(AGENT_IMAGE) ENABLE_WEBHOOKS=$(ENABLE_WEBHOOKS) GOCOVERDIR=$(REPORTING)/int nohup $(LOCALBIN)/manager > $(REPORTING)/int/std.out & echo "$$!" > $(REPORTING)/int/run.PID
 else 

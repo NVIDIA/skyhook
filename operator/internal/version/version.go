@@ -18,10 +18,14 @@
 
 package version
 
-import "golang.org/x/mod/semver"
+import (
+	"fmt"
 
-var GIT_SHA string = ""
-var VERSION string = ""
+	"golang.org/x/mod/semver"
+)
+
+var GIT_SHA string = "unknown"
+var VERSION string = "dev"
 
 // IsValid checks if the version is a valid semver version adds a 'v' prefix if missing
 func IsValid(version string) bool {
@@ -54,4 +58,18 @@ func MajorMinor(version string) string {
 		version = "v" + version
 	}
 	return semver.MajorMinor(version)
+}
+
+// GetVersion returns the current version.
+func GetVersion() string {
+	return VERSION
+}
+
+// Summary returns a human-friendly representation of the build metadata.
+// It shows both version and git SHA when available, or just the version if SHA is missing.
+func Summary() string {
+	if GIT_SHA == "" || GIT_SHA == "unknown" {
+		return VERSION
+	}
+	return fmt.Sprintf("%s (%s)", VERSION, GIT_SHA)
 }
