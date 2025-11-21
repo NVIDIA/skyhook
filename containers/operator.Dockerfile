@@ -37,7 +37,7 @@ COPY ./ ./
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -mod=vendor \
     -ldflags "-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=${GIT_SHA}\
     -X github.com/NVIDIA/skyhook/internal/version.VERSION=${VERSION}" \
-    -a -o manager cmd/main.go
+    -a -o manager cmd/manager/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless/tree/main/base for more 
