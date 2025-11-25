@@ -1694,5 +1694,68 @@ var _ = Describe("Compartment Status Tests", func() {
 			Expect(compStatus.BatchState).NotTo(BeNil())
 			Expect(compStatus.BatchState.CurrentBatch).To(Equal(1))
 		})
+
+		It("should remove stale compartment statuses when compartments are deleted from policy", func() {
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: make(map[string]v1alpha1.CompartmentStatus),
+				},
+			}
+
+			// Create a node
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode1.SetStatus(v1alpha1.StatusComplete)
+
+			// Create compartment
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment-1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: ptr(2),
+				},
+			}, nil)
+			compartment.AddNode(skyhookNode1)
+
+			// Pre-populate status with a stale compartment that no longer exists in the policy
+			skyhook.Status.CompartmentStatuses["compartment-1"] = v1alpha1.CompartmentStatus{
+				Matched:         1,
+				Ceiling:         2,
+				InProgress:      0,
+				Completed:       1,
+				ProgressPercent: 100,
+			}
+			skyhook.Status.CompartmentStatuses["stale-compartment"] = v1alpha1.CompartmentStatus{
+				Matched:         5,
+				Ceiling:         3,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 60,
+			}
+
+			// Create skyhookNodes with only compartment-1 (stale-compartment was removed from policy)
+			skyhookNodes := &skyhookNodes{
+				skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+				nodes:        []wrapper.SkyhookNode{skyhookNode1},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+			skyhookNodes.AddCompartment("compartment-1", compartment)
+			// Note: stale-compartment is NOT added to skyhookNodes.compartments
+
+			// Reset Updated flag
+			skyhookNodes.skyhook.Updated = false
+
+			// Call ReportState
+			skyhookNodes.ReportState()
+
+			// Verify stale compartment status was removed
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).NotTo(BeNil())
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).To(HaveKey("compartment-1"))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).NotTo(HaveKey("stale-compartment"))
+
+			// Verify Updated flag was set since cleanup occurred
+			Expect(skyhookNodes.skyhook.Updated).To(BeTrue())
+		})
 	})
 })

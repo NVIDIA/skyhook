@@ -821,6 +821,16 @@ func (skyhook *skyhookNodes) ReportState() {
 		}
 	}
 
+	// Clean up stale compartment statuses that are no longer in the policy
+	if skyhook.skyhook.Status.CompartmentStatuses != nil {
+		for compartmentName := range skyhook.skyhook.Status.CompartmentStatuses {
+			if _, exists := skyhook.compartments[compartmentName]; !exists {
+				delete(skyhook.skyhook.Status.CompartmentStatuses, compartmentName)
+				skyhook.skyhook.Updated = true
+			}
+		}
+	}
+
 	// reset metrics to zero
 	ResetSkyhookMetricsToZero(skyhook)
 
