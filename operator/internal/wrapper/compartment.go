@@ -192,20 +192,16 @@ func (c *Compartment) EvaluateCurrentBatch() (bool, int, int) {
 
 	// If batch is complete but we have blocked nodes and no completed/failed changes,
 	// we still need to advance the batch. This handles the case where all nodes in a batch
-	// become blocked (e.g., due to taints). We need to count blocked nodes as part of the
-	// batch size so the batch can progress.
+	// become blocked (e.g., due to taints). The batch is complete (no InProgress nodes),
+	// so we should still evaluate it even though no nodes succeeded or failed.
+	// The caller will need to determine the batch size from blocked nodes.
 	if deltaCompleted == 0 && deltaFailed == 0 && currentBlocked > 0 {
 		// Batch is complete but all nodes are blocked - still advance the batch
-		// Use LastBatchSize if available, otherwise count blocked nodes
-		batchSize := currentBlocked
-		if c.BatchState.LastBatchSize > 0 {
-			// Use the last batch size as a reference for how many nodes were in this batch
-			batchSize = c.BatchState.LastBatchSize
-		}
 		// Update checkpoints
 		c.BatchState.CompletedNodes = currentCompleted
 		c.BatchState.FailedNodes = currentFailed
-		// Return with batch size so it's counted as processed (0 successes, 0 failures, but batchSize nodes processed)
+		// Return true to indicate batch is complete, but 0 successes and 0 failures
+		// The caller will use blocked node count to determine batch size
 		return true, 0, 0
 	}
 

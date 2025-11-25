@@ -663,7 +663,7 @@ func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
 	for _, compartment := range compartments {
 		if isComplete, successCount, failureCount := compartment.EvaluateCurrentBatch(); isComplete {
 			batchSize := successCount + failureCount
-			
+
 			// If batchSize is 0 but batch is complete, it means all nodes are blocked
 			// We need to use the last batch size or count blocked nodes to advance the batch
 			if batchSize == 0 {
