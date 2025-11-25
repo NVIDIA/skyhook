@@ -175,17 +175,39 @@ func (c *Compartment) EvaluateCurrentBatch() (bool, int, int) {
 	// Count current state in the compartment
 	currentCompleted := 0
 	currentFailed := 0
+	currentBlocked := 0
 	for _, node := range c.Nodes {
 		if node.IsComplete() {
 			currentCompleted++
 		} else if node.Status() == v1alpha1.StatusErroring {
 			currentFailed++
+		} else if node.Status() == v1alpha1.StatusBlocked {
+			currentBlocked++
 		}
 	}
 
 	// Calculate delta from last checkpoint
 	deltaCompleted := currentCompleted - c.BatchState.CompletedNodes
 	deltaFailed := currentFailed - c.BatchState.FailedNodes
+
+	// If batch is complete but we have blocked nodes and no completed/failed changes,
+	// we still need to advance the batch. This handles the case where all nodes in a batch
+	// become blocked (e.g., due to taints). We need to count blocked nodes as part of the
+	// batch size so the batch can progress.
+	if deltaCompleted == 0 && deltaFailed == 0 && currentBlocked > 0 {
+		// Batch is complete but all nodes are blocked - still advance the batch
+		// Use LastBatchSize if available, otherwise count blocked nodes
+		batchSize := currentBlocked
+		if c.BatchState.LastBatchSize > 0 {
+			// Use the last batch size as a reference for how many nodes were in this batch
+			batchSize = c.BatchState.LastBatchSize
+		}
+		// Update checkpoints
+		c.BatchState.CompletedNodes = currentCompleted
+		c.BatchState.FailedNodes = currentFailed
+		// Return with batch size so it's counted as processed (0 successes, 0 failures, but batchSize nodes processed)
+		return true, 0, 0
+	}
 
 	// Only evaluate if there's actually a change (batch was processed)
 	if deltaCompleted == 0 && deltaFailed == 0 {

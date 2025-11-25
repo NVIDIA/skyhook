@@ -123,32 +123,62 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 			for _, node := range ret.skyhooks[idx].GetNodes() {
 				ret.skyhooks[idx].AddCompartmentNode(v1alpha1.DefaultCompartmentName, node)
 			}
-		}
-
-		for _, deploymentPolicy := range deploymentPolicies.Items {
-			if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
-				for _, compartment := range deploymentPolicy.Spec.Compartments {
-					// Load persisted batch state from CompartmentStatuses if it exists
-					var batchState *v1alpha1.BatchProcessingState
+		} else {
+			// Deployment policy is specified - try to find it
+			policyFound := false
+			for _, deploymentPolicy := range deploymentPolicies.Items {
+				if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
+					policyFound = true
+					for _, compartment := range deploymentPolicy.Spec.Compartments {
+						// Load persisted batch state from CompartmentStatuses if it exists
+						var batchState *v1alpha1.BatchProcessingState
+						if skyhook.Status.CompartmentStatuses != nil {
+							if status, exists := skyhook.Status.CompartmentStatuses[compartment.Name]; exists && status.BatchState != nil {
+								batchState = status.BatchState
+							}
+						}
+						ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
+					}
+					// use policy default
+					var defaultBatchState *v1alpha1.BatchProcessingState
 					if skyhook.Status.CompartmentStatuses != nil {
-						if status, exists := skyhook.Status.CompartmentStatuses[compartment.Name]; exists && status.BatchState != nil {
-							batchState = status.BatchState
+						if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
+							defaultBatchState = status.BatchState
 						}
 					}
-					ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
+					ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+						Name:     v1alpha1.DefaultCompartmentName,
+						Budget:   deploymentPolicy.Spec.Default.Budget,
+						Strategy: deploymentPolicy.Spec.Default.Strategy,
+					}, defaultBatchState))
+					break
 				}
-				// use policy default
-				var defaultBatchState *v1alpha1.BatchProcessingState
-				if skyhook.Status.CompartmentStatuses != nil {
-					if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
-						defaultBatchState = status.BatchState
+			}
+
+			// If deployment policy was specified but not found, mark it for error handling
+			if !policyFound {
+				ret.skyhooks[idx].GetSkyhook().AddCondition(metav1.Condition{
+					Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+					Status:             metav1.ConditionTrue,
+					ObservedGeneration: skyhook.Generation,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "DeploymentPolicyNotFound",
+					Message:            fmt.Sprintf("DeploymentPolicy %q not found", skyhook.Spec.DeploymentPolicy),
+				})
+				ret.skyhooks[idx].GetSkyhook().Updated = true
+			} else {
+				// Policy found - clear any previous error condition if it exists
+				if ret.skyhooks[idx].GetSkyhook().Status.Conditions != nil {
+					for i, cond := range ret.skyhooks[idx].GetSkyhook().Status.Conditions {
+						if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
+							// Remove the condition by creating a new slice without it
+							conditions := ret.skyhooks[idx].GetSkyhook().Status.Conditions
+							ret.skyhooks[idx].GetSkyhook().Status.Conditions = append(conditions[:i], conditions[i+1:]...)
+							ret.skyhooks[idx].GetSkyhook().Updated = true
+							break
+						}
 					}
 				}
-				ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
-					Name:     v1alpha1.DefaultCompartmentName,
-					Budget:   deploymentPolicy.Spec.Default.Budget,
-					Strategy: deploymentPolicy.Spec.Default.Strategy,
-				}, defaultBatchState))
 			}
 		}
 	}
@@ -567,7 +597,18 @@ func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 	scrStatus := skyhook.Status()
 	collectNodeStatus := skyhook.CollectNodeStatus()
 
-	// override the node status if the skyhook is in a skyhook controlled state. (e.g. disabled, paused, waiting)
+	// Check if deployment policy is missing - this should block the skyhook
+	hasMissingPolicy := false
+	if skyhook.GetSkyhook().Status.Conditions != nil {
+		for _, cond := range skyhook.GetSkyhook().Status.Conditions {
+			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) && cond.Status == metav1.ConditionTrue {
+				hasMissingPolicy = true
+				break
+			}
+		}
+	}
+
+	// override the node status if the skyhook is in a skyhook controlled state. (e.g. disabled, paused, waiting, blocked)
 	if collectNodeStatus != v1alpha1.StatusComplete {
 		switch {
 		case skyhook.IsDisabled():
@@ -576,11 +617,17 @@ func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 		case skyhook.IsPaused():
 			collectNodeStatus = v1alpha1.StatusPaused
 
+		case hasMissingPolicy:
+			collectNodeStatus = v1alpha1.StatusBlocked
+
 		default:
 			if nextSkyhook := GetNextSkyhook(allSkyhooks); nextSkyhook != nil && nextSkyhook != skyhook {
 				collectNodeStatus = v1alpha1.StatusWaiting
 			}
 		}
+	} else if hasMissingPolicy {
+		// Even if all nodes are complete, if policy is missing, we should still be blocked
+		collectNodeStatus = v1alpha1.StatusBlocked
 	}
 
 	if scrStatus != collectNodeStatus {
@@ -616,6 +663,24 @@ func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
 	for _, compartment := range compartments {
 		if isComplete, successCount, failureCount := compartment.EvaluateCurrentBatch(); isComplete {
 			batchSize := successCount + failureCount
+			
+			// If batchSize is 0 but batch is complete, it means all nodes are blocked
+			// We need to use the last batch size or count blocked nodes to advance the batch
+			if batchSize == 0 {
+				// Count blocked nodes to determine batch size
+				blockedCount := 0
+				for _, node := range compartment.GetNodes() {
+					if node.Status() == v1alpha1.StatusBlocked {
+						blockedCount++
+					}
+				}
+				// Use blocked count or last batch size as fallback
+				if blockedCount > 0 {
+					batchSize = blockedCount
+				} else if compartment.GetBatchState().LastBatchSize > 0 {
+					batchSize = compartment.GetBatchState().LastBatchSize
+				}
+			}
 
 			// Update the compartment's batch state using strategy logic
 			compartment.EvaluateAndUpdateBatchState(batchSize, successCount, failureCount)
@@ -806,76 +871,14 @@ func (skyhook *skyhookNodes) ReportState() {
 		}
 	}
 
-	// Update compartment statuses if compartments exist
-	if len(skyhook.compartments) > 0 {
-		if skyhook.skyhook.Status.CompartmentStatuses == nil {
-			skyhook.skyhook.Status.CompartmentStatuses = make(map[string]v1alpha1.CompartmentStatus)
-		}
+	// Update compartment statuses
+	updateCompartmentStatuses(skyhook)
 
-		for name, compartment := range skyhook.compartments {
-			newStatus := buildCompartmentStatus(compartment)
-			if existing, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; !ok || !compartmentStatusEqual(existing, newStatus) {
-				skyhook.skyhook.Status.CompartmentStatuses[name] = newStatus
-				skyhook.skyhook.Updated = true
-			}
-		}
-	}
+	// Clean up stale compartment statuses
+	cleanupStaleCompartmentStatuses(skyhook)
 
-	// Clean up stale compartment statuses that are no longer in the policy
-	if skyhook.skyhook.Status.CompartmentStatuses != nil {
-		for compartmentName := range skyhook.skyhook.Status.CompartmentStatuses {
-			if _, exists := skyhook.compartments[compartmentName]; !exists {
-				delete(skyhook.skyhook.Status.CompartmentStatuses, compartmentName)
-				skyhook.skyhook.Updated = true
-			}
-		}
-	}
-
-	// reset metrics to zero
-	ResetSkyhookMetricsToZero(skyhook)
-
-	// Set skyhook status metrics
-	SetSkyhookStatusMetrics(skyhookName, skyhook.Status(), true)
-
-	// Set target count and node status metrics
-	SetNodeTargetCountMetrics(skyhookName, float64(nodeCount))
-	for status, count := range nodeStatusCounts {
-		SetNodeStatusMetrics(skyhookName, status, float64(count))
-	}
-
-	// Set package state and stage metrics
-	for _package, versions := range packageStateStageCounts {
-		for version, states := range versions {
-			for state, stages := range states {
-				for stage, count := range stages {
-					SetPackageStateMetrics(skyhookName, _package, version, state, float64(count))
-					SetPackageStageMetrics(skyhookName, _package, version, stage, float64(count))
-				}
-			}
-		}
-	}
-
-	// Set package restarts metrics
-	for _package, versions := range packageRestarts {
-		for version, restarts := range versions {
-			SetPackageRestartsMetrics(skyhookName, _package, version, restarts)
-		}
-	}
-
-	// Set rollout metrics for each compartment (follows same pattern as other metrics)
-	if len(skyhook.compartments) > 0 {
-		policyName := skyhook.GetSkyhook().Spec.DeploymentPolicy
-		if policyName == "" {
-			policyName = LegacyPolicyName
-		}
-
-		for name, compartment := range skyhook.compartments {
-			if status, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; ok {
-				strategy := getStrategyType(compartment)
-				SetRolloutMetrics(skyhookName, policyName, name, strategy, status)
-			}
-		}
-	}
+	// Set all metrics
+	setAllMetrics(skyhookName, skyhook, nodeStatusCounts, packageStateStageCounts, packageRestarts, nodeCount)
 
 	// Set current count of completed nodes
 	completeNodes := fmt.Sprintf("%d/%d", nodeStatusCounts[v1alpha1.StatusComplete], nodeCount)
@@ -1049,6 +1052,93 @@ func (skyhook *skyhookNodes) AssignNodeToCompartment(node wrapper.SkyhookNode) (
 
 	// Return the safest compartment
 	return matches[0].name, nil
+}
+
+// updateCompartmentStatuses updates compartment statuses for all current compartments
+func updateCompartmentStatuses(skyhook *skyhookNodes) {
+	if len(skyhook.compartments) == 0 {
+		return
+	}
+	if skyhook.skyhook.Status.CompartmentStatuses == nil {
+		skyhook.skyhook.Status.CompartmentStatuses = make(map[string]v1alpha1.CompartmentStatus)
+	}
+
+	for name, compartment := range skyhook.compartments {
+		newStatus := buildCompartmentStatus(compartment)
+		if existing, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; !ok || !compartmentStatusEqual(existing, newStatus) {
+			skyhook.skyhook.Status.CompartmentStatuses[name] = newStatus
+			skyhook.skyhook.Updated = true
+		}
+	}
+}
+
+// cleanupStaleCompartmentStatuses removes compartment statuses that are no longer in the policy
+func cleanupStaleCompartmentStatuses(skyhook *skyhookNodes) {
+	if skyhook.skyhook.Status.CompartmentStatuses == nil {
+		return
+	}
+	for compartmentName := range skyhook.skyhook.Status.CompartmentStatuses {
+		if _, exists := skyhook.compartments[compartmentName]; !exists {
+			delete(skyhook.skyhook.Status.CompartmentStatuses, compartmentName)
+			skyhook.skyhook.Updated = true
+		}
+	}
+}
+
+// setAllMetrics sets all metrics for the skyhook
+func setAllMetrics(
+	skyhookName string,
+	skyhook *skyhookNodes,
+	nodeStatusCounts map[v1alpha1.Status]int,
+	packageStateStageCounts map[string]map[string]map[v1alpha1.State]map[v1alpha1.Stage]int,
+	packageRestarts map[string]map[string]int32,
+	nodeCount int,
+) {
+	// reset metrics to zero
+	ResetSkyhookMetricsToZero(skyhook)
+
+	// Set skyhook status metrics
+	SetSkyhookStatusMetrics(skyhookName, skyhook.Status(), true)
+
+	// Set target count and node status metrics
+	SetNodeTargetCountMetrics(skyhookName, float64(nodeCount))
+	for status, count := range nodeStatusCounts {
+		SetNodeStatusMetrics(skyhookName, status, float64(count))
+	}
+
+	// Set package state and stage metrics
+	for _package, versions := range packageStateStageCounts {
+		for version, states := range versions {
+			for state, stages := range states {
+				for stage, count := range stages {
+					SetPackageStateMetrics(skyhookName, _package, version, state, float64(count))
+					SetPackageStageMetrics(skyhookName, _package, version, stage, float64(count))
+				}
+			}
+		}
+	}
+
+	// Set package restarts metrics
+	for _package, versions := range packageRestarts {
+		for version, restarts := range versions {
+			SetPackageRestartsMetrics(skyhookName, _package, version, restarts)
+		}
+	}
+
+	// Set rollout metrics for each compartment
+	if len(skyhook.compartments) > 0 {
+		policyName := skyhook.GetSkyhook().Spec.DeploymentPolicy
+		if policyName == "" {
+			policyName = LegacyPolicyName
+		}
+
+		for name, compartment := range skyhook.compartments {
+			if status, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; ok {
+				strategy := getStrategyType(compartment)
+				SetRolloutMetrics(skyhookName, policyName, name, strategy, status)
+			}
+		}
+	}
 }
 
 // cleanupNodeMap removes nodes from the given map that no longer exist in currentNodes

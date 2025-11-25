@@ -266,6 +266,132 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 		// Verify all nodes were assigned to the compartment
 		Expect(len(defaultComp.GetNodes())).To(Equal(10))
 	})
+
+	It("should add condition and set status when deployment policy is referenced but not found", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "test-skyhook",
+						Generation: 1,
+					},
+					Spec: v1alpha1.SkyhookSpec{
+						DeploymentPolicy: "missing-policy",
+					},
+					Status: v1alpha1.SkyhookStatus{
+						CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+							"old-compartment": {
+								Matched: 5,
+								Ceiling: 3,
+							},
+						},
+					},
+				},
+			},
+		}
+		// No deployment policies in the list
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
+		nodes := &corev1.NodeList{Items: []corev1.Node{}}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		skyhookNodes := clusterState.skyhooks[0]
+
+		// Verify no compartments were created
+		compartments := skyhookNodes.GetCompartments()
+		Expect(compartments).To(HaveLen(0))
+
+		// Verify condition was added
+		conditions := skyhookNodes.GetSkyhook().Status.Conditions
+		Expect(conditions).NotTo(BeNil())
+		found := false
+		for _, cond := range conditions {
+			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
+				Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				Expect(cond.Reason).To(Equal("DeploymentPolicyNotFound"))
+				Expect(cond.Message).To(ContainSubstring("missing-policy"))
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "DeploymentPolicyNotFound condition should be present")
+
+		// Verify Updated flag was set
+		Expect(skyhookNodes.GetSkyhook().Updated).To(BeTrue())
+
+		// Test IntrospectSkyhook sets status to blocked
+		changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+		Expect(changed).To(BeTrue())
+		Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusBlocked))
+	})
+
+	It("should clear condition when deployment policy is found after being missing", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "test-skyhook",
+						Generation: 2,
+					},
+					Spec: v1alpha1.SkyhookSpec{
+						DeploymentPolicy: "found-policy",
+					},
+					Status: v1alpha1.SkyhookStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+								Status:             metav1.ConditionTrue,
+								ObservedGeneration: 1,
+								LastTransitionTime: metav1.Now(),
+								Reason:             "DeploymentPolicyNotFound",
+								Message:            "DeploymentPolicy \"found-policy\" not found",
+							},
+						},
+					},
+				},
+			},
+		}
+		// Deployment policy exists now
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{
+			Items: []v1alpha1.DeploymentPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "found-policy"},
+					Spec: v1alpha1.DeploymentPolicySpec{
+						Default: v1alpha1.PolicyDefault{
+							Budget: v1alpha1.DeploymentBudget{
+								Percent: kptr.To(100),
+							},
+						},
+					},
+				},
+			},
+		}
+		nodes := &corev1.NodeList{Items: []corev1.Node{}}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		skyhookNodes := clusterState.skyhooks[0]
+
+		// Verify compartments were created
+		compartments := skyhookNodes.GetCompartments()
+		Expect(compartments).To(HaveLen(1))
+		Expect(compartments).To(HaveKey(v1alpha1.DefaultCompartmentName))
+
+		// Verify condition was removed
+		conditions := skyhookNodes.GetSkyhook().Status.Conditions
+		found := false
+		for _, cond := range conditions {
+			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeFalse(), "DeploymentPolicyNotFound condition should be removed")
+	})
 })
 
 var _ = Describe("CleanupRemovedNodes", func() {
