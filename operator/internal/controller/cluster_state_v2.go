@@ -664,22 +664,38 @@ func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
 		if isComplete, successCount, failureCount := compartment.EvaluateCurrentBatch(); isComplete {
 			batchSize := successCount + failureCount
 
-			// If batchSize is 0 but batch is complete, it means all nodes are blocked
-			// We need to use the last batch size or count blocked nodes to advance the batch
-			if batchSize == 0 {
-				// Count blocked nodes to determine batch size
-				blockedCount := 0
-				for _, node := range compartment.GetNodes() {
-					if node.Status() == v1alpha1.StatusBlocked {
-						blockedCount++
-					}
+			// Count blocked nodes to determine if we should skip batch evaluation
+			blockedCount := 0
+			for _, node := range compartment.GetNodes() {
+				if node.Status() == v1alpha1.StatusBlocked {
+					blockedCount++
 				}
-				// Use blocked count or last batch size as fallback
+			}
+
+			// If batchSize is 0 but batch is complete, check if all nodes are blocked
+			// If all nodes are blocked, don't advance the batch - wait for them to become unblocked
+			// Blocked nodes are not failures, they're just temporarily unable to proceed
+			if batchSize == 0 {
+				// If all nodes in the compartment are blocked, skip batch evaluation
+				// The batch will be re-evaluated when nodes become unblocked
+				if blockedCount > 0 && blockedCount == len(compartment.GetNodes()) {
+					continue // Skip this compartment - all nodes blocked, wait for them to unblock
+				}
+				// If some nodes are blocked but not all, use blocked count as batch size
+				// This handles mixed batches (some blocked, some completed/failed)
 				if blockedCount > 0 {
 					batchSize = blockedCount
 				} else if compartment.GetBatchState().LastBatchSize > 0 {
 					batchSize = compartment.GetBatchState().LastBatchSize
 				}
+			}
+
+			// If batch has blocked nodes but no successes/failures, don't treat as failure
+			// Blocked nodes should not increment consecutive failures
+			// Only evaluate if we have actual progress (successes or failures)
+			if batchSize > 0 && successCount == 0 && failureCount == 0 && blockedCount == batchSize {
+				// All nodes in batch are blocked - skip evaluation to avoid false failures
+				continue
 			}
 
 			// Update the compartment's batch state using strategy logic
