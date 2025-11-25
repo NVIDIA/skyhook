@@ -2320,7 +2320,7 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 		// 1. Nodes currently InProgress
 		// 2. Nodes that completed/failed in the last batch (their counts are in BatchState)
 		nodesToKeep := make(map[string]string) // node name -> compartment name
-		
+
 		if skyhook.GetSkyhook().Status.CompartmentStatuses != nil {
 			for compartmentName, status := range skyhook.GetSkyhook().Status.CompartmentStatuses {
 				// Keep nodes that are in progress
@@ -2331,7 +2331,7 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 						}
 					}
 				}
-				
+
 				// Keep nodes that are part of the current batch state counts
 				// These nodes' completion/failure was counted in the last batch evaluation
 				// Moving them would break the delta calculation in the next evaluation
@@ -2356,13 +2356,13 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 
 		for _, node := range skyhook.GetNodes() {
 			nodeName := node.GetNode().Name
-			
+
 			// If node should be kept in its current compartment, keep it there
 			if existingCompartment, shouldKeep := nodesToKeep[nodeName]; shouldKeep {
 				skyhook.AddCompartmentNode(existingCompartment, node)
 				continue
 			}
-			
+
 			// For all other nodes, assign based on current policy
 			compartmentName, err := skyhook.AssignNodeToCompartment(node)
 			if err != nil {

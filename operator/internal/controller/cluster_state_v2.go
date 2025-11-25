@@ -103,9 +103,7 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		}
 
 		// Setup compartments for this skyhook
-		if err := setupCompartments(ret.skyhooks[idx], &skyhook, deploymentPolicies); err != nil {
-			return nil, err
-		}
+		setupCompartments(ret.skyhooks[idx], &skyhook, deploymentPolicies)
 	}
 
 	// Sort by priority (ascending), then by name (ascending) if priorities are equal
@@ -132,7 +130,7 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 // 1. DeploymentPolicy if specified and found
 // 2. Legacy InterruptionBudget if no DeploymentPolicy is specified, or if DeploymentPolicy is specified but not found
 // 3. Safe fallback defaults if neither DeploymentPolicy nor InterruptionBudget is available
-func setupCompartments(skyhookNodes SkyhookNodes, skyhook *v1alpha1.Skyhook, deploymentPolicies *v1alpha1.DeploymentPolicyList) error {
+func setupCompartments(skyhookNodes SkyhookNodes, skyhook *v1alpha1.Skyhook, deploymentPolicies *v1alpha1.DeploymentPolicyList) {
 	var defaultCompartment *v1alpha1.Compartment
 	var defaultBatchState *v1alpha1.BatchProcessingState
 
@@ -223,8 +221,6 @@ func setupCompartments(skyhookNodes SkyhookNodes, skyhook *v1alpha1.Skyhook, dep
 	}
 	// Note: If using deployment policy, nodes are NOT assigned here
 	// They will be assigned in partitionNodesIntoCompartments
-
-	return nil
 }
 
 // checkForOrphanedBatchState detects when compartment names have changed (renaming)
@@ -884,14 +880,8 @@ func buildCompartmentStatus(compartment *wrapper.Compartment) v1alpha1.Compartme
 	}
 }
 
-// ReportState collects the current state of the skyhook and reports it to the skyhook status for printer columns
-func (skyhook *skyhookNodes) ReportState() {
-	CleanupRemovedNodes(skyhook)
-
-	nodeCount := len(skyhook.nodes)
-	skyhookName := skyhook.GetSkyhook().Name
-
-	// Initialize status and metrics maps
+// collectNodeAndPackageStats collects node status counts and package statistics
+func (skyhook *skyhookNodes) collectNodeAndPackageStats() (map[v1alpha1.Status]int, map[string]map[string]int32, map[string]map[string]map[v1alpha1.State]map[v1alpha1.Stage]int) {
 	nodeStatusCounts := make(map[v1alpha1.Status]int, len(v1alpha1.Statuses))
 	for _, status := range v1alpha1.Statuses {
 		nodeStatusCounts[status] = 0
@@ -900,7 +890,6 @@ func (skyhook *skyhookNodes) ReportState() {
 	packageRestarts := make(map[string]map[string]int32)
 	packageStateStageCounts := make(map[string]map[string]map[v1alpha1.State]map[v1alpha1.Stage]int)
 
-	// Collect node and package stats
 	for _, node := range skyhook.nodes {
 		nodeStatusCounts[node.Status()]++
 
@@ -929,32 +918,41 @@ func (skyhook *skyhookNodes) ReportState() {
 		}
 	}
 
-	// Update compartment statuses if compartments exist
-	if len(skyhook.compartments) > 0 {
-		if skyhook.skyhook.Status.CompartmentStatuses == nil {
-			skyhook.skyhook.Status.CompartmentStatuses = make(map[string]v1alpha1.CompartmentStatus)
-		}
+	return nodeStatusCounts, packageRestarts, packageStateStageCounts
+}
 
-		// Track which compartments are currently active
-		activeCompartments := make(map[string]bool)
-		for name, compartment := range skyhook.compartments {
-			activeCompartments[name] = true
-			newStatus := buildCompartmentStatus(compartment)
-			if existing, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; !ok || !compartmentStatusEqual(existing, newStatus) {
-				skyhook.skyhook.Status.CompartmentStatuses[name] = newStatus
-				skyhook.skyhook.Updated = true
-			}
-		}
+// updateCompartmentStatuses updates compartment statuses and removes stale entries
+func (skyhook *skyhookNodes) updateCompartmentStatuses() {
+	if len(skyhook.compartments) == 0 {
+		return
+	}
 
-		// Remove statuses for compartments that no longer exist
-		for name := range skyhook.skyhook.Status.CompartmentStatuses {
-			if !activeCompartments[name] {
-				delete(skyhook.skyhook.Status.CompartmentStatuses, name)
-				skyhook.skyhook.Updated = true
-			}
+	if skyhook.skyhook.Status.CompartmentStatuses == nil {
+		skyhook.skyhook.Status.CompartmentStatuses = make(map[string]v1alpha1.CompartmentStatus)
+	}
+
+	// Track which compartments are currently active
+	activeCompartments := make(map[string]bool)
+	for name, compartment := range skyhook.compartments {
+		activeCompartments[name] = true
+		newStatus := buildCompartmentStatus(compartment)
+		if existing, ok := skyhook.skyhook.Status.CompartmentStatuses[name]; !ok || !compartmentStatusEqual(existing, newStatus) {
+			skyhook.skyhook.Status.CompartmentStatuses[name] = newStatus
+			skyhook.skyhook.Updated = true
 		}
 	}
 
+	// Remove statuses for compartments that no longer exist
+	for name := range skyhook.skyhook.Status.CompartmentStatuses {
+		if !activeCompartments[name] {
+			delete(skyhook.skyhook.Status.CompartmentStatuses, name)
+			skyhook.skyhook.Updated = true
+		}
+	}
+}
+
+// publishMetrics publishes all metrics for the skyhook
+func (skyhook *skyhookNodes) publishMetrics(skyhookName string, nodeCount int, nodeStatusCounts map[v1alpha1.Status]int, packageRestarts map[string]map[string]int32, packageStateStageCounts map[string]map[string]map[v1alpha1.State]map[v1alpha1.Stage]int) {
 	// reset metrics to zero
 	ResetSkyhookMetricsToZero(skyhook)
 
@@ -986,7 +984,7 @@ func (skyhook *skyhookNodes) ReportState() {
 		}
 	}
 
-	// Set rollout metrics for each compartment (follows same pattern as other metrics)
+	// Set rollout metrics for each compartment
 	if len(skyhook.compartments) > 0 {
 		policyName := skyhook.GetSkyhook().Spec.DeploymentPolicy
 		if policyName == "" {
@@ -1000,6 +998,23 @@ func (skyhook *skyhookNodes) ReportState() {
 			}
 		}
 	}
+}
+
+// ReportState collects the current state of the skyhook and reports it to the skyhook status for printer columns
+func (skyhook *skyhookNodes) ReportState() {
+	CleanupRemovedNodes(skyhook)
+
+	nodeCount := len(skyhook.nodes)
+	skyhookName := skyhook.GetSkyhook().Name
+
+	// Collect all statistics
+	nodeStatusCounts, packageRestarts, packageStateStageCounts := skyhook.collectNodeAndPackageStats()
+
+	// Update compartment statuses
+	skyhook.updateCompartmentStatuses()
+
+	// Publish all metrics
+	skyhook.publishMetrics(skyhookName, nodeCount, nodeStatusCounts, packageRestarts, packageStateStageCounts)
 
 	// Set current count of completed nodes
 	completeNodes := fmt.Sprintf("%d/%d", nodeStatusCounts[v1alpha1.StatusComplete], nodeCount)
