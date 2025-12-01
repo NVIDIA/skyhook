@@ -63,7 +63,18 @@ func (c *Compartment) GetNode(name string) SkyhookNode {
 }
 
 func (c *Compartment) AddNode(node SkyhookNode) {
+	// Check if node already exists to prevent duplicates
+	for _, existingNode := range c.Nodes {
+		if existingNode.GetNode().Name == node.GetNode().Name {
+			return // Node already in this compartment
+		}
+	}
 	c.Nodes = append(c.Nodes, node)
+}
+
+// ClearNodes removes all nodes from the compartment
+func (c *Compartment) ClearNodes() {
+	c.Nodes = make([]SkyhookNode, 0)
 }
 
 // CalculateCeiling is a public helper to calculate ceiling from budget and matched nodes
@@ -175,17 +186,46 @@ func (c *Compartment) EvaluateCurrentBatch() (bool, int, int) {
 	// Count current state in the compartment
 	currentCompleted := 0
 	currentFailed := 0
+	currentBlocked := 0
 	for _, node := range c.Nodes {
 		if node.IsComplete() {
 			currentCompleted++
 		} else if node.Status() == v1alpha1.StatusErroring {
 			currentFailed++
+		} else if node.Status() == v1alpha1.StatusBlocked {
+			currentBlocked++
 		}
 	}
 
 	// Calculate delta from last checkpoint
 	deltaCompleted := currentCompleted - c.BatchState.CompletedNodes
 	deltaFailed := currentFailed - c.BatchState.FailedNodes
+
+	// Handle negative deltas: this happens when nodes move between compartments mid-rollout
+	// When nodes leave a compartment, the checkpoint becomes invalid, so we reset it
+	if deltaCompleted < 0 || deltaFailed < 0 {
+		// Nodes moved compartments - reset checkpoints to current state
+		// This prevents negative batch sizes and incorrect evaluations
+		c.BatchState.CompletedNodes = currentCompleted
+		c.BatchState.FailedNodes = currentFailed
+		// Don't evaluate this batch since we just reset - wait for next reconcile
+		return false, 0, 0
+	}
+
+	// If batch is complete but we have blocked nodes and no completed/failed changes,
+	// we still need to advance the batch. This handles the case where all nodes in a batch
+	// become blocked (e.g., due to taints). The batch is complete (no InProgress nodes),
+	// so we should still evaluate it even though no nodes succeeded or failed.
+	// The caller will need to determine the batch size from blocked nodes.
+	if deltaCompleted == 0 && deltaFailed == 0 && currentBlocked > 0 {
+		// Batch is complete but all nodes are blocked - still advance the batch
+		// Update checkpoints
+		c.BatchState.CompletedNodes = currentCompleted
+		c.BatchState.FailedNodes = currentFailed
+		// Return true to indicate batch is complete, but 0 successes and 0 failures
+		// The caller will use blocked node count to determine batch size
+		return true, 0, 0
+	}
 
 	// Only evaluate if there's actually a change (batch was processed)
 	if deltaCompleted == 0 && deltaFailed == 0 {

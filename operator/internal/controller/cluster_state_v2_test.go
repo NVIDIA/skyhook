@@ -266,6 +266,132 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 		// Verify all nodes were assigned to the compartment
 		Expect(len(defaultComp.GetNodes())).To(Equal(10))
 	})
+
+	It("should add condition and set status when deployment policy is referenced but not found", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "test-skyhook",
+						Generation: 1,
+					},
+					Spec: v1alpha1.SkyhookSpec{
+						DeploymentPolicy: "missing-policy",
+					},
+					Status: v1alpha1.SkyhookStatus{
+						CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+							"old-compartment": {
+								Matched: 5,
+								Ceiling: 3,
+							},
+						},
+					},
+				},
+			},
+		}
+		// No deployment policies in the list
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
+		nodes := &corev1.NodeList{Items: []corev1.Node{}}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		skyhookNodes := clusterState.skyhooks[0]
+
+		// Verify no compartments were created
+		compartments := skyhookNodes.GetCompartments()
+		Expect(compartments).To(HaveLen(0))
+
+		// Verify condition was added
+		conditions := skyhookNodes.GetSkyhook().Status.Conditions
+		Expect(conditions).NotTo(BeNil())
+		found := false
+		for _, cond := range conditions {
+			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
+				Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+				Expect(cond.Reason).To(Equal("DeploymentPolicyNotFound"))
+				Expect(cond.Message).To(ContainSubstring("missing-policy"))
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "DeploymentPolicyNotFound condition should be present")
+
+		// Verify Updated flag was set
+		Expect(skyhookNodes.GetSkyhook().Updated).To(BeTrue())
+
+		// Test IntrospectSkyhook sets status to blocked
+		changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+		Expect(changed).To(BeTrue())
+		Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusBlocked))
+	})
+
+	It("should clear condition when deployment policy is found after being missing", func() {
+		skyhooks := &v1alpha1.SkyhookList{
+			Items: []v1alpha1.Skyhook{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "test-skyhook",
+						Generation: 2,
+					},
+					Spec: v1alpha1.SkyhookSpec{
+						DeploymentPolicy: "found-policy",
+					},
+					Status: v1alpha1.SkyhookStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+								Status:             metav1.ConditionTrue,
+								ObservedGeneration: 1,
+								LastTransitionTime: metav1.Now(),
+								Reason:             "DeploymentPolicyNotFound",
+								Message:            "DeploymentPolicy \"found-policy\" not found",
+							},
+						},
+					},
+				},
+			},
+		}
+		// Deployment policy exists now
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{
+			Items: []v1alpha1.DeploymentPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "found-policy"},
+					Spec: v1alpha1.DeploymentPolicySpec{
+						Default: v1alpha1.PolicyDefault{
+							Budget: v1alpha1.DeploymentBudget{
+								Percent: kptr.To(100),
+							},
+						},
+					},
+				},
+			},
+		}
+		nodes := &corev1.NodeList{Items: []corev1.Node{}}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		skyhookNodes := clusterState.skyhooks[0]
+
+		// Verify compartments were created
+		compartments := skyhookNodes.GetCompartments()
+		Expect(compartments).To(HaveLen(1))
+		Expect(compartments).To(HaveKey(v1alpha1.DefaultCompartmentName))
+
+		// Verify condition was removed
+		conditions := skyhookNodes.GetSkyhook().Status.Conditions
+		found := false
+		for _, cond := range conditions {
+			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeFalse(), "DeploymentPolicyNotFound condition should be removed")
+	})
 })
 
 var _ = Describe("CleanupRemovedNodes", func() {
@@ -1693,6 +1819,69 @@ var _ = Describe("Compartment Status Tests", func() {
 			compStatus := skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-with-strategy"]
 			Expect(compStatus.BatchState).NotTo(BeNil())
 			Expect(compStatus.BatchState.CurrentBatch).To(Equal(1))
+		})
+
+		It("should remove stale compartment statuses when compartments are deleted from policy", func() {
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: make(map[string]v1alpha1.CompartmentStatus),
+				},
+			}
+
+			// Create a node
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}
+			skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode1.SetStatus(v1alpha1.StatusComplete)
+
+			// Create compartment
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: "compartment-1",
+				Budget: v1alpha1.DeploymentBudget{
+					Count: ptr(2),
+				},
+			}, nil)
+			compartment.AddNode(skyhookNode1)
+
+			// Pre-populate status with a stale compartment that no longer exists in the policy
+			skyhook.Status.CompartmentStatuses["compartment-1"] = v1alpha1.CompartmentStatus{
+				Matched:         1,
+				Ceiling:         2,
+				InProgress:      0,
+				Completed:       1,
+				ProgressPercent: 100,
+			}
+			skyhook.Status.CompartmentStatuses["stale-compartment"] = v1alpha1.CompartmentStatus{
+				Matched:         5,
+				Ceiling:         3,
+				InProgress:      2,
+				Completed:       3,
+				ProgressPercent: 60,
+			}
+
+			// Create skyhookNodes with only compartment-1 (stale-compartment was removed from policy)
+			skyhookNodes := &skyhookNodes{
+				skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+				nodes:        []wrapper.SkyhookNode{skyhookNode1},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+			skyhookNodes.AddCompartment("compartment-1", compartment)
+			// Note: stale-compartment is NOT added to skyhookNodes.compartments
+
+			// Reset Updated flag
+			skyhookNodes.skyhook.Updated = false
+
+			// Call ReportState
+			skyhookNodes.ReportState()
+
+			// Verify stale compartment status was removed
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).NotTo(BeNil())
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).To(HaveKey("compartment-1"))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses).NotTo(HaveKey("stale-compartment"))
+
+			// Verify Updated flag was set since cleanup occurred
+			Expect(skyhookNodes.skyhook.Updated).To(BeTrue())
 		})
 	})
 })

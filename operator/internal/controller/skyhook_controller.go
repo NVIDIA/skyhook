@@ -2314,6 +2314,12 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 			continue
 		}
 
+		// Clear all compartments before reassigning nodes to prevent stale nodes
+		// This ensures nodes are only in their current compartment based on current labels
+		for _, compartment := range skyhook.GetCompartments() {
+			compartment.ClearNodes()
+		}
+
 		for _, node := range skyhook.GetNodes() {
 			compartmentName, err := skyhook.AssignNodeToCompartment(node)
 			if err != nil {
