@@ -127,9 +127,18 @@ jobs:
         env:
           COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
         run: |
-          cd operator
+          # Install goveralls
           go install github.com/mattn/goveralls@latest
-          goveralls -coverprofile=reporting/cover.out -service=github -repotoken=$COVERALLS_TOKEN -parallel
+          # Run goveralls from operator directory (where go.mod is located)
+          cd operator
+          # Verify coverage file exists
+          if [ ! -f reporting/cover.out ]; then
+            echo "ERROR: Coverage file not found at reporting/cover.out"
+            ls -la reporting/ || echo "reporting directory does not exist"
+            exit 1
+          fi
+          # Upload coverage (run from operator/ directory, path is relative to operator/)
+          goveralls -coverprofile=reporting/cover.out -service=github -repotoken=$COVERALLS_TOKEN
   
   # Build multi-platform container image and push to registry
   build-and-push-operator:
