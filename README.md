@@ -1,5 +1,9 @@
 # skyhook
 
+[![Pipeline Status](https://github.com/NVIDIA/skyhook/actions/workflows/operator-ci.yaml/badge.svg)](https://github.com/NVIDIA/skyhook/actions/workflows/operator-ci.yaml)
+[![Coverage Status](https://coveralls.io/repos/github/NVIDIA/skyhook/badge.svg)](https://coveralls.io/github/NVIDIA/skyhook)
+[![Go Report Card](https://goreportcard.com/badge/github.com/NVIDIA/skyhook/operator)](https://goreportcard.com/report/github.com/NVIDIA/skyhook/operator)
+
 **Skyhook** is a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying host declaratively at scale.
 
 ## Why Skyhook?
