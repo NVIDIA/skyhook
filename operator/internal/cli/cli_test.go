@@ -19,29 +19,118 @@
 package cli
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/spf13/cobra"
 )
 
-// TestNewSkyhookCommand verifies the root command is properly configured
-func TestNewSkyhookCommand(t *testing.T) {
-	ctx := context.NewCLIContext(nil)
-	cmd := NewSkyhookCommand(ctx)
+func TestCLISmoke(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "CLI Test Suite")
+}
 
-	if cmd == nil {
-		t.Fatal("NewSkyhookCommand returned nil")
-	}
+var _ = Describe("Skyhook CLI Tests", func() {
+	var rootCmd *cobra.Command
+	var testCtx *context.CLIContext
+	var output *bytes.Buffer
 
-	// Verify version command is registered
-	found := false
-	for _, c := range cmd.Commands() {
-		if c.Name() == "version" {
-			found = true
-			break
+	BeforeEach(func() {
+		config := context.NewCLIConfig()
+		testCtx = context.NewCLIContext(config)
+		rootCmd = NewSkyhookCommand(testCtx)
+
+		output = &bytes.Buffer{}
+		rootCmd.SetOut(output)
+		rootCmd.SetErr(output)
+	})
+
+	Describe("Command Structure", func() {
+		It("should have all main commands registered", func() {
+			commandNames := getCommandNames(rootCmd)
+			Expect(commandNames).To(ContainElement("package"))
+		})
+
+		It("should have complete subcommand structure", func() {
+			// Verify package subcommands
+			packageCmd := findCommand(rootCmd, "package")
+			Expect(packageCmd).NotTo(BeNil())
+			packageSubs := getCommandNames(packageCmd)
+			expectedPackageCommands := []string{
+				"rerun <package-name>",
+				"status <package-name>",
+				"logs <package-name>",
+			}
+			for _, expected := range expectedPackageCommands {
+				Expect(packageSubs).To(ContainElement(expected))
+			}
+		})
+	})
+
+	Describe("Help and Version", func() {
+		It("should display help correctly", func() {
+			rootCmd.SetArgs([]string{"--help"})
+			err := rootCmd.Execute()
+			Expect(err).NotTo(HaveOccurred())
+			helpText := output.String()
+			Expect(helpText).To(ContainSubstring("kubectl-compatible helper for managing Skyhook deployments."))
+			Expect(helpText).To(ContainSubstring("Available Commands:"))
+		})
+
+		It("should display version correctly", func() {
+			rootCmd.SetArgs([]string{"--version"})
+			err := rootCmd.Execute()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("Skyhook plugin: "))
+		})
+	})
+
+	Describe("Global Flags", func() {
+		It("should have all flags bound with correct properties", func() {
+			persistentFlags := rootCmd.PersistentFlags()
+
+			// Verify all flags exist with correct shortcuts
+			Expect(persistentFlags.Lookup("verbose")).NotTo(BeNil())
+			Expect(persistentFlags.Lookup("dry-run")).NotTo(BeNil())
+		})
+
+		It("should bind flags to config.Flags struct", func() {
+			pflags := rootCmd.PersistentFlags()
+
+			// Set flags and verify they update config.Flags
+			pflags.Set("verbose", "true")
+			pflags.Set("dry-run", "true")
+			Expect(testCtx.GlobalFlags.Verbose).To(BeTrue())
+			Expect(testCtx.GlobalFlags.DryRun).To(BeTrue())
+		})
+	})
+
+	Describe("Error Handling", func() {
+		It("should handle invalid commands and arguments", func() {
+			rootCmd.SetArgs([]string{"invalid-command"})
+			err := rootCmd.Execute()
+			Expect(err).To(HaveOccurred())
+		})
+	})
+})
+
+func findCommand(parent *cobra.Command, name string) *cobra.Command {
+	for _, cmd := range parent.Commands() {
+		if cmd.Use == name || cmd.Name() == name {
+			return cmd
 		}
 	}
-	if !found {
-		t.Error("version command not registered")
+	return nil
+}
+
+func getCommandNames(cmd *cobra.Command) []string {
+	commands := cmd.Commands()
+	names := make([]string, len(commands))
+	for i, cmd := range commands {
+		names[i] = cmd.Use
 	}
+	return names
 }
