@@ -149,25 +149,11 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	// Get the unique key for the package (name|version)
 	packageKey := pkg.GetUniqueName()
 
-	// Get all nodes that have the skyhook annotation
+	// Collect node states
 	annotationKey := nodeStateAnnotationKey(opts.skyhookName)
-	nodeList, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	nodeStates, allNodes, err := collectNodeStates(ctx, kubeClient, annotationKey)
 	if err != nil {
-		return fmt.Errorf("listing nodes: %w", err)
-	}
-
-	// Build list of nodes that have the annotation
-	allNodes := make([]string, 0)
-	nodeStates := make(map[string]v1alpha1.NodeState)
-	for _, node := range nodeList.Items {
-		if annotation, ok := node.Annotations[annotationKey]; ok {
-			var nodeState v1alpha1.NodeState
-			if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
-				continue // skip nodes with invalid annotation
-			}
-			allNodes = append(allNodes, node.Name)
-			nodeStates[node.Name] = nodeState
-		}
+		return err
 	}
 
 	// Match nodes based on patterns
@@ -182,14 +168,7 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	}
 
 	// Filter to only nodes that have this package in their state
-	nodesToUpdate := make([]string, 0)
-	for _, nodeName := range matchedNodes {
-		if nodeState, ok := nodeStates[nodeName]; ok {
-			if _, hasPackage := nodeState[packageKey]; hasPackage {
-				nodesToUpdate = append(nodesToUpdate, nodeName)
-			}
-		}
-	}
+	nodesToUpdate := filterNodesWithPackage(matchedNodes, nodeStates, packageKey)
 
 	if len(nodesToUpdate) == 0 {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package %q (version %s) has no state on matched nodes\n", packageName, pkg.Version)
@@ -197,7 +176,69 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	}
 
 	// Display what will be changed
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package: %s (version %s)\n", packageName, pkg.Version)
+	printRerunSummary(cmd, packageName, pkg.Version, opts, nodesToUpdate, nodeStates, packageKey)
+
+	if cliCtx.GlobalFlags.DryRun {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n[dry-run] No changes applied\n")
+		return nil
+	}
+
+	// Confirmation prompt
+	confirmed, err := promptConfirmation(cmd, opts)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Aborted\n")
+		return nil
+	}
+
+	// Update each node's annotation to trigger re-run
+	successCount, updateErrors := updateNodeAnnotations(ctx, kubeClient, nodesToUpdate, nodeStates, packageKey, annotationKey, opts)
+
+	printRerunResults(cmd, packageName, successCount, updateErrors)
+
+	return nil
+}
+
+// collectNodeStates gathers node states from annotations
+func collectNodeStates(ctx context.Context, kubeClient *client.Client, annotationKey string) (map[string]v1alpha1.NodeState, []string, error) {
+	nodeList, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing nodes: %w", err)
+	}
+
+	allNodes := make([]string, 0, len(nodeList.Items))
+	nodeStates := make(map[string]v1alpha1.NodeState)
+	for _, node := range nodeList.Items {
+		if annotation, ok := node.Annotations[annotationKey]; ok {
+			var nodeState v1alpha1.NodeState
+			if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+				continue // skip nodes with invalid annotation
+			}
+			allNodes = append(allNodes, node.Name)
+			nodeStates[node.Name] = nodeState
+		}
+	}
+	return nodeStates, allNodes, nil
+}
+
+// filterNodesWithPackage returns nodes that have the specified package in their state
+func filterNodesWithPackage(matchedNodes []string, nodeStates map[string]v1alpha1.NodeState, packageKey string) []string {
+	nodesToUpdate := make([]string, 0, len(matchedNodes))
+	for _, nodeName := range matchedNodes {
+		if nodeState, ok := nodeStates[nodeName]; ok {
+			if _, hasPackage := nodeState[packageKey]; hasPackage {
+				nodesToUpdate = append(nodesToUpdate, nodeName)
+			}
+		}
+	}
+	return nodesToUpdate
+}
+
+// printRerunSummary displays what will be changed
+func printRerunSummary(cmd *cobra.Command, packageName, version string, opts *rerunOptions, nodesToUpdate []string, nodeStates map[string]v1alpha1.NodeState, packageKey string) {
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package: %s (version %s)\n", packageName, version)
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", opts.skyhookName)
 	if opts.stage != "" {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Re-run from stage: %s\n", opts.stage)
@@ -208,81 +249,81 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 		pkgStatus := nodeState[packageKey]
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s (current state: %s, stage: %s)\n", nodeName, pkgStatus.State, pkgStatus.Stage)
 	}
+}
 
-	if cliCtx.GlobalFlags.DryRun {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n[dry-run] No changes applied\n")
-		return nil
+// promptConfirmation asks user to confirm the operation
+func promptConfirmation(cmd *cobra.Command, opts *rerunOptions) (bool, error) {
+	if opts.confirm {
+		return true, nil
 	}
 
-	// Confirmation prompt
-	if !opts.confirm {
-		if opts.stage != "" {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will reset package state to re-run from the '%s' stage.\n", opts.stage)
-		} else {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove package state from node annotations and cause the package to re-run from the beginning.\n")
-		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Continue? [y/N]: ")
+	if opts.stage != "" {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will reset package state to re-run from the '%s' stage.\n", opts.stage)
+	} else {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove package state from node annotations and cause the package to re-run from the beginning.\n")
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Continue? [y/N]: ")
 
-		reader := bufio.NewReader(cmd.InOrStdin())
-		response, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("reading confirmation: %w", err)
-		}
-
-		response = strings.ToLower(strings.TrimSpace(response))
-		if response != "y" && response != "yes" {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Aborted\n")
-			return nil
-		}
+	reader := bufio.NewReader(cmd.InOrStdin())
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("reading confirmation: %w", err)
 	}
 
-	// Update each node's annotation to trigger re-run
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes", nil
+}
+
+// updateNodeAnnotations updates each node's annotation to trigger re-run
+func updateNodeAnnotations(ctx context.Context, kubeClient *client.Client, nodesToUpdate []string, nodeStates map[string]v1alpha1.NodeState, packageKey, annotationKey string, opts *rerunOptions) (int, []string) {
 	var updateErrors []string
 	successCount := 0
+
 	for _, nodeName := range nodesToUpdate {
 		nodeState := nodeStates[nodeName]
 
 		if opts.stage != "" {
-			// If a specific stage is requested, update the package state to re-run from that stage
 			pkgStatus := nodeState[packageKey]
 			pkgStatus.Stage = v1alpha1.Stage(opts.stage)
 			pkgStatus.State = v1alpha1.StateInProgress
 			nodeState[packageKey] = pkgStatus
 		} else {
-			// Otherwise, remove the package from the node state entirely to re-run from the beginning
 			delete(nodeState, packageKey)
 		}
 
-		// Get the current node to ensure we have the latest resourceVersion
-		node, err := kubeClient.Kubernetes().CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
-		if err != nil {
-			updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
-			continue
-		}
-
-		// Update the annotation
-		if len(nodeState) == 0 {
-			// If no packages left, remove the annotation entirely
-			delete(node.Annotations, annotationKey)
-		} else {
-			// Otherwise, update with the modified state
-			newAnnotation, err := json.Marshal(nodeState)
-			if err != nil {
-				updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
-				continue
-			}
-			node.Annotations[annotationKey] = string(newAnnotation)
-		}
-
-		// Update the node
-		_, err = kubeClient.Kubernetes().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
-		if err != nil {
+		if err := applyNodeStateUpdate(ctx, kubeClient, nodeName, nodeState, annotationKey); err != nil {
 			updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
 			continue
 		}
 		successCount++
 	}
 
+	return successCount, updateErrors
+}
+
+// applyNodeStateUpdate applies the updated state to a single node
+func applyNodeStateUpdate(ctx context.Context, kubeClient *client.Client, nodeName string, nodeState v1alpha1.NodeState, annotationKey string) error {
+	node, err := kubeClient.Kubernetes().CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	if len(nodeState) == 0 {
+		delete(node.Annotations, annotationKey)
+	} else {
+		newAnnotation, err := json.Marshal(nodeState)
+		if err != nil {
+			return err
+		}
+		node.Annotations[annotationKey] = string(newAnnotation)
+	}
+
+	_, err = kubeClient.Kubernetes().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+	return err
+}
+
+// printRerunResults displays the operation results
+func printRerunResults(cmd *cobra.Command, packageName string, successCount int, updateErrors []string) {
 	if len(updateErrors) > 0 {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nErrors updating some nodes:\n")
 		for _, e := range updateErrors {
@@ -293,6 +334,4 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	if successCount > 0 {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset package %q on %d node(s)\n", packageName, successCount)
 	}
-
-	return nil
 }
