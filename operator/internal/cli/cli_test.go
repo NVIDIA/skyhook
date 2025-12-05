@@ -20,6 +20,7 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
@@ -106,6 +107,17 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			Expect(testCtx.GlobalFlags.Verbose).To(BeTrue())
 			Expect(testCtx.GlobalFlags.DryRun).To(BeTrue())
 		})
+
+		It("should validate output format via PersistentPreRunE", func() {
+			// Invalid format should fail - need fresh command since flags persist
+			freshConfig := context.NewCLIConfig()
+			freshCtx := context.NewCLIContext(freshConfig)
+			freshCmd := NewSkyhookCommand(freshCtx)
+			freshCmd.SetArgs([]string{"--output", "invalid", "version"})
+			err := freshCmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid output format"))
+		})
 	})
 
 	Describe("Error Handling", func() {
@@ -113,6 +125,40 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			rootCmd.SetArgs([]string{"invalid-command"})
 			err := rootCmd.Execute()
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("ToInt", func() {
+		It("should convert ExitCode to int", func() {
+			Expect(ExitCodeSuccess.ToInt()).To(Equal(0))
+			Expect(ExitCodeError.ToInt()).To(Equal(1))
+		})
+	})
+
+	Describe("Execute Function", func() {
+		var originalArgs []string
+
+		BeforeEach(func() {
+			originalArgs = os.Args
+		})
+
+		AfterEach(func() {
+			os.Args = originalArgs
+		})
+
+		It("should execute successfully and return correct exit code", func() {
+			os.Args = []string{"skyhook", "--help"}
+			exitCode := Execute(context.NewCLIConfig())
+			Expect(exitCode).To(Equal(ExitCodeSuccess))
+		})
+
+		It("should return error exit code if command execution fails", func() {
+			os.Args = []string{"skyhook", "invalid-command"}
+			errBuf := &bytes.Buffer{}
+			config := context.NewCLIConfig(context.WithErrorWriter(errBuf))
+			exitCode := Execute(config)
+			Expect(exitCode).To(Equal(ExitCodeError))
+			Expect(errBuf.String()).To(ContainSubstring("unknown command"))
 		})
 	})
 })
