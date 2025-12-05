@@ -30,6 +30,8 @@ import (
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
 )
 
+const testSkyhookName = "my-skyhook"
+
 var _ = Describe("Package Status Command", func() {
 	Describe("formatPackageList", func() {
 		It("should format single package", func() {
@@ -127,7 +129,7 @@ var _ = Describe("Package Status Command", func() {
 					},
 				},
 			}
-			skyhook.Name = "my-skyhook"
+			skyhook.Name = testSkyhookName
 
 			statuses := []nodePackageStatus{
 				{NodeName: "node1", PackageName: "pkg1", Version: "1.0", Stage: "apply", State: "complete"},
@@ -157,7 +159,7 @@ var _ = Describe("Package Status Command", func() {
 					},
 				},
 			}
-			skyhook.Name = "my-skyhook"
+			skyhook.Name = testSkyhookName
 
 			output := &bytes.Buffer{}
 			err := outputTable(output, skyhook, []nodePackageStatus{})
@@ -176,7 +178,7 @@ var _ = Describe("Package Status Command", func() {
 					},
 				},
 			}
-			skyhook.Name = "my-skyhook"
+			skyhook.Name = testSkyhookName
 
 			statuses := []nodePackageStatus{
 				{NodeName: "node1", PackageName: "pkg1", Version: "1.0", Stage: "apply", State: "complete", Image: "nginx:latest"},
