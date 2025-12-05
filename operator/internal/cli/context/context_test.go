@@ -19,86 +19,176 @@
 package context
 
 import (
+	"bytes"
 	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/spf13/pflag"
 )
 
-// TestGlobalFlags_Validate tests the validation logic
-func TestGlobalFlags_Validate(t *testing.T) {
-	tests := []struct {
-		name         string
-		outputFormat string
-		wantErr      bool
-	}{
-		{"valid json", "json", false},
-		{"valid yaml", "yaml", false},
-		{"valid table", "table", false},
-		{"valid wide", "wide", false},
-		{"case insensitive", "JSON", false},
-		{"invalid format", "invalid", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			flags := NewGlobalFlags()
-			flags.OutputFormat = tt.outputFormat
-
-			err := flags.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
+func TestContext(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Context CLI Tests Suite")
 }
 
-// TestGlobalFlags_Namespace tests the namespace retrieval logic
-func TestGlobalFlags_Namespace(t *testing.T) {
-	tests := []struct {
-		name          string
-		setupFlags    func(*GlobalFlags)
-		wantNamespace string
-	}{
-		{
-			name: "default namespace",
-			setupFlags: func(f *GlobalFlags) {
-				// No changes, use default
-			},
-			wantNamespace: "skyhook",
-		},
-		{
-			name: "custom namespace",
-			setupFlags: func(f *GlobalFlags) {
+var _ = Describe("CLI Context", func() {
+	Describe("GlobalFlags", func() {
+		Describe("NewGlobalFlags", func() {
+			It("should initialize with default namespace", func() {
+				flags := NewGlobalFlags()
+				Expect(flags.ConfigFlags.Namespace).NotTo(BeNil())
+				Expect(*flags.ConfigFlags.Namespace).To(Equal("skyhook"))
+			})
+
+			It("should initialize with default output format", func() {
+				flags := NewGlobalFlags()
+				Expect(flags.OutputFormat).To(Equal("table"))
+			})
+		})
+
+		Describe("AddFlags", func() {
+			It("should register output flag", func() {
+				flags := NewGlobalFlags()
+				flagset := pflag.NewFlagSet("test", pflag.ContinueOnError)
+				flags.AddFlags(flagset)
+
+				outputFlag := flagset.Lookup("output")
+				Expect(outputFlag).NotTo(BeNil())
+				Expect(outputFlag.Shorthand).To(Equal("o"))
+			})
+
+			It("should register verbose flag", func() {
+				flags := NewGlobalFlags()
+				flagset := pflag.NewFlagSet("test", pflag.ContinueOnError)
+				flags.AddFlags(flagset)
+
+				verboseFlag := flagset.Lookup("verbose")
+				Expect(verboseFlag).NotTo(BeNil())
+				Expect(verboseFlag.Shorthand).To(Equal("v"))
+			})
+
+			It("should register dry-run flag", func() {
+				flags := NewGlobalFlags()
+				flagset := pflag.NewFlagSet("test", pflag.ContinueOnError)
+				flags.AddFlags(flagset)
+
+				dryRunFlag := flagset.Lookup("dry-run")
+				Expect(dryRunFlag).NotTo(BeNil())
+			})
+
+			It("should bind flags to struct fields", func() {
+				flags := NewGlobalFlags()
+				flagset := pflag.NewFlagSet("test", pflag.ContinueOnError)
+				flags.AddFlags(flagset)
+
+				Expect(flagset.Set("output", "json")).To(Succeed())
+				Expect(flagset.Set("verbose", "true")).To(Succeed())
+				Expect(flagset.Set("dry-run", "true")).To(Succeed())
+
+				Expect(flags.OutputFormat).To(Equal("json"))
+				Expect(flags.Verbose).To(BeTrue())
+				Expect(flags.DryRun).To(BeTrue())
+			})
+		})
+
+		Describe("Validate", func() {
+			It("should accept valid output formats", func() {
+				for _, format := range []string{"json", "yaml", "table", "wide"} {
+					flags := NewGlobalFlags()
+					flags.OutputFormat = format
+					Expect(flags.Validate()).To(Succeed())
+				}
+			})
+
+			It("should be case insensitive", func() {
+				flags := NewGlobalFlags()
+				flags.OutputFormat = "JSON"
+				Expect(flags.Validate()).To(Succeed())
+				Expect(flags.OutputFormat).To(Equal("json"))
+			})
+
+			It("should reject invalid output formats", func() {
+				flags := NewGlobalFlags()
+				flags.OutputFormat = "invalid"
+				err := flags.Validate()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("invalid output format"))
+			})
+		})
+
+		Describe("Namespace", func() {
+			It("should return default namespace when not set", func() {
+				flags := NewGlobalFlags()
+				Expect(flags.Namespace()).To(Equal("skyhook"))
+			})
+
+			It("should return custom namespace when set", func() {
+				flags := NewGlobalFlags()
 				ns := "custom-ns"
-				f.ConfigFlags.Namespace = &ns
-			},
-			wantNamespace: "custom-ns",
-		},
-		{
-			name: "empty namespace string",
-			setupFlags: func(f *GlobalFlags) {
+				flags.ConfigFlags.Namespace = &ns
+				Expect(flags.Namespace()).To(Equal("custom-ns"))
+			})
+
+			It("should return default namespace for empty string", func() {
+				flags := NewGlobalFlags()
 				ns := ""
-				f.ConfigFlags.Namespace = &ns
-			},
-			wantNamespace: "skyhook",
-		},
-		{
-			name: "whitespace namespace",
-			setupFlags: func(f *GlobalFlags) {
+				flags.ConfigFlags.Namespace = &ns
+				Expect(flags.Namespace()).To(Equal("skyhook"))
+			})
+
+			It("should return default namespace for whitespace", func() {
+				flags := NewGlobalFlags()
 				ns := "  "
-				f.ConfigFlags.Namespace = &ns
-			},
-			wantNamespace: "skyhook",
-		},
-	}
+				flags.ConfigFlags.Namespace = &ns
+				Expect(flags.Namespace()).To(Equal("skyhook"))
+			})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			flags := NewGlobalFlags()
-			tt.setupFlags(flags)
-
-			got := flags.Namespace()
-			if got != tt.wantNamespace {
-				t.Errorf("Namespace() = %q, want %q", got, tt.wantNamespace)
-			}
+			It("should return default namespace when nil", func() {
+				flags := NewGlobalFlags()
+				flags.ConfigFlags.Namespace = nil
+				Expect(flags.Namespace()).To(Equal("skyhook"))
+			})
 		})
-	}
-}
+	})
+
+	Describe("CLIConfig", func() {
+		It("should create config with default writers", func() {
+			config := NewCLIConfig()
+			Expect(config.OutputWriter).NotTo(BeNil())
+			Expect(config.ErrorWriter).NotTo(BeNil())
+		})
+
+		It("should allow custom output writer", func() {
+			buf := &bytes.Buffer{}
+			config := NewCLIConfig(WithOutputWriter(buf))
+			Expect(config.OutputWriter).To(Equal(buf))
+		})
+
+		It("should allow custom error writer", func() {
+			buf := &bytes.Buffer{}
+			config := NewCLIConfig(WithErrorWriter(buf))
+			Expect(config.ErrorWriter).To(Equal(buf))
+		})
+	})
+
+	Describe("CLIContext", func() {
+		It("should create context with default config when nil", func() {
+			ctx := NewCLIContext(nil)
+			Expect(ctx).NotTo(BeNil())
+			Expect(ctx.GlobalFlags).NotTo(BeNil())
+			Expect(ctx.Config()).NotTo(BeNil())
+		})
+
+		It("should create context with provided config", func() {
+			config := NewCLIConfig()
+			ctx := NewCLIContext(config)
+			Expect(ctx.Config()).To(Equal(config))
+		})
+
+		It("should return global flags via GetGlobalFlags", func() {
+			ctx := NewCLIContext(nil)
+			Expect(ctx.GetGlobalFlags()).To(Equal(ctx.GlobalFlags))
+		})
+	})
+})
