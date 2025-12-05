@@ -101,8 +101,8 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			pflags := rootCmd.PersistentFlags()
 
 			// Set flags and verify they update config.Flags
-			pflags.Set("verbose", "true")
-			pflags.Set("dry-run", "true")
+			Expect(pflags.Set("verbose", "true")).To(Succeed())
+			Expect(pflags.Set("dry-run", "true")).To(Succeed())
 			Expect(testCtx.GlobalFlags.Verbose).To(BeTrue())
 			Expect(testCtx.GlobalFlags.DryRun).To(BeTrue())
 		})

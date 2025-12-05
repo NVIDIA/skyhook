@@ -127,7 +127,7 @@ func runLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts
 	}
 
 	// Filter pods
-	var matchedPods []corev1.Pod
+	matchedPods := make([]corev1.Pod, 0, len(podList.Items))
 	for _, pod := range podList.Items {
 		// Filter by package if specified
 		if opts.packageName != "" {
@@ -300,7 +300,7 @@ func getContainerLogs(ctx context.Context, out io.Writer, kubeClient *client.Cli
 	if err != nil {
 		return fmt.Errorf("opening log stream: %w", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	// Copy logs to output
 	_, err = io.Copy(out, stream)

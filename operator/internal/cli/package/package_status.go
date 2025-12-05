@@ -128,7 +128,7 @@ func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, op
 
 	// Collect status from all nodes with the annotation
 	var statuses []nodePackageStatus
-	var allNodes []string
+	allNodes := make([]string, 0, len(nodeList.Items))
 
 	for _, node := range nodeList.Items {
 		annotation, ok := node.Annotations[annotationKey]
@@ -252,7 +252,7 @@ func outputWide(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackage
 }
 
 func formatPackageList(skyhook *v1alpha1.Skyhook) string {
-	var packages []string
+	packages := make([]string, 0, len(skyhook.Spec.Packages))
 	for name, pkg := range skyhook.Spec.Packages {
 		packages = append(packages, fmt.Sprintf("%s:%s", name, pkg.Version))
 	}
