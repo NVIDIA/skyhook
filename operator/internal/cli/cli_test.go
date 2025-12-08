@@ -161,6 +161,80 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			Expect(errBuf.String()).To(ContainSubstring("unknown command"))
 		})
 	})
+
+	Describe("extractImageTag", func() {
+		It("should extract tag from simple image reference", func() {
+			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3")
+			Expect(tag).To(Equal("v1.2.3"))
+		})
+
+		It("should extract tag from image with digest", func() {
+			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3@sha256:abc123")
+			Expect(tag).To(Equal("v1.2.3"))
+		})
+
+		It("should return empty for image without tag", func() {
+			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator")
+			Expect(tag).To(BeEmpty())
+		})
+
+		It("should handle image with only digest", func() {
+			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator@sha256:abc123")
+			Expect(tag).To(BeEmpty())
+		})
+
+		It("should extract latest tag", func() {
+			tag := extractImageTag("nginx:latest")
+			Expect(tag).To(Equal("latest"))
+		})
+
+		It("should handle image with port in registry", func() {
+			tag := extractImageTag("localhost:5000/myimage:v1.0")
+			Expect(tag).To(Equal("v1.0"))
+		})
+	})
+
+	Describe("NewVersionCmd", func() {
+		var versionCmd *cobra.Command
+
+		BeforeEach(func() {
+			testCtx := context.NewCLIContext(nil)
+			versionCmd = NewVersionCmd(testCtx)
+		})
+
+		It("should have correct command metadata", func() {
+			Expect(versionCmd.Use).To(Equal("version"))
+			Expect(versionCmd.Short).To(ContainSubstring("version"))
+		})
+
+		It("should have timeout flag with default", func() {
+			timeoutFlag := versionCmd.Flags().Lookup("timeout")
+			Expect(timeoutFlag).NotTo(BeNil())
+			Expect(timeoutFlag.DefValue).To(Equal("10s"))
+		})
+
+		It("should have client-only flag", func() {
+			clientOnlyFlag := versionCmd.Flags().Lookup("client-only")
+			Expect(clientOnlyFlag).NotTo(BeNil())
+			Expect(clientOnlyFlag.DefValue).To(Equal("false"))
+		})
+
+		It("should show plugin version with --client-only", func() {
+			output := &bytes.Buffer{}
+			versionCmd.SetOut(output)
+			versionCmd.SetArgs([]string{"--client-only"})
+
+			err := versionCmd.Execute()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("Skyhook plugin:"))
+		})
+	})
+
+	Describe("defaultNamespace constant", func() {
+		It("should be set to skyhook", func() {
+			Expect(defaultNamespace).To(Equal("skyhook"))
+		})
+	})
 })
 
 func findCommand(parent *cobra.Command, name string) *cobra.Command {

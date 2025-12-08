@@ -20,21 +20,32 @@ package pkg
 
 import (
 	"bytes"
+	gocontext "context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/mock"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	mockdynamic "github.com/NVIDIA/skyhook/operator/internal/mocks/dynamic"
 )
 
 func TestPackage(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Package CLI Tests Suite")
 }
+
+const testSkyhookNameRerun = "my-skyhook"
 
 var _ = Describe("Package Rerun Command", func() {
 	Describe("nodeStateAnnotationKey", func() {
@@ -243,6 +254,252 @@ var _ = Describe("Package Rerun Command", func() {
 		})
 	})
 
+	Describe("rerunPackage", func() {
+		var (
+			fakeKube    *fake.Clientset
+			mockDynamic *mockdynamic.Interface
+			mockNSRes   *mockdynamic.NamespaceableResourceInterface
+		)
+
+		BeforeEach(func() {
+			fakeKube = fake.NewSimpleClientset()
+			mockDynamic = &mockdynamic.Interface{}
+			mockNSRes = &mockdynamic.NamespaceableResourceInterface{}
+		})
+
+		createSkyhookUnstructured := func() *unstructured.Unstructured {
+			return &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "skyhook.nvidia.com/v1alpha1",
+					"kind":       "Skyhook",
+					"metadata": map[string]interface{}{
+						"name": testSkyhookNameRerun,
+					},
+					"spec": map[string]interface{}{
+						"packages": map[string]interface{}{
+							"pkg1": map[string]interface{}{
+								"version": "1.0.0",
+							},
+						},
+					},
+				},
+			}
+		}
+
+		It("should show message when no nodes match patterns", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			// Create a node without the skyhook annotation
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			cliCtx := context.NewCLIContext(nil)
+			cmd := &cobra.Command{}
+			output := &bytes.Buffer{}
+			cmd.SetOut(output)
+
+			opts := &rerunOptions{
+				skyhookName: testSkyhookNameRerun,
+				nodes:       []string{"node1"},
+				confirm:     true,
+			}
+
+			err := rerunPackage(gocontext.Background(), cmd, kubeClient, "pkg1", opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("No nodes matched"))
+		})
+
+		It("should show message when package not found on nodes", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			// Create node with annotation but different package
+			nodeState := v1alpha1.NodeState{
+				"pkg2|2.0.0": {Name: "pkg2", Version: "2.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			cliCtx := context.NewCLIContext(nil)
+			cmd := &cobra.Command{}
+			output := &bytes.Buffer{}
+			cmd.SetOut(output)
+
+			opts := &rerunOptions{
+				skyhookName: testSkyhookNameRerun,
+				nodes:       []string{"node1"},
+				confirm:     true,
+			}
+
+			err := rerunPackage(gocontext.Background(), cmd, kubeClient, "pkg1", opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("has no state on matched nodes"))
+		})
+
+		It("should preview changes in dry-run mode", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			cliCtx := context.NewCLIContext(nil)
+			cliCtx.GlobalFlags.DryRun = true
+			cmd := &cobra.Command{}
+			output := &bytes.Buffer{}
+			cmd.SetOut(output)
+
+			opts := &rerunOptions{
+				skyhookName: testSkyhookNameRerun,
+				nodes:       []string{"node1"},
+			}
+
+			err := rerunPackage(gocontext.Background(), cmd, kubeClient, "pkg1", opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("dry-run"))
+			Expect(output.String()).To(ContainSubstring("No changes applied"))
+		})
+
+		It("should abort when user declines confirmation", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			cliCtx := context.NewCLIContext(nil)
+			cmd := &cobra.Command{}
+			output := &bytes.Buffer{}
+			cmd.SetOut(output)
+			cmd.SetIn(strings.NewReader("n\n"))
+
+			opts := &rerunOptions{
+				skyhookName: testSkyhookNameRerun,
+				nodes:       []string{"node1"},
+				confirm:     false,
+			}
+
+			err := rerunPackage(gocontext.Background(), cmd, kubeClient, "pkg1", opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("Aborted"))
+		})
+
+		It("should update node annotations when confirmed", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			cliCtx := context.NewCLIContext(nil)
+			cmd := &cobra.Command{}
+			output := &bytes.Buffer{}
+			cmd.SetOut(output)
+
+			opts := &rerunOptions{
+				skyhookName: testSkyhookNameRerun,
+				nodes:       []string{"node1"},
+				confirm:     true,
+			}
+
+			err := rerunPackage(gocontext.Background(), cmd, kubeClient, "pkg1", opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("Successfully reset package"))
+		})
+
+		It("should reset to specific stage when stage flag is set", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			cliCtx := context.NewCLIContext(nil)
+			cmd := &cobra.Command{}
+			output := &bytes.Buffer{}
+			cmd.SetOut(output)
+
+			opts := &rerunOptions{
+				skyhookName: testSkyhookNameRerun,
+				nodes:       []string{"node1"},
+				stage:       "config",
+				confirm:     true,
+			}
+
+			err := rerunPackage(gocontext.Background(), cmd, kubeClient, "pkg1", opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("Re-run from stage: config"))
+		})
+	})
+
 	Describe("NewRerunCmd", func() {
 		var rerunCmd *cobra.Command
 
@@ -251,11 +508,31 @@ var _ = Describe("Package Rerun Command", func() {
 			rerunCmd = NewRerunCmd(testCtx)
 		})
 
+		It("should require exactly one argument", func() {
+			// No arguments
+			freshCtx := context.NewCLIContext(nil)
+			freshCmd := NewRerunCmd(freshCtx)
+			freshCmd.SetArgs([]string{"--skyhook", "test", "--node", "node1"})
+			err := freshCmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("accepts 1 arg"))
+		})
+
+		It("should reject too many arguments", func() {
+			freshCtx := context.NewCLIContext(nil)
+			freshCmd := NewRerunCmd(freshCtx)
+			freshCmd.SetArgs([]string{"pkg1", "pkg2", "--skyhook", "test", "--node", "node1"})
+			err := freshCmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("accepts 1 arg"))
+		})
+
 		It("should validate stage flag values", func() {
 			rerunCmd.SetArgs([]string{"pkg1", "--skyhook", "test", "--node", "node1", "--stage", "invalid"})
 			err := rerunCmd.Execute()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid stage"))
+			Expect(err.Error()).To(ContainSubstring("must be one of apply, config, interrupt, post-interrupt"))
 		})
 
 		It("should accept valid stage values", func() {
@@ -277,12 +554,81 @@ var _ = Describe("Package Rerun Command", func() {
 			rerunCmd.SetArgs([]string{"pkg1", "--node", "node1"})
 			err := rerunCmd.Execute()
 			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("skyhook"))
 		})
 
 		It("should require --node flag", func() {
 			rerunCmd.SetArgs([]string{"pkg1", "--skyhook", "test"})
 			err := rerunCmd.Execute()
 			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("node"))
+		})
+
+		It("should accept multiple --node flags", func() {
+			freshCtx := context.NewCLIContext(nil)
+			freshCmd := NewRerunCmd(freshCtx)
+			freshCmd.SetArgs([]string{"pkg1", "--skyhook", "test", "--node", "node1", "--node", "node2"})
+			err := freshCmd.Execute()
+			// Should pass validation (will fail at client creation)
+			if err != nil {
+				Expect(err.Error()).NotTo(ContainSubstring("--node flag is required"))
+			}
+		})
+
+		It("should have correct command metadata", func() {
+			Expect(rerunCmd.Use).To(Equal("rerun <package-name>"))
+			Expect(rerunCmd.Short).To(ContainSubstring("Force a package to re-run"))
+			Expect(rerunCmd.Long).To(ContainSubstring("removing its state"))
+		})
+
+		It("should have example usage", func() {
+			Expect(rerunCmd.Example).To(ContainSubstring("kubectl skyhook"))
+			Expect(rerunCmd.Example).To(ContainSubstring("--confirm"))
+			Expect(rerunCmd.Example).To(ContainSubstring("--dry-run"))
+		})
+
+		It("should have confirm flag with shorthand", func() {
+			confirmFlag := rerunCmd.Flags().Lookup("confirm")
+			Expect(confirmFlag).NotTo(BeNil())
+			Expect(confirmFlag.Shorthand).To(Equal("y"))
+			Expect(confirmFlag.DefValue).To(Equal("false"))
+		})
+
+		It("should require exactly one argument", func() {
+			testCtx := context.NewCLIContext(nil)
+			cmd := NewRerunCmd(testCtx)
+			cmd.SetArgs([]string{"--skyhook", "test", "--node", "node1"})
+			err := cmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("accepts 1 arg"))
+		})
+
+		It("should allow multiple --node flags", func() {
+			nodeFlag := rerunCmd.Flags().Lookup("node")
+			Expect(nodeFlag).NotTo(BeNil())
+			// StringArray allows multiple values
+			Expect(nodeFlag.Value.Type()).To(Equal("stringArray"))
+		})
+	})
+
+	Describe("rerunOptions struct", func() {
+		It("should support multiple nodes", func() {
+			opts := &rerunOptions{
+				skyhookName: "test",
+				nodes:       []string{"node1", "node2", "node3"},
+				stage:       "apply",
+				confirm:     true,
+			}
+			Expect(opts.nodes).To(HaveLen(3))
+			Expect(opts.confirm).To(BeTrue())
+		})
+	})
+
+	Describe("skyhookGVR", func() {
+		It("should have correct group version resource", func() {
+			Expect(skyhookGVR.Group).To(Equal("skyhook.nvidia.com"))
+			Expect(skyhookGVR.Version).To(Equal("v1alpha1"))
+			Expect(skyhookGVR.Resource).To(Equal("skyhooks"))
 		})
 	})
 })

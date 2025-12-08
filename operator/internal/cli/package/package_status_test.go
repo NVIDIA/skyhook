@@ -20,14 +20,22 @@ package pkg
 
 import (
 	"bytes"
+	gocontext "context"
 	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/mock"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	mockdynamic "github.com/NVIDIA/skyhook/operator/internal/mocks/dynamic"
 )
 
 const testSkyhookName = "my-skyhook"
@@ -194,6 +202,268 @@ var _ = Describe("Package Status Command", func() {
 		})
 	})
 
+	Describe("runStatus", func() {
+		var (
+			output      *bytes.Buffer
+			fakeKube    *fake.Clientset
+			mockDynamic *mockdynamic.Interface
+			mockNSRes   *mockdynamic.NamespaceableResourceInterface
+		)
+
+		BeforeEach(func() {
+			output = &bytes.Buffer{}
+			fakeKube = fake.NewSimpleClientset()
+			mockDynamic = &mockdynamic.Interface{}
+			mockNSRes = &mockdynamic.NamespaceableResourceInterface{}
+		})
+
+		createSkyhookUnstructured := func() *unstructured.Unstructured {
+			return &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "skyhook.nvidia.com/v1alpha1",
+					"kind":       "Skyhook",
+					"metadata": map[string]interface{}{
+						"name": testSkyhookName,
+					},
+					"spec": map[string]interface{}{
+						"packages": map[string]interface{}{
+							"pkg1": map[string]interface{}{
+								"version": "1.0.0",
+							},
+						},
+					},
+				},
+			}
+		}
+
+		It("should return status for nodes with annotations", func() {
+			// Setup mock
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookName, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			// Create node with annotation
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, err := fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			opts := &statusOptions{
+				skyhookName: testSkyhookName,
+				packageName: "pkg1",
+				output:      "table",
+			}
+
+			err = runStatus(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("node1"))
+			Expect(output.String()).To(ContainSubstring("pkg1"))
+		})
+
+		It("should output JSON format", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookName, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			opts := &statusOptions{
+				skyhookName: testSkyhookName,
+				packageName: "pkg1",
+				output:      "json",
+			}
+
+			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			var result []nodePackageStatus
+			err = json.Unmarshal(output.Bytes(), &result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].NodeName).To(Equal("node1"))
+		})
+
+		It("should show message when no status found", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookName, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			// Node without annotation
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			opts := &statusOptions{
+				skyhookName: testSkyhookName,
+				packageName: "pkg1",
+				output:      "table",
+			}
+
+			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("No package status found"))
+		})
+
+		It("should skip nodes with invalid JSON annotations", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookName, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			// Node with invalid JSON
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": "invalid-json",
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			opts := &statusOptions{
+				skyhookName: testSkyhookName,
+				packageName: "pkg1",
+				output:      "table",
+			}
+
+			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("No package status found"))
+		})
+
+		It("should filter by package name", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookName, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+				"pkg2|2.0.0": {Name: "pkg2", Version: "2.0.0", Stage: v1alpha1.StageConfig, State: v1alpha1.StateInProgress},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			opts := &statusOptions{
+				skyhookName: testSkyhookName,
+				packageName: "pkg1",
+				output:      "table",
+			}
+
+			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("pkg1"))
+			Expect(output.String()).NotTo(ContainSubstring("pkg2"))
+		})
+
+		It("should output wide format with image", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookName, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete, Image: "nginx:latest"},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			opts := &statusOptions{
+				skyhookName: testSkyhookName,
+				packageName: "pkg1",
+				output:      "wide",
+			}
+
+			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("IMAGE"))
+			Expect(output.String()).To(ContainSubstring("nginx:latest"))
+		})
+
+		It("should sort results by node name", func() {
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, testSkyhookName, mock.Anything).Return(createSkyhookUnstructured(), nil)
+
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0.0": {Name: "pkg1", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			// Create nodes in reverse order
+			for _, name := range []string{"node-z", "node-a"} {
+				node := &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: name,
+						Annotations: map[string]string{
+							"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						},
+					},
+				}
+				_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+			}
+
+			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
+			opts := &statusOptions{
+				skyhookName: testSkyhookName,
+				packageName: "pkg1",
+				output:      "json",
+			}
+
+			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			var result []nodePackageStatus
+			err = json.Unmarshal(output.Bytes(), &result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(HaveLen(2))
+			Expect(result[0].NodeName).To(Equal("node-a"))
+			Expect(result[1].NodeName).To(Equal("node-z"))
+		})
+	})
+
 	Describe("NewStatusCmd", func() {
 		var statusCmd *cobra.Command
 
@@ -209,6 +479,15 @@ var _ = Describe("Package Status Command", func() {
 			Expect(err.Error()).To(ContainSubstring("skyhook"))
 		})
 
+		It("should require exactly one argument", func() {
+			freshCtx := context.NewCLIContext(nil)
+			freshCmd := NewStatusCmd(freshCtx)
+			freshCmd.SetArgs([]string{"--skyhook", "test"})
+			err := freshCmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("accepts 1 arg"))
+		})
+
 		It("should have output flag with shorthand", func() {
 			outputFlag := statusCmd.Flags().Lookup("output")
 			Expect(outputFlag).NotTo(BeNil())
@@ -219,6 +498,18 @@ var _ = Describe("Package Status Command", func() {
 		It("should have node flag", func() {
 			nodeFlag := statusCmd.Flags().Lookup("node")
 			Expect(nodeFlag).NotTo(BeNil())
+		})
+
+		It("should have correct command metadata", func() {
+			Expect(statusCmd.Use).To(Equal("status <package-name>"))
+			Expect(statusCmd.Short).To(ContainSubstring("Query package status"))
+		})
+
+		It("should support multiple output formats", func() {
+			outputFlag := statusCmd.Flags().Lookup("output")
+			Expect(outputFlag.Usage).To(ContainSubstring("table"))
+			Expect(outputFlag.Usage).To(ContainSubstring("json"))
+			Expect(outputFlag.Usage).To(ContainSubstring("wide"))
 		})
 	})
 })
