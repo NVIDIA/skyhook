@@ -19,13 +19,22 @@
 package pkg
 
 import (
+	"bytes"
+	gocontext "context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
 )
+
+const testSkyhookNameLogs = "my-skyhook"
 
 var _ = Describe("Package Logs Command", func() {
 	Describe("getContainerStatus", func() {
@@ -250,6 +259,162 @@ var _ = Describe("Package Logs Command", func() {
 		})
 	})
 
+	Describe("runLogs", func() {
+		var (
+			output   *bytes.Buffer
+			fakeKube *fake.Clientset
+		)
+
+		BeforeEach(func() {
+			output = &bytes.Buffer{}
+			fakeKube = fake.NewSimpleClientset()
+		})
+
+		It("should show message when no pods found", func() {
+			// No pods in the cluster
+			kubeClient := client.NewForTesting(fakeKube, nil)
+			opts := &logsOptions{
+				skyhookName: testSkyhookNameLogs,
+				packageName: "pkg1",
+			}
+
+			err := runLogs(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("No pods found"))
+		})
+
+		It("should show message when no pods match filters", func() {
+			// Create a pod with different labels
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "other-pod",
+					Namespace: skyhookNamespace,
+					Labels: map[string]string{
+						v1alpha1.METADATA_PREFIX + "/name":    "other-skyhook",
+						v1alpha1.METADATA_PREFIX + "/package": "other-pkg",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node1",
+				},
+			}
+			_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, nil)
+			opts := &logsOptions{
+				skyhookName: testSkyhookNameLogs,
+				packageName: "pkg1",
+			}
+
+			err := runLogs(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("No pods found"))
+		})
+
+		It("should filter pods by node name", func() {
+			// Create pods on different nodes
+			for _, nodeName := range []string{"node1", "node2"} {
+				pod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-" + nodeName,
+						Namespace: skyhookNamespace,
+						Labels: map[string]string{
+							v1alpha1.METADATA_PREFIX + "/name":    testSkyhookNameLogs,
+							v1alpha1.METADATA_PREFIX + "/package": "pkg1-1.0.0",
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName: nodeName,
+						Containers: []corev1.Container{
+							{Name: "main"},
+						},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "main", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}}},
+						},
+					},
+				}
+				_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+			}
+
+			kubeClient := client.NewForTesting(fakeKube, nil)
+			opts := &logsOptions{
+				skyhookName: testSkyhookNameLogs,
+				packageName: "pkg1",
+				node:        "node1",
+			}
+
+			err := runLogs(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			// Should only show pod on node1
+			Expect(output.String()).To(ContainSubstring("pod-node1"))
+			Expect(output.String()).NotTo(ContainSubstring("pod-node2"))
+		})
+
+		It("should match pods by package label prefix", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: skyhookNamespace,
+					Labels: map[string]string{
+						v1alpha1.METADATA_PREFIX + "/name":    testSkyhookNameLogs,
+						v1alpha1.METADATA_PREFIX + "/package": "pkg1-1.0.0",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node1",
+					Containers: []corev1.Container{
+						{Name: "main"},
+					},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "main", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}}},
+					},
+				},
+			}
+			_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, nil)
+			opts := &logsOptions{
+				skyhookName: testSkyhookNameLogs,
+				packageName: "pkg1",
+			}
+
+			err := runLogs(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("test-pod"))
+		})
+
+		It("should show no pods matched message when package filter doesn't match", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: skyhookNamespace,
+					Labels: map[string]string{
+						v1alpha1.METADATA_PREFIX + "/name":    testSkyhookNameLogs,
+						v1alpha1.METADATA_PREFIX + "/package": "other-pkg-1.0.0",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node1",
+				},
+			}
+			_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+
+			kubeClient := client.NewForTesting(fakeKube, nil)
+			opts := &logsOptions{
+				skyhookName: testSkyhookNameLogs,
+				packageName: "pkg1",
+			}
+
+			err := runLogs(gocontext.Background(), output, kubeClient, opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("No pods matched"))
+		})
+	})
+
 	Describe("NewLogsCmd", func() {
 		var logsCmd *cobra.Command
 
@@ -265,11 +430,21 @@ var _ = Describe("Package Logs Command", func() {
 			Expect(err.Error()).To(ContainSubstring("skyhook"))
 		})
 
+		It("should require exactly one argument", func() {
+			freshCtx := context.NewCLIContext(nil)
+			freshCmd := NewLogsCmd(freshCtx)
+			freshCmd.SetArgs([]string{"--skyhook", "test"})
+			err := freshCmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("accepts 1 arg"))
+		})
+
 		It("should validate stage flag values", func() {
 			logsCmd.SetArgs([]string{"pkg1", "--skyhook", "test", "--stage", "invalid"})
 			err := logsCmd.Execute()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid stage"))
+			Expect(err.Error()).To(ContainSubstring("must be one of apply, config, interrupt, post-interrupt"))
 		})
 
 		It("should accept valid stage values", func() {
@@ -306,6 +481,48 @@ var _ = Describe("Package Logs Command", func() {
 		It("should have stage flag", func() {
 			stageFlag := logsCmd.Flags().Lookup("stage")
 			Expect(stageFlag).NotTo(BeNil())
+		})
+
+		It("should have correct command metadata", func() {
+			Expect(logsCmd.Use).To(Equal("logs <package-name>"))
+			Expect(logsCmd.Short).To(ContainSubstring("Retrieve logs"))
+			Expect(logsCmd.Long).To(ContainSubstring("Skyhook labels"))
+		})
+
+		It("should have example usage", func() {
+			Expect(logsCmd.Example).To(ContainSubstring("kubectl skyhook"))
+			Expect(logsCmd.Example).To(ContainSubstring("-f"))
+			Expect(logsCmd.Example).To(ContainSubstring("--tail"))
+		})
+
+		It("should require exactly one argument", func() {
+			testCtx := context.NewCLIContext(nil)
+			cmd := NewLogsCmd(testCtx)
+			cmd.SetArgs([]string{"--skyhook", "test"})
+			err := cmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("accepts 1 arg"))
+		})
+	})
+
+	Describe("logsOptions struct", func() {
+		It("should be initialized correctly", func() {
+			testCtx := context.NewCLIContext(nil)
+			cmd := NewLogsCmd(testCtx)
+
+			// Default follow should be false
+			followFlag := cmd.Flags().Lookup("follow")
+			Expect(followFlag.DefValue).To(Equal("false"))
+
+			// Default tail should be -1
+			tailFlag := cmd.Flags().Lookup("tail")
+			Expect(tailFlag.DefValue).To(Equal("-1"))
+		})
+	})
+
+	Describe("skyhookNamespace constant", func() {
+		It("should be set to skyhook", func() {
+			Expect(skyhookNamespace).To(Equal("skyhook"))
 		})
 	})
 })

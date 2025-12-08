@@ -74,5 +74,62 @@ var _ = Describe("CLI Utility Functions", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(skyhook.Name).To(Equal("test-skyhook"))
 		})
+
+		It("should handle unstructured with packages", func() {
+			u := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "skyhook.nvidia.com/v1alpha1",
+					"kind":       "Skyhook",
+					"metadata": map[string]interface{}{
+						"name": "test-skyhook",
+					},
+					"spec": map[string]interface{}{
+						"packages": map[string]interface{}{
+							"pkg1": map[string]interface{}{
+								"version": "1.0.0",
+							},
+						},
+					},
+				},
+			}
+			skyhook, err := UnstructuredToSkyhook(u)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(skyhook.Spec.Packages).To(HaveKey("pkg1"))
+		})
+
+	})
+
+	Describe("EscapeJSONPointer", func() {
+		It("should escape tilde", func() {
+			result := EscapeJSONPointer("key~value")
+			Expect(result).To(Equal("key~0value"))
+		})
+
+		It("should escape forward slash", func() {
+			result := EscapeJSONPointer("key/value")
+			Expect(result).To(Equal("key~1value"))
+		})
+
+		It("should escape both tilde and forward slash", func() {
+			result := EscapeJSONPointer("key~with/special")
+			Expect(result).To(Equal("key~0with~1special"))
+		})
+
+		It("should handle string without special characters", func() {
+			result := EscapeJSONPointer("normalkey")
+			Expect(result).To(Equal("normalkey"))
+		})
+
+		It("should handle empty string", func() {
+			result := EscapeJSONPointer("")
+			Expect(result).To(Equal(""))
+		})
+
+		It("should escape tilde before forward slash per RFC 6901", func() {
+			// RFC 6901 requires ~ to be escaped first, then /
+			// This ensures ~/value becomes ~0~1value, not ~01value
+			result := EscapeJSONPointer("~/value")
+			Expect(result).To(Equal("~0~1value"))
+		})
 	})
 })

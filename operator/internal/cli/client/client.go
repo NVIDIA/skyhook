@@ -120,3 +120,11 @@ func (f *Factory) Reset() {
 	f.client = nil
 	f.err = nil
 }
+
+// NewForTesting creates a Client with the provided interfaces for testing.
+func NewForTesting(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface) *Client {
+	return &Client{
+		kubeClient:    kubeClient,
+		dynamicClient: dynamicClient,
+	}
+}
