@@ -68,6 +68,21 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			for _, expected := range expectedPackageCommands {
 				Expect(packageSubs).To(ContainElement(expected))
 			}
+
+			// Verify node subcommands
+			nodeCmd := findCommand(rootCmd, "node")
+			Expect(nodeCmd).NotTo(BeNil())
+			nodeSubs := getCommandNames(nodeCmd)
+			expectedNodeCommands := []string{
+				"list",
+				"status [node-name...] [flags]",
+				"reset <node-name...>",
+				"ignore <node-name...>",
+				"unignore <node-name...>",
+			}
+			for _, expected := range expectedNodeCommands {
+				Expect(nodeSubs).To(ContainElement(expected))
+			}
 		})
 	})
 
