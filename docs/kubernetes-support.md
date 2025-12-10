@@ -57,7 +57,7 @@ We understand many installations run slightly older Kubernetes versions. Our str
 
 **Choose your Skyhook version based on your Kubernetes version:**
 
-- **Kubernetes 1.34, 1.33, 1.32, or 1.31:** Use latest Skyhook (v0.9.0+)
+- **Kubernetes 1.34, 1.33, 1.32, or 1.31:** Use latest Skyhook (v0.9.x or v0.10.0)
 - **Kubernetes 1.30:** Use Skyhook v0.8.x (K8s 1.30 is EOL but v0.8.x still works)
 - **Kubernetes 1.29 or older:** Use Skyhook v0.8.x or older (check release notes for compatibility)
 
