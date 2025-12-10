@@ -58,6 +58,7 @@ Skyhook uses **release branches** to manage patches and maintenance releases:
 ```bash
 release/v0.8.x    # Contains operator v0.8.0 + agent v6.3.0 + chart v0.8.x
 release/v0.9.x    # Contains operator v0.9.0 + (agent v6.3.0*) + chart v0.9.x
+release/v0.10.x   # Contains operator v0.10.0 + (agent v6.3.0*) + chart v0.10.x
 ```
 *Agent versions may not change every release - operator drives the release cycle
 
