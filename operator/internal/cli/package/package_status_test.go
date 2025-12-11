@@ -208,6 +208,7 @@ var _ = Describe("Package Status Command", func() {
 			fakeKube    *fake.Clientset
 			mockDynamic *mockdynamic.Interface
 			mockNSRes   *mockdynamic.NamespaceableResourceInterface
+			kubeClient  *client.Client
 		)
 
 		BeforeEach(func() {
@@ -215,6 +216,7 @@ var _ = Describe("Package Status Command", func() {
 			fakeKube = fake.NewSimpleClientset()
 			mockDynamic = &mockdynamic.Interface{}
 			mockNSRes = &mockdynamic.NamespaceableResourceInterface{}
+			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)
 		})
 
 		createSkyhookUnstructured := func() *unstructured.Unstructured {
@@ -258,7 +260,6 @@ var _ = Describe("Package Status Command", func() {
 			_, err := fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
@@ -290,7 +291,6 @@ var _ = Describe("Package Status Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
@@ -319,7 +319,6 @@ var _ = Describe("Package Status Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
@@ -346,7 +345,6 @@ var _ = Describe("Package Status Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
@@ -378,7 +376,6 @@ var _ = Describe("Package Status Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
@@ -410,7 +407,6 @@ var _ = Describe("Package Status Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
@@ -445,7 +441,6 @@ var _ = Describe("Package Status Command", func() {
 				_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			}
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
