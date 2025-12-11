@@ -74,7 +74,7 @@ func New(flags *genericclioptions.ConfigFlags) (*Client, error) {
 	return NewWithClientsAndConfig(kubeClient, dynamicClient, cfg), nil
 }
 
-// newWithClientsAndConfig creates a Client with pre-built clients and REST config.
+// NewWithClientsAndConfig creates a Client with pre-built clients and REST config.
 // Internal helper for combining clients with their configuration.
 func NewWithClientsAndConfig(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface, restConfig *rest.Config) *Client {
 	return &Client{

@@ -174,7 +174,14 @@ func runLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts
 		}
 
 		containers := getContainersToLog(&pod, opts)
-		for _, containerName := range containers {
+		for i, containerName := range containers {
+			// Add container header when showing multiple containers
+			if len(containers) > 1 {
+				if i > 0 {
+					_, _ = fmt.Fprintln(out)
+				}
+				_, _ = fmt.Fprintf(out, "=== Container: %s ===\n", containerName)
+			}
 			if err := getContainerLogs(ctx, out, kubeClient, opts, &pod, containerName); err != nil {
 				_, _ = fmt.Fprintf(out, "Error getting logs for %s/%s: %v\n", pod.Name, containerName, err)
 			}
@@ -203,10 +210,10 @@ func getContainersToLog(pod *corev1.Pod, opts *logsOptions) []string {
 		return nil
 	}
 
-	// Default: find the most relevant container based on actual status
-	// Look for the last init container that has run or is running (where the actual work happens)
-	for i := len(pod.Status.InitContainerStatuses) - 1; i >= 0; i-- {
-		cs := pod.Status.InitContainerStatuses[i]
+	// Default: return all init containers that have run or are running
+	containers := make([]string, 0, len(pod.Status.InitContainerStatuses))
+
+	for _, cs := range pod.Status.InitContainerStatuses {
 		// Skip containers that haven't started yet
 		if cs.State.Waiting != nil {
 			continue
@@ -215,38 +222,28 @@ func getContainersToLog(pod *corev1.Pod, opts *logsOptions) []string {
 		if strings.HasSuffix(cs.Name, "-init") {
 			continue
 		}
-		// Found a container that has run or is running
-		return []string{cs.Name}
+		containers = append(containers, cs.Name)
 	}
 
-	// If no non-init container found, try the most recent init container that has run
-	for i := len(pod.Status.InitContainerStatuses) - 1; i >= 0; i-- {
-		cs := pod.Status.InitContainerStatuses[i]
+	// If we found init containers, return them
+	if len(containers) > 0 {
+		return containers
+	}
+
+	// No package execution containers found, try any init container that has run
+	for _, cs := range pod.Status.InitContainerStatuses {
 		if cs.State.Running != nil || cs.State.Terminated != nil {
-			return []string{cs.Name}
+			containers = append(containers, cs.Name)
 		}
 	}
 
-	// Check regular containers if no init containers have run
-	for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
-		cs := pod.Status.ContainerStatuses[i]
-		if cs.State.Running != nil || cs.State.Terminated != nil {
-			// Skip the pause container if there are other options
-			if cs.Name == "pause" && len(pod.Status.ContainerStatuses) > 1 {
-				continue
-			}
-			return []string{cs.Name}
-		}
+	if len(containers) > 0 {
+		return containers
 	}
 
 	// Fallback: if nothing has run yet, show the first init container (will show waiting message)
 	if len(pod.Spec.InitContainers) > 0 {
 		return []string{pod.Spec.InitContainers[0].Name}
-	}
-
-	// Final fallback: first regular container
-	if len(pod.Spec.Containers) > 0 {
-		return []string{pod.Spec.Containers[0].Name}
 	}
 
 	return nil
