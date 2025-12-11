@@ -261,18 +261,19 @@ var _ = Describe("Package Logs Command", func() {
 
 	Describe("runLogs", func() {
 		var (
-			output   *bytes.Buffer
-			fakeKube *fake.Clientset
+			output     *bytes.Buffer
+			fakeKube   *fake.Clientset
+			kubeClient *client.Client
 		)
 
 		BeforeEach(func() {
 			output = &bytes.Buffer{}
 			fakeKube = fake.NewSimpleClientset()
+			kubeClient = client.NewWithClientsAndConfig(fakeKube, nil, nil)
 		})
 
 		It("should show message when no pods found", func() {
 			// No pods in the cluster
-			kubeClient := client.NewForTesting(fakeKube, nil)
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",
@@ -300,7 +301,6 @@ var _ = Describe("Package Logs Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, nil)
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",
@@ -338,7 +338,6 @@ var _ = Describe("Package Logs Command", func() {
 				_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 			}
 
-			kubeClient := client.NewForTesting(fakeKube, nil)
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",
@@ -376,7 +375,6 @@ var _ = Describe("Package Logs Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, nil)
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",
@@ -403,7 +401,6 @@ var _ = Describe("Package Logs Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Pods(skyhookNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, nil)
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",

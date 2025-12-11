@@ -259,12 +259,14 @@ var _ = Describe("Package Rerun Command", func() {
 			fakeKube    *fake.Clientset
 			mockDynamic *mockdynamic.Interface
 			mockNSRes   *mockdynamic.NamespaceableResourceInterface
+			kubeClient  *client.Client
 		)
 
 		BeforeEach(func() {
 			fakeKube = fake.NewSimpleClientset()
 			mockDynamic = &mockdynamic.Interface{}
 			mockNSRes = &mockdynamic.NamespaceableResourceInterface{}
+			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)
 		})
 
 		createSkyhookUnstructured := func() *unstructured.Unstructured {
@@ -298,7 +300,6 @@ var _ = Describe("Package Rerun Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			cliCtx := context.NewCLIContext(nil)
 			cmd := &cobra.Command{}
 			output := &bytes.Buffer{}
@@ -335,7 +336,6 @@ var _ = Describe("Package Rerun Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			cliCtx := context.NewCLIContext(nil)
 			cmd := &cobra.Command{}
 			output := &bytes.Buffer{}
@@ -371,7 +371,6 @@ var _ = Describe("Package Rerun Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			cliCtx := context.NewCLIContext(nil)
 			cliCtx.GlobalFlags.DryRun = true
 			cmd := &cobra.Command{}
@@ -408,7 +407,6 @@ var _ = Describe("Package Rerun Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			cliCtx := context.NewCLIContext(nil)
 			cmd := &cobra.Command{}
 			output := &bytes.Buffer{}
@@ -445,7 +443,6 @@ var _ = Describe("Package Rerun Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			cliCtx := context.NewCLIContext(nil)
 			cmd := &cobra.Command{}
 			output := &bytes.Buffer{}
@@ -481,7 +478,6 @@ var _ = Describe("Package Rerun Command", func() {
 			}
 			_, _ = fakeKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 
-			kubeClient := client.NewForTesting(fakeKube, mockDynamic)
 			cliCtx := context.NewCLIContext(nil)
 			cmd := &cobra.Command{}
 			output := &bytes.Buffer{}
