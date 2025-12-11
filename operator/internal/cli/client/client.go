@@ -71,11 +71,17 @@ func New(flags *genericclioptions.ConfigFlags) (*Client, error) {
 		return nil, fmt.Errorf("creating dynamic client: %w", err)
 	}
 
+	return NewWithClientsAndConfig(kubeClient, dynamicClient, cfg), nil
+}
+
+// NewWithClientsAndConfig creates a Client with pre-built clients and REST config.
+// Internal helper for combining clients with their configuration.
+func NewWithClientsAndConfig(kubeClient kubernetes.Interface, dynamicClient dynamic.Interface, restConfig *rest.Config) *Client {
 	return &Client{
-		restConfig:    cfg,
+		restConfig:    restConfig,
 		kubeClient:    kubeClient,
 		dynamicClient: dynamicClient,
-	}, nil
+	}
 }
 
 // Kubernetes returns the typed Kubernetes clientset.
@@ -90,6 +96,9 @@ func (c *Client) Dynamic() dynamic.Interface {
 
 // RESTConfig returns a copy of the REST configuration used by the client.
 func (c *Client) RESTConfig() *rest.Config {
+	if c.restConfig == nil {
+		return nil
+	}
 	return rest.CopyConfig(c.restConfig)
 }
 
