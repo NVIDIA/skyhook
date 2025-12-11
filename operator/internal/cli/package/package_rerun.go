@@ -54,6 +54,17 @@ type rerunOptions struct {
 	confirm     bool
 }
 
+// BindToCmd binds the rerun options to command flags
+func (o *rerunOptions) BindToCmd(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
+	cmd.Flags().StringArrayVar(&o.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times, required)")
+	cmd.Flags().StringVar(&o.stage, "stage", "", "Re-run from specific stage (apply, config, interrupt, post-interrupt)")
+	cmd.Flags().BoolVarP(&o.confirm, "confirm", "y", false, "Skip confirmation prompt")
+
+	_ = cmd.MarkFlagRequired("skyhook")
+	_ = cmd.MarkFlagRequired("node")
+}
+
 // NewRerunCmd creates the package rerun command
 func NewRerunCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &rerunOptions{}
@@ -116,13 +127,7 @@ Nodes can be specified using exact names or regex patterns. Multiple
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
-	cmd.Flags().StringArrayVar(&opts.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times, required)")
-	cmd.Flags().StringVar(&opts.stage, "stage", "", "Re-run from specific stage (apply, config, interrupt, post-interrupt)")
-	cmd.Flags().BoolVarP(&opts.confirm, "confirm", "y", false, "Skip confirmation prompt")
-
-	_ = cmd.MarkFlagRequired("skyhook")
-	_ = cmd.MarkFlagRequired("node")
+	opts.BindToCmd(cmd)
 
 	return cmd
 }

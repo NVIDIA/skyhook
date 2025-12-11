@@ -44,6 +44,15 @@ type statusOptions struct {
 	output      string
 }
 
+// BindToCmd binds the status options to command flags
+func (o *statusOptions) BindToCmd(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
+	cmd.Flags().StringArrayVar(&o.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times)")
+	cmd.Flags().StringVarP(&o.output, "output", "o", "table", "Output format: table, json, wide")
+
+	_ = cmd.MarkFlagRequired("skyhook")
+}
+
 // NewStatusCmd creates the package status command
 func NewStatusCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &statusOptions{}
@@ -88,11 +97,7 @@ The output can be filtered by:
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
-	cmd.Flags().StringArrayVar(&opts.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times)")
-	cmd.Flags().StringVarP(&opts.output, "output", "o", "table", "Output format: table, json, wide")
-
-	_ = cmd.MarkFlagRequired("skyhook")
+	opts.BindToCmd(cmd)
 
 	return cmd
 }
