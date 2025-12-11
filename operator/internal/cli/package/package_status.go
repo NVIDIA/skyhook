@@ -104,12 +104,19 @@ The output can be filtered by:
 
 // nodePackageStatus represents the status of a package on a node
 type nodePackageStatus struct {
-	NodeName    string `json:"nodeName"`
-	PackageName string `json:"packageName"`
-	Version     string `json:"version"`
-	Stage       string `json:"stage"`
-	State       string `json:"state"`
-	Image       string `json:"image,omitempty"`
+	// Embed the API PackageStatus for consistency and to avoid drift
+	v1alpha1.PackageStatus
+
+	// NodeName is the name of the node (not in PackageStatus)
+	NodeName string `json:"nodeName"`
+}
+
+// newNodePackageStatus creates a nodePackageStatus from API types
+func newNodePackageStatus(nodeName string, pkgStatus v1alpha1.PackageStatus) nodePackageStatus {
+	return nodePackageStatus{
+		PackageStatus: pkgStatus,
+		NodeName:      nodeName,
+	}
 }
 
 func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *statusOptions) error {
@@ -149,14 +156,7 @@ func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, op
 		allNodes = append(allNodes, node.Name)
 
 		for _, pkgStatus := range nodeState {
-			statuses = append(statuses, nodePackageStatus{
-				NodeName:    node.Name,
-				PackageName: pkgStatus.Name,
-				Version:     pkgStatus.Version,
-				Stage:       string(pkgStatus.Stage),
-				State:       string(pkgStatus.State),
-				Image:       pkgStatus.Image,
-			})
+			statuses = append(statuses, newNodePackageStatus(node.Name, pkgStatus))
 		}
 	}
 
@@ -184,7 +184,7 @@ func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, op
 	if opts.packageName != "" {
 		var filtered []nodePackageStatus
 		for _, s := range statuses {
-			if s.PackageName == opts.packageName {
+			if s.Name == opts.packageName {
 				filtered = append(filtered, s)
 			}
 		}
@@ -196,7 +196,7 @@ func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, op
 		if statuses[i].NodeName != statuses[j].NodeName {
 			return statuses[i].NodeName < statuses[j].NodeName
 		}
-		return statuses[i].PackageName < statuses[j].PackageName
+		return statuses[i].Name < statuses[j].Name
 	})
 
 	if len(statuses) == 0 {
@@ -234,7 +234,7 @@ func outputTable(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackag
 
 	for _, s := range statuses {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			s.NodeName, s.PackageName, s.Version, s.Stage, s.State)
+			s.NodeName, s.Name, s.Version, string(s.Stage), string(s.State))
 	}
 
 	return w.Flush()
@@ -250,7 +250,7 @@ func outputWide(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackage
 
 	for _, s := range statuses {
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			s.NodeName, s.PackageName, s.Version, s.Stage, s.State, s.Image)
+			s.NodeName, s.Name, s.Version, string(s.Stage), string(s.State), s.Image)
 	}
 
 	return w.Flush()

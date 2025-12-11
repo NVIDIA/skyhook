@@ -82,7 +82,9 @@ var _ = Describe("Package Status Command", func() {
 	Describe("outputJSON", func() {
 		It("should output valid JSON", func() {
 			statuses := []nodePackageStatus{
-				{NodeName: "node1", PackageName: "pkg1", Version: "1.0", Stage: "apply", State: "complete"},
+				newNodePackageStatus("node1", v1alpha1.PackageStatus{
+					Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete,
+				}),
 			}
 			output := &bytes.Buffer{}
 
@@ -98,14 +100,10 @@ var _ = Describe("Package Status Command", func() {
 
 		It("should include all fields in JSON output", func() {
 			statuses := []nodePackageStatus{
-				{
-					NodeName:    "node1",
-					PackageName: "pkg1",
-					Version:     "1.0",
-					Stage:       "apply",
-					State:       "complete",
-					Image:       "nginx:latest",
-				},
+				newNodePackageStatus("node1", v1alpha1.PackageStatus{
+					Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply,
+					State: v1alpha1.StateComplete, Image: "nginx:latest",
+				}),
 			}
 			output := &bytes.Buffer{}
 
@@ -113,7 +111,7 @@ var _ = Describe("Package Status Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(output.String()).To(ContainSubstring(`"nodeName": "node1"`))
-			Expect(output.String()).To(ContainSubstring(`"packageName": "pkg1"`))
+			Expect(output.String()).To(ContainSubstring(`"name": "pkg1"`))
 			Expect(output.String()).To(ContainSubstring(`"version": "1.0"`))
 			Expect(output.String()).To(ContainSubstring(`"stage": "apply"`))
 			Expect(output.String()).To(ContainSubstring(`"state": "complete"`))
@@ -140,7 +138,9 @@ var _ = Describe("Package Status Command", func() {
 			skyhook.Name = testSkyhookName
 
 			statuses := []nodePackageStatus{
-				{NodeName: "node1", PackageName: "pkg1", Version: "1.0", Stage: "apply", State: "complete"},
+				newNodePackageStatus("node1", v1alpha1.PackageStatus{
+					Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete,
+				}),
 			}
 			output := &bytes.Buffer{}
 
@@ -189,7 +189,10 @@ var _ = Describe("Package Status Command", func() {
 			skyhook.Name = testSkyhookName
 
 			statuses := []nodePackageStatus{
-				{NodeName: "node1", PackageName: "pkg1", Version: "1.0", Stage: "apply", State: "complete", Image: "nginx:latest"},
+				newNodePackageStatus("node1", v1alpha1.PackageStatus{
+					Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply,
+					State: v1alpha1.StateComplete, Image: "nginx:latest",
+				}),
 			}
 			output := &bytes.Buffer{}
 
