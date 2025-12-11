@@ -45,6 +45,17 @@ type logsOptions struct {
 	tail        int64
 }
 
+// BindToCmd binds the logs options to command flags
+func (o *logsOptions) BindToCmd(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
+	cmd.Flags().StringVar(&o.node, "node", "", "Filter by node name")
+	cmd.Flags().StringVar(&o.stage, "stage", "", "Filter by stage (apply, config, interrupt, post-interrupt)")
+	cmd.Flags().BoolVarP(&o.follow, "follow", "f", false, "Follow log output")
+	cmd.Flags().Int64Var(&o.tail, "tail", -1, "Number of lines to show from the end of logs (-1 for all)")
+
+	_ = cmd.MarkFlagRequired("skyhook")
+}
+
 // NewLogsCmd creates the package logs command
 func NewLogsCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &logsOptions{}
@@ -96,13 +107,7 @@ By default, it shows logs from the most relevant stage container.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
-	cmd.Flags().StringVar(&opts.node, "node", "", "Filter by node name")
-	cmd.Flags().StringVar(&opts.stage, "stage", "", "Filter by stage (apply, config, interrupt, post-interrupt)")
-	cmd.Flags().BoolVarP(&opts.follow, "follow", "f", false, "Follow log output")
-	cmd.Flags().Int64Var(&opts.tail, "tail", -1, "Number of lines to show from the end of logs (-1 for all)")
-
-	_ = cmd.MarkFlagRequired("skyhook")
+	opts.BindToCmd(cmd)
 
 	return cmd
 }
