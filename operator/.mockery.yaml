@@ -46,3 +46,11 @@ packages:
       structname: "{{.InterfaceName}}"
     interfaces:
       Client: {}
+  k8s.io/client-go/dynamic:
+    config:
+      dir: internal/mocks/{{.SrcPackageName}}
+      structname: "{{.InterfaceName}}"
+    interfaces:
+      Interface: {}
+      NamespaceableResourceInterface: {}
+      ResourceInterface: {}
