@@ -187,33 +187,36 @@ var _ = Describe("Package Logs Command", func() {
 			Expect(containers).To(ConsistOf("pkg-apply"))
 		})
 
-		It("should find running regular container when no init containers have run", func() {
+		It("should return all init containers that have run", func() {
 			pod := &corev1.Pod{
 				Status: corev1.PodStatus{
-					ContainerStatuses: []corev1.ContainerStatus{
-						{Name: "main", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{Name: "pkg-init", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}}},
+						{Name: "pkg-apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}}},
+						{Name: "pkg-config", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 					},
 				},
 			}
 			opts := &logsOptions{}
 
 			containers := getContainersToLog(pod, opts)
-			Expect(containers).To(ConsistOf("main"))
+			// Should return all non-"-init" suffix containers that have run
+			Expect(containers).To(ConsistOf("pkg-apply", "pkg-config"))
 		})
 
-		It("should skip pause container if other containers exist", func() {
+		It("should return nil when no init containers exist and no regular containers have run", func() {
 			pod := &corev1.Pod{
+				Spec: corev1.PodSpec{},
 				Status: corev1.PodStatus{
 					ContainerStatuses: []corev1.ContainerStatus{
-						{Name: "pause", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
-						{Name: "main", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
+						{Name: "pause", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{}}},
 					},
 				},
 			}
 			opts := &logsOptions{}
 
 			containers := getContainersToLog(pod, opts)
-			Expect(containers).To(ConsistOf("main"))
+			Expect(containers).To(BeNil())
 		})
 
 		It("should fallback to first init container if nothing has run", func() {
@@ -236,18 +239,18 @@ var _ = Describe("Package Logs Command", func() {
 			Expect(containers).To(ConsistOf("first-init"))
 		})
 
-		It("should fallback to first regular container if no init containers", func() {
+		It("should return nil if no init containers exist", func() {
 			pod := &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						{Name: "first-container"},
+						{Name: "pause"}, // Skyhook always has a pause container but no init containers is invalid
 					},
 				},
 			}
 			opts := &logsOptions{}
 
 			containers := getContainersToLog(pod, opts)
-			Expect(containers).To(ConsistOf("first-container"))
+			Expect(containers).To(BeNil())
 		})
 
 		It("should return nil for empty pod", func() {
@@ -325,13 +328,19 @@ var _ = Describe("Package Logs Command", func() {
 					},
 					Spec: corev1.PodSpec{
 						NodeName: nodeName,
+						InitContainers: []corev1.Container{
+							{Name: "pkg1-apply"},
+						},
 						Containers: []corev1.Container{
-							{Name: "main"},
+							{Name: "pause"},
 						},
 					},
 					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{Name: "pkg1-apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}}},
+						},
 						ContainerStatuses: []corev1.ContainerStatus{
-							{Name: "main", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}}},
+							{Name: "pause", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 						},
 					},
 				}
@@ -363,13 +372,19 @@ var _ = Describe("Package Logs Command", func() {
 				},
 				Spec: corev1.PodSpec{
 					NodeName: "node1",
+					InitContainers: []corev1.Container{
+						{Name: "pkg1-apply"},
+					},
 					Containers: []corev1.Container{
-						{Name: "main"},
+						{Name: "pause"},
 					},
 				},
 				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{Name: "pkg1-apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}}},
+					},
 					ContainerStatuses: []corev1.ContainerStatus{
-						{Name: "main", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}}},
+						{Name: "pause", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}},
 					},
 				},
 			}
