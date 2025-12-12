@@ -176,6 +176,12 @@ e2e-tests: chainsaw install run ## Run end to end tests.
 	$(MAKE) kill 
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
+cli-e2e-tests: chainsaw install run build-cli ## Run CLI end to end tests.
+	## Tests the kubectl-skyhook CLI commands against a real cluster
+	## Requires nodes labeled with skyhook.nvidia.com/test-node=skyhooke2e
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS)
+	$(MAKE) kill
+
 helm-tests: helm chainsaw
 	## Here we need to run the operator so that the old CRD can deleted along with
 	## any leftover SCRs. Without this the SCRs may have finalizers which rely on
