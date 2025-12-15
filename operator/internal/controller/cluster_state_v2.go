@@ -530,17 +530,30 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 	return np.selectNodesWithCompartments(s, compartments, tolerations)
 }
 
+// CheckNodeIgnoreLabel checks if a node has the ignore label set to true
+func CheckNodeIgnoreLabel(node wrapper.SkyhookNode) bool {
+	ignoreLabel := fmt.Sprintf("%s/ignore", v1alpha1.METADATA_PREFIX)
+	if val, ok := node.GetNode().Labels[ignoreLabel]; ok && val == "true" {
+		return true
+	}
+	return false
+}
+
 // selectNodesWithCompartments selects nodes using compartment-based batch processing
 func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments map[string]*wrapper.Compartment, tolerations []corev1.Toleration) []wrapper.SkyhookNode {
 	selectedNodes := make([]wrapper.SkyhookNode, 0)
 	nodesWithTaintTolerationIssue := make([]string, 0)
+	ignoredNodes := make([]string, 0)
 
-	// First, check ALL nodes for taint issues to set the condition correctly
-	// This ensures the condition reflects the true state even when no batch is being processed
+	// First, check ALL nodes for taint and ignore issues to set the conditions correctly
+	// This ensures the conditions reflect the true state even when no batch is being processed
 	for _, compartment := range compartments {
 		for _, node := range compartment.GetNodes() {
 			if !CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
 				nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
+			}
+			if CheckNodeIgnoreLabel(node) {
+				ignoredNodes = append(ignoredNodes, node.GetNode().Name)
 			}
 		}
 	}
@@ -550,6 +563,11 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 		batchNodes := compartment.GetNodesForNextBatch()
 
 		for _, node := range batchNodes {
+			// Check if node is ignored
+			if CheckNodeIgnoreLabel(node) {
+				node.SetStatus(v1alpha1.StatusBlocked)
+				continue
+			}
 			// Check taint toleration
 			if CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
 				selectedNodes = append(selectedNodes, node)
@@ -562,6 +580,8 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 
 	// Add condition about taint toleration issues
 	np.updateTaintToleranceCondition(s, nodesWithTaintTolerationIssue)
+	// Add condition about ignored nodes
+	np.updateIgnoredNodesCondition(s, ignoredNodes)
 
 	return selectedNodes
 }
@@ -582,6 +602,27 @@ func (np *NodePicker) updateTaintToleranceCondition(s SkyhookNodes, nodesWithTai
 			Status:             metav1.ConditionFalse,
 			Reason:             "TaintNotTolerable",
 			Message:            "All nodes have tolerable taints.",
+			LastTransitionTime: metav1.Now(),
+		})
+	}
+}
+
+// updateIgnoredNodesCondition updates the ignored nodes condition on the skyhook
+func (np *NodePicker) updateIgnoredNodesCondition(s SkyhookNodes, ignoredNodes []string) {
+	if len(ignoredNodes) > 0 {
+		s.GetSkyhook().AddCondition(metav1.Condition{
+			Type:               fmt.Sprintf("%s/NodesIgnored", v1alpha1.METADATA_PREFIX),
+			Status:             metav1.ConditionTrue,
+			Reason:             "NodesIgnored",
+			Message:            fmt.Sprintf("Node [%s] has ignore label set. Skipping.", strings.Join(ignoredNodes, ", ")),
+			LastTransitionTime: metav1.Now(),
+		})
+	} else {
+		s.GetSkyhook().AddCondition(metav1.Condition{
+			Type:               fmt.Sprintf("%s/NodesIgnored", v1alpha1.METADATA_PREFIX),
+			Status:             metav1.ConditionFalse,
+			Reason:             "NodesIgnored",
+			Message:            "No nodes have ignore label set.",
 			LastTransitionTime: metav1.Now(),
 		})
 	}
