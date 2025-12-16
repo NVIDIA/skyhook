@@ -79,54 +79,7 @@ var _ = Describe("Package Status Command", func() {
 		})
 	})
 
-	Describe("outputJSON", func() {
-		It("should output valid JSON", func() {
-			statuses := []nodePackageStatus{
-				newNodePackageStatus("node1", v1alpha1.PackageStatus{
-					Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete,
-				}),
-			}
-			output := &bytes.Buffer{}
-
-			err := outputJSON(output, statuses)
-			Expect(err).NotTo(HaveOccurred())
-
-			var result []nodePackageStatus
-			err = json.Unmarshal(output.Bytes(), &result)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(HaveLen(1))
-			Expect(result[0].NodeName).To(Equal("node1"))
-		})
-
-		It("should include all fields in JSON output", func() {
-			statuses := []nodePackageStatus{
-				newNodePackageStatus("node1", v1alpha1.PackageStatus{
-					Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply,
-					State: v1alpha1.StateComplete, Image: "nginx:latest",
-				}),
-			}
-			output := &bytes.Buffer{}
-
-			err := outputJSON(output, statuses)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(output.String()).To(ContainSubstring(`"nodeName": "node1"`))
-			Expect(output.String()).To(ContainSubstring(`"name": "pkg1"`))
-			Expect(output.String()).To(ContainSubstring(`"version": "1.0"`))
-			Expect(output.String()).To(ContainSubstring(`"stage": "apply"`))
-			Expect(output.String()).To(ContainSubstring(`"state": "complete"`))
-			Expect(output.String()).To(ContainSubstring(`"image": "nginx:latest"`))
-		})
-
-		It("should handle empty statuses", func() {
-			output := &bytes.Buffer{}
-			err := outputJSON(output, []nodePackageStatus{})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(output.String()).To(ContainSubstring("[]"))
-		})
-	})
-
-	Describe("outputTable", func() {
+	Describe("outputPackageStatusTableOrWide", func() {
 		It("should output table format with headers", func() {
 			skyhook := &v1alpha1.Skyhook{
 				Spec: v1alpha1.SkyhookSpec{
@@ -144,7 +97,7 @@ var _ = Describe("Package Status Command", func() {
 			}
 			output := &bytes.Buffer{}
 
-			err := outputTable(output, skyhook, statuses)
+			err := outputPackageStatusTableOrWide(output, skyhook, statuses, false)
 			Expect(err).NotTo(HaveOccurred())
 
 			result := output.String()
@@ -170,15 +123,13 @@ var _ = Describe("Package Status Command", func() {
 			skyhook.Name = testSkyhookName
 
 			output := &bytes.Buffer{}
-			err := outputTable(output, skyhook, []nodePackageStatus{})
+			err := outputPackageStatusTableOrWide(output, skyhook, []nodePackageStatus{}, false)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(output.String()).To(ContainSubstring("Packages:"))
 		})
-	})
 
-	Describe("outputWide", func() {
-		It("should include IMAGE column", func() {
+		It("should include RESTARTS and IMAGE columns in wide output", func() {
 			skyhook := &v1alpha1.Skyhook{
 				Spec: v1alpha1.SkyhookSpec{
 					Packages: map[string]v1alpha1.Package{
@@ -191,16 +142,18 @@ var _ = Describe("Package Status Command", func() {
 			statuses := []nodePackageStatus{
 				newNodePackageStatus("node1", v1alpha1.PackageStatus{
 					Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply,
-					State: v1alpha1.StateComplete, Image: "nginx:latest",
+					State: v1alpha1.StateComplete, Restarts: 3, Image: "nginx:latest",
 				}),
 			}
 			output := &bytes.Buffer{}
 
-			err := outputWide(output, skyhook, statuses)
+			err := outputPackageStatusTableOrWide(output, skyhook, statuses, true)
 			Expect(err).NotTo(HaveOccurred())
 
 			result := output.String()
+			Expect(result).To(ContainSubstring("RESTARTS"))
 			Expect(result).To(ContainSubstring("IMAGE"))
+			Expect(result).To(ContainSubstring("3"))
 			Expect(result).To(ContainSubstring("nginx:latest"))
 		})
 	})
