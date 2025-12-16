@@ -24,6 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
@@ -151,29 +152,28 @@ func runIgnore(ctx context.Context, cmd *cobra.Command, kubeClient *client.Clien
 
 	for _, nodeName := range matchedNodes {
 		idx := nodeMap[nodeName]
-		node := nodeList.Items[idx].DeepCopy()
+		node := &nodeList.Items[idx]
 
-		if node.Labels == nil {
-			node.Labels = make(map[string]string)
-		}
-
+		var patchData []byte
 		if ignore {
 			// Check if already ignored
 			if val, ok := node.Labels[v1alpha1.NodeIgnoreLabel]; ok && val == labelValueTrue {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: already ignored\n", nodeName)
 				continue
 			}
-			node.Labels[v1alpha1.NodeIgnoreLabel] = labelValueTrue
+			// Add the label using merge patch
+			patchData = []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:%q}}}`, v1alpha1.NodeIgnoreLabel, labelValueTrue))
 		} else {
 			// Check if not ignored
 			if val, ok := node.Labels[v1alpha1.NodeIgnoreLabel]; !ok || val != labelValueTrue {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: not ignored\n", nodeName)
 				continue
 			}
-			delete(node.Labels, v1alpha1.NodeIgnoreLabel)
+			// Remove the label using merge patch (null removes the key)
+			patchData = []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:null}}}`, v1alpha1.NodeIgnoreLabel))
 		}
 
-		_, err := kubeClient.Kubernetes().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+		_, err := kubeClient.Kubernetes().CoreV1().Nodes().Patch(ctx, nodeName, types.MergePatchType, patchData, metav1.PatchOptions{})
 		if err != nil {
 			updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
 			continue

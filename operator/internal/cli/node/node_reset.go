@@ -27,6 +27,7 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
@@ -188,13 +189,10 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	successCount := 0
 
 	for _, nodeName := range nodesToReset {
-		idx := nodeMap[nodeName]
-		node := nodeList.Items[idx].DeepCopy()
+		// Remove the Skyhook annotation using merge patch
+		patchData := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, annotationKey))
 
-		// Remove the Skyhook annotation
-		delete(node.Annotations, annotationKey)
-
-		_, err := kubeClient.Kubernetes().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
+		_, err := kubeClient.Kubernetes().CoreV1().Nodes().Patch(ctx, nodeName, types.MergePatchType, patchData, metav1.PatchOptions{})
 		if err != nil {
 			updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
 			continue

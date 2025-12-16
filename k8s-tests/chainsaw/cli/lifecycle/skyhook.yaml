@@ -17,16 +17,18 @@
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
 metadata:
-  name: cli-package-test
+  name: cli-lifecycle-test
 spec:
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
   packages:
-    hello-world:
-      version: "3.2.3"
-      image: ghcr.io/nvidia/skyhook/agentless
-      env:
-        - name: SLEEP_LEN
-          value: "5"
+    test-package:
+      version: "1.0.0"
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
+      configMap:
+        apply.sh: |
+          #!/bin/bash
+          echo "Lifecycle test apply"
+          sleep 2
 

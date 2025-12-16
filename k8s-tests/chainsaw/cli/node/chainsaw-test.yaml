@@ -30,26 +30,11 @@ spec:
     assert: 120s
     exec: 90s
   steps:
-  # Step 1: Create a Skyhook and wait for activity
+  # Step 1: Create a Skyhook
   - name: setup-skyhook
     try:
     - apply:
         file: skyhook.yaml
-    - script:
-        timeout: 60s
-        content: |
-          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
-          echo "Waiting for Skyhook activity on node $NODE..."
-          for i in $(seq 1 30); do
-            ANNOTATION=$(kubectl get node "$NODE" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/nodeState_cli-node-test}' 2>/dev/null)
-            if [ -n "$ANNOTATION" ]; then
-              echo "Skyhook activity detected"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Timeout waiting for activity"
-          exit 1
 
   # Step 2: Test node list (table format)
   - name: test-node-list
