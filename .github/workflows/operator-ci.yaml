@@ -124,21 +124,11 @@ jobs:
       # Upload coverage to Coveralls using goveralls (Go-specific tool)
       - name: Upload coverage to Coveralls
         if: matrix.test-suite == 'e2e' && matrix.k8s-version == '1.34.0'
-        env:
-          COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
-        run: |
-          # Install goveralls
-          go install github.com/mattn/goveralls@latest
-          # Run goveralls from operator directory (where go.mod is located)
-          cd operator
-          # Verify coverage file exists
-          if [ ! -f reporting/cover.out ]; then
-            echo "ERROR: Coverage file not found at reporting/cover.out"
-            ls -la reporting/ || echo "reporting directory does not exist"
-            exit 1
-          fi
-          # Upload coverage (run from operator/ directory, path is relative to operator/)
-          goveralls -coverprofile=reporting/cover.out -service=github -repotoken=$COVERALLS_TOKEN
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: operator/reporting/cover.out
+          format: golang
   
   # Build multi-platform container image and push to registry
   build-and-push-operator:
