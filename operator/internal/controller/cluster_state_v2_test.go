@@ -114,6 +114,33 @@ var _ = Describe("cluster state v2 tests", func() {
 
 		Expect(CheckTaintToleration(tolerations, taints)).To(BeTrue())
 	})
+
+	It("When node has ignore label it is blocked", func() {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "node1", Labels: map[string]string{v1alpha1.METADATA_PREFIX + "/ignore": "true"}},
+		}
+		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.Skyhook{})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(CheckNodeIgnoreLabel(skyhookNode)).To(BeTrue())
+	})
+
+	It("When node does not have ignore label it is not blocked", func() {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "node1", Labels: map[string]string{}},
+		}
+		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.Skyhook{})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(CheckNodeIgnoreLabel(skyhookNode)).To(BeFalse())
+	})
+
+	It("When node has ignore label set to false it is not blocked", func() {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "node1", Labels: map[string]string{v1alpha1.METADATA_PREFIX + "/ignore": "false"}},
+		}
+		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.Skyhook{})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(CheckNodeIgnoreLabel(skyhookNode)).To(BeFalse())
+	})
 })
 
 // --- Add GetNextSkyhook tests ---
