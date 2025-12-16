@@ -33,6 +33,9 @@ import (
 
 const labelValueTrue = "true"
 
+// nodeIgnoreLabel is the label key used to ignore nodes from Skyhook processing
+var nodeIgnoreLabel = fmt.Sprintf("%s/ignore", v1alpha1.METADATA_PREFIX)
+
 // NewIgnoreCmd creates the node ignore command
 func NewIgnoreCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	cmd := &cobra.Command{
@@ -159,18 +162,18 @@ func runIgnore(ctx context.Context, cmd *cobra.Command, kubeClient *client.Clien
 
 		if ignore {
 			// Check if already ignored
-			if val, ok := node.Labels[v1alpha1.NodeIgnoreLabel]; ok && val == labelValueTrue {
+			if val, ok := node.Labels[nodeIgnoreLabel]; ok && val == labelValueTrue {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: already ignored\n", nodeName)
 				continue
 			}
-			node.Labels[v1alpha1.NodeIgnoreLabel] = labelValueTrue
+			node.Labels[nodeIgnoreLabel] = labelValueTrue
 		} else {
 			// Check if not ignored
-			if val, ok := node.Labels[v1alpha1.NodeIgnoreLabel]; !ok || val != labelValueTrue {
+			if val, ok := node.Labels[nodeIgnoreLabel]; !ok || val != labelValueTrue {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: not ignored\n", nodeName)
 				continue
 			}
-			delete(node.Labels, v1alpha1.NodeIgnoreLabel)
+			delete(node.Labels, nodeIgnoreLabel)
 		}
 
 		_, err := kubeClient.Kubernetes().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})

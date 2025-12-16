@@ -21,10 +21,13 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
+	"text/tabwriter"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 )
@@ -88,4 +91,92 @@ func UnstructuredToSkyhook(u *unstructured.Unstructured) (*v1alpha1.Skyhook, err
 	}
 
 	return &skyhook, nil
+}
+
+// OutputJSON writes data as indented JSON to the writer
+func OutputJSON(out io.Writer, data any) error {
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling json: %w", err)
+	}
+	_, _ = fmt.Fprintln(out, string(jsonData))
+	return nil
+}
+
+// OutputYAML writes data as YAML to the writer
+func OutputYAML(out io.Writer, data any) error {
+	yamlData, err := yaml.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshaling yaml: %w", err)
+	}
+	_, _ = fmt.Fprint(out, string(yamlData))
+	return nil
+}
+
+// TableConfig defines the column configuration for table/wide output
+// T is the type of items being displayed
+type TableConfig[T any] struct {
+	// Headers for table mode (always shown)
+	Headers []string
+	// Extract returns column values for table mode
+	Extract func(T) []string
+	// WideHeaders are additional headers appended in wide mode (optional)
+	WideHeaders []string
+	// WideExtract returns additional column values for wide mode (optional)
+	WideExtract func(T) []string
+}
+
+// OutputTable writes items as a table using the provided config
+func OutputTable[T any](out io.Writer, cfg TableConfig[T], items []T) error {
+	return outputTableInternal(out, cfg, items, false)
+}
+
+// OutputWide writes items as a wide table (table columns + wide columns)
+func OutputWide[T any](out io.Writer, cfg TableConfig[T], items []T) error {
+	return outputTableInternal(out, cfg, items, true)
+}
+
+// OutputTableWithHeader writes items as a table with a header line above
+func OutputTableWithHeader[T any](out io.Writer, headerLine string, cfg TableConfig[T], items []T) error {
+	_, _ = fmt.Fprintln(out, headerLine)
+	_, _ = fmt.Fprintln(out)
+	return outputTableInternal(out, cfg, items, false)
+}
+
+// OutputWideWithHeader writes items as a wide table with a header line above
+func OutputWideWithHeader[T any](out io.Writer, headerLine string, cfg TableConfig[T], items []T) error {
+	_, _ = fmt.Fprintln(out, headerLine)
+	_, _ = fmt.Fprintln(out)
+	return outputTableInternal(out, cfg, items, true)
+}
+
+func outputTableInternal[T any](out io.Writer, cfg TableConfig[T], items []T, wide bool) error {
+	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+
+	// Build headers
+	headers := cfg.Headers
+	if wide && len(cfg.WideHeaders) > 0 {
+		headers = append(headers, cfg.WideHeaders...)
+	}
+
+	// Write headers
+	_, _ = fmt.Fprintln(tw, strings.Join(headers, "\t"))
+
+	// Write separator
+	seps := make([]string, len(headers))
+	for i, h := range headers {
+		seps[i] = strings.Repeat("-", len(h))
+	}
+	_, _ = fmt.Fprintln(tw, strings.Join(seps, "\t"))
+
+	// Write rows
+	for _, item := range items {
+		row := cfg.Extract(item)
+		if wide && cfg.WideExtract != nil {
+			row = append(row, cfg.WideExtract(item)...)
+		}
+		_, _ = fmt.Fprintln(tw, strings.Join(row, "\t"))
+	}
+
+	return tw.Flush()
 }

@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
 )
@@ -135,7 +134,7 @@ var _ = Describe("Node Ignore Command", func() {
 				// Verify label was added
 				updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(updatedNode.Labels[v1alpha1.NodeIgnoreLabel]).To(Equal("true"))
+				Expect(updatedNode.Labels[nodeIgnoreLabel]).To(Equal("true"))
 			})
 
 			It("should skip already ignored nodes", func() {
@@ -143,7 +142,7 @@ var _ = Describe("Node Ignore Command", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "worker-1",
 						Labels: map[string]string{
-							v1alpha1.NodeIgnoreLabel: "true",
+							nodeIgnoreLabel: "true",
 						},
 					},
 				}
@@ -175,7 +174,7 @@ var _ = Describe("Node Ignore Command", func() {
 				for _, name := range []string{"worker-1", "worker-2", "worker-3"} {
 					updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), name, metav1.GetOptions{})
 					Expect(err).NotTo(HaveOccurred())
-					Expect(updatedNode.Labels[v1alpha1.NodeIgnoreLabel]).To(Equal("true"))
+					Expect(updatedNode.Labels[nodeIgnoreLabel]).To(Equal("true"))
 				}
 			})
 
@@ -199,7 +198,7 @@ var _ = Describe("Node Ignore Command", func() {
 				// Verify label was NOT added
 				updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
-				_, exists := updatedNode.Labels[v1alpha1.NodeIgnoreLabel]
+				_, exists := updatedNode.Labels[nodeIgnoreLabel]
 				Expect(exists).To(BeFalse())
 			})
 
@@ -220,7 +219,7 @@ var _ = Describe("Node Ignore Command", func() {
 				// Verify label was added
 				updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(updatedNode.Labels[v1alpha1.NodeIgnoreLabel]).To(Equal("true"))
+				Expect(updatedNode.Labels[nodeIgnoreLabel]).To(Equal("true"))
 			})
 		})
 
@@ -230,7 +229,7 @@ var _ = Describe("Node Ignore Command", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "worker-1",
 						Labels: map[string]string{
-							v1alpha1.NodeIgnoreLabel: "true",
+							nodeIgnoreLabel: "true",
 						},
 					},
 				}
@@ -244,7 +243,7 @@ var _ = Describe("Node Ignore Command", func() {
 				// Verify label was removed
 				updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
-				_, exists := updatedNode.Labels[v1alpha1.NodeIgnoreLabel]
+				_, exists := updatedNode.Labels[nodeIgnoreLabel]
 				Expect(exists).To(BeFalse())
 			})
 
@@ -269,7 +268,7 @@ var _ = Describe("Node Ignore Command", func() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name: name,
 							Labels: map[string]string{
-								v1alpha1.NodeIgnoreLabel: "true",
+								nodeIgnoreLabel: "true",
 							},
 						},
 					}
@@ -285,7 +284,7 @@ var _ = Describe("Node Ignore Command", func() {
 				for _, name := range []string{"worker-1", "worker-2", "worker-3"} {
 					updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), name, metav1.GetOptions{})
 					Expect(err).NotTo(HaveOccurred())
-					_, exists := updatedNode.Labels[v1alpha1.NodeIgnoreLabel]
+					_, exists := updatedNode.Labels[nodeIgnoreLabel]
 					Expect(exists).To(BeFalse())
 				}
 			})
@@ -295,7 +294,7 @@ var _ = Describe("Node Ignore Command", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "worker-1",
 						Labels: map[string]string{
-							v1alpha1.NodeIgnoreLabel: "true",
+							nodeIgnoreLabel: "true",
 						},
 					},
 				}
@@ -312,7 +311,7 @@ var _ = Describe("Node Ignore Command", func() {
 				// Verify label was NOT removed
 				updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
-				Expect(updatedNode.Labels[v1alpha1.NodeIgnoreLabel]).To(Equal("true"))
+				Expect(updatedNode.Labels[nodeIgnoreLabel]).To(Equal("true"))
 			})
 		})
 

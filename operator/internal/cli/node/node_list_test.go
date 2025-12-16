@@ -68,29 +68,7 @@ var _ = Describe("Node List Command", func() {
 		})
 	})
 
-	Describe("outputNodeListJSON", func() {
-		It("should output valid JSON with skyhook name", func() {
-			entries := []nodeListEntry{
-				{NodeName: "node1", Status: "complete", PackagesComplete: 3, PackagesTotal: 3},
-			}
-			output := &bytes.Buffer{}
-
-			err := outputNodeListJSON(output, "my-skyhook", entries)
-			Expect(err).NotTo(HaveOccurred())
-
-			var result struct {
-				SkyhookName string          `json:"skyhookName"`
-				Nodes       []nodeListEntry `json:"nodes"`
-			}
-			err = json.Unmarshal(output.Bytes(), &result)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.SkyhookName).To(Equal("my-skyhook"))
-			Expect(result.Nodes).To(HaveLen(1))
-			Expect(result.Nodes[0].NodeName).To(Equal("node1"))
-		})
-	})
-
-	Describe("outputNodeListTable", func() {
+	Describe("outputNodeListTableOrWide", func() {
 		It("should output table with summary", func() {
 			entries := []nodeListEntry{
 				{NodeName: "node1", Status: "complete", PackagesComplete: 3, PackagesTotal: 3},
@@ -99,7 +77,7 @@ var _ = Describe("Node List Command", func() {
 			}
 			output := &bytes.Buffer{}
 
-			err := outputNodeListTable(output, "my-skyhook", entries)
+			err := outputNodeListTableOrWide(output, "my-skyhook", entries, false)
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
@@ -118,11 +96,25 @@ var _ = Describe("Node List Command", func() {
 			}
 			output := &bytes.Buffer{}
 
-			err := outputNodeListTable(output, "my-skyhook", entries)
+			err := outputNodeListTableOrWide(output, "my-skyhook", entries, false)
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
 			Expect(outputStr).To(ContainSubstring("ERROR"))
+		})
+
+		It("should show RESTARTS in wide output", func() {
+			entries := []nodeListEntry{
+				{NodeName: "node1", Status: "complete", PackagesComplete: 3, PackagesTotal: 3, Restarts: 5},
+			}
+			output := &bytes.Buffer{}
+
+			err := outputNodeListTableOrWide(output, "my-skyhook", entries, true)
+			Expect(err).NotTo(HaveOccurred())
+
+			outputStr := output.String()
+			Expect(outputStr).To(ContainSubstring("RESTARTS"))
+			Expect(outputStr).To(ContainSubstring("5"))
 		})
 	})
 
