@@ -54,7 +54,7 @@ func NewStatusCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &nodeStatusOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "status [node-name...] [flags]",
+		Use:   "status [node-name...]",
 		Short: "Show all Skyhook activity on specific node(s)",
 		Long: `Show all Skyhook activity on specific node(s) by reading node annotations.
 

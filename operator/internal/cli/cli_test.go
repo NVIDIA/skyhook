@@ -75,7 +75,7 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			nodeSubs := getCommandNames(nodeCmd)
 			expectedNodeCommands := []string{
 				"list",
-				"status [node-name...] [flags]",
+				"status [node-name...]",
 				"reset <node-name...>",
 				"ignore <node-name...>",
 				"unignore <node-name...>",
