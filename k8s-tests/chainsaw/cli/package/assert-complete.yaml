@@ -18,15 +18,6 @@ apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
 metadata:
   name: cli-package-test
-spec:
-  nodeSelectors:
-    matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
-  packages:
-    hello-world:
-      version: "3.2.3"
-      image: ghcr.io/nvidia/skyhook/agentless
-      env:
-        - name: SLEEP_LEN
-          value: "5"
+status:
+  status: complete
 
