@@ -40,7 +40,7 @@ var _ = Describe("Node Status Command", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewStatusCmd(ctx)
 
-			Expect(cmd.Use).To(Equal("status [node-name...] [flags]"))
+			Expect(cmd.Use).To(Equal("status [node-name...]"))
 			Expect(cmd.Short).To(ContainSubstring("Skyhook activity"))
 		})
 

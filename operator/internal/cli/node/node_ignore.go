@@ -24,18 +24,13 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/skyhook/operator/internal/cli/context"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 )
 
 const labelValueTrue = "true"
-
-// nodeIgnoreLabel is the label key used to ignore nodes from Skyhook processing
-var nodeIgnoreLabel = fmt.Sprintf("%s/ignore", v1alpha1.METADATA_PREFIX)
 
 // NewIgnoreCmd creates the node ignore command
 func NewIgnoreCmd(ctx *cliContext.CLIContext) *cobra.Command {
@@ -157,26 +152,23 @@ func runIgnore(ctx context.Context, cmd *cobra.Command, kubeClient *client.Clien
 		idx := nodeMap[nodeName]
 		node := &nodeList.Items[idx]
 
-		var patchData []byte
+		var err error
 		if ignore {
 			// Check if already ignored
-			if val, ok := node.Labels[v1alpha1.NodeIgnoreLabel]; ok && val == labelValueTrue {
+			if val, ok := node.Labels[utils.NodeIgnoreLabel]; ok && val == labelValueTrue {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: already ignored\n", nodeName)
 				continue
 			}
-			// Add the label using merge patch
-			patchData = []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:%q}}}`, v1alpha1.NodeIgnoreLabel, labelValueTrue))
+			err = utils.SetNodeLabel(ctx, kubeClient.Kubernetes(), nodeName, utils.NodeIgnoreLabel, labelValueTrue)
 		} else {
 			// Check if not ignored
-			if val, ok := node.Labels[v1alpha1.NodeIgnoreLabel]; !ok || val != labelValueTrue {
+			if val, ok := node.Labels[utils.NodeIgnoreLabel]; !ok || val != labelValueTrue {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: not ignored\n", nodeName)
 				continue
 			}
-			// Remove the label using merge patch (null removes the key)
-			patchData = []byte(fmt.Sprintf(`{"metadata":{"labels":{%q:null}}}`, v1alpha1.NodeIgnoreLabel))
+			err = utils.RemoveNodeLabel(ctx, kubeClient.Kubernetes(), nodeName, utils.NodeIgnoreLabel)
 		}
 
-		_, err := kubeClient.Kubernetes().CoreV1().Nodes().Patch(ctx, nodeName, types.MergePatchType, patchData, metav1.PatchOptions{})
 		if err != nil {
 			updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
 			continue

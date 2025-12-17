@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/yaml"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
@@ -97,10 +98,11 @@ func UnstructuredToSkyhook(u *unstructured.Unstructured) (*v1alpha1.Skyhook, err
 	return &skyhook, nil
 }
 
-// Skyhook annotation keys
+// Skyhook annotation and label keys
 const (
 	PauseAnnotation   = v1alpha1.METADATA_PREFIX + "/pause"
 	DisableAnnotation = v1alpha1.METADATA_PREFIX + "/disable"
+	NodeIgnoreLabel   = v1alpha1.METADATA_PREFIX + "/ignore"
 )
 
 // SetSkyhookAnnotation sets an annotation on a Skyhook CR using dynamic client
@@ -141,6 +143,80 @@ func RemoveSkyhookAnnotation(ctx context.Context, dynamicClient dynamic.Interfac
 	}
 
 	return nil
+}
+
+// SetNodeAnnotation sets an annotation on a Node using merge patch
+func SetNodeAnnotation(ctx context.Context, kubeClient kubernetes.Interface, nodeName, key, value string) error {
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, key, value)
+
+	_, err := kubeClient.CoreV1().Nodes().Patch(
+		ctx,
+		nodeName,
+		types.MergePatchType,
+		[]byte(patch),
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("patching node %q: %w", nodeName, err)
+	}
+
+	return nil
+}
+
+// RemoveNodeAnnotation removes an annotation from a Node using merge patch
+func RemoveNodeAnnotation(ctx context.Context, kubeClient kubernetes.Interface, nodeName, key string) error {
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, key)
+
+	_, err := kubeClient.CoreV1().Nodes().Patch(
+		ctx,
+		nodeName,
+		types.MergePatchType,
+		[]byte(patch),
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("patching node %q: %w", nodeName, err)
+	}
+
+	return nil
+}
+
+// SetNodeLabel sets a label on a Node using merge patch
+func SetNodeLabel(ctx context.Context, kubeClient kubernetes.Interface, nodeName, key, value string) error {
+	patch := fmt.Sprintf(`{"metadata":{"labels":{%q:%q}}}`, key, value)
+
+	_, err := kubeClient.CoreV1().Nodes().Patch(
+		ctx,
+		nodeName,
+		types.MergePatchType,
+		[]byte(patch),
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("patching node %q: %w", nodeName, err)
+	}
+
+	return nil
+}
+
+// RemoveNodeLabel removes a label from a Node using merge patch
+func RemoveNodeLabel(ctx context.Context, kubeClient kubernetes.Interface, nodeName, key string) error {
+	patch := fmt.Sprintf(`{"metadata":{"labels":{%q:null}}}`, key)
+
+	_, err := kubeClient.CoreV1().Nodes().Patch(
+		ctx,
+		nodeName,
+		types.MergePatchType,
+		[]byte(patch),
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("patching node %q: %w", nodeName, err)
+	}
+
+	return nil
+}
+
 // OutputJSON writes data as indented JSON to the writer
 func OutputJSON(out io.Writer, data any) error {
 	jsonData, err := json.MarshalIndent(data, "", "  ")

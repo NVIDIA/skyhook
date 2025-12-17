@@ -306,25 +306,17 @@ func updateNodeAnnotations(ctx context.Context, kubeClient *client.Client, nodes
 	return successCount, updateErrors
 }
 
-// applyNodeStateUpdate applies the updated state to a single node
+// applyNodeStateUpdate applies the updated state to a single node using patch
 func applyNodeStateUpdate(ctx context.Context, kubeClient *client.Client, nodeName string, nodeState v1alpha1.NodeState, annotationKey string) error {
-	node, err := kubeClient.Kubernetes().CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	if len(nodeState) == 0 {
+		return utils.RemoveNodeAnnotation(ctx, kubeClient.Kubernetes(), nodeName, annotationKey)
+	}
+
+	newAnnotation, err := json.Marshal(nodeState)
 	if err != nil {
 		return err
 	}
-
-	if len(nodeState) == 0 {
-		delete(node.Annotations, annotationKey)
-	} else {
-		newAnnotation, err := json.Marshal(nodeState)
-		if err != nil {
-			return err
-		}
-		node.Annotations[annotationKey] = string(newAnnotation)
-	}
-
-	_, err = kubeClient.Kubernetes().CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
-	return err
+	return utils.SetNodeAnnotation(ctx, kubeClient.Kubernetes(), nodeName, annotationKey, string(newAnnotation))
 }
 
 // printRerunResults displays the operation results

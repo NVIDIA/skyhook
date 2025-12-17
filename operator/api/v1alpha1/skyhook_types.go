@@ -632,10 +632,6 @@ type State string
 const (
 	METADATA_PREFIX string = "skyhook.nvidia.com"
 
-	// NodeIgnoreLabel is the label key used to ignore nodes from Skyhook processing
-	// When set to "true", the node will be excluded from all Skyhook operations
-	NodeIgnoreLabel string = METADATA_PREFIX + "/ignore"
-
 	StateComplete   State = "complete"
 	StateInProgress State = "in_progress" // this means its actually running, pod started
 	StateSkipped    State = "skipped"     // this means this package, stage are skipped mostly for some parts of the lifecycle

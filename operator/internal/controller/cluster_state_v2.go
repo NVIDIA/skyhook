@@ -87,11 +87,6 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 			compartments: make(map[string]*wrapper.Compartment),
 		}
 		for _, node := range nodes.Items {
-			// Skip nodes with the ignore label
-			if val, ok := node.Labels[v1alpha1.NodeIgnoreLabel]; ok && val == "true" {
-				continue
-			}
-
 			skyNode, err := wrapper.NewSkyhookNode(&node, &skyhook)
 			if err != nil {
 				return nil, err
