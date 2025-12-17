@@ -25,9 +25,11 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"

@@ -19,6 +19,7 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,7 +27,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/yaml"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
@@ -93,6 +97,50 @@ func UnstructuredToSkyhook(u *unstructured.Unstructured) (*v1alpha1.Skyhook, err
 	return &skyhook, nil
 }
 
+// Skyhook annotation keys
+const (
+	PauseAnnotation   = v1alpha1.METADATA_PREFIX + "/pause"
+	DisableAnnotation = v1alpha1.METADATA_PREFIX + "/disable"
+)
+
+// SetSkyhookAnnotation sets an annotation on a Skyhook CR using dynamic client
+// Note: Skyhook is a cluster-scoped resource (not namespaced)
+func SetSkyhookAnnotation(ctx context.Context, dynamicClient dynamic.Interface, skyhookName, annotation, value string) error {
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, annotation, value)
+
+	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	_, err := dynamicClient.Resource(gvr).Patch(
+		ctx,
+		skyhookName,
+		types.MergePatchType,
+		[]byte(patch),
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("patching skyhook %q: %w", skyhookName, err)
+	}
+
+	return nil
+}
+
+// RemoveSkyhookAnnotation removes an annotation from a Skyhook CR using dynamic client
+// Note: Skyhook is a cluster-scoped resource (not namespaced)
+func RemoveSkyhookAnnotation(ctx context.Context, dynamicClient dynamic.Interface, skyhookName, annotation string) error {
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, annotation)
+
+	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	_, err := dynamicClient.Resource(gvr).Patch(
+		ctx,
+		skyhookName,
+		types.MergePatchType,
+		[]byte(patch),
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("patching skyhook %q: %w", skyhookName, err)
+	}
+
+	return nil
 // OutputJSON writes data as indented JSON to the writer
 func OutputJSON(out io.Writer, data any) error {
 	jsonData, err := json.MarshalIndent(data, "", "  ")

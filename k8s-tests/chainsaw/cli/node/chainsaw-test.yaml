@@ -1,0 +1,111 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cli-node
+spec:
+  description: |
+    Test all CLI node commands:
+    - node list: shows nodes targeted by a Skyhook
+    - node status: shows Skyhook activity on nodes  
+    - node ignore/unignore: excludes/includes nodes from processing
+    - node reset: resets package state on a node
+  timeouts:
+    assert: 120s
+    exec: 90s
+  steps:
+  # Step 1: Create a Skyhook
+  - name: setup-skyhook
+    try:
+    - apply:
+        file: skyhook.yaml
+
+  # Step 2: Test node list (table format)
+  - name: test-node-list
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../../../../operator/bin/skyhook node list --skyhook cli-node-test
+    - script:
+        timeout: 30s
+        content: |
+          ../../../../operator/bin/skyhook node list --skyhook cli-node-test -o json
+
+  # Step 3: Test node status
+  - name: test-node-status
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          ../../../../operator/bin/skyhook node status "$NODE"
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          ../../../../operator/bin/skyhook node status "$NODE" --skyhook cli-node-test
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          ../../../../operator/bin/skyhook node status "$NODE" -o json
+
+  # Step 4: Test node ignore/unignore
+  - name: test-node-ignore
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          ../../../../operator/bin/skyhook node ignore "$NODE"
+    - assert:
+        file: assert-node-ignored.yaml
+  - name: test-node-unignore
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          ../../../../operator/bin/skyhook node unignore "$NODE"
+    - assert:
+        file: assert-node-unignored.yaml
+
+  # Step 5: Test node reset
+  - name: test-node-reset
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          ../../../../operator/bin/skyhook node reset "$NODE" --skyhook cli-node-test --confirm
+    - assert:
+        file: assert-node-reset.yaml
+
+  # Cleanup
+  - name: cleanup
+    try:
+    - script:
+        content: |
+          kubectl delete skyhook cli-node-test 2>/dev/null || true
+          for NODE in $(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}'); do
+            kubectl annotate node "$NODE" skyhook.nvidia.com/nodeState_cli-node-test- 2>/dev/null || true
+            kubectl label node "$NODE" skyhook.nvidia.com/ignore- 2>/dev/null || true
+          done
+

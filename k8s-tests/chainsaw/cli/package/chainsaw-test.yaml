@@ -1,0 +1,93 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cli-package
+spec:
+  description: |
+    Test all CLI package commands:
+    - package status: shows package status across nodes
+    - package logs: retrieves logs from package pods
+    - package rerun: forces a package to re-run
+  timeouts:
+    assert: 120s
+    exec: 90s
+  steps:
+  # Step 1: Create a Skyhook
+  - name: setup-skyhook
+    try:
+    - apply:
+        file: skyhook.yaml
+
+  # Step 2: Test package status (table format)
+  - name: test-package-status
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../../../../operator/bin/skyhook package status hello-world --skyhook cli-package-test
+    - script:
+        timeout: 30s
+        content: |
+          ../../../../operator/bin/skyhook package status hello-world --skyhook cli-package-test -o json
+
+  # Step 3: Test package logs
+  - name: test-package-logs
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+
+          # Run logs command - it should succeed (may show waiting or actual logs)
+          ../../../../operator/bin/skyhook package logs hello-world --skyhook cli-package-test --node "$NODE"
+
+  # Step 4: Wait for package to complete, then test rerun
+  - name: test-package-rerun
+    try:
+    - assert:
+        timeout: 120s
+        file: assert-complete.yaml
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+
+          # Test dry-run first
+          ../../../../operator/bin/skyhook package rerun hello-world --skyhook cli-package-test --node "$NODE" --dry-run
+    - script:
+        timeout: 30s
+        content: |
+          NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+
+          # Run actual rerun with confirm flag and stage
+          ../../../../operator/bin/skyhook package rerun hello-world --skyhook cli-package-test --node "$NODE" --stage apply --confirm
+    - assert:
+        file: assert-package-rerun.yaml
+
+  # Cleanup
+  - name: cleanup
+    try:
+    - script:
+        content: |
+          kubectl delete skyhook cli-package-test 2>/dev/null || true
+          for NODE in $(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}'); do
+            kubectl annotate node "$NODE" skyhook.nvidia.com/nodeState_cli-package-test- 2>/dev/null || true
+          done
+
