@@ -124,62 +124,7 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 				ret.skyhooks[idx].AddCompartmentNode(v1alpha1.DefaultCompartmentName, node)
 			}
 		} else {
-			// Deployment policy is specified - try to find it
-			policyFound := false
-			for _, deploymentPolicy := range deploymentPolicies.Items {
-				if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
-					policyFound = true
-					for _, compartment := range deploymentPolicy.Spec.Compartments {
-						// Load persisted batch state from CompartmentStatuses if it exists
-						var batchState *v1alpha1.BatchProcessingState
-						if skyhook.Status.CompartmentStatuses != nil {
-							if status, exists := skyhook.Status.CompartmentStatuses[compartment.Name]; exists && status.BatchState != nil {
-								batchState = status.BatchState
-							}
-						}
-						ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
-					}
-					// use policy default
-					var defaultBatchState *v1alpha1.BatchProcessingState
-					if skyhook.Status.CompartmentStatuses != nil {
-						if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
-							defaultBatchState = status.BatchState
-						}
-					}
-					ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
-						Name:     v1alpha1.DefaultCompartmentName,
-						Budget:   deploymentPolicy.Spec.Default.Budget,
-						Strategy: deploymentPolicy.Spec.Default.Strategy,
-					}, defaultBatchState))
-					break
-				}
-			}
-
-			// If deployment policy was specified but not found, mark it for error handling
-			if !policyFound {
-				ret.skyhooks[idx].GetSkyhook().AddCondition(metav1.Condition{
-					Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
-					Status:             metav1.ConditionTrue,
-					ObservedGeneration: skyhook.Generation,
-					LastTransitionTime: metav1.Now(),
-					Reason:             "DeploymentPolicyNotFound",
-					Message:            fmt.Sprintf("DeploymentPolicy %q not found", skyhook.Spec.DeploymentPolicy),
-				})
-				ret.skyhooks[idx].GetSkyhook().Updated = true
-			} else {
-				// Policy found - clear any previous error condition if it exists
-				if ret.skyhooks[idx].GetSkyhook().Status.Conditions != nil {
-					for i, cond := range ret.skyhooks[idx].GetSkyhook().Status.Conditions {
-						if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
-							// Remove the condition by creating a new slice without it
-							conditions := ret.skyhooks[idx].GetSkyhook().Status.Conditions
-							ret.skyhooks[idx].GetSkyhook().Status.Conditions = append(conditions[:i], conditions[i+1:]...)
-							ret.skyhooks[idx].GetSkyhook().Updated = true
-							break
-						}
-					}
-				}
-			}
+			ret.initializeCompartmentsFromPolicy(idx, &skyhook, deploymentPolicies)
 		}
 	}
 
@@ -199,7 +144,77 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 		})
 	}
 
+	// Partition nodes into compartments for skyhooks with deployment policies
+	if err := partitionNodesIntoCompartments(ret); err != nil {
+		return nil, fmt.Errorf("partitioning nodes into compartments: %w", err)
+	}
+
 	return ret, nil
+}
+
+// initializeCompartmentsFromPolicy loads compartments from the specified DeploymentPolicy.
+// It handles finding the policy, loading persisted batch states, creating compartments,
+// and managing the DeploymentPolicyNotFound condition.
+func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1alpha1.Skyhook, deploymentPolicies *v1alpha1.DeploymentPolicyList) {
+	policyFound := false
+	for _, deploymentPolicy := range deploymentPolicies.Items {
+		if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
+			policyFound = true
+			for _, compartment := range deploymentPolicy.Spec.Compartments {
+				// Load persisted batch state from CompartmentStatuses if it exists
+				var batchState *v1alpha1.BatchProcessingState
+				if skyhook.Status.CompartmentStatuses != nil {
+					if status, exists := skyhook.Status.CompartmentStatuses[compartment.Name]; exists && status.BatchState != nil {
+						batchState = status.BatchState
+					}
+				}
+				ret.skyhooks[idx].AddCompartment(compartment.Name, wrapper.NewCompartmentWrapper(&compartment, batchState))
+			}
+			// use policy default
+			var defaultBatchState *v1alpha1.BatchProcessingState
+			if skyhook.Status.CompartmentStatuses != nil {
+				if status, exists := skyhook.Status.CompartmentStatuses[v1alpha1.DefaultCompartmentName]; exists && status.BatchState != nil {
+					defaultBatchState = status.BatchState
+				}
+			}
+			ret.skyhooks[idx].AddCompartment(v1alpha1.DefaultCompartmentName, wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name:     v1alpha1.DefaultCompartmentName,
+				Budget:   deploymentPolicy.Spec.Default.Budget,
+				Strategy: deploymentPolicy.Spec.Default.Strategy,
+			}, defaultBatchState))
+			break
+		}
+	}
+
+	// If deployment policy was specified but not found, mark it for error handling
+	if !policyFound {
+		// We must create a condition here to indicate the DeploymentPolicy is not found,
+		// because verifying its existence requires access to the client and cluster state.
+		// This cannot be handled in the webhook: by design, the webhook must remain stateless
+		// and should not be passed the client, as doing so would violate its required statelessness.
+		ret.skyhooks[idx].GetSkyhook().AddCondition(metav1.Condition{
+			Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: skyhook.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "DeploymentPolicyNotFound",
+			Message:            fmt.Sprintf("DeploymentPolicy %q not found", skyhook.Spec.DeploymentPolicy),
+		})
+		ret.skyhooks[idx].GetSkyhook().Updated = true
+	} else {
+		// Policy found - clear any previous error condition if it exists
+		if ret.skyhooks[idx].GetSkyhook().Status.Conditions != nil {
+			for i, cond := range ret.skyhooks[idx].GetSkyhook().Status.Conditions {
+				if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
+					// Remove the condition by creating a new slice without it
+					conditions := ret.skyhooks[idx].GetSkyhook().Status.Conditions
+					ret.skyhooks[idx].GetSkyhook().Status.Conditions = append(conditions[:i], conditions[i+1:]...)
+					ret.skyhooks[idx].GetSkyhook().Updated = true
+					break
+				}
+			}
+		}
+	}
 }
 
 // createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility
