@@ -25,7 +25,6 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,7 +47,7 @@ type statusOptions struct {
 func (o *statusOptions) BindToCmd(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
 	cmd.Flags().StringArrayVar(&o.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times)")
-	cmd.Flags().StringVarP(&o.output, "output", "o", "table", "Output format: table, json, wide")
+	cmd.Flags().StringVarP(&o.output, "output", "o", "table", "Output format: table, json, yaml, wide")
 
 	_ = cmd.MarkFlagRequired("skyhook")
 }
@@ -207,53 +206,42 @@ func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, op
 	// Output based on format
 	switch opts.output {
 	case "json":
-		return outputJSON(out, statuses)
+		return utils.OutputJSON(out, statuses)
+	case "yaml":
+		return utils.OutputYAML(out, statuses)
 	case "wide":
-		return outputWide(out, skyhook, statuses)
+		return outputPackageStatusTableOrWide(out, skyhook, statuses, true)
 	default:
-		return outputTable(out, skyhook, statuses)
+		return outputPackageStatusTableOrWide(out, skyhook, statuses, false)
 	}
 }
 
-func outputJSON(out io.Writer, statuses []nodePackageStatus) error {
-	data, err := json.MarshalIndent(statuses, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling json: %w", err)
+// packageStatusTableConfig returns the table configuration for package status output
+func packageStatusTableConfig() utils.TableConfig[nodePackageStatus] {
+	return utils.TableConfig[nodePackageStatus]{
+		Headers: []string{"NODE", "PACKAGE", "VERSION", "STAGE", "STATE"},
+		Extract: func(s nodePackageStatus) []string {
+			return []string{
+				s.NodeName,
+				s.Name,
+				s.Version,
+				string(s.Stage),
+				string(s.State),
+			}
+		},
+		WideHeaders: []string{"RESTARTS", "IMAGE"},
+		WideExtract: func(s nodePackageStatus) []string {
+			return []string{fmt.Sprintf("%d", s.Restarts), s.Image}
+		},
 	}
-	_, _ = fmt.Fprintln(out, string(data))
-	return nil
 }
 
-func outputTable(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackageStatus) error {
-	_, _ = fmt.Fprintf(out, "Skyhook: %s\n", skyhook.Name)
-	_, _ = fmt.Fprintf(out, "Packages: %s\n\n", formatPackageList(skyhook))
-
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NODE\tPACKAGE\tVERSION\tSTAGE\tSTATE")
-	_, _ = fmt.Fprintln(w, "----\t-------\t-------\t-----\t-----")
-
-	for _, s := range statuses {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			s.NodeName, s.Name, s.Version, string(s.Stage), string(s.State))
+func outputPackageStatusTableOrWide(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackageStatus, wide bool) error {
+	headerLine := fmt.Sprintf("Skyhook: %s\nPackages: %s", skyhook.Name, formatPackageList(skyhook))
+	if wide {
+		return utils.OutputWideWithHeader(out, headerLine, packageStatusTableConfig(), statuses)
 	}
-
-	return w.Flush()
-}
-
-func outputWide(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackageStatus) error {
-	_, _ = fmt.Fprintf(out, "Skyhook: %s\n", skyhook.Name)
-	_, _ = fmt.Fprintf(out, "Packages: %s\n\n", formatPackageList(skyhook))
-
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NODE\tPACKAGE\tVERSION\tSTAGE\tSTATE\tIMAGE")
-	_, _ = fmt.Fprintln(w, "----\t-------\t-------\t-----\t-----\t-----")
-
-	for _, s := range statuses {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			s.NodeName, s.Name, s.Version, string(s.Stage), string(s.State), s.Image)
-	}
-
-	return w.Flush()
+	return utils.OutputTableWithHeader(out, headerLine, packageStatusTableConfig(), statuses)
 }
 
 func formatPackageList(skyhook *v1alpha1.Skyhook) string {

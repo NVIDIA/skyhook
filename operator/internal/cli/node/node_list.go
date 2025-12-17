@@ -34,6 +34,7 @@ import (
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 )
 
 // nodeListOptions holds the options for the node list command
@@ -45,7 +46,7 @@ type nodeListOptions struct {
 // BindToCmd binds the options to the command flags
 func (o *nodeListOptions) BindToCmd(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
-	cmd.Flags().StringVarP(&o.output, "output", "o", "table", "Output format: table, json, yaml")
+	cmd.Flags().StringVarP(&o.output, "output", "o", "table", "Output format: table, json, yaml, wide")
 
 	_ = cmd.MarkFlagRequired("skyhook")
 }
@@ -92,6 +93,7 @@ type nodeListEntry struct {
 	Status           string `json:"status"`
 	PackagesComplete int    `json:"packagesComplete"`
 	PackagesTotal    int    `json:"packagesTotal"`
+	Restarts         int32  `json:"restarts"`
 }
 
 func runNodeList(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *nodeListOptions) error {
@@ -118,8 +120,10 @@ func runNodeList(ctx context.Context, out io.Writer, kubeClient *client.Client, 
 		completeCount := 0
 		hasError := false
 		hasInProgress := false
+		var totalRestarts int32
 
 		for _, pkgStatus := range nodeState {
+			totalRestarts += pkgStatus.Restarts
 			switch pkgStatus.State {
 			case v1alpha1.StateComplete:
 				completeCount++
@@ -145,6 +149,7 @@ func runNodeList(ctx context.Context, out io.Writer, kubeClient *client.Client, 
 			Status:           status,
 			PackagesComplete: completeCount,
 			PackagesTotal:    len(nodeState),
+			Restarts:         totalRestarts,
 		})
 	}
 
@@ -159,54 +164,44 @@ func runNodeList(ctx context.Context, out io.Writer, kubeClient *client.Client, 
 	}
 
 	// Output based on format
+	output := nodeListOutput{SkyhookName: opts.skyhookName, Nodes: entries}
 	switch opts.output {
 	case "json":
-		return outputNodeListJSON(out, opts.skyhookName, entries)
+		return utils.OutputJSON(out, output)
 	case "yaml":
-		return outputNodeListYAML(out, opts.skyhookName, entries)
+		return utils.OutputYAML(out, output)
+	case "wide":
+		return outputNodeListTableOrWide(out, opts.skyhookName, entries, true)
 	default:
-		return outputNodeListTable(out, opts.skyhookName, entries)
+		return outputNodeListTableOrWide(out, opts.skyhookName, entries, false)
 	}
 }
 
-func outputNodeListJSON(out io.Writer, skyhookName string, entries []nodeListEntry) error {
-	output := struct {
-		SkyhookName string          `json:"skyhookName"`
-		Nodes       []nodeListEntry `json:"nodes"`
-	}{
-		SkyhookName: skyhookName,
-		Nodes:       entries,
-	}
-
-	data, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling json: %w", err)
-	}
-	_, _ = fmt.Fprintln(out, string(data))
-	return nil
+// nodeListOutput is the structured output for JSON/YAML
+type nodeListOutput struct {
+	SkyhookName string          `json:"skyhookName" yaml:"skyhookName"`
+	Nodes       []nodeListEntry `json:"nodes" yaml:"nodes"`
 }
 
-func outputNodeListYAML(out io.Writer, skyhookName string, entries []nodeListEntry) error {
-	output := struct {
-		SkyhookName string          `yaml:"skyhookName"`
-		Nodes       []nodeListEntry `yaml:"nodes"`
-	}{
-		SkyhookName: skyhookName,
-		Nodes:       entries,
+// nodeListTableConfig returns the table configuration for node list output
+func nodeListTableConfig() utils.TableConfig[nodeListEntry] {
+	return utils.TableConfig[nodeListEntry]{
+		Headers: []string{"NODE", "STATUS", "PACKAGES"},
+		Extract: func(e nodeListEntry) []string {
+			status := e.Status
+			if e.Status == string(v1alpha1.StateErroring) {
+				status = strings.ToUpper(status)
+			}
+			return []string{e.NodeName, status, fmt.Sprintf("%d/%d", e.PackagesComplete, e.PackagesTotal)}
+		},
+		WideHeaders: []string{"RESTARTS"},
+		WideExtract: func(e nodeListEntry) []string {
+			return []string{fmt.Sprintf("%d", e.Restarts)}
+		},
 	}
-
-	data, err := yaml.Marshal(output)
-	if err != nil {
-		return fmt.Errorf("marshaling yaml: %w", err)
-	}
-	_, _ = fmt.Fprint(out, string(data))
-	return nil
 }
 
-func outputNodeListTable(out io.Writer, skyhookName string, entries []nodeListEntry) error {
-	_, _ = fmt.Fprintf(out, "Skyhook: %s\n\n", skyhookName)
-
-	// Calculate summary
+func formatNodeListSummary(entries []nodeListEntry) string {
 	totalNodes := len(entries)
 	completeNodes := 0
 	errorNodes := 0
@@ -218,22 +213,14 @@ func outputNodeListTable(out io.Writer, skyhookName string, entries []nodeListEn
 			errorNodes++
 		}
 	}
-
-	_, _ = fmt.Fprintf(out, "Summary: %d nodes (%d complete, %d erroring, %d in progress)\n\n",
+	return fmt.Sprintf("Summary: %d nodes (%d complete, %d erroring, %d in progress)",
 		totalNodes, completeNodes, errorNodes, totalNodes-completeNodes-errorNodes)
+}
 
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NODE\tSTATUS\tPACKAGES")
-	_, _ = fmt.Fprintln(w, "----\t------\t--------")
-
-	for _, e := range entries {
-		status := e.Status
-		if e.Status == string(v1alpha1.StateErroring) {
-			status = strings.ToUpper(status)
-		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%d/%d\n",
-			e.NodeName, status, e.PackagesComplete, e.PackagesTotal)
+func outputNodeListTableOrWide(out io.Writer, skyhookName string, entries []nodeListEntry, wide bool) error {
+	headerLine := fmt.Sprintf("Skyhook: %s\n\n%s", skyhookName, formatNodeListSummary(entries))
+	if wide {
+		return utils.OutputWideWithHeader(out, headerLine, nodeListTableConfig(), entries)
 	}
-
-	return w.Flush()
+	return utils.OutputTableWithHeader(out, headerLine, nodeListTableConfig(), entries)
 }

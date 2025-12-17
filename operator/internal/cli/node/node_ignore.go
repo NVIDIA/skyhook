@@ -34,6 +34,9 @@ import (
 
 const labelValueTrue = "true"
 
+// nodeIgnoreLabel is the label key used to ignore nodes from Skyhook processing
+var nodeIgnoreLabel = fmt.Sprintf("%s/ignore", v1alpha1.METADATA_PREFIX)
+
 // NewIgnoreCmd creates the node ignore command
 func NewIgnoreCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	cmd := &cobra.Command{

@@ -58,51 +58,6 @@ var _ = Describe("Node Status Command", func() {
 		})
 	})
 
-	Describe("outputNodeStatusJSON", func() {
-		It("should output valid JSON", func() {
-			summaries := []nodeSkyhookSummary{
-				{NodeName: "node1", SkyhookName: "skyhook1", Status: "complete", PackagesComplete: 3, PackagesTotal: 3},
-			}
-			output := &bytes.Buffer{}
-
-			err := outputNodeStatusJSON(output, summaries)
-			Expect(err).NotTo(HaveOccurred())
-
-			var result []nodeSkyhookSummary
-			err = json.Unmarshal(output.Bytes(), &result)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result).To(HaveLen(1))
-			Expect(result[0].NodeName).To(Equal("node1"))
-			Expect(result[0].SkyhookName).To(Equal("skyhook1"))
-		})
-
-		It("should include all fields in JSON output", func() {
-			summaries := []nodeSkyhookSummary{
-				{
-					NodeName:         "worker-1",
-					SkyhookName:      "gpu-init",
-					Status:           "in_progress",
-					PackagesComplete: 2,
-					PackagesTotal:    3,
-					Packages: []nodeSkyhookPkgStatus{
-						{Name: "pkg1", Version: "1.0", Stage: "apply", State: "complete"},
-					},
-				},
-			}
-			output := &bytes.Buffer{}
-
-			err := outputNodeStatusJSON(output, summaries)
-			Expect(err).NotTo(HaveOccurred())
-
-			outputStr := output.String()
-			Expect(outputStr).To(ContainSubstring(`"nodeName": "worker-1"`))
-			Expect(outputStr).To(ContainSubstring(`"skyhookName": "gpu-init"`))
-			Expect(outputStr).To(ContainSubstring(`"status": "in_progress"`))
-			Expect(outputStr).To(ContainSubstring(`"packagesComplete": 2`))
-			Expect(outputStr).To(ContainSubstring(`"packagesTotal": 3`))
-		})
-	})
-
 	Describe("outputNodeStatusTable", func() {
 		It("should output table with headers", func() {
 			summaries := []nodeSkyhookSummary{
@@ -117,8 +72,7 @@ var _ = Describe("Node Status Command", func() {
 			Expect(outputStr).To(ContainSubstring("NODE"))
 			Expect(outputStr).To(ContainSubstring("SKYHOOK"))
 			Expect(outputStr).To(ContainSubstring("STATUS"))
-			Expect(outputStr).To(ContainSubstring("PACKAGES-COMPLETE"))
-			Expect(outputStr).To(ContainSubstring("PACKAGES-TOTAL"))
+			Expect(outputStr).To(ContainSubstring("PACKAGES"))
 			Expect(outputStr).To(ContainSubstring("node1"))
 			Expect(outputStr).To(ContainSubstring("skyhook1"))
 			Expect(outputStr).To(ContainSubstring("complete"))
@@ -148,7 +102,7 @@ var _ = Describe("Node Status Command", func() {
 					SkyhookName: "skyhook1",
 					Status:      "complete",
 					Packages: []nodeSkyhookPkgStatus{
-						{Name: "pkg1", Version: "1.0", Stage: "apply", State: "complete", Image: "img:1.0"},
+						{Name: "pkg1", Version: "1.0", Stage: "apply", State: "complete", Restarts: 0, Image: "img:1.0"},
 					},
 				},
 			}
@@ -162,9 +116,30 @@ var _ = Describe("Node Status Command", func() {
 			Expect(outputStr).To(ContainSubstring("VERSION"))
 			Expect(outputStr).To(ContainSubstring("STAGE"))
 			Expect(outputStr).To(ContainSubstring("STATE"))
+			Expect(outputStr).To(ContainSubstring("RESTARTS"))
 			Expect(outputStr).To(ContainSubstring("IMAGE"))
 			Expect(outputStr).To(ContainSubstring("pkg1"))
 			Expect(outputStr).To(ContainSubstring("img:1.0"))
+		})
+
+		It("should show restarts count", func() {
+			summaries := []nodeSkyhookSummary{
+				{
+					NodeName:    "node1",
+					SkyhookName: "skyhook1",
+					Status:      "erroring",
+					Packages: []nodeSkyhookPkgStatus{
+						{Name: "pkg1", Version: "1.0", Stage: "apply", State: "erroring", Restarts: 5, Image: "img:1.0"},
+					},
+				},
+			}
+			output := &bytes.Buffer{}
+
+			err := outputNodeStatusWide(output, summaries)
+			Expect(err).NotTo(HaveOccurred())
+
+			outputStr := output.String()
+			Expect(outputStr).To(ContainSubstring("5"))
 		})
 	})
 

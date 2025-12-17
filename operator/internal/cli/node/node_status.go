@@ -56,7 +56,7 @@ func NewStatusCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &nodeStatusOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "status [node-name...] [flags]",
+		Use:   "status [node-name...]",
 		Short: "Show all Skyhook activity on specific node(s)",
 		Long: `Show all Skyhook activity on specific node(s) by reading node annotations.
 
@@ -113,11 +113,12 @@ type nodeSkyhookSummary struct {
 
 // nodeSkyhookPkgStatus represents the status of a single package
 type nodeSkyhookPkgStatus struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Stage   string `json:"stage"`
-	State   string `json:"state"`
-	Image   string `json:"image,omitempty"`
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Stage    string `json:"stage"`
+	State    string `json:"state"`
+	Restarts int32  `json:"restarts"`
+	Image    string `json:"image,omitempty"`
 }
 
 func runNodeStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, nodePatterns []string, opts *nodeStatusOptions) error {
@@ -186,11 +187,12 @@ func runNodeStatus(ctx context.Context, out io.Writer, kubeClient *client.Client
 
 			for _, pkgStatus := range nodeState {
 				packages = append(packages, nodeSkyhookPkgStatus{
-					Name:    pkgStatus.Name,
-					Version: pkgStatus.Version,
-					Stage:   string(pkgStatus.Stage),
-					State:   string(pkgStatus.State),
-					Image:   pkgStatus.Image,
+					Name:     pkgStatus.Name,
+					Version:  pkgStatus.Version,
+					Stage:    string(pkgStatus.Stage),
+					State:    string(pkgStatus.State),
+					Restarts: pkgStatus.Restarts,
+					Image:    pkgStatus.Image,
 				})
 
 				switch pkgStatus.State {
@@ -245,9 +247,9 @@ func runNodeStatus(ctx context.Context, out io.Writer, kubeClient *client.Client
 	// Output based on format
 	switch opts.output {
 	case "json":
-		return outputNodeStatusJSON(out, summaries)
+		return utils.OutputJSON(out, summaries)
 	case "yaml":
-		return outputNodeStatusYAML(out, summaries)
+		return utils.OutputYAML(out, summaries)
 	case "wide":
 		return outputNodeStatusWide(out, summaries)
 	default:
@@ -255,48 +257,70 @@ func runNodeStatus(ctx context.Context, out io.Writer, kubeClient *client.Client
 	}
 }
 
-func outputNodeStatusJSON(out io.Writer, summaries []nodeSkyhookSummary) error {
-	data, err := json.MarshalIndent(summaries, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling json: %w", err)
+// nodeStatusTableConfig returns the table configuration for node status output
+func nodeStatusTableConfig() utils.TableConfig[nodeSkyhookSummary] {
+	return utils.TableConfig[nodeSkyhookSummary]{
+		Headers: []string{"NODE", "SKYHOOK", "STATUS", "PACKAGES"},
+		Extract: func(s nodeSkyhookSummary) []string {
+			return []string{
+				s.NodeName,
+				s.SkyhookName,
+				s.Status,
+				fmt.Sprintf("%d/%d", s.PackagesComplete, s.PackagesTotal),
+			}
+		},
+		WideHeaders: []string{"COMPLETE", "TOTAL"},
+		WideExtract: func(s nodeSkyhookSummary) []string {
+			return []string{
+				fmt.Sprintf("%d", s.PackagesComplete),
+				fmt.Sprintf("%d", s.PackagesTotal),
+			}
+		},
 	}
-	_, _ = fmt.Fprintln(out, string(data))
-	return nil
-}
-
-func outputNodeStatusYAML(out io.Writer, summaries []nodeSkyhookSummary) error {
-	data, err := yaml.Marshal(summaries)
-	if err != nil {
-		return fmt.Errorf("marshaling yaml: %w", err)
-	}
-	_, _ = fmt.Fprint(out, string(data))
-	return nil
 }
 
 func outputNodeStatusTable(out io.Writer, summaries []nodeSkyhookSummary) error {
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NODE\tSKYHOOK\tSTATUS\tPACKAGES-COMPLETE\tPACKAGES-TOTAL")
-	_, _ = fmt.Fprintln(w, "----\t-------\t------\t-----------------\t--------------")
+	return utils.OutputTable(out, nodeStatusTableConfig(), summaries)
+}
 
-	for _, s := range summaries {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d/%d\t%d\n",
-			s.NodeName, s.SkyhookName, s.Status, s.PackagesComplete, s.PackagesTotal, s.PackagesTotal)
-	}
-
-	return w.Flush()
+// nodeStatusWideEntry represents a flattened entry for wide output (one row per package)
+type nodeStatusWideEntry struct {
+	NodeName    string
+	SkyhookName string
+	Package     nodeSkyhookPkgStatus
 }
 
 func outputNodeStatusWide(out io.Writer, summaries []nodeSkyhookSummary) error {
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NODE\tSKYHOOK\tPACKAGE\tVERSION\tSTAGE\tSTATE\tIMAGE")
-	_, _ = fmt.Fprintln(w, "----\t-------\t-------\t-------\t-----\t-----\t-----")
+	// Wide output shows one row per package, not per summary
+	cfg := utils.TableConfig[nodeStatusWideEntry]{
+		Headers: []string{"NODE", "SKYHOOK", "PACKAGE", "VERSION", "STAGE", "STATE"},
+		Extract: func(e nodeStatusWideEntry) []string {
+			return []string{
+				e.NodeName,
+				e.SkyhookName,
+				e.Package.Name,
+				e.Package.Version,
+				e.Package.Stage,
+				e.Package.State,
+			}
+		},
+		WideHeaders: []string{"RESTARTS", "IMAGE"},
+		WideExtract: func(e nodeStatusWideEntry) []string {
+			return []string{fmt.Sprintf("%d", e.Package.Restarts), e.Package.Image}
+		},
+	}
 
+	// Flatten summaries to per-package entries
+	var entries []nodeStatusWideEntry
 	for _, s := range summaries {
 		for _, pkg := range s.Packages {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				s.NodeName, s.SkyhookName, pkg.Name, pkg.Version, pkg.Stage, pkg.State, pkg.Image)
+			entries = append(entries, nodeStatusWideEntry{
+				NodeName:    s.NodeName,
+				SkyhookName: s.SkyhookName,
+				Package:     pkg,
+			})
 		}
 	}
 
-	return w.Flush()
+	return utils.OutputWide(out, cfg, entries)
 }
