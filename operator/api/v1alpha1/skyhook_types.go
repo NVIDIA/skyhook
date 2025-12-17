@@ -631,11 +631,12 @@ type State string
 
 const (
 	METADATA_PREFIX string = "skyhook.nvidia.com"
-	StateComplete   State  = "complete"
-	StateInProgress State  = "in_progress" // this means its actually running, pod started
-	StateSkipped    State  = "skipped"     // this means this package, stage are skipped mostly for some parts of the lifecycle
-	StateErroring   State  = "erroring"
-	StateUnknown    State  = "unknown"
+
+	StateComplete   State = "complete"
+	StateInProgress State = "in_progress" // this means its actually running, pod started
+	StateSkipped    State = "skipped"     // this means this package, stage are skipped mostly for some parts of the lifecycle
+	StateErroring   State = "erroring"
+	StateUnknown    State = "unknown"
 )
 
 var (

@@ -24,6 +24,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/node"
+	pkg "github.com/NVIDIA/skyhook/operator/internal/cli/package"
 	internalVersion "github.com/NVIDIA/skyhook/operator/internal/version"
 )
 
@@ -65,6 +67,12 @@ func NewSkyhookCommand(ctx *context.CLIContext) *cobra.Command {
 	// Add subcommands
 	skyhookCmd.AddCommand(
 		NewVersionCmd(ctx),
+		pkg.NewPackageCmd(ctx),
+		node.NewNodeCmd(ctx),
+		NewPauseCmd(ctx),
+		NewResumeCmd(ctx),
+		NewDisableCmd(ctx),
+		NewEnableCmd(ctx),
 	)
 
 	return skyhookCmd

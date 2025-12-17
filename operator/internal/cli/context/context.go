@@ -35,6 +35,7 @@ type GlobalFlags struct {
 	ConfigFlags  *genericclioptions.ConfigFlags
 	OutputFormat string
 	Verbose      bool
+	DryRun       bool
 }
 
 // NewGlobalFlags creates a new GlobalFlags with default values.
@@ -58,6 +59,7 @@ func (f *GlobalFlags) AddFlags(flagset *pflag.FlagSet) {
 	f.ConfigFlags.AddFlags(flagset)
 	flagset.StringVarP(&f.OutputFormat, "output", "o", f.OutputFormat, "Output format. One of: table|json|yaml|wide")
 	flagset.BoolVarP(&f.Verbose, "verbose", "v", false, "Enable verbose output")
+	flagset.BoolVar(&f.DryRun, "dry-run", false, "Preview changes without applying them")
 }
 
 // Validate validates the global flags.
@@ -148,4 +150,8 @@ func NewCLIContext(config *CLIConfig) *CLIContext {
 // Config returns the CLI configuration.
 func (c *CLIContext) Config() *CLIConfig {
 	return c.config
+}
+
+func (c *CLIContext) GetGlobalFlags() *GlobalFlags {
+	return c.GlobalFlags
 }
