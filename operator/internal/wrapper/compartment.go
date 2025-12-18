@@ -131,9 +131,7 @@ func (c *Compartment) createNewBatch() []SkyhookNode {
 	if c.Strategy != nil {
 		batchSize = c.Strategy.CalculateBatchSize(len(c.Nodes), &c.BatchState)
 	} else {
-		ceiling := CalculateCeiling(c.Budget, len(c.Nodes))
-		availableCapacity := ceiling - c.getInProgressCount()
-		batchSize = max(0, availableCapacity)
+		batchSize = CalculateCeiling(c.Budget, len(c.Nodes))
 	}
 
 	if batchSize <= 0 {
@@ -141,7 +139,7 @@ func (c *Compartment) createNewBatch() []SkyhookNode {
 	}
 
 	selectedNodes := make([]SkyhookNode, 0)
-	priority := []v1alpha1.Status{v1alpha1.StatusInProgress, v1alpha1.StatusUnknown, v1alpha1.StatusBlocked, v1alpha1.StatusErroring}
+	priority := []v1alpha1.Status{v1alpha1.StatusUnknown, v1alpha1.StatusBlocked, v1alpha1.StatusErroring}
 
 	for _, status := range priority {
 		for _, node := range c.Nodes {

@@ -1433,8 +1433,6 @@ var _ = Describe("Resource Comparison", func() {
 
 		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
 		Expect(err).ToNot(HaveOccurred())
-		err = partitionNodesIntoCompartments(clusterState)
-		Expect(err).ToNot(HaveOccurred())
 		Expect(clusterState.skyhooks[0].GetCompartments()).To(HaveLen(3))
 		Expect(clusterState.skyhooks[0].GetCompartments()["compartment-a"].GetNodes()).To(HaveLen(2))
 		Expect(clusterState.skyhooks[0].GetCompartments()["compartment-b"].GetNodes()).To(HaveLen(1))

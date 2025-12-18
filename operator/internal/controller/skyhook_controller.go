@@ -293,13 +293,6 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// PARTITION nodes into compartments for each skyhook that uses deployment policies
-	err = partitionNodesIntoCompartments(clusterState)
-	if err != nil {
-		logger.Error(err, "error partitioning nodes into compartments")
-		return ctrl.Result{}, err
-	}
-
 	if yes, result, err := shouldReturn(r.HandleMigrations(ctx, clusterState)); yes {
 		return result, err
 	}
