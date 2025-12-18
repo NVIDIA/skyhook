@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package cli
+package app
 
 import (
 	"bytes"

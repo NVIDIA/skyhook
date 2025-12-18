@@ -21,7 +21,7 @@ package main
 import (
 	"os"
 
-	"github.com/NVIDIA/skyhook/operator/internal/cli"
+	cli "github.com/NVIDIA/skyhook/operator/cmd/cli/app"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
 )
 
