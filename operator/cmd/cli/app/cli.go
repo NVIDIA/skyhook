@@ -16,16 +16,16 @@
  * limitations under the License.
  */
 
-package cli
+package app
 
 import (
 	"fmt"
 
 	"github.com/spf13/cobra"
 
+	"github.com/NVIDIA/skyhook/operator/cmd/cli/app/node"
+	pkg "github.com/NVIDIA/skyhook/operator/cmd/cli/app/package"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
-	"github.com/NVIDIA/skyhook/operator/internal/cli/node"
-	pkg "github.com/NVIDIA/skyhook/operator/internal/cli/package"
 	internalVersion "github.com/NVIDIA/skyhook/operator/internal/version"
 )
 

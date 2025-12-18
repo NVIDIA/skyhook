@@ -280,7 +280,14 @@ func promptConfirmation(cmd *cobra.Command, opts *rerunOptions) (bool, error) {
 }
 
 // updateNodeAnnotations updates each node's annotation to trigger re-run
-func updateNodeAnnotations(ctx context.Context, kubeClient *client.Client, nodesToUpdate []string, nodeStates map[string]v1alpha1.NodeState, packageKey, annotationKey string, opts *rerunOptions) (int, []string) {
+func updateNodeAnnotations(
+	ctx context.Context,
+	kubeClient *client.Client,
+	nodesToUpdate []string,
+	nodeStates map[string]v1alpha1.NodeState,
+	packageKey, annotationKey string,
+	opts *rerunOptions,
+) (int, []string) {
 	var updateErrors []string
 	successCount := 0
 

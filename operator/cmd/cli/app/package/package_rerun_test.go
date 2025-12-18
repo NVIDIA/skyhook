@@ -316,6 +316,7 @@ var _ = Describe("Package Rerun Command", func() {
 			Expect(output.String()).To(ContainSubstring("No nodes matched"))
 		})
 
+		//nolint:dupl // Test setup intentionally similar to other test cases for clarity
 		It("should show message when package not found on nodes", func() {
 			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
 			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
@@ -424,6 +425,7 @@ var _ = Describe("Package Rerun Command", func() {
 			Expect(output.String()).To(ContainSubstring("Aborted"))
 		})
 
+		//nolint:dupl // Test setup intentionally similar to other test cases for clarity
 		It("should update node annotations when confirmed", func() {
 			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
 			mockNSRes.On("Get", mock.Anything, testSkyhookNameRerun, mock.Anything).Return(createSkyhookUnstructured(), nil)
