@@ -28,7 +28,8 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
-const defaultNamespace = "skyhook"
+// DefaultNamespace is the default namespace for Skyhook resources
+const DefaultNamespace = "skyhook"
 
 // GlobalFlags holds persistent CLI flags that every command uses (kubeconfig, namespace, output, etc.).
 type GlobalFlags struct {
@@ -45,7 +46,7 @@ func NewGlobalFlags() *GlobalFlags {
 		flags.Namespace = new(string)
 	}
 	if *flags.Namespace == "" {
-		*flags.Namespace = defaultNamespace
+		*flags.Namespace = DefaultNamespace
 	}
 
 	return &GlobalFlags{
@@ -81,11 +82,11 @@ func (f *GlobalFlags) Validate() error {
 // Namespace returns the namespace selected via kubeconfig or flag (default "skyhook").
 func (f *GlobalFlags) Namespace() string {
 	if f.ConfigFlags == nil || f.ConfigFlags.Namespace == nil {
-		return defaultNamespace
+		return DefaultNamespace
 	}
 	ns := strings.TrimSpace(*f.ConfigFlags.Namespace)
 	if ns == "" {
-		return defaultNamespace
+		return DefaultNamespace
 	}
 	return ns
 }
@@ -150,8 +151,4 @@ func NewCLIContext(config *CLIConfig) *CLIContext {
 // Config returns the CLI configuration.
 func (c *CLIContext) Config() *CLIConfig {
 	return c.config
-}
-
-func (c *CLIContext) GetGlobalFlags() *GlobalFlags {
-	return c.GlobalFlags
 }

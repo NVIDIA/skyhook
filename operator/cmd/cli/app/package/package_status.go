@@ -40,14 +40,12 @@ type statusOptions struct {
 	skyhookName string
 	packageName string
 	nodes       []string
-	output      string
 }
 
 // BindToCmd binds the status options to command flags
 func (o *statusOptions) BindToCmd(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
 	cmd.Flags().StringArrayVar(&o.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times)")
-	cmd.Flags().StringVarP(&o.output, "output", "o", "table", "Output format: table, json, yaml, wide")
 
 	_ = cmd.MarkFlagRequired("skyhook")
 }
@@ -92,7 +90,7 @@ The output can be filtered by:
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
-			return runStatus(cmd.Context(), cmd.OutOrStdout(), kubeClient, opts)
+			return runStatus(cmd.Context(), kubeClient, opts, ctx)
 		},
 	}
 
@@ -118,7 +116,8 @@ func newNodePackageStatus(nodeName string, pkgStatus v1alpha1.PackageStatus) nod
 	}
 }
 
-func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *statusOptions) error {
+func runStatus(ctx context.Context, kubeClient *client.Client, opts *statusOptions, cliCtx *cliContext.CLIContext) error {
+	out := cliCtx.Config().OutputWriter
 	// Get the Skyhook CR to validate it exists and get package info
 	skyhookUnstructured, err := kubeClient.Dynamic().Resource(skyhookGVR).Get(ctx, opts.skyhookName, metav1.GetOptions{})
 	if err != nil {
@@ -149,6 +148,9 @@ func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, op
 
 		var nodeState v1alpha1.NodeState
 		if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+			if cliCtx.GlobalFlags.Verbose {
+				_, _ = fmt.Fprintf(cliCtx.Config().ErrorWriter, "Warning: skipping node %q - invalid annotation: %v\n", node.Name, err)
+			}
 			continue
 		}
 
@@ -204,12 +206,12 @@ func runStatus(ctx context.Context, out io.Writer, kubeClient *client.Client, op
 	}
 
 	// Output based on format
-	switch opts.output {
-	case "json":
+	switch cliCtx.GlobalFlags.OutputFormat {
+	case utils.OutputFormatJSON:
 		return utils.OutputJSON(out, statuses)
-	case "yaml":
+	case utils.OutputFormatYAML:
 		return utils.OutputYAML(out, statuses)
-	case "wide":
+	case utils.OutputFormatWide:
 		return outputPackageStatusTableOrWide(out, skyhook, statuses, true)
 	default:
 		return outputPackageStatusTableOrWide(out, skyhook, statuses, false)

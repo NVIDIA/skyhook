@@ -32,6 +32,7 @@ import (
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 )
 
 var _ = Describe("Node Status Command", func() {
@@ -44,17 +45,13 @@ var _ = Describe("Node Status Command", func() {
 			Expect(cmd.Short).To(ContainSubstring("Skyhook activity"))
 		})
 
-		It("should have skyhook and output flags", func() {
+		It("should have skyhook flag", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewStatusCmd(ctx)
 
 			skyhookFlag := cmd.Flags().Lookup("skyhook")
 			Expect(skyhookFlag).NotTo(BeNil())
 			Expect(skyhookFlag.Usage).To(ContainSubstring("Filter by Skyhook"))
-
-			outputFlag := cmd.Flags().Lookup("output")
-			Expect(outputFlag).NotTo(BeNil())
-			Expect(outputFlag.Shorthand).To(Equal("o"))
 		})
 	})
 
@@ -148,12 +145,14 @@ var _ = Describe("Node Status Command", func() {
 			output     *bytes.Buffer
 			mockKube   *fake.Clientset
 			kubeClient *client.Client
+			cliCtx     *context.CLIContext
 		)
 
 		BeforeEach(func() {
 			output = &bytes.Buffer{}
 			mockKube = fake.NewSimpleClientset()
 			kubeClient = client.NewWithClientsAndConfig(mockKube, nil, nil)
+			cliCtx = context.NewCLIContext(context.NewCLIConfig(context.WithOutputWriter(output)))
 		})
 
 		It("should show no activity when node has no annotations", func() {
@@ -166,8 +165,8 @@ var _ = Describe("Node Status Command", func() {
 			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeStatusOptions{output: "table"}
-			err = runNodeStatus(gocontext.Background(), output, kubeClient, []string{"worker-1"}, opts)
+			opts := &nodeStatusOptions{}
+			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("No Skyhook activity found"))
 		})
@@ -189,8 +188,8 @@ var _ = Describe("Node Status Command", func() {
 			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeStatusOptions{output: "table"}
-			err = runNodeStatus(gocontext.Background(), output, kubeClient, []string{"worker-1"}, opts)
+			opts := &nodeStatusOptions{}
+			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
@@ -222,8 +221,8 @@ var _ = Describe("Node Status Command", func() {
 			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeStatusOptions{skyhookName: "skyhook-a", output: "table"}
-			err = runNodeStatus(gocontext.Background(), output, kubeClient, []string{"worker-1"}, opts)
+			opts := &nodeStatusOptions{skyhookName: "skyhook-a"}
+			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
@@ -250,8 +249,8 @@ var _ = Describe("Node Status Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 			}
 
-			opts := &nodeStatusOptions{output: "table"}
-			err := runNodeStatus(gocontext.Background(), output, kubeClient, []string{}, opts)
+			opts := &nodeStatusOptions{}
+			err := runNodeStatus(gocontext.Background(), kubeClient, []string{}, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
@@ -276,8 +275,9 @@ var _ = Describe("Node Status Command", func() {
 			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeStatusOptions{output: "json"}
-			err = runNodeStatus(gocontext.Background(), output, kubeClient, []string{"worker-1"}, opts)
+			opts := &nodeStatusOptions{}
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			var result []nodeSkyhookSummary
@@ -321,8 +321,9 @@ var _ = Describe("Node Status Command", func() {
 			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeStatusOptions{output: "json"}
-			err = runNodeStatus(gocontext.Background(), output, kubeClient, []string{"worker-1"}, opts)
+			opts := &nodeStatusOptions{}
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			var result []nodeSkyhookSummary

@@ -103,7 +103,8 @@ By default, it shows logs from the most relevant stage container.`,
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
-			return runLogs(cmd.Context(), cmd.OutOrStdout(), kubeClient, opts)
+			namespace := ctx.GlobalFlags.Namespace()
+			return runLogs(cmd.Context(), cmd.OutOrStdout(), kubeClient, opts, namespace)
 		},
 	}
 
@@ -112,14 +113,12 @@ By default, it shows logs from the most relevant stage container.`,
 	return cmd
 }
 
-const skyhookNamespace = "skyhook"
-
-func runLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *logsOptions) error {
+func runLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *logsOptions, namespace string) error {
 	// Build label selector for Skyhook pods
 	labelSelector := fmt.Sprintf("%s/name=%s", v1alpha1.METADATA_PREFIX, opts.skyhookName)
 
 	// List pods matching the selector
-	podList, err := kubeClient.Kubernetes().CoreV1().Pods(skyhookNamespace).List(ctx, metav1.ListOptions{
+	podList, err := kubeClient.Kubernetes().CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 	if err != nil {
@@ -127,7 +126,7 @@ func runLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts
 	}
 
 	if len(podList.Items) == 0 {
-		_, _ = fmt.Fprintf(out, "No pods found for skyhook %q in namespace %q\n", opts.skyhookName, skyhookNamespace)
+		_, _ = fmt.Fprintf(out, "No pods found for skyhook %q in namespace %q\n", opts.skyhookName, namespace)
 		return nil
 	}
 
@@ -182,7 +181,7 @@ func runLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts
 				}
 				_, _ = fmt.Fprintf(out, "=== Container: %s ===\n", containerName)
 			}
-			if err := getContainerLogs(ctx, out, kubeClient, opts, &pod, containerName); err != nil {
+			if err := getContainerLogs(ctx, out, kubeClient, opts, &pod, containerName, namespace); err != nil {
 				_, _ = fmt.Fprintf(out, "Error getting logs for %s/%s: %v\n", pod.Name, containerName, err)
 			}
 		}
@@ -249,7 +248,7 @@ func getContainersToLog(pod *corev1.Pod, opts *logsOptions) []string {
 	return nil
 }
 
-func getContainerLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *logsOptions, pod *corev1.Pod, containerName string) error {
+func getContainerLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *logsOptions, pod *corev1.Pod, containerName, namespace string) error {
 	// Check container status first
 	containerStatus := getContainerStatus(pod, containerName)
 	statusStr := ""
@@ -297,7 +296,7 @@ func getContainerLogs(ctx context.Context, out io.Writer, kubeClient *client.Cli
 	}
 
 	// Get logs
-	req := kubeClient.Kubernetes().CoreV1().Pods(skyhookNamespace).GetLogs(pod.Name, logOpts)
+	req := kubeClient.Kubernetes().CoreV1().Pods(namespace).GetLogs(pod.Name, logOpts)
 	stream, err := req.Stream(ctx)
 	if err != nil {
 		return fmt.Errorf("opening log stream: %w", err)

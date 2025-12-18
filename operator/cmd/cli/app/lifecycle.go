@@ -19,7 +19,9 @@
 package app
 
 import (
+	"bufio"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -62,11 +64,23 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 			if cfg.needsConfirm && !opts.confirm {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "This will %s Skyhook %q. Continue? [y/N]: ",
 					cfg.confirmVerb, skyhookName)
-				var response string
-				if _, err := fmt.Scanln(&response); err != nil || (response != "y" && response != "Y") {
+				reader := bufio.NewReader(cmd.InOrStdin())
+				response, err := reader.ReadString('\n')
+				if err != nil {
 					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
 					return nil
 				}
+				response = strings.TrimSpace(response)
+				if response != "y" && response != "Y" {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+					return nil
+				}
+			}
+
+			// Check dry-run before making changes
+			if ctx.GlobalFlags.DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] Would %s Skyhook %q\n", cfg.confirmVerb, skyhookName)
+				return nil
 			}
 
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
@@ -131,6 +145,7 @@ The operator will resume processing nodes after this command.`,
 		annotation:   utils.PauseAnnotation,
 		action:       "remove",
 		verb:         "resumed",
+		confirmVerb:  "resume",
 		needsConfirm: false,
 	})
 }
@@ -170,6 +185,7 @@ The operator will resume normal processing after this command.`,
 		annotation:   utils.DisableAnnotation,
 		action:       "remove",
 		verb:         "enabled",
+		confirmVerb:  "enable",
 		needsConfirm: false,
 	})
 }

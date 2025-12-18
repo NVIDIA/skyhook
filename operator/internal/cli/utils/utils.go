@@ -37,6 +37,14 @@ import (
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 )
 
+// Output format constants
+const (
+	OutputFormatTable = "table"
+	OutputFormatJSON  = "json"
+	OutputFormatYAML  = "yaml"
+	OutputFormatWide  = "wide"
+)
+
 // MatchNodes matches node patterns against a list of available nodes.
 // Patterns can be exact node names or regex patterns.
 func MatchNodes(patterns []string, availableNodes []string) ([]string, error) {
@@ -73,14 +81,6 @@ func MatchNodes(patterns []string, availableNodes []string) ([]string, error) {
 	}
 
 	return result, nil
-}
-
-// EscapeJSONPointer escapes special characters in JSON Pointer tokens
-// per RFC 6901: ~ becomes ~0, / becomes ~1
-func EscapeJSONPointer(s string) string {
-	s = strings.ReplaceAll(s, "~", "~0")
-	s = strings.ReplaceAll(s, "/", "~1")
-	return s
 }
 
 // UnstructuredToSkyhook converts an unstructured object to a Skyhook.

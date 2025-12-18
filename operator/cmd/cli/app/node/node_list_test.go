@@ -32,6 +32,7 @@ import (
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 )
 
 var _ = Describe("Node List Command", func() {
@@ -58,14 +59,6 @@ var _ = Describe("Node List Command", func() {
 			Expect(err.Error()).To(ContainSubstring("skyhook"))
 		})
 
-		It("should have output flag", func() {
-			ctx := context.NewCLIContext(nil)
-			cmd := NewListCmd(ctx)
-
-			outputFlag := cmd.Flags().Lookup("output")
-			Expect(outputFlag).NotTo(BeNil())
-			Expect(outputFlag.Shorthand).To(Equal("o"))
-		})
 	})
 
 	Describe("outputNodeListTableOrWide", func() {
@@ -123,12 +116,14 @@ var _ = Describe("Node List Command", func() {
 			output     *bytes.Buffer
 			mockKube   *fake.Clientset
 			kubeClient *client.Client
+			cliCtx     *context.CLIContext
 		)
 
 		BeforeEach(func() {
 			output = &bytes.Buffer{}
 			mockKube = fake.NewSimpleClientset()
 			kubeClient = client.NewWithClientsAndConfig(mockKube, nil, nil)
+			cliCtx = context.NewCLIContext(context.NewCLIConfig(context.WithOutputWriter(output)))
 		})
 
 		It("should show no nodes when none have the skyhook", func() {
@@ -141,8 +136,8 @@ var _ = Describe("Node List Command", func() {
 			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeListOptions{skyhookName: "my-skyhook", output: "table"}
-			err = runNodeList(gocontext.Background(), output, kubeClient, opts)
+			opts := &nodeListOptions{skyhookName: "my-skyhook"}
+			err = runNodeList(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("No nodes found"))
 		})
@@ -166,8 +161,8 @@ var _ = Describe("Node List Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 			}
 
-			opts := &nodeListOptions{skyhookName: "my-skyhook", output: "table"}
-			err := runNodeList(gocontext.Background(), output, kubeClient, opts)
+			opts := &nodeListOptions{skyhookName: "my-skyhook"}
+			err := runNodeList(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
@@ -209,8 +204,8 @@ var _ = Describe("Node List Command", func() {
 			_, err = mockKube.CoreV1().Nodes().Create(gocontext.Background(), node2, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeListOptions{skyhookName: "skyhook-a", output: "table"}
-			err = runNodeList(gocontext.Background(), output, kubeClient, opts)
+			opts := &nodeListOptions{skyhookName: "skyhook-a"}
+			err = runNodeList(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
@@ -235,8 +230,9 @@ var _ = Describe("Node List Command", func() {
 			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			opts := &nodeListOptions{skyhookName: "my-skyhook", output: "json"}
-			err = runNodeList(gocontext.Background(), output, kubeClient, opts)
+			opts := &nodeListOptions{skyhookName: "my-skyhook"}
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err = runNodeList(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			var result struct {
@@ -291,8 +287,9 @@ var _ = Describe("Node List Command", func() {
 				Expect(err).NotTo(HaveOccurred())
 			}
 
-			opts := &nodeListOptions{skyhookName: "my-skyhook", output: "json"}
-			err := runNodeList(gocontext.Background(), output, kubeClient, opts)
+			opts := &nodeListOptions{skyhookName: "my-skyhook"}
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err := runNodeList(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			var result struct {

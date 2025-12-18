@@ -138,6 +138,9 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 
 		var nodeState v1alpha1.NodeState
 		if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+			if cliCtx.GlobalFlags.Verbose {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping node %q - invalid annotation: %v\n", nodeName, err)
+			}
 			continue
 		}
 

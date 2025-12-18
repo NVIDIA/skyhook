@@ -247,7 +247,7 @@ var _ = Describe("Skyhook CLI Tests", func() {
 
 	Describe("defaultNamespace constant", func() {
 		It("should be set to skyhook", func() {
-			Expect(defaultNamespace).To(Equal("skyhook"))
+			Expect(context.DefaultNamespace).To(Equal("skyhook"))
 		})
 	})
 })
