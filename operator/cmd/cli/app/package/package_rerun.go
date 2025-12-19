@@ -156,7 +156,7 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 
 	// Collect node states
 	annotationKey := nodeStateAnnotationKey(opts.skyhookName)
-	nodeStates, allNodes, err := collectNodeStates(ctx, kubeClient, annotationKey)
+	nodeStates, allNodes, err := collectNodeStates(ctx, kubeClient, annotationKey, cliCtx)
 	if err != nil {
 		return err
 	}
@@ -207,7 +207,7 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 }
 
 // collectNodeStates gathers node states from annotations
-func collectNodeStates(ctx context.Context, kubeClient *client.Client, annotationKey string) (map[string]v1alpha1.NodeState, []string, error) {
+func collectNodeStates(ctx context.Context, kubeClient *client.Client, annotationKey string, cliCtx *cliContext.CLIContext) (map[string]v1alpha1.NodeState, []string, error) {
 	nodeList, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing nodes: %w", err)
@@ -219,6 +219,9 @@ func collectNodeStates(ctx context.Context, kubeClient *client.Client, annotatio
 		if annotation, ok := node.Annotations[annotationKey]; ok {
 			var nodeState v1alpha1.NodeState
 			if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+				if cliCtx.GlobalFlags.Verbose {
+					_, _ = fmt.Fprintf(cliCtx.Config().ErrorWriter, "Warning: skipping node %q - invalid annotation: %v\n", node.Name, err)
+				}
 				continue // skip nodes with invalid annotation
 			}
 			allNodes = append(allNodes, node.Name)

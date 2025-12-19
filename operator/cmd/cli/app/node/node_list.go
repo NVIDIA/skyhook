@@ -38,13 +38,11 @@ import (
 // nodeListOptions holds the options for the node list command
 type nodeListOptions struct {
 	skyhookName string
-	output      string
 }
 
 // BindToCmd binds the options to the command flags
 func (o *nodeListOptions) BindToCmd(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
-	cmd.Flags().StringVarP(&o.output, "output", "o", "table", "Output format: table, json, yaml, wide")
 
 	_ = cmd.MarkFlagRequired("skyhook")
 }
@@ -76,7 +74,7 @@ specified Skyhook CR, along with a summary of package completion status.`,
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
-			return runNodeList(cmd.Context(), cmd.OutOrStdout(), kubeClient, opts)
+			return runNodeList(cmd.Context(), kubeClient, opts, ctx)
 		},
 	}
 
@@ -94,7 +92,8 @@ type nodeListEntry struct {
 	Restarts         int32  `json:"restarts"`
 }
 
-func runNodeList(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *nodeListOptions) error {
+func runNodeList(ctx context.Context, kubeClient *client.Client, opts *nodeListOptions, cliCtx *cliContext.CLIContext) error {
+	out := cliCtx.Config().OutputWriter
 	// Get all nodes
 	nodeList, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -112,6 +111,9 @@ func runNodeList(ctx context.Context, out io.Writer, kubeClient *client.Client, 
 
 		var nodeState v1alpha1.NodeState
 		if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+			if cliCtx.GlobalFlags.Verbose {
+				_, _ = fmt.Fprintf(cliCtx.Config().ErrorWriter, "Warning: skipping node %q - invalid annotation: %v\n", node.Name, err)
+			}
 			continue
 		}
 
@@ -163,12 +165,12 @@ func runNodeList(ctx context.Context, out io.Writer, kubeClient *client.Client, 
 
 	// Output based on format
 	output := nodeListOutput{SkyhookName: opts.skyhookName, Nodes: entries}
-	switch opts.output {
-	case "json":
+	switch cliCtx.GlobalFlags.OutputFormat {
+	case utils.OutputFormatJSON:
 		return utils.OutputJSON(out, output)
-	case "yaml":
+	case utils.OutputFormatYAML:
 		return utils.OutputYAML(out, output)
-	case "wide":
+	case utils.OutputFormatWide:
 		return outputNodeListTableOrWide(out, opts.skyhookName, entries, true)
 	default:
 		return outputNodeListTableOrWide(out, opts.skyhookName, entries, false)

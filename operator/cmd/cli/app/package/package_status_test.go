@@ -35,6 +35,7 @@ import (
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 	mockdynamic "github.com/NVIDIA/skyhook/operator/internal/mocks/dynamic"
 )
 
@@ -165,6 +166,7 @@ var _ = Describe("Package Status Command", func() {
 			mockDynamic *mockdynamic.Interface
 			mockNSRes   *mockdynamic.NamespaceableResourceInterface
 			kubeClient  *client.Client
+			cliCtx      *context.CLIContext
 		)
 
 		BeforeEach(func() {
@@ -173,6 +175,7 @@ var _ = Describe("Package Status Command", func() {
 			mockDynamic = &mockdynamic.Interface{}
 			mockNSRes = &mockdynamic.NamespaceableResourceInterface{}
 			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)
+			cliCtx = context.NewCLIContext(context.NewCLIConfig(context.WithOutputWriter(output)))
 		})
 
 		createSkyhookUnstructured := func() *unstructured.Unstructured {
@@ -219,10 +222,9 @@ var _ = Describe("Package Status Command", func() {
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
-				output:      "table",
 			}
 
-			err = runStatus(gocontext.Background(), output, kubeClient, opts)
+			err = runStatus(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("node1"))
 			Expect(output.String()).To(ContainSubstring("pkg1"))
@@ -250,10 +252,10 @@ var _ = Describe("Package Status Command", func() {
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
-				output:      "json",
 			}
 
-			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err := runStatus(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			var result []nodePackageStatus
@@ -278,10 +280,9 @@ var _ = Describe("Package Status Command", func() {
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
-				output:      "table",
 			}
 
-			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			err := runStatus(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("No package status found"))
 		})
@@ -304,10 +305,9 @@ var _ = Describe("Package Status Command", func() {
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
-				output:      "table",
 			}
 
-			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			err := runStatus(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("No package status found"))
 		})
@@ -335,10 +335,9 @@ var _ = Describe("Package Status Command", func() {
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
-				output:      "table",
 			}
 
-			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			err := runStatus(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("pkg1"))
 			Expect(output.String()).NotTo(ContainSubstring("pkg2"))
@@ -366,10 +365,10 @@ var _ = Describe("Package Status Command", func() {
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
-				output:      "wide",
 			}
 
-			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatWide
+			err := runStatus(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("IMAGE"))
 			Expect(output.String()).To(ContainSubstring("nginx:latest"))
@@ -400,10 +399,10 @@ var _ = Describe("Package Status Command", func() {
 			opts := &statusOptions{
 				skyhookName: testSkyhookName,
 				packageName: "pkg1",
-				output:      "json",
 			}
 
-			err := runStatus(gocontext.Background(), output, kubeClient, opts)
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err := runStatus(gocontext.Background(), kubeClient, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
 
 			var result []nodePackageStatus
@@ -439,13 +438,6 @@ var _ = Describe("Package Status Command", func() {
 			Expect(err.Error()).To(ContainSubstring("accepts 1 arg"))
 		})
 
-		It("should have output flag with shorthand", func() {
-			outputFlag := statusCmd.Flags().Lookup("output")
-			Expect(outputFlag).NotTo(BeNil())
-			Expect(outputFlag.Shorthand).To(Equal("o"))
-			Expect(outputFlag.DefValue).To(Equal("table"))
-		})
-
 		It("should have node flag", func() {
 			nodeFlag := statusCmd.Flags().Lookup("node")
 			Expect(nodeFlag).NotTo(BeNil())
@@ -454,13 +446,6 @@ var _ = Describe("Package Status Command", func() {
 		It("should have correct command metadata", func() {
 			Expect(statusCmd.Use).To(Equal("status <package-name>"))
 			Expect(statusCmd.Short).To(ContainSubstring("Query package status"))
-		})
-
-		It("should support multiple output formats", func() {
-			outputFlag := statusCmd.Flags().Lookup("output")
-			Expect(outputFlag.Usage).To(ContainSubstring("table"))
-			Expect(outputFlag.Usage).To(ContainSubstring("json"))
-			Expect(outputFlag.Usage).To(ContainSubstring("wide"))
 		})
 	})
 })

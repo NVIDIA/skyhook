@@ -34,8 +34,6 @@ import (
 	"github.com/NVIDIA/skyhook/operator/internal/version"
 )
 
-const defaultNamespace = "skyhook"
-
 // NewVersionCmd creates the version command.
 func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	var timeout time.Duration
@@ -96,7 +94,7 @@ func discoverOperatorVersion(ctx context.Context, kube kubernetes.Interface, nam
 		return "", fmt.Errorf("nil kubernetes client")
 	}
 	if namespace == "" {
-		namespace = defaultNamespace
+		namespace = cliContext.DefaultNamespace
 	}
 
 	deploymentName := "skyhook-operator-controller-manager"

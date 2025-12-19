@@ -186,9 +186,5 @@ var _ = Describe("CLI Context", func() {
 			Expect(ctx.Config()).To(Equal(config))
 		})
 
-		It("should return global flags via GetGlobalFlags", func() {
-			ctx := NewCLIContext(nil)
-			Expect(ctx.GetGlobalFlags()).To(Equal(ctx.GlobalFlags))
-		})
 	})
 })
