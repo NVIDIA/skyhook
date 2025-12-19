@@ -14,24 +14,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-controllerManager:
-  # setting a toleration on the manager for testing purposes
-  tolerations:
-  - key: dedicated
-    operator: "Equal"
-    value: system-cpu
-    effect: NoSchedule
-  manager:
-    # telling the helm chart to use the test operator image
-    # for more info refer to the README
-    image:
-      repository: ghcr.io/nvidia/skyhook/operator
-      tag: latest ## THIS should change to be like a tag so it can point at a specific commit
-      digest: ""
-    # Use agentless mock image for testing - it just sleeps and exits successfully
-    agent:
-      repository: ghcr.io/nvidia/skyhook/agentless
-      tag: "6.2.0"
-      digest: ""
-webhook:
-  enable: false
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: helm-test-skyhook
+spec:
+  nodeSelectors:
+    matchExpressions:
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
+  deploymentPolicy: helm-test-policy
+  additionalTolerations:
+    - key: dedicated
+      value: system-cpu
+      effect: NoSchedule
+  packages:
+    helm-test:
+      version: "6.2.0"
+      image: ghcr.io/nvidia/skyhook/agentless
+      env:
+        - name: SLEEP_LEN
+          value: "1"

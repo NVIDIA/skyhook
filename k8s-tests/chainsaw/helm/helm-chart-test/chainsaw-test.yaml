@@ -50,7 +50,18 @@ spec:
           ../install-helm-chart.sh foobar
     - assert:
         file: assert-scheduled.yaml
+    - apply:
+        file: deployment-policy.yaml
+    - apply:
+        file: skyhook.yaml
+    - assert:
+        file: assert-skyhook-complete.yaml
     finally:
+    - script:
+        content: |
+          ## Cleanup deployment policy test resources
+          kubectl delete skyhook helm-test-skyhook --ignore-not-found || true
+          kubectl delete deploymentpolicy helm-test-policy -n skyhook --ignore-not-found || true
     - script:
         content: |
           ## Remove taint from nodes
