@@ -237,3 +237,20 @@ The operator is a kbuernetes operator that monitors cluster events and coordinat
 ## [Skyhook Agent](agent/README.md)
 The agent is what does the operators work and is a separate container from the package. The agent knowns how to read a package (/skyhook_package/config.json) is what implements the [lifecycle](#stages) packages go though.
 
+## [Skyhook CLI](docs/cli.md)
+A kubectl plugin for managing Skyhook deployments, packages, and nodes. Provides SRE tooling for inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
+
+### Quick Install
+```bash
+# Build from source
+make build-cli
+
+# Install as kubectl plugin
+cp bin/kubectl-skyhook /usr/local/bin/
+
+# Verify installation
+kubectl skyhook version
+```
+
+See the [full CLI documentation](docs/cli.md) for detailed usage and examples.
+
