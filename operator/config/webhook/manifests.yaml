@@ -83,6 +83,7 @@ webhooks:
     operations:
     - CREATE
     - UPDATE
+    - DELETE
     resources:
     - deploymentpolicies
   sideEffects: None

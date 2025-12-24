@@ -121,7 +121,9 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 
 			// Assign all nodes to the default compartment for backwards compatibility
 			for _, node := range ret.skyhooks[idx].GetNodes() {
-				ret.skyhooks[idx].AddCompartmentNode(v1alpha1.DefaultCompartmentName, node)
+				if err := ret.skyhooks[idx].AddCompartmentNode(v1alpha1.DefaultCompartmentName, node); err != nil {
+					return nil, fmt.Errorf("error adding node to default compartment: %w", err)
+				}
 			}
 		} else {
 			ret.initializeCompartmentsFromPolicy(idx, &skyhook, deploymentPolicies)
@@ -188,10 +190,12 @@ func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1al
 
 	// If deployment policy was specified but not found, mark it for error handling
 	if !policyFound {
-		// We must create a condition here to indicate the DeploymentPolicy is not found,
-		// because verifying its existence requires access to the client and cluster state.
-		// This cannot be handled in the webhook: by design, the webhook must remain stateless
-		// and should not be passed the client, as doing so would violate its required statelessness.
+		// Set a condition to indicate the DeploymentPolicy is not found.
+		// Note: The webhook also validates policy existence at creation/update time,
+		// but this runtime check is needed to handle cases where:
+		// 1. A policy is deleted after a Skyhook references it
+		// 2. The webhook was bypassed or disabled
+		// This provides defense-in-depth validation.
 		ret.skyhooks[idx].GetSkyhook().AddCondition(metav1.Condition{
 			Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
 			Status:             metav1.ConditionTrue,
@@ -303,7 +307,7 @@ type SkyhookNodes interface {
 
 	GetCompartments() map[string]*wrapper.Compartment
 	AddCompartment(name string, compartment *wrapper.Compartment)
-	AddCompartmentNode(name string, node wrapper.SkyhookNode)
+	AddCompartmentNode(name string, node wrapper.SkyhookNode) error
 	AssignNodeToCompartment(node wrapper.SkyhookNode) (string, error)
 }
 
@@ -1024,8 +1028,13 @@ func (skyhook *skyhookNodes) AddCompartment(name string, compartment *wrapper.Co
 	skyhook.compartments[name] = compartment
 }
 
-func (skyhook *skyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) {
-	skyhook.compartments[name].AddNode(node)
+func (skyhook *skyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) error {
+	compartment, ok := skyhook.compartments[name]
+	if !ok {
+		return fmt.Errorf("compartment %q not found for skyhook %q - missing deployment policy", name, skyhook.skyhook.Name)
+	}
+	compartment.AddNode(node)
+	return nil
 }
 
 // compartmentMatch represents a compartment that matches a node

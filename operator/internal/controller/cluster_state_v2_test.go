@@ -424,6 +424,188 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 	})
 })
 
+var _ = Describe("AddCompartmentNode", func() {
+	It("should return error when compartment doesn't exist", func() {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-node",
+			},
+		}
+
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-skyhook",
+			},
+		}
+
+		skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+			nodes:        []wrapper.SkyhookNode{skyhookNode},
+			compartments: make(map[string]*wrapper.Compartment),
+		}
+
+		// Try to add node to non-existent compartment
+		err = skyhookNodes.AddCompartmentNode("non-existent-compartment", skyhookNode)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("compartment \"non-existent-compartment\" not found"))
+		Expect(err.Error()).To(ContainSubstring("test-skyhook"))
+	})
+
+	It("should successfully add node when compartment exists", func() {
+		compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+			Name: "test-compartment",
+		}, nil)
+
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-node",
+			},
+		}
+
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-skyhook",
+			},
+		}
+
+		skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+			nodes:        []wrapper.SkyhookNode{skyhookNode},
+			compartments: make(map[string]*wrapper.Compartment),
+		}
+		skyhookNodes.AddCompartment("test-compartment", compartment)
+
+		// Should succeed
+		err = skyhookNodes.AddCompartmentNode("test-compartment", skyhookNode)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(len(compartment.GetNodes())).To(Equal(1))
+	})
+})
+
+var _ = Describe("partitionNodesIntoCompartments", func() {
+	It("should skip skyhooks with no deployment policy", func() {
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			Spec:       v1alpha1.SkyhookSpec{
+				// No deployment policy
+			},
+		}
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		}
+		skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+			nodes:        []wrapper.SkyhookNode{skyhookNode},
+			compartments: make(map[string]*wrapper.Compartment),
+		}
+
+		clusterState := &clusterState{
+			skyhooks: []SkyhookNodes{skyhookNodes},
+		}
+
+		// Should not error, just skip
+		err = partitionNodesIntoCompartments(clusterState)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should skip skyhooks with empty compartments (missing policy)", func() {
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			Spec: v1alpha1.SkyhookSpec{
+				DeploymentPolicy: "missing-policy", // Policy doesn't exist
+			},
+		}
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		}
+		skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+			nodes:        []wrapper.SkyhookNode{skyhookNode},
+			compartments: make(map[string]*wrapper.Compartment), // Empty - policy not found
+		}
+
+		clusterState := &clusterState{
+			skyhooks: []SkyhookNodes{skyhookNodes},
+		}
+
+		// Should skip gracefully instead of panicking
+		err = partitionNodesIntoCompartments(clusterState)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should partition nodes when compartments exist", func() {
+		compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+			Name: "test-compartment",
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"type": "gpu"},
+			},
+		}, nil)
+
+		defaultCompartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+			Name: v1alpha1.DefaultCompartmentName,
+		}, nil)
+
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			Spec: v1alpha1.SkyhookSpec{
+				DeploymentPolicy: "test-policy",
+			},
+		}
+
+		node1 := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "gpu-node",
+				Labels: map[string]string{"type": "gpu"},
+			},
+		}
+		node2 := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "cpu-node",
+				Labels: map[string]string{"type": "cpu"},
+			},
+		}
+
+		skyhookNode1, err := wrapper.NewSkyhookNode(node1, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+		skyhookNode2, err := wrapper.NewSkyhookNode(node2, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:      wrapper.NewSkyhookWrapper(skyhook),
+			nodes:        []wrapper.SkyhookNode{skyhookNode1, skyhookNode2},
+			compartments: make(map[string]*wrapper.Compartment),
+		}
+		skyhookNodes.AddCompartment("test-compartment", compartment)
+		skyhookNodes.AddCompartment(v1alpha1.DefaultCompartmentName, defaultCompartment)
+
+		clusterState := &clusterState{
+			skyhooks: []SkyhookNodes{skyhookNodes},
+		}
+
+		// Should succeed
+		err = partitionNodesIntoCompartments(clusterState)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Verify nodes were assigned correctly
+		Expect(len(compartment.GetNodes())).To(Equal(1))
+		Expect(compartment.GetNodes()[0].GetNode().Name).To(Equal("gpu-node"))
+		Expect(len(defaultCompartment.GetNodes())).To(Equal(1))
+		Expect(defaultCompartment.GetNodes()[0].GetNode().Name).To(Equal("cpu-node"))
+	})
+})
+
 var _ = Describe("CleanupRemovedNodes", func() {
 	It("should cleanup removed nodes from all status maps", func() {
 		// Create mock skyhook nodes

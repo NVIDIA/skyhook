@@ -23,6 +23,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -231,9 +232,9 @@ func (r *WebhookController) CheckOrUpdateWebhookConfigurations(ctx context.Conte
 	}
 
 	needUpdate := false
+	expectedRules := webhookRule()
 	for i := range existingValidating.Webhooks {
-		if len(existingValidating.Webhooks[i].ClientConfig.CABundle) == 0 {
-			existingValidating.Webhooks[i].ClientConfig.CABundle = caBundle
+		if validatingWebhookNeedsUpdate(&existingValidating.Webhooks[i], caBundle, expectedRules) {
 			needUpdate = true
 		}
 	}
@@ -257,8 +258,7 @@ func (r *WebhookController) CheckOrUpdateWebhookConfigurations(ctx context.Conte
 
 	needUpdate = false
 	for i := range existingMutating.Webhooks {
-		if len(existingMutating.Webhooks[i].ClientConfig.CABundle) == 0 {
-			existingMutating.Webhooks[i].ClientConfig.CABundle = caBundle
+		if mutatingWebhookNeedsUpdate(&existingMutating.Webhooks[i], caBundle, expectedRules) {
 			needUpdate = true
 		}
 	}
@@ -369,7 +369,7 @@ func webhookRule() []admissionregistrationv1.RuleWithOperations {
 			},
 		},
 		{
-			Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update},
+			Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update, admissionregistrationv1.Delete},
 			Rule: admissionregistrationv1.Rule{
 				APIGroups:   []string{v1alpha1.GroupVersion.Group},
 				APIVersions: []string{v1alpha1.GroupVersion.Version},
@@ -377,6 +377,45 @@ func webhookRule() []admissionregistrationv1.RuleWithOperations {
 			},
 		},
 	}
+}
+
+// validatingWebhookNeedsUpdate checks if a validating webhook needs to be updated with new CABundle or Rules
+// Returns true if updates were made to the webhook
+func validatingWebhookNeedsUpdate(webhook *admissionregistrationv1.ValidatingWebhook, caBundle []byte, expectedRules []admissionregistrationv1.RuleWithOperations) bool {
+	needUpdate := false
+
+	// Check if CABundle needs to be set
+	if len(webhook.ClientConfig.CABundle) == 0 {
+		webhook.ClientConfig.CABundle = caBundle
+		needUpdate = true
+	}
+
+	// Check if rules need to be updated
+	if !reflect.DeepEqual(webhook.Rules, expectedRules) {
+		webhook.Rules = expectedRules
+		needUpdate = true
+	}
+
+	return needUpdate
+}
+
+// mutatingWebhookNeedsUpdate checks if a mutating webhook needs to be updated
+func mutatingWebhookNeedsUpdate(webhook *admissionregistrationv1.MutatingWebhook, caBundle []byte, expectedRules []admissionregistrationv1.RuleWithOperations) bool {
+	needUpdate := false
+
+	// Check if CABundle needs to be set
+	if len(webhook.ClientConfig.CABundle) == 0 {
+		webhook.ClientConfig.CABundle = caBundle
+		needUpdate = true
+	}
+
+	// Check if rules need to be updated
+	if !reflect.DeepEqual(webhook.Rules, expectedRules) {
+		webhook.Rules = expectedRules
+		needUpdate = true
+	}
+
+	return needUpdate
 }
 
 // WebhookSecretReadyzCheck is a readyz check for the webhook secret, if it does not exist, it will return an error

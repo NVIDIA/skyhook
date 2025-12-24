@@ -103,9 +103,20 @@ func (_c *MockSkyhookNodes_AddCompartment_Call) RunAndReturn(run func(name strin
 }
 
 // AddCompartmentNode provides a mock function for the type MockSkyhookNodes
-func (_mock *MockSkyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) {
-	_mock.Called(name, node)
-	return
+func (_mock *MockSkyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) error {
+	ret := _mock.Called(name, node)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddCompartmentNode")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(string, wrapper.SkyhookNode) error); ok {
+		r0 = returnFunc(name, node)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
 }
 
 // MockSkyhookNodes_AddCompartmentNode_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddCompartmentNode'
@@ -138,13 +149,13 @@ func (_c *MockSkyhookNodes_AddCompartmentNode_Call) Run(run func(name string, no
 	return _c
 }
 
-func (_c *MockSkyhookNodes_AddCompartmentNode_Call) Return() *MockSkyhookNodes_AddCompartmentNode_Call {
-	_c.Call.Return()
+func (_c *MockSkyhookNodes_AddCompartmentNode_Call) Return(err error) *MockSkyhookNodes_AddCompartmentNode_Call {
+	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *MockSkyhookNodes_AddCompartmentNode_Call) RunAndReturn(run func(name string, node wrapper.SkyhookNode)) *MockSkyhookNodes_AddCompartmentNode_Call {
-	_c.Run(run)
+func (_c *MockSkyhookNodes_AddCompartmentNode_Call) RunAndReturn(run func(name string, node wrapper.SkyhookNode) error) *MockSkyhookNodes_AddCompartmentNode_Call {
+	_c.Call.Return(run)
 	return _c
 }
 
