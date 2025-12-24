@@ -455,12 +455,14 @@ func (s *skyhookNodes) UpdateCondition() bool { // TODO: might make sense to mak
 }
 
 type NodePicker struct {
+	logger                    logr.Logger
 	priorityNodes             map[string]time.Time
 	runtimeRequiredToleration corev1.Toleration
 }
 
-func NewNodePicker(runtimeRequiredToleration corev1.Toleration) *NodePicker {
+func NewNodePicker(logger logr.Logger, runtimeRequiredToleration corev1.Toleration) *NodePicker {
 	return &NodePicker{
+		logger:                    logger,
 		priorityNodes:             make(map[string]time.Time),
 		runtimeRequiredToleration: runtimeRequiredToleration,
 	}
@@ -507,13 +509,13 @@ func (s *NodePicker) upsertPick(name string, skyhook *wrapper.Skyhook) {
 	skyhook.Updated = true
 }
 
-func CheckTaintToleration(tolerations []corev1.Toleration, taints []corev1.Taint) bool {
+func CheckTaintToleration(logger logr.Logger, tolerations []corev1.Toleration, taints []corev1.Taint) bool {
 	// Must tolerate all taints.
 	all_tolerated := true
 	for _, taint := range taints {
 		tolerated := false
 		for _, toleration := range tolerations {
-			if toleration.ToleratesTaint(&taint) {
+			if toleration.ToleratesTaint(logger.WithName("CheckTaintToleration"), &taint, false) {
 				tolerated = true
 				break
 			}
@@ -564,7 +566,7 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 	// This ensures the conditions reflect the true state even when no batch is being processed
 	for _, compartment := range compartments {
 		for _, node := range compartment.GetNodes() {
-			if !CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
+			if !CheckTaintToleration(np.logger, tolerations, node.GetNode().Spec.Taints) {
 				nodesWithTaintTolerationIssue = append(nodesWithTaintTolerationIssue, node.GetNode().Name)
 			}
 			if CheckNodeIgnoreLabel(node) {
@@ -584,7 +586,7 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 				continue
 			}
 			// Check taint toleration
-			if CheckTaintToleration(tolerations, node.GetNode().Spec.Taints) {
+			if CheckTaintToleration(np.logger, tolerations, node.GetNode().Spec.Taints) {
 				selectedNodes = append(selectedNodes, node)
 				np.upsertPick(node.GetNode().GetName(), s.GetSkyhook())
 			} else {

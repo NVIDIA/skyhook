@@ -43,7 +43,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: 1.24.6
+  GO_VERSION: 1.25.5
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
@@ -53,16 +53,16 @@ jobs:
     strategy:
       matrix:
         # Standard E2E tests on all supported K8s versions
-        k8s-version: ["1.31.12", "1.32.8", "1.33.4", "1.34.0"]
+        k8s-version: ["1.31.14", "1.32.11", "1.33.7", "1.34.3", "1.35.0"]
         test-suite: ["e2e"]
         include:
           # Deployment policy tests on 15-node cluster (K8s 1.34 only)
-          - k8s-version: "1.34.0"
+          - k8s-version: "1.35.0"
             test-suite: deployment-policy
             kind-config: k8s-tests/chainsaw/deployment-policy/kind-config.yaml
             make-target: deployment-policy-tests
           # CLI e2e tests on K8s 1.34 only
-          - k8s-version: "1.34.0"
+          - k8s-version: "1.35.0"
             test-suite: cli-e2e
             make-target: cli-e2e-tests
       fail-fast: false  # Continue testing other versions if one fails
@@ -130,7 +130,7 @@ jobs:
           fi
       # Upload coverage to Coveralls using goveralls (Go-specific tool)
       - name: Upload coverage to Coveralls
-        if: matrix.test-suite == 'e2e' && matrix.k8s-version == '1.34.0'
+        if: matrix.test-suite == 'e2e' && matrix.k8s-version == '1.35.0'
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

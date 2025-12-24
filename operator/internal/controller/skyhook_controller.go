@@ -303,7 +303,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// node picker is for selecting nodes to do work, tries maintain a prior of nodes between SCRs
-	nodePicker := NewNodePicker(r.opts.GetRuntimeRequiredToleration())
+	nodePicker := NewNodePicker(logger, r.opts.GetRuntimeRequiredToleration())
 
 	errs := make([]error, 0)
 	var result *ctrl.Result
