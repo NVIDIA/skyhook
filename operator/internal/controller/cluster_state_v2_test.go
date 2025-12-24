@@ -21,8 +21,10 @@ package controller
 import (
 	"fmt"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/skyhook/operator/internal/controller/mock"
@@ -37,6 +39,8 @@ const (
 )
 
 var _ = Describe("cluster state v2 tests", func() {
+
+	var logger logr.Logger = log.FromContext(ctx)
 
 	It("should check taint toleration", func() {
 		taints := []corev1.Taint{
@@ -67,7 +71,7 @@ var _ = Describe("cluster state v2 tests", func() {
 			},
 		}
 
-		Expect(CheckTaintToleration(tolerations, taints)).To(BeTrue())
+		Expect(CheckTaintToleration(logger, tolerations, taints)).To(BeTrue())
 	})
 
 	It("Must tolerate all taints", func() {
@@ -91,7 +95,7 @@ var _ = Describe("cluster state v2 tests", func() {
 			},
 		}
 
-		Expect(CheckTaintToleration(tolerations, taints)).To(BeFalse())
+		Expect(CheckTaintToleration(logger, tolerations, taints)).To(BeFalse())
 	})
 
 	It("When no taints it is tolerated", func() {
@@ -104,7 +108,7 @@ var _ = Describe("cluster state v2 tests", func() {
 			},
 		}
 
-		Expect(CheckTaintToleration(tolerations, taints)).To(BeTrue())
+		Expect(CheckTaintToleration(logger, tolerations, taints)).To(BeTrue())
 	})
 
 	It("When no taints and no tolerations it is tolerated", func() {
@@ -112,7 +116,7 @@ var _ = Describe("cluster state v2 tests", func() {
 
 		tolerations := make([]corev1.Toleration, 0)
 
-		Expect(CheckTaintToleration(tolerations, taints)).To(BeTrue())
+		Expect(CheckTaintToleration(logger, tolerations, taints)).To(BeTrue())
 	})
 
 	It("When node has ignore label it is blocked", func() {

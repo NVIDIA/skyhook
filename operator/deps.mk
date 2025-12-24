@@ -39,9 +39,9 @@ endif
 GOLANGCI_LINT_VERSION ?= v2.2.1
 KUSTOMIZE_VERSION ?= v5.4.1
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
-ENVTEST_K8S_VERSION ?= 1.34.1
+ENVTEST_K8S_VERSION ?= 1.35.0
 GOCOVER_VERSION ?= v1.3.0
-GINKGO_VERSION ?= v2.22.2
+GINKGO_VERSION ?= v2.27.2
 MOCKERY_VERSION ?= v3.5.0
 CHAINSAW_VERSION ?= v0.2.10
 HELM_VERSION ?= v3.18.5
@@ -93,7 +93,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
-	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.20 ## latest requires golang 1.24
+	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.22
 	$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN)
 
 .PHONY: gocover-cobertura

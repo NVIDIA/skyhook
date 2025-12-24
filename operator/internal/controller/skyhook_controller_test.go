@@ -34,10 +34,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var _ = Describe("skyhook controller tests", func() {
+
+	var logger = log.FromContext(ctx)
 
 	It("should map only pods we created", func() {
 
@@ -113,7 +116,7 @@ var _ = Describe("skyhook controller tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, skyhook := range clusterState.skyhooks {
-					picker := NewNodePicker(opts.GetRuntimeRequiredToleration())
+					picker := NewNodePicker(logger, opts.GetRuntimeRequiredToleration())
 					pick := picker.SelectNodes(skyhook)
 					Expect(pick).To(HaveLen(expected))
 				}
@@ -173,7 +176,7 @@ var _ = Describe("skyhook controller tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, skyhook := range clusterState.skyhooks {
-					picker := NewNodePicker(opts.GetRuntimeRequiredToleration())
+					picker := NewNodePicker(logger, opts.GetRuntimeRequiredToleration())
 					pick := picker.SelectNodes(skyhook)
 					Expect(pick).To(HaveLen(expected))
 				}
@@ -810,7 +813,7 @@ var _ = Describe("skyhook controller tests", func() {
 			Effect: "NoSchedule",
 		}
 		toleration := opts.GetRuntimeRequiredToleration()
-		Expect(toleration.ToleratesTaint(&taint)).To(BeTrue())
+		Expect(toleration.ToleratesTaint(logger, &taint, false)).To(BeTrue())
 
 	})
 	It("Pods should always tolerate runtime required taint", func() {

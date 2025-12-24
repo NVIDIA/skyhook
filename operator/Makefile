@@ -16,7 +16,7 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.24.6
+GO_VERSION ?= 1.25.5
 
 # Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location
@@ -24,7 +24,7 @@ IMG_REPO ?= ghcr.io/nvidia/skyhook
 IMG ?= $(IMG_REPO)/operator
 
 ## default version of kind to use
-KIND_VERSION?=1.34.0
+KIND_VERSION?=1.35.0
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook
