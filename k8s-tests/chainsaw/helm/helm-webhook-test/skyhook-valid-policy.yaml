@@ -14,13 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-controllerManager:
-  manager:
-    # telling the helm chart to use the test operator image
-    # for more info refer to the README
-    image:
-      repository: ghcr.io/nvidia/skyhook/operator
-      tag: v0.10.0-c55c93d7
-      digest: ""
-webhook:
-  enable: true
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: skyhook-valid-policy
+spec:
+  deploymentPolicy: test-policy
+  packages:
+    test-pkg:
+      version: "1.2.3"
+      image: ghcr.io/nvidia/skyhook/agentless
+

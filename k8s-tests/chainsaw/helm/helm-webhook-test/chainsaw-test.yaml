@@ -20,7 +20,15 @@ kind: Test
 metadata:
   name: helm-chart-webhook
 spec:
-  description: This test asserts that the helm chart is working as expected. Specifically it asserts that webhooks work as expected. Validating an invalid skyhook should fail. Validating an invalid deployment policy should fail.
+  description: |
+    Test webhook validation for Skyhook and DeploymentPolicy resources:
+    - Invalid Skyhook (bad dependencies) should be rejected
+    - Invalid DeploymentPolicy (bad config) should be rejected
+    - Skyhook with non-existent policy reference should be rejected
+    - Skyhook with valid policy reference should be accepted
+    - Updating Skyhook to non-existent policy should be rejected
+    - Deleting DeploymentPolicy in use should be rejected
+    - Deleting DeploymentPolicy after Skyhook removed should succeed
   concurrent: false
   timeouts:
     assert: 180s
@@ -67,6 +75,78 @@ spec:
             cat err.txt
             exit 1
           fi
+    
+    # Test: Create Skyhook with non-existent DeploymentPolicy (should fail)
+    - script:
+        content: |
+          echo "Testing: Create Skyhook with non-existent DeploymentPolicy..."
+          kubectl apply -f skyhook-missing-policy.yaml 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: Skyhook with non-existent policy was accepted"
+            exit 1
+          fi
+          if ! grep -q "deploymentPolicy \"non-existent-policy\" not found" err.txt; then
+            echo "ERROR: Did not get expected policy not found error"
+            cat err.txt
+            exit 1
+          fi
+          echo "✅ Correctly rejected Skyhook with missing policy"
+    
+    # Test: Create valid DeploymentPolicy
+    - apply:
+        file: valid-deploymentpolicy.yaml
+    
+    # Test: Create Skyhook with existing DeploymentPolicy (should succeed)
+    - apply:
+        file: skyhook-valid-policy.yaml
+    
+    # Test: Update Skyhook to reference non-existent policy (should fail)
+    - script:
+        content: |
+          echo "Testing: Update Skyhook to reference non-existent policy..."
+          kubectl patch skyhook skyhook-valid-policy --type=merge -p '{"spec":{"deploymentPolicy":"does-not-exist"}}' 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: Update to non-existent policy was accepted"
+            exit 1
+          fi
+          if ! grep -q "deploymentPolicy \"does-not-exist\" not found" err.txt; then
+            echo "ERROR: Did not get expected policy not found error"
+            cat err.txt
+            exit 1
+          fi
+          echo "✅ Correctly rejected update to missing policy"
+    
+    # Test: Delete DeploymentPolicy while Skyhook references it (should fail)
+    - script:
+        content: |
+          echo "Testing: Delete DeploymentPolicy while in use..."
+          kubectl delete deploymentpolicy test-policy 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: Policy deletion was accepted while in use"
+            exit 1
+          fi
+          if ! grep -q "still referenced by" err.txt; then
+            echo "ERROR: Did not get expected 'in use' error"
+            cat err.txt
+            exit 1
+          fi
+          echo "✅ Correctly rejected deletion of policy in use"
+    
+    # Test: Delete Skyhook, then delete policy (should succeed)
+    - script:
+        content: |
+          echo "Testing: Delete Skyhook then policy..."
+          kubectl delete skyhook skyhook-valid-policy
+          echo "✅ Skyhook deleted"
+          kubectl delete deploymentpolicy test-policy
+          echo "✅ Policy deleted after Skyhook removed"
+    
     - assert:
         file: assert-webhook.yaml
     - script:
