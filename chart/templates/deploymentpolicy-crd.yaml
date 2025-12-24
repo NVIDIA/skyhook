@@ -23,7 +23,7 @@ spec:
     listKind: DeploymentPolicyList
     plural: deploymentpolicies
     singular: deploymentpolicy
-  scope: Namespaced
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:

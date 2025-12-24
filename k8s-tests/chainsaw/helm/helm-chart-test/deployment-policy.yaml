@@ -21,7 +21,6 @@ apiVersion: skyhook.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: helm-test-policy
-  namespace: skyhook
 spec:
   default:
     budget:
