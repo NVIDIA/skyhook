@@ -6,8 +6,9 @@ This document outlines Skyhook's approach to supporting different Kubernetes ver
 
 | Kubernetes Version | Skyhook Version | Status | Notes |
 |--------------------|-----------------|---------|-------|
-| 1.35, 1.34, 1.33, 1.32, 1.31  | v0.11.0+         | ✅ Next Supported | Current stable versions |
-| 1.34, 1.33, 1.32, 1.31  | v0.9.0 - 0.10.0        | ✅ Fully Supported | Current stable versions |
+| 1.35, 1.34, 1.33, 1.32, 1.31  | v0.11.0+         | ✅ Fully Supported | Current stable versions |
+| 1.34, 1.33, 1.32, 1.31  | 0.10.x        | ✅ Fully Supported | Use v0.11.x  |
+| 1.34, 1.33, 1.32, 1.31  | v0.9.x       | ✅ Fully Supported |  |
 | 1.30               | v0.8.x          | ⚠️ Use older Skyhook | K8s 1.30 EOL: June 28, 2025 |
 | 1.29 and older    | v0.8.x or older | ⚠️ Use older Skyhook | No longer maintained |
 
