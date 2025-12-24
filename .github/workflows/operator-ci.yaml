@@ -20,8 +20,6 @@ name: Operator CI
 on:
   workflow_dispatch: {}
   pull_request:
-    branches:
-      - main
     paths:
       - operator/**
       - containers/operator.Dockerfile
