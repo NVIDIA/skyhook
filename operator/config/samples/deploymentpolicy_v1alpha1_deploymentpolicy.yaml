@@ -24,7 +24,6 @@ apiVersion: skyhook.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: sample-policy
-  namespace: skyhook
 spec:
   # Default applies to nodes that don't match any compartment selector
   default:

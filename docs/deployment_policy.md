@@ -22,7 +22,6 @@ apiVersion: skyhook.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: my-policy
-  namespace: skyhook
 spec:
   # Default applies to nodes that don't match any compartment
   default:
@@ -260,7 +259,7 @@ spec:
 ```
 
 **Behavior**:
-- DeploymentPolicy must be in the **same namespace**
+- DeploymentPolicy is **cluster-scoped** (not namespaced)
 - Each node is assigned to a compartment based on selectors
 - Nodes not matching any compartment use the `default` settings
 
@@ -284,7 +283,6 @@ apiVersion: skyhook.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: legacy-equivalent
-  namespace: skyhook
 spec:
   default:
     budget:

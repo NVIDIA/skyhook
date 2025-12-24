@@ -44,7 +44,7 @@ type DAL interface {
 	GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error)
 	GetPods(ctx context.Context, opts ...client.ListOption) (*corev1.PodList, error)
 	GetDeploymentPolicies(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.DeploymentPolicyList, error)
-	GetDeploymentPolicy(ctx context.Context, namespace, name string) (*skyhookv1alpha1.DeploymentPolicy, error)
+	GetDeploymentPolicy(ctx context.Context, name string) (*skyhookv1alpha1.DeploymentPolicy, error)
 }
 
 type dal struct {
@@ -153,10 +153,11 @@ func (e *dal) GetDeploymentPolicies(ctx context.Context, opts ...client.ListOpti
 	return &policies, nil
 }
 
-func (e *dal) GetDeploymentPolicy(ctx context.Context, namespace, name string) (*skyhookv1alpha1.DeploymentPolicy, error) {
+func (e *dal) GetDeploymentPolicy(ctx context.Context, name string) (*skyhookv1alpha1.DeploymentPolicy, error) {
 	var policy skyhookv1alpha1.DeploymentPolicy
 
-	if err := e.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &policy); err != nil {
+	// DeploymentPolicy is cluster-scoped, so no namespace is needed
+	if err := e.client.Get(ctx, types.NamespacedName{Name: name}, &policy); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
