@@ -94,7 +94,7 @@ var _ = Describe("Node Ignore Command", func() {
 
 		BeforeEach(func() {
 			output = &bytes.Buffer{}
-			mockKube = fake.NewSimpleClientset()
+			mockKube = fake.NewClientset()
 			kubeClient = client.NewWithClientsAndConfig(mockKube, nil, nil)
 			cliCtx = context.NewCLIContext(context.NewCLIConfig(context.WithOutputWriter(output)))
 

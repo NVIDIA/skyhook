@@ -263,7 +263,7 @@ var _ = Describe("Package Rerun Command", func() {
 		)
 
 		BeforeEach(func() {
-			fakeKube = fake.NewSimpleClientset()
+			fakeKube = fake.NewClientset()
 			mockDynamic = &mockdynamic.Interface{}
 			mockNSRes = &mockdynamic.NamespaceableResourceInterface{}
 			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)

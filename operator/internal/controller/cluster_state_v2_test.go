@@ -21,7 +21,6 @@ package controller
 import (
 	"fmt"
 
-	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -40,7 +39,7 @@ const (
 
 var _ = Describe("cluster state v2 tests", func() {
 
-	var logger logr.Logger = log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	It("should check taint toleration", func() {
 		taints := []corev1.Taint{
