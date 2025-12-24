@@ -171,7 +171,7 @@ var _ = Describe("Package Status Command", func() {
 
 		BeforeEach(func() {
 			output = &bytes.Buffer{}
-			fakeKube = fake.NewSimpleClientset()
+			fakeKube = fake.NewClientset()
 			mockDynamic = &mockdynamic.Interface{}
 			mockNSRes = &mockdynamic.NamespaceableResourceInterface{}
 			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)

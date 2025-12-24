@@ -176,7 +176,7 @@ func TestDiscoverOperatorVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clientset := fake.NewSimpleClientset()
+			clientset := fake.NewClientset()
 
 			if tt.deployment != nil {
 				_, err := clientset.AppsV1().Deployments("skyhook").Create(

@@ -271,7 +271,7 @@ var _ = Describe("Package Logs Command", func() {
 
 		BeforeEach(func() {
 			output = &bytes.Buffer{}
-			fakeKube = fake.NewSimpleClientset()
+			fakeKube = fake.NewClientset()
 			kubeClient = client.NewWithClientsAndConfig(fakeKube, nil, nil)
 		})
 
