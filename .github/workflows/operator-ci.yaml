@@ -54,18 +54,22 @@ jobs:
         # Standard E2E tests on all supported K8s versions
         k8s-version: ["1.31.14", "1.32.11", "1.33.7", "1.34.3", "1.35.0"]
         test-suite: ["e2e"]
+        make-targets: ["setup-kind-cluster e2e-tests"]
         include:
-          # Deployment policy tests on 15-node cluster (K8s 1.34 only)
+          # Deployment policy tests on 15-node cluster (K8s 1.35 only)
           - k8s-version: "1.35.0"
             test-suite: deployment-policy
             kind-config: k8s-tests/chainsaw/deployment-policy/kind-config.yaml
-            make-target: deployment-policy-tests
+            make-targets: "setup-kind-cluster deployment-policy-tests"
           # CLI e2e tests on K8s 1.34 only
           - k8s-version: "1.35.0"
             test-suite: cli-e2e
-            make-target: cli-e2e-tests
+            make-targets: "setup-kind-cluster cli-e2e-tests"
+          - k8s-version: "1.35.0"
+            test-suite: unit-tests
+            make-targets: "vet lint unit-tests"
       fail-fast: false  # Continue testing other versions if one fails
-    name: ${{ matrix.test-suite }}-tests (k8s-${{ matrix.k8s-version }})
+    name: ${{ matrix.test-suite }} (k8s-${{ matrix.k8s-version }})
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,16 +81,18 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: operator/go.sum
       - name: Log in to the Container registry
+        if: matrix.test-suite != 'unit-tests' # unit tests don't need a container registry login
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create Kubernetes KinD Cluster v${{ matrix.k8s-version }}
+        if: matrix.test-suite != 'unit-tests' # unit tests don't need a kind cluster
         id: kind
         uses: helm/kind-action@v1
         with:
-          version: v0.30.0
+          version: v0.31.0
           node_image: kindest/node:v${{ matrix.k8s-version }}
           config: ${{ matrix.kind-config || 'operator/config/local-dev/kind-config.yaml' }}
           cluster_name: kind
@@ -118,18 +124,53 @@ jobs:
       - name: Run ${{ matrix.test-suite }} tests
         run: |
           cd operator
-          if [ "${{ matrix.test-suite }}" = "e2e" ]; then
-            make setup-kind-cluster
-            make test
-          elif [ "${{ matrix.test-suite }}" = "cli-e2e" ]; then
-            make setup-kind-cluster
-            make ${{ matrix.make-target }}
-          else
-            make ${{ matrix.make-target }}
-          fi
-      # Upload coverage to Coveralls using goveralls (Go-specific tool)
-      - name: Upload coverage to Coveralls
-        if: matrix.test-suite == 'e2e' && matrix.k8s-version == '1.35.0'
+          make ${{ matrix.make-targets }} merge-coverage
+      # Save coverage artifacts from any test suite that generates them
+      - name: Upload coverage artifact
+        if: hashFiles('operator/reporting/cover.out') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.test-suite }}-k8s-${{ matrix.k8s-version }}
+          path: operator/reporting/cover.out
+          retention-days: 1
+          if-no-files-found: ignore
+
+  # Merge coverage from all test suites and upload to Coveralls
+  upload-coverage:
+    runs-on: ubuntu-latest
+    needs: [tests]
+    # Only upload coverage for PRs and main branch pushes, not for tags
+    if: success() && !startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage-artifacts
+          merge-multiple: false
+      - name: Merge coverage files
+        run: |
+          cd operator
+          mkdir -p reporting
+          # Combine all coverage files
+          for file in ../coverage-artifacts/*/cover.out; do
+            if [ -f "$file" ]; then
+              echo "Merging coverage from $file"
+              cat "$file" >> reporting/all-cover.out
+            fi
+          done
+          # Create final merged coverage file
+          echo "mode: set" > reporting/cover.out
+          tail -n +2 reporting/all-cover.out | sed '/mode: set/d' >> reporting/cover.out
+          # Show total coverage
+          echo "📊 Total Combined Coverage:"
+          go tool cover -func reporting/cover.out | grep total
+      - name: Upload to Coveralls
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

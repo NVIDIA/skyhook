@@ -142,7 +142,7 @@ $(REPORTING):
 	mkdir -p $@
 
 .PHONY: test
-test:: reporting manifests generate fmt vet lint unit-tests e2e-tests helm-tests operator-agent-tests ## Run all tests.
+test:: reporting manifests generate fmt vet lint unit-tests e2e-tests cli-e2e-tests helm-tests operator-agent-tests ## Run all tests.
 
 ifndef CI
 ## we double define test so we can do thing different if in ci vs local
@@ -176,11 +176,30 @@ e2e-tests: chainsaw install run ## Run end to end tests.
 	$(MAKE) kill 
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
-cli-e2e-tests: chainsaw install run build-cli ## Run CLI end to end tests.
+cli-e2e-tests: chainsaw install run build-cli-with-coverage ## Run CLI end to end tests with coverage.
 	## Tests the kubectl-skyhook CLI commands against a real cluster
 	## Requires nodes labeled with skyhook.nvidia.com/test-node=skyhooke2e
+	@mkdir -p $(REPORTING)/cli-cover
+	@# Replace CLI binary with a wrapper that sets GOCOVERDIR for coverage collection
+	@mv bin/skyhook bin/skyhook.orig 2>/dev/null || true
+	@echo '#!/bin/bash' > bin/skyhook
+	@echo 'SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> bin/skyhook
+	@echo 'export GOCOVERDIR="$$SCRIPT_DIR/../reporting/cli-cover"' >> bin/skyhook
+	@echo 'exec "$$SCRIPT_DIR/skyhook-cover" "$$@"' >> bin/skyhook
+	@chmod +x bin/skyhook
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS)
 	$(MAKE) kill
+	@# Restore original CLI binary
+	@mv bin/skyhook.orig bin/skyhook 2>/dev/null || true
+	@# Extract coverage from operator running in cluster
+	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/cli-int.coverprofile
+	@# Extract coverage from CLI binary if any was generated
+	@if [ -d "$(REPORTING)/cli-cover" ] && [ -n "$$(ls -A $(REPORTING)/cli-cover 2>/dev/null)" ]; then \
+		go tool covdata textfmt -i=$(REPORTING)/cli-cover -o=$(REPORTING)/cli-e2e.coverprofile; \
+		echo "✅ CLI coverage collected"; \
+	else \
+		echo "ℹ️  No CLI coverage data (this is OK - CLI is covered by unit tests)"; \
+	fi
 
 helm-tests: helm chainsaw
 	## Here we need to run the operator so that the old CRD can deleted along with
@@ -197,12 +216,14 @@ operator-agent-tests: chainsaw install ## Run operator agent tests.
 	$(CHAINSAW) test --test-dir ../k8s-tests/operator-agent $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
+	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
 deployment-policy-tests: chainsaw install run ## Run all deployment policy E2E tests (requires 15-node cluster).
 	## requires a 15-node cluster to be running with access
 	## use 'make create-deployment-policy-cluster' to create the cluster
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
 	$(MAKE) kill
+	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
 create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deployment policy tests.
 	@echo "🔧 Creating 15-node Kind cluster for deployment policy tests..."
@@ -255,11 +276,14 @@ endif
 .PHONY: merage-coverage
 merge-coverage:
 	## merge coverage file into one so we can run totals and html reporting
-	cat $(REPORTING)/*.coverprofile > reporting/temp-cover.out
-	echo "mode: set" > $(REPORTING)/cover.out
-	## skip first line with +2
-	tail -n +2 $(REPORTING)/temp-cover.out | sed  '/mode: set/d' >> $(REPORTING)/cover.out
-	$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/operator/\1|g' $(REPORTING)/cover.out
+	@if ls $(REPORTING)/*.coverprofile 1> /dev/null 2>&1; then \
+		cat $(REPORTING)/*.coverprofile > reporting/temp-cover.out; \
+		echo "mode: set" > $(REPORTING)/cover.out; \
+		tail -n +2 $(REPORTING)/temp-cover.out | sed  '/mode: set/d' >> $(REPORTING)/cover.out; \
+		$(sedrp) 's|^/.*skyhook/operator/(.*)$$|github\.com/NVIDIA/skyhook/operator/\1|g' $(REPORTING)/cover.out; \
+	else \
+		echo "No coverage files found - skipping merge"; \
+	fi
 
 .PHONY: lint
 lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
@@ -280,15 +304,22 @@ build-manager: manifests generate fmt vet lint ## Build manager binary.
 
 .PHONY: build-cli
 CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(VERSION) -X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA)"
-build-cli: fmt vet ## Build CLI binary.
+build-cli:  ## Build CLI binary.
 	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/skyhook cmd/cli/main.go
+
+build-cli-with-coverage:  ## Build CLI binary with coverage instrumentation.
+	go build $(GOFLAGS) -cover $(CLI_LDFLAGS) -o bin/skyhook-cover cmd/cli/main.go
 
 .PHONY: run
 ENABLE_WEBHOOKS?=false
 BACKGROUND?=true
 AGENT_IMAGE?=$(IMG_REPO)/agentless:6.2.0
 LOG_LEVEL?=info
+ifndef CI
+run: manifests generate reporting install kill ## Run a controller from your host.
+else
 run: manifests generate fmt vet lint reporting install kill ## Run a controller from your host.
+endif
 	mkdir -p $(REPORTING)/int
 	rm -rf $(REPORTING)/int/*
 	go build $(GOFLAGS) -cover $(GO_LDFLAGS) -o $(LOCALBIN)/manager cmd/manager/main.go
