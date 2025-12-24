@@ -254,7 +254,7 @@ var _ = Describe("WebhookController", Ordered, func() {
 			}
 
 			caBundle := []byte("new-ca")
-			expectedRules := webhookRule()
+			expectedRules := skyhookRules()
 
 			needsUpdate := validatingWebhookNeedsUpdate(&webhook, caBundle, expectedRules)
 			Expect(needsUpdate).To(BeTrue(), "should detect rules mismatch")
@@ -262,7 +262,7 @@ var _ = Describe("WebhookController", Ordered, func() {
 		})
 
 		It("should not update when rules are identical", func() {
-			expectedRules := webhookRule()
+			expectedRules := skyhookRules()
 
 			webhook := admissionregistrationv1.ValidatingWebhook{
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
@@ -278,7 +278,7 @@ var _ = Describe("WebhookController", Ordered, func() {
 		})
 
 		It("should update CABundle when empty", func() {
-			expectedRules := webhookRule()
+			expectedRules := skyhookRules()
 
 			webhook := admissionregistrationv1.MutatingWebhook{
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
