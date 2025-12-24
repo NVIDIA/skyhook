@@ -42,6 +42,29 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+const (
+	// Webhook configuration names
+	validatingWebhookConfigName = "skyhook-operator-validating-webhook"
+	mutatingWebhookConfigName   = "skyhook-operator-mutating-webhook"
+
+	// Webhook names
+	skyhookValidatingWebhookName          = "validate-skyhook.nvidia.com"
+	deploymentPolicyValidatingWebhookName = "validate-deploymentpolicy.nvidia.com"
+	skyhookMutatingWebhookName            = "mutate-skyhook.nvidia.com"
+	deploymentPolicyMutatingWebhookName   = "mutate-deploymentpolicy.nvidia.com"
+
+	// Webhook paths
+	skyhookValidatingPath          = "/validate-skyhook-nvidia-com-v1alpha1-skyhook"
+	deploymentPolicyValidatingPath = "/validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy"
+	skyhookMutatingPath            = "/mutate-skyhook-nvidia-com-v1alpha1-skyhook"
+	deploymentPolicyMutatingPath   = "/mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy"
+
+	// Certificate management
+	certRotationThreshold    = 168 * time.Hour      // 7 days
+	certValidityDurationYear = 365 * 24 * time.Hour // 1 year
+	expirationAnnotationKey  = v1alpha1.METADATA_PREFIX + "/expiration"
+)
+
 // This project used to use cert-manager to generate the webhook certificates.
 // This removes the dependency on cert-manager and simplifies the deployment.
 // This also removes the need to have a specific issuer, and just uses a self-signed cert.
@@ -161,7 +184,7 @@ func (r *WebhookController) GetOrCreateWebhookCertSecret(ctx context.Context, se
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// not found, create it
-			webhookCert, err := generateCert(r.opts.ServiceName, r.namespace, 365*24*time.Hour) // TODO: this should be configured
+			webhookCert, err := generateCert(r.opts.ServiceName, r.namespace, certValidityDurationYear)
 			if err != nil {
 				return nil, err
 			}
@@ -186,16 +209,18 @@ func (r *WebhookController) GetOrCreateWebhookCertSecret(ctx context.Context, se
 	return secret, nil
 }
 
+// CheckOrUpdateWebhookCertSecret checks if the webhook secret is going to expire in the next 7 days or if the cert on disk is different from the secret
+// if it is, it will generate a new cert and update the secret
 func (r *WebhookController) CheckOrUpdateWebhookCertSecret(ctx context.Context, secret *corev1.Secret) (bool, error) {
 	equal, err := compareCertOnDiskToSecret(r.certDir, secret)
 	if err != nil {
 		return false, err
 	}
 
-	// check if the secret is going to expire in the next 168 hours or if the cert on disk is different from the secret
-	if !equal || secret.Annotations[fmt.Sprintf("%s/expiration", v1alpha1.METADATA_PREFIX)] < time.Now().Add(168*time.Hour).Format(time.RFC3339) {
+	// check if the secret is going to expire in the next 7 days or if the cert on disk is different from the secret
+	if !equal || secret.Annotations[expirationAnnotationKey] < time.Now().Add(certRotationThreshold).Format(time.RFC3339) {
 		// expired, generate a new cert
-		webhookCert, err := generateCert(r.opts.ServiceName, r.namespace, 365*24*time.Hour) // TODO: this should be configured
+		webhookCert, err := generateCert(r.opts.ServiceName, r.namespace, certValidityDurationYear)
 		if err != nil {
 			return false, err
 		}
@@ -208,7 +233,7 @@ func (r *WebhookController) CheckOrUpdateWebhookCertSecret(ctx context.Context, 
 		secret.Data["ca.crt"] = webhookCert.CABytes
 		secret.Data["tls.crt"] = []byte(webhookCert.TLSCert)
 		secret.Data["tls.key"] = []byte(webhookCert.TLSKey)
-		secret.Annotations[fmt.Sprintf("%s/expiration", v1alpha1.METADATA_PREFIX)] = webhookCert.Expiration.Format(time.RFC3339)
+		secret.Annotations[expirationAnnotationKey] = webhookCert.Expiration.Format(time.RFC3339)
 
 		return true, r.Update(ctx, secret)
 	}
@@ -216,75 +241,130 @@ func (r *WebhookController) CheckOrUpdateWebhookCertSecret(ctx context.Context, 
 	return false, nil
 }
 
+// CheckOrUpdateWebhookConfigurations checks if the webhook configurations are need to be updated with the new cert
+// if it is, it will update the webhook configurations
 func (r *WebhookController) CheckOrUpdateWebhookConfigurations(ctx context.Context, secret *corev1.Secret) (bool, error) {
-	// Update only CABundle fields of existing webhook configurations created by Helm
 	caBundle := secret.Data["ca.crt"]
-	changed := false
 
-	// ValidatingWebhookConfiguration
-	validatingName := webhookValidatingWebhookConfiguration(r.namespace, r.opts.ServiceName, secret).GetName()
+	validatingChanged, err := r.updateValidatingWebhookConfiguration(ctx, caBundle)
+	if err != nil {
+		return false, err
+	}
+
+	mutatingChanged, err := r.updateMutatingWebhookConfiguration(ctx, caBundle)
+	if err != nil {
+		return false, err
+	}
+
+	return validatingChanged || mutatingChanged, nil
+}
+
+// updateValidatingWebhookConfiguration updates the ValidatingWebhookConfiguration with the provided CABundle
+func (r *WebhookController) updateValidatingWebhookConfiguration(ctx context.Context, caBundle []byte) (bool, error) {
 	existingValidating := &admissionregistrationv1.ValidatingWebhookConfiguration{}
-	if err := r.Get(ctx, types.NamespacedName{Name: validatingName}, existingValidating); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: validatingWebhookConfigName}, existingValidating); err != nil {
 		if errors.IsNotFound(err) {
-			return false, fmt.Errorf("ValidatingWebhookConfiguration %q not found; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", validatingName, err)
+			return false, fmt.Errorf("ValidatingWebhookConfiguration %q not found; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", validatingWebhookConfigName, err)
 		}
-		return false, fmt.Errorf("failed to get ValidatingWebhookConfiguration %q: %w", validatingName, err)
+		return false, fmt.Errorf("failed to get ValidatingWebhookConfiguration %q: %w", validatingWebhookConfigName, err)
 	}
 
 	needUpdate := false
-	expectedRules := webhookRule()
 	for i := range existingValidating.Webhooks {
+		expectedRules := r.getValidatingWebhookRules(existingValidating.Webhooks[i].Name)
+		if expectedRules == nil {
+			continue // Unknown webhook, skip
+		}
 		if validatingWebhookNeedsUpdate(&existingValidating.Webhooks[i], caBundle, expectedRules) {
 			needUpdate = true
 		}
 	}
+
 	if needUpdate {
 		if err := r.Update(ctx, existingValidating); err != nil {
 			return false, err
-		} else {
-			changed = true
 		}
+		return true, nil
 	}
 
-	// MutatingWebhookConfiguration
-	mutatingName := webhookMutatingWebhookConfiguration(r.namespace, r.opts.ServiceName, secret).GetName()
+	return false, nil
+}
+
+// updateMutatingWebhookConfiguration updates the MutatingWebhookConfiguration with the provided CABundle
+func (r *WebhookController) updateMutatingWebhookConfiguration(ctx context.Context, caBundle []byte) (bool, error) {
 	existingMutating := &admissionregistrationv1.MutatingWebhookConfiguration{}
-	if err := r.Get(ctx, types.NamespacedName{Name: mutatingName}, existingMutating); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: mutatingWebhookConfigName}, existingMutating); err != nil {
 		if errors.IsNotFound(err) {
-			return changed, fmt.Errorf("MutatingWebhookConfiguration %q not found; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", mutatingName, err)
+			return false, fmt.Errorf("MutatingWebhookConfiguration %q not found; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", mutatingWebhookConfigName, err)
 		}
-		return false, fmt.Errorf("failed to get MutatingWebhookConfiguration %q: %w", mutatingName, err)
+		return false, fmt.Errorf("failed to get MutatingWebhookConfiguration %q: %w", mutatingWebhookConfigName, err)
 	}
 
-	needUpdate = false
+	needUpdate := false
 	for i := range existingMutating.Webhooks {
+		expectedRules := r.getMutatingWebhookRules(existingMutating.Webhooks[i].Name)
+		if expectedRules == nil {
+			continue // Unknown webhook, skip
+		}
 		if mutatingWebhookNeedsUpdate(&existingMutating.Webhooks[i], caBundle, expectedRules) {
 			needUpdate = true
 		}
 	}
+
 	if needUpdate {
 		if err := r.Update(ctx, existingMutating); err != nil {
 			return false, err
-		} else {
-			changed = true
 		}
+		return true, nil
 	}
 
-	return changed, nil
+	return false, nil
+}
+
+// getValidatingWebhookRules returns the expected rules for a validating webhook by name
+func (r *WebhookController) getValidatingWebhookRules(webhookName string) []admissionregistrationv1.RuleWithOperations {
+	switch webhookName {
+	case skyhookValidatingWebhookName:
+		return skyhookRules()
+	case deploymentPolicyValidatingWebhookName:
+		return deploymentPolicyValidatingRules()
+	default:
+		return nil
+	}
+}
+
+// getMutatingWebhookRules returns the expected rules for a mutating webhook by name
+func (r *WebhookController) getMutatingWebhookRules(webhookName string) []admissionregistrationv1.RuleWithOperations {
+	switch webhookName {
+	case skyhookMutatingWebhookName:
+		return skyhookRules()
+	case deploymentPolicyMutatingWebhookName:
+		return deploymentPolicyMutatingRules()
+	default:
+		return nil
+	}
 }
 
 // webhookValidatingWebhookConfiguration returns a new validating webhook configuration.
 func webhookValidatingWebhookConfiguration(namespace, serviceName string, secret *corev1.Secret) *admissionregistrationv1.ValidatingWebhookConfiguration {
 	conf := admissionregistrationv1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "skyhook-operator-validating-webhook",
+			Name: validatingWebhookConfigName,
 		},
 		Webhooks: []admissionregistrationv1.ValidatingWebhook{
 			{
-				Name:                    "validate-skyhook.nvidia.com",
-				ClientConfig:            webhookClient(serviceName, namespace, "/validate-skyhook-nvidia-com-v1alpha1-skyhook", secret),
+				Name:                    skyhookValidatingWebhookName,
+				ClientConfig:            webhookClient(serviceName, namespace, skyhookValidatingPath, secret),
 				FailurePolicy:           ptr(admissionregistrationv1.Fail),
-				Rules:                   webhookRule(),
+				Rules:                   skyhookRules(),
+				SideEffects:             ptr(admissionregistrationv1.SideEffectClassNone),
+				AdmissionReviewVersions: []string{"v1"},
+			},
+			{
+				Name:                    deploymentPolicyValidatingWebhookName,
+				ClientConfig:            webhookClient(serviceName, namespace, deploymentPolicyValidatingPath, secret),
+				FailurePolicy:           ptr(admissionregistrationv1.Fail),
+				Rules:                   deploymentPolicyValidatingRules(),
 				SideEffects:             ptr(admissionregistrationv1.SideEffectClassNone),
 				AdmissionReviewVersions: []string{"v1"},
 			},
@@ -298,22 +378,22 @@ func webhookValidatingWebhookConfiguration(namespace, serviceName string, secret
 func webhookMutatingWebhookConfiguration(namespace, serviceName string, secret *corev1.Secret) *admissionregistrationv1.MutatingWebhookConfiguration {
 	conf := admissionregistrationv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "skyhook-operator-mutating-webhook",
+			Name: mutatingWebhookConfigName,
 		},
 		Webhooks: []admissionregistrationv1.MutatingWebhook{
 			{
-				Name:                    "mutate-skyhook.nvidia.com",
-				ClientConfig:            webhookClient(serviceName, namespace, "/mutate-skyhook-nvidia-com-v1alpha1-skyhook", secret),
+				Name:                    skyhookMutatingWebhookName,
+				ClientConfig:            webhookClient(serviceName, namespace, skyhookMutatingPath, secret),
 				FailurePolicy:           ptr(admissionregistrationv1.Fail),
-				Rules:                   webhookRule(),
+				Rules:                   skyhookRules(),
 				SideEffects:             ptr(admissionregistrationv1.SideEffectClassNone),
 				AdmissionReviewVersions: []string{"v1"},
 			},
 			{
-				Name:                    "mutate-deploymentpolicy.nvidia.com",
-				ClientConfig:            webhookClient(serviceName, namespace, "/mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy", secret),
+				Name:                    deploymentPolicyMutatingWebhookName,
+				ClientConfig:            webhookClient(serviceName, namespace, deploymentPolicyMutatingPath, secret),
 				FailurePolicy:           ptr(admissionregistrationv1.Fail),
-				Rules:                   webhookRule(),
+				Rules:                   deploymentPolicyMutatingRules(),
 				SideEffects:             ptr(admissionregistrationv1.SideEffectClassNone),
 				AdmissionReviewVersions: []string{"v1"},
 			},
@@ -358,7 +438,7 @@ func webhookClient(serviceName, namespace, path string, secret *corev1.Secret) a
 	}
 }
 
-func webhookRule() []admissionregistrationv1.RuleWithOperations {
+func skyhookRules() []admissionregistrationv1.RuleWithOperations {
 	return []admissionregistrationv1.RuleWithOperations{
 		{
 			Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update},
@@ -368,8 +448,24 @@ func webhookRule() []admissionregistrationv1.RuleWithOperations {
 				Resources:   []string{"skyhooks"},
 			},
 		},
+	}
+}
+
+// deploymentPolicyValidatingRules adds the delete operation to the mutating webhook rules, otherwise they are the same
+func deploymentPolicyValidatingRules() []admissionregistrationv1.RuleWithOperations {
+	mutrules := deploymentPolicyMutatingRules()
+	oprs := mutrules[0].Operations
+	newops := make([]admissionregistrationv1.OperationType, len(oprs))
+	copy(newops, oprs)
+	newops = append(newops, admissionregistrationv1.Delete)
+	mutrules[0].Operations = newops
+	return mutrules
+}
+
+func deploymentPolicyMutatingRules() []admissionregistrationv1.RuleWithOperations {
+	return []admissionregistrationv1.RuleWithOperations{
 		{
-			Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update, admissionregistrationv1.Delete},
+			Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update},
 			Rule: admissionregistrationv1.Rule{
 				APIGroups:   []string{v1alpha1.GroupVersion.Group},
 				APIVersions: []string{v1alpha1.GroupVersion.Version},

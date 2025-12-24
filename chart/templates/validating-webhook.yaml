@@ -53,6 +53,7 @@ webhooks:
     operations:
     - CREATE
     - UPDATE
+    - DELETE
     resources:
     - deploymentpolicies
     scope: '*'
