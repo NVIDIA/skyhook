@@ -233,6 +233,68 @@ var _ = Describe("WebhookController", Ordered, func() {
 		})
 	})
 
+	Describe("webhook rules comparison", func() {
+		It("should detect when rules are different", func() {
+			oldRules := []admissionregistrationv1.RuleWithOperations{
+				{
+					Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{v1alpha1.GroupVersion.Group},
+						APIVersions: []string{v1alpha1.GroupVersion.Version},
+						Resources:   []string{"skyhooks"},
+					},
+				},
+			}
+
+			webhook := admissionregistrationv1.ValidatingWebhook{
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: []byte("existing-ca"),
+				},
+				Rules: oldRules,
+			}
+
+			caBundle := []byte("new-ca")
+			expectedRules := webhookRule()
+
+			needsUpdate := validatingWebhookNeedsUpdate(&webhook, caBundle, expectedRules)
+			Expect(needsUpdate).To(BeTrue(), "should detect rules mismatch")
+			Expect(webhook.Rules).To(Equal(expectedRules), "rules should be updated")
+		})
+
+		It("should not update when rules are identical", func() {
+			expectedRules := webhookRule()
+
+			webhook := admissionregistrationv1.ValidatingWebhook{
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: []byte("existing-ca"),
+				},
+				Rules: expectedRules,
+			}
+
+			caBundle := []byte("existing-ca")
+
+			needsUpdate := validatingWebhookNeedsUpdate(&webhook, caBundle, expectedRules)
+			Expect(needsUpdate).To(BeFalse(), "should not detect changes when rules are identical")
+		})
+
+		It("should update CABundle when empty", func() {
+			expectedRules := webhookRule()
+
+			webhook := admissionregistrationv1.MutatingWebhook{
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: nil, // Empty CABundle
+				},
+				Rules: expectedRules,
+			}
+
+			caBundle := []byte("new-ca")
+
+			needsUpdate := mutatingWebhookNeedsUpdate(&webhook, caBundle, expectedRules)
+			Expect(needsUpdate).To(BeTrue(), "should detect empty CABundle")
+			Expect(webhook.ClientConfig.CABundle).To(Equal(caBundle), "CABundle should be updated")
+		})
+	})
+
 	Describe("Disk and Secret-to-Disk Sync Logic", func() {
 		It("should write and read cert and key files correctly", func() {
 			err := writeCertAndKey([]byte(cachedCert.TLSCert), []byte(cachedCert.TLSKey), tmpDir)

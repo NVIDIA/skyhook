@@ -2308,6 +2308,13 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 			continue
 		}
 
+		// Skip if no compartments exist (e.g., deployment policy not found)
+		// The webhook should prevent this at admission time, and the controller sets a condition at runtime,
+		// but we guard here to prevent panics if the policy goes missing
+		if len(skyhook.GetCompartments()) == 0 {
+			continue
+		}
+
 		// Clear all compartments before reassigning nodes to prevent stale nodes
 		// This ensures nodes are only in their current compartment based on current labels
 		for _, compartment := range skyhook.GetCompartments() {
@@ -2319,7 +2326,9 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 			if err != nil {
 				return fmt.Errorf("error assigning node %s: %w", node.GetNode().Name, err)
 			}
-			skyhook.AddCompartmentNode(compartmentName, node)
+			if err := skyhook.AddCompartmentNode(compartmentName, node); err != nil {
+				return fmt.Errorf("error adding node %s to compartment %s: %w", node.GetNode().Name, compartmentName, err)
+			}
 		}
 	}
 

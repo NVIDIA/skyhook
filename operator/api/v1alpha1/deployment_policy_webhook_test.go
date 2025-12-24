@@ -26,7 +26,13 @@ import (
 )
 
 var _ = Describe("DeploymentPolicy", func() {
-	deploymentPolicyWebhook := &DeploymentPolicyWebhook{}
+	var deploymentPolicyWebhook *DeploymentPolicyWebhook
+
+	BeforeEach(func() {
+		deploymentPolicyWebhook = &DeploymentPolicyWebhook{
+			Client: k8sClient,
+		}
+	})
 
 	Context("When creating DeploymentPolicy under Defaulting Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
@@ -253,6 +259,128 @@ var _ = Describe("DeploymentPolicy", func() {
 			deploymentPolicy.Spec.Compartments[1].Selector = metav1.LabelSelector{MatchLabels: map[string]string{"node-type": "gpu"}}
 			_, err = deploymentPolicyWebhook.ValidateCreate(ctx, deploymentPolicy)
 			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("When deleting DeploymentPolicy under Validating Webhook", func() {
+		It("should allow deletion when no Skyhooks reference it", func() {
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "unused-policy",
+				},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{
+							Percent: ptr.To(100),
+						},
+						Strategy: &DeploymentStrategy{
+							Fixed: &FixedStrategy{},
+						},
+					},
+				},
+			}
+
+			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should reject deletion when Skyhooks reference it", func() {
+			// Create a deployment policy
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "policy-in-use",
+				},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{
+							Percent: ptr.To(100),
+						},
+						Strategy: &DeploymentStrategy{
+							Fixed: &FixedStrategy{},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+			// Create a Skyhook that references the policy
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-skyhook-using-policy",
+				},
+				Spec: SkyhookSpec{
+					DeploymentPolicy: "policy-in-use",
+					Packages: Packages{
+						"test-pkg": {
+							PackageRef: PackageRef{
+								Name:    "test-pkg",
+								Version: "1.0.0",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+
+			// Try to delete the policy - should be rejected
+			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot delete DeploymentPolicy"))
+			Expect(err.Error()).To(ContainSubstring("policy-in-use"))
+			Expect(err.Error()).To(ContainSubstring("test-skyhook-using-policy"))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+		})
+
+		It("should allow deletion after Skyhooks no longer reference it", func() {
+			// Create a deployment policy
+			policy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "policy-to-be-freed",
+				},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget: DeploymentBudget{
+							Percent: ptr.To(100),
+						},
+						Strategy: &DeploymentStrategy{
+							Fixed: &FixedStrategy{},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+			// Create a Skyhook that references the policy
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-skyhook-temp",
+				},
+				Spec: SkyhookSpec{
+					DeploymentPolicy: "policy-to-be-freed",
+					Packages: Packages{
+						"test-pkg": {
+							PackageRef: PackageRef{
+								Name:    "test-pkg",
+								Version: "1.0.0",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+
+			// Delete the Skyhook
+			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+
+			// Now deletion should succeed
+			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 		})
 	})
 })

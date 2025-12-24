@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -36,7 +37,9 @@ var (
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
 func (r *DeploymentPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	deploymentPolicyWebhook := &DeploymentPolicyWebhook{}
+	deploymentPolicyWebhook := &DeploymentPolicyWebhook{
+		Client: mgr.GetClient(),
+	}
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
 		WithDefaulter(deploymentPolicyWebhook).
@@ -46,7 +49,11 @@ func (r *DeploymentPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:webhook:path=/mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy,mutating=true,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=deploymentpolicies,verbs=create;update,versions=v1alpha1,name=mdeploymentpolicy.kb.io,admissionReviewVersions=v1
 
+// DeploymentPolicyWebhook validates DeploymentPolicy resources at admission time.
+// Includes a client to check if any Skyhooks reference this policy before allowing deletion.
+// +kubebuilder:object:generate=false
 type DeploymentPolicyWebhook struct {
+	Client client.Client
 }
 
 var _ admission.CustomDefaulter = &DeploymentPolicyWebhook{}
@@ -79,7 +86,7 @@ func (r *DeploymentPolicyWebhook) Default(ctx context.Context, obj runtime.Objec
 	return nil
 }
 
-//+kubebuilder:webhook:path=/validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=deploymentpolicies,verbs=create;update,versions=v1alpha1,name=vdeploymentpolicy.kb.io,admissionReviewVersions=v1
+//+kubebuilder:webhook:path=/validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=deploymentpolicies,verbs=create;update;delete,versions=v1alpha1,name=vdeploymentpolicy.kb.io,admissionReviewVersions=v1
 
 var _ admission.CustomValidator = &DeploymentPolicyWebhook{}
 
@@ -118,6 +125,24 @@ func (r *DeploymentPolicyWebhook) ValidateDelete(ctx context.Context, obj runtim
 	}
 
 	deploymentPolicylog.Info("validate delete", "name", deploymentPolicy.Name)
+
+	// Check if any Skyhooks are still referencing this policy
+	skyhooks := &SkyhookList{}
+	if err := r.Client.List(ctx, skyhooks); err != nil {
+		return nil, fmt.Errorf("failed to list skyhooks to check for references: %w", err)
+	}
+
+	referencingSkyhooks := []string{}
+	for _, skyhook := range skyhooks.Items {
+		if skyhook.Spec.DeploymentPolicy == deploymentPolicy.Name {
+			referencingSkyhooks = append(referencingSkyhooks, skyhook.Name)
+		}
+	}
+
+	if len(referencingSkyhooks) > 0 {
+		return nil, fmt.Errorf("cannot delete DeploymentPolicy %q: still referenced by %d Skyhook(s): %v",
+			deploymentPolicy.Name, len(referencingSkyhooks), referencingSkyhooks)
+	}
 
 	return nil, nil
 }

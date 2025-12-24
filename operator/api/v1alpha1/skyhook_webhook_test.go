@@ -29,7 +29,13 @@ import (
 )
 
 var _ = Describe("Skyhook Webhook", func() {
-	skyhookWebhook := &SkyhookWebhook{}
+	var skyhookWebhook *SkyhookWebhook
+
+	BeforeEach(func() {
+		skyhookWebhook = &SkyhookWebhook{
+			Client: k8sClient,
+		}
+	})
 
 	Context("When creating Skyhook under Defaulting Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
@@ -551,5 +557,151 @@ var _ = Describe("Skyhook Webhook", func() {
 		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("deploymentPolicy and interruptionBudget are mutually exclusive"))
+	})
+
+	It("should reject skyhook with non-existent deployment policy", func() {
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-skyhook",
+			},
+			Spec: SkyhookSpec{
+				DeploymentPolicy: "non-existent-policy",
+				Packages: Packages{
+					"test-pkg": {
+						PackageRef: PackageRef{
+							Name:    "test-pkg",
+							Version: "1.0.0",
+						},
+					},
+				},
+			},
+		}
+
+		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("deploymentPolicy \"non-existent-policy\" not found"))
+	})
+
+	It("should accept skyhook when deployment policy exists", func() {
+		// Create a cluster-scoped deployment policy first
+		policy := &DeploymentPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-policy-webhook",
+			},
+			Spec: DeploymentPolicySpec{
+				Default: PolicyDefault{
+					Budget: DeploymentBudget{
+						Percent: ptr.To(100),
+					},
+					Strategy: &DeploymentStrategy{
+						Fixed: &FixedStrategy{},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-skyhook-valid",
+			},
+			Spec: SkyhookSpec{
+				DeploymentPolicy: "test-policy-webhook",
+				Packages: Packages{
+					"test-pkg": {
+						PackageRef: PackageRef{
+							Name:    "test-pkg",
+							Version: "1.0.0",
+						},
+					},
+				},
+			},
+		}
+
+		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Cleanup
+		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+	})
+
+	It("should reject skyhook update to reference non-existent deployment policy", func() {
+		// Create a Skyhook without deployment policy
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-skyhook-update",
+			},
+			Spec: SkyhookSpec{
+				Packages: Packages{
+					"test-pkg": {
+						PackageRef: PackageRef{
+							Name:    "test-pkg",
+							Version: "1.0.0",
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+
+		// Try to update it to reference a non-existent policy
+		updatedSkyhook := skyhook.DeepCopy()
+		updatedSkyhook.Spec.DeploymentPolicy = "does-not-exist"
+
+		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("deploymentPolicy \"does-not-exist\" not found"))
+
+		// Cleanup
+		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+	})
+
+	It("should allow skyhook update to reference valid deployment policy", func() {
+		// Create a deployment policy
+		policy := &DeploymentPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "valid-policy-for-update",
+			},
+			Spec: DeploymentPolicySpec{
+				Default: PolicyDefault{
+					Budget: DeploymentBudget{
+						Percent: ptr.To(100),
+					},
+					Strategy: &DeploymentStrategy{
+						Fixed: &FixedStrategy{},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+		// Create a Skyhook without deployment policy
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-skyhook-update-valid",
+			},
+			Spec: SkyhookSpec{
+				Packages: Packages{
+					"test-pkg": {
+						PackageRef: PackageRef{
+							Name:    "test-pkg",
+							Version: "1.0.0",
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+
+		// Update it to reference the valid policy - should succeed
+		updatedSkyhook := skyhook.DeepCopy()
+		updatedSkyhook.Spec.DeploymentPolicy = "valid-policy-for-update"
+
+		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Cleanup
+		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 	})
 })

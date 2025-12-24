@@ -27,9 +27,12 @@ import (
 
 	"github.com/NVIDIA/skyhook/operator/internal/graph"
 	semver "github.com/NVIDIA/skyhook/operator/internal/version"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -42,7 +45,9 @@ var (
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
 func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	skyhookWebhook := &SkyhookWebhook{}
+	skyhookWebhook := &SkyhookWebhook{
+		Client: mgr.GetClient(),
+	}
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
 		WithDefaulter(skyhookWebhook).
@@ -54,7 +59,11 @@ func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 //+kubebuilder:webhook:path=/mutate-skyhook-nvidia-com-v1alpha1-skyhook,mutating=true,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=skyhooks,verbs=create;update,versions=v1alpha1,name=mskyhook.kb.io,admissionReviewVersions=v1
 
+// SkyhookWebhook validates Skyhook resources at admission time.
+// Includes a client for validating references to DeploymentPolicies.
+// +kubebuilder:object:generate=false
 type SkyhookWebhook struct {
+	Client client.Client
 }
 
 var _ admission.CustomDefaulter = &SkyhookWebhook{}
@@ -90,7 +99,11 @@ func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, obj runtime.Object)
 
 	skyhooklog.Info("validate create", "name", skyhook.Name)
 
-	return nil, skyhook.Validate()
+	if err := skyhook.Validate(); err != nil {
+		return nil, err
+	}
+
+	return nil, r.validateDeploymentPolicyExists(ctx, skyhook)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
@@ -103,7 +116,11 @@ func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runt
 
 	skyhooklog.Info("validate update", "name", skyhook.Name)
 
-	return nil, skyhook.Validate()
+	if err := skyhook.Validate(); err != nil {
+		return nil, err
+	}
+
+	return nil, r.validateDeploymentPolicyExists(ctx, skyhook)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
@@ -234,6 +251,29 @@ func (r *Skyhook) Validate() error {
 	err = graph.Valid()
 	if err != nil {
 		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %s", err)
+	}
+
+	return nil
+}
+
+// validateDeploymentPolicyExists checks if the referenced DeploymentPolicy exists
+func (r *SkyhookWebhook) validateDeploymentPolicyExists(ctx context.Context, skyhook *Skyhook) error {
+	// Skip validation if no deployment policy is specified
+	if skyhook.Spec.DeploymentPolicy == "" {
+		return nil
+	}
+
+	// Check if the DeploymentPolicy exists (cluster-scoped, no namespace)
+	policy := &DeploymentPolicy{}
+	err := r.Client.Get(ctx, types.NamespacedName{
+		Name: skyhook.Spec.DeploymentPolicy,
+	}, policy)
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf("deploymentPolicy %q not found", skyhook.Spec.DeploymentPolicy)
+		}
+		return fmt.Errorf("error checking if deploymentPolicy %q exists: %w", skyhook.Spec.DeploymentPolicy, err)
 	}
 
 	return nil
