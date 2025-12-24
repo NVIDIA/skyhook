@@ -18,6 +18,7 @@
 name: Operator CI
 
 on:
+  workflow_dispatch: {}
   pull_request:
     branches:
       - main
