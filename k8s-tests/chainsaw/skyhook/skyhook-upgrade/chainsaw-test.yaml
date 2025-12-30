@@ -35,7 +35,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh skyhook-upgrade
+          ../skyhook-cli reset skyhook-upgrade --confirm 2>/dev/null || true
     - script:
         content: |
           ## Set up old format annotation to test migration

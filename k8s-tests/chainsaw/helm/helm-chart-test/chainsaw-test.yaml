@@ -27,6 +27,14 @@ spec:
     assert: 240s
     exec: 240s
   steps:
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset helm-test-skyhook --confirm 2>/dev/null || true
+          echo "✓ State reset complete"
+  
   - try:
     - script:
         content: |
@@ -60,6 +68,7 @@ spec:
     - script:
         content: |
           ## Cleanup deployment policy test resources
+          ../skyhook-cli reset helm-test-skyhook --confirm 2>/dev/null || true
           kubectl delete skyhook helm-test-skyhook --ignore-not-found || true
           kubectl delete deploymentpolicy helm-test-policy -n skyhook --ignore-not-found || true
     - script:

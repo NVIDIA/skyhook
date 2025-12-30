@@ -41,7 +41,7 @@ spec:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../rest_test.sh validate-packages
+          ../skyhook-cli reset validate-packages --confirm 2>/dev/null || true
     - apply:
         file: skyhook.yaml
     - sleep:

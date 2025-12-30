@@ -28,7 +28,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh delete-skyhook
+          ../skyhook-cli reset delete-skyhook --confirm 2>/dev/null || true
     - apply:
         file: skyhook.yaml
     - assert:

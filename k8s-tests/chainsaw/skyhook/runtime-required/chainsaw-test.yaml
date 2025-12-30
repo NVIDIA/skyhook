@@ -38,7 +38,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh runtime-required
+          ../skyhook-cli reset runtime-required --confirm 2>/dev/null || true
           ## add taints to nodes
           ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/test-node=skyhooke2e
     - create:

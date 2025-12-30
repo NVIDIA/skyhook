@@ -798,8 +798,15 @@ func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes) bool {
 		if node.IsComplete() {
 			node.SetStatus(v1alpha1.StatusComplete)
 		} else {
-			// node will update to it's correct status on next reconcile
-			node.SetStatus(v1alpha1.StatusUnknown)
+			// In normal operation, all nodes are in at least the default compartment
+			// If compartments exist, node is waiting for its batch; otherwise Unknown (error state)
+			compartments := skyhook.GetCompartments()
+			if len(compartments) > 0 {
+				node.SetStatus(v1alpha1.StatusWaiting)
+			} else {
+				// No compartments exist (error state, e.g., deployment policy missing)
+				node.SetStatus(v1alpha1.StatusUnknown)
+			}
 		}
 		return node.Changed()
 	}
@@ -811,6 +818,16 @@ func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes) bool {
 
 	if nodeStatus == v1alpha1.StatusComplete && !node.IsComplete() {
 		node.SetStatus(v1alpha1.StatusUnknown)
+	}
+
+	// If node is Unknown and not complete, check if it's waiting for its batch
+	// In normal operation, all nodes are in at least the default compartment
+	if nodeStatus == v1alpha1.StatusUnknown && !node.IsComplete() {
+		compartments := skyhook.GetCompartments()
+		if len(compartments) > 0 {
+			node.SetStatus(v1alpha1.StatusWaiting)
+			return node.Changed()
+		}
 	}
 
 	return node.Changed()

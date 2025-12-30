@@ -32,3 +32,15 @@ status:
     prod-us-west:
       matched: 2
       ceiling: 1
+  nodeStatus:
+    # REGRESSION TEST: Nodes assigned to compartments but not yet selected for batches should be "waiting", not "unknown"
+    # This verifies that nodes waiting for batch selection have the correct status
+    #
+    # With 6 nodes total (2 per compartment) and initialBatch=1 per compartment:
+    # - 3 nodes should be "in_progress" (1 per compartment, selected for batch 1)
+    # - 3 nodes should be "waiting" (1 per compartment, not yet selected)
+    #
+    # Count occurrences using JMESPath array filtering: verify exactly 3 "waiting" and 3 "in_progress"
+    # This verifies nodes are correctly marked as "waiting" (not "unknown")
+    (length(values(@)[?@ == 'waiting'])): 3
+    (length(values(@)[?@ == 'in_progress'])): 3

@@ -34,10 +34,10 @@ spec:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../rest_test.sh strict-order-skyhook-zzz
-          ../rest_test.sh strict-order-skyhook-b
-          ../rest_test.sh strict-order-skyhook-c
-          ../rest_test.sh strict-order-skyhook-d
+          ../skyhook-cli reset strict-order-skyhook-zzz --confirm 2>/dev/null || true
+          ../skyhook-cli reset strict-order-skyhook-b --confirm 2>/dev/null || true
+          ../skyhook-cli reset strict-order-skyhook-c --confirm 2>/dev/null || true
+          ../skyhook-cli reset strict-order-skyhook-d --confirm 2>/dev/null || true
     - apply:
         file: skyhook.yaml
     - script:

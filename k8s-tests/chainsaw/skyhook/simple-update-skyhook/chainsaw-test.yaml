@@ -38,7 +38,7 @@ spec:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../rest_test.sh simple-update-skyhook
+          ../skyhook-cli reset simple-update-skyhook --confirm 2>/dev/null || true
     - apply:
         file: skyhook.yaml
     - assert:

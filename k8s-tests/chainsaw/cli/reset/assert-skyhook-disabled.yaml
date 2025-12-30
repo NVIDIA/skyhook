@@ -1,5 +1,3 @@
-#!/bin/bash -x
-
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -16,14 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: cli-reset-test
+  annotations:
+    skyhook.nvidia.com/disable: "true"
 
-skyhook="$1"
-pause="$2"
-
-## assert is true or false
-if [[ "$pause" != "true" && "$pause" != "false" ]]; then
-    echo "pause must be true or false"
-    exit 1
-fi
-
-kubectl patch skyhook ${skyhook} -p '{"spec":{"pause":'$pause'}}' --type=merge

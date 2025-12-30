@@ -1079,6 +1079,55 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			Expect(changed).To(BeTrue())
 		})
 
+		It("should set Unknown nodes to Waiting when in compartments", func() {
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode.SetStatus(v1alpha1.StatusUnknown)
+
+			// Create a compartment and add the node
+			compartment := wrapper.NewCompartmentWrapper(&v1alpha1.Compartment{
+				Name: v1alpha1.DefaultCompartmentName,
+				Budget: v1alpha1.DeploymentBudget{
+					Percent: ptr(100),
+				},
+			}, nil)
+			compartment.AddNode(skyhookNode)
+
+			skyhookNodes := &skyhookNodes{
+				skyhook:      wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:        []wrapper.SkyhookNode{skyhookNode},
+				compartments: make(map[string]*wrapper.Compartment),
+			}
+			skyhookNodes.AddCompartment(v1alpha1.DefaultCompartmentName, compartment)
+
+			// Call IntrospectSkyhook which calls IntrospectNode
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the node status changed from Unknown to Waiting
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusWaiting))
+		})
+
+		It("should keep Unknown nodes Unknown when no compartments exist", func() {
+			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode.SetStatus(v1alpha1.StatusUnknown)
+
+			skyhookNodes := &skyhookNodes{
+				skyhook:      wrapper.NewSkyhookWrapper(testSkyhook),
+				nodes:        []wrapper.SkyhookNode{skyhookNode},
+				compartments: make(map[string]*wrapper.Compartment), // No compartments
+			}
+
+			// Call IntrospectSkyhook which calls IntrospectNode
+			_ = IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+
+			// Verify the node status stays Unknown (error state - no compartments)
+			// Note: IntrospectSkyhook might return true due to UpdateCondition, but the important
+			// thing is that the node status remains Unknown when no compartments exist
+			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusUnknown))
+		})
+
 		It("should handle multiple nodes correctly when disabled", func() {
 			// Set up the skyhook as disabled
 			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = annotationTrueValue

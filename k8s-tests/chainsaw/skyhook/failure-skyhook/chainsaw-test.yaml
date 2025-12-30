@@ -39,7 +39,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh failure-skyhook
+          ../skyhook-cli reset failure-skyhook --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:

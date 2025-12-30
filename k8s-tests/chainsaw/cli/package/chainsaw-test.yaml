@@ -29,6 +29,15 @@ spec:
     assert: 120s
     exec: 90s
   steps:
+  # Step 0: Reset state from previous runs
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset cli-package-test --confirm 2>/dev/null || true
+          echo "✓ State reset complete"
+
   # Step 1: Create a Skyhook
   - name: setup-skyhook
     try:
@@ -41,11 +50,11 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook package status hello-world --skyhook cli-package-test
+          ../skyhook-cli package status hello-world --skyhook cli-package-test
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook package status hello-world --skyhook cli-package-test -o json
+          ../skyhook-cli package status hello-world --skyhook cli-package-test -o json
 
   # Step 3: Test package logs
   - name: test-package-logs
@@ -56,7 +65,7 @@ spec:
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
 
           # Run logs command - it should succeed (may show waiting or actual logs)
-          ../../../../operator/bin/skyhook package logs hello-world --skyhook cli-package-test --node "$NODE"
+          ../skyhook-cli package logs hello-world --skyhook cli-package-test --node "$NODE"
 
   # Step 4: Wait for package to complete, then test rerun
   - name: test-package-rerun
@@ -70,14 +79,14 @@ spec:
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
 
           # Test dry-run first
-          ../../../../operator/bin/skyhook package rerun hello-world --skyhook cli-package-test --node "$NODE" --dry-run
+          ../skyhook-cli package rerun hello-world --skyhook cli-package-test --node "$NODE" --dry-run
     - script:
         timeout: 30s
         content: |
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
 
           # Run actual rerun with confirm flag and stage
-          ../../../../operator/bin/skyhook package rerun hello-world --skyhook cli-package-test --node "$NODE" --stage apply --confirm
+          ../skyhook-cli package rerun hello-world --skyhook cli-package-test --node "$NODE" --stage apply --confirm
     - assert:
         file: assert-package-rerun.yaml
 
@@ -86,8 +95,5 @@ spec:
     try:
     - script:
         content: |
-          kubectl delete skyhook cli-package-test 2>/dev/null || true
-          for NODE in $(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl annotate node "$NODE" skyhook.nvidia.com/nodeState_cli-package-test- 2>/dev/null || true
-          done
+          ../skyhook-cli reset cli-package-test --confirm 2>/dev/null || true
 

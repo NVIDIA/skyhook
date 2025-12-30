@@ -45,7 +45,7 @@ spec:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../rest_test.sh uninstall-upgrade-skyhook
+          ../skyhook-cli reset uninstall-upgrade-skyhook --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:

@@ -30,6 +30,15 @@ spec:
     assert: 120s
     exec: 90s
   steps:
+  # Step 0: Reset state from previous runs
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset cli-node-test --confirm 2>/dev/null || true
+          echo "✓ State reset complete"
+
   # Step 1: Create a Skyhook
   - name: setup-skyhook
     try:
@@ -42,11 +51,11 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook node list --skyhook cli-node-test
+          ../skyhook-cli node list --skyhook cli-node-test
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook node list --skyhook cli-node-test -o json
+          ../skyhook-cli node list --skyhook cli-node-test -o json
 
   # Step 3: Test node status
   - name: test-node-status
@@ -55,17 +64,17 @@ spec:
         timeout: 30s
         content: |
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
-          ../../../../operator/bin/skyhook node status "$NODE"
+          ../skyhook-cli node status "$NODE"
     - script:
         timeout: 30s
         content: |
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
-          ../../../../operator/bin/skyhook node status "$NODE" --skyhook cli-node-test
+          ../skyhook-cli node status "$NODE" --skyhook cli-node-test
     - script:
         timeout: 30s
         content: |
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
-          ../../../../operator/bin/skyhook node status "$NODE" -o json
+          ../skyhook-cli node status "$NODE" -o json
 
   # Step 4: Test node ignore/unignore
   - name: test-node-ignore
@@ -74,7 +83,7 @@ spec:
         timeout: 30s
         content: |
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
-          ../../../../operator/bin/skyhook node ignore "$NODE"
+          ../skyhook-cli node ignore "$NODE"
     - assert:
         file: assert-node-ignored.yaml
   - name: test-node-unignore
@@ -83,7 +92,7 @@ spec:
         timeout: 30s
         content: |
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
-          ../../../../operator/bin/skyhook node unignore "$NODE"
+          ../skyhook-cli node unignore "$NODE"
     - assert:
         file: assert-node-unignored.yaml
 
@@ -94,7 +103,7 @@ spec:
         timeout: 30s
         content: |
           NODE=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
-          ../../../../operator/bin/skyhook node reset "$NODE" --skyhook cli-node-test --confirm
+          ../skyhook-cli node reset "$NODE" --skyhook cli-node-test --confirm
     - assert:
         file: assert-node-reset.yaml
 
@@ -103,9 +112,8 @@ spec:
     try:
     - script:
         content: |
-          kubectl delete skyhook cli-node-test 2>/dev/null || true
+          ../skyhook-cli reset cli-node-test --confirm 2>/dev/null || true
           for NODE in $(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl annotate node "$NODE" skyhook.nvidia.com/nodeState_cli-node-test- 2>/dev/null || true
             kubectl label node "$NODE" skyhook.nvidia.com/ignore- 2>/dev/null || true
           done
 
