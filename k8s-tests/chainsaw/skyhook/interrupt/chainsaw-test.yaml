@@ -45,7 +45,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh interrupt
+          ../skyhook-cli reset interrupt --confirm 2>/dev/null || true
     - create:
         file: pod.yaml
     - wait:

@@ -30,6 +30,15 @@ spec:
     assert: 60s
     exec: 30s
   steps:
+  # Step 0: Reset state from previous runs
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset cli-lifecycle-test --confirm 2>/dev/null || true
+          echo "✓ State reset complete"
+
   # Step 1: Create a Skyhook
   - name: setup-skyhook
     try:
@@ -55,7 +64,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook pause cli-lifecycle-test --confirm
+          ../skyhook-cli pause cli-lifecycle-test --confirm
     - assert:
         file: assert-paused.yaml
 
@@ -65,7 +74,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook resume cli-lifecycle-test
+          ../skyhook-cli resume cli-lifecycle-test
     - assert:
         file: assert-resumed.yaml
 
@@ -75,7 +84,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook disable cli-lifecycle-test --confirm
+          ../skyhook-cli disable cli-lifecycle-test --confirm
     - assert:
         file: assert-disabled.yaml
 
@@ -85,7 +94,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook enable cli-lifecycle-test
+          ../skyhook-cli enable cli-lifecycle-test
     - assert:
         file: assert-enabled.yaml
 
@@ -95,22 +104,22 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../../../../operator/bin/skyhook pause cli-lifecycle-test --confirm
-          ../../../../operator/bin/skyhook disable cli-lifecycle-test --confirm
+          ../skyhook-cli pause cli-lifecycle-test --confirm
+          ../skyhook-cli disable cli-lifecycle-test --confirm
     - assert:
         file: assert-paused-and-disabled.yaml
     - script:
         timeout: 30s
         content: |
           # Resume should only remove pause, not disable
-          ../../../../operator/bin/skyhook resume cli-lifecycle-test
+          ../skyhook-cli resume cli-lifecycle-test
     - assert:
         file: assert-still-disabled.yaml
     - script:
         timeout: 30s
         content: |
           # Enable should remove disable
-          ../../../../operator/bin/skyhook enable cli-lifecycle-test
+          ../skyhook-cli enable cli-lifecycle-test
 
   # Cleanup
   - name: cleanup

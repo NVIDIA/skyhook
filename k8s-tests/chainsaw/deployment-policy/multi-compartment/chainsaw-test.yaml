@@ -31,6 +31,18 @@ spec:
     exec: 300s  # Increased for 15-node rollout
   steps:
   
+  - name: reset-state
+    try:
+    - script:
+        content: |
+          # Clear node annotations from previous runs using skyhook CLI
+          ../skyhook-cli reset multi-compartment-test --confirm 2>/dev/null || true
+          # Clean up any leftover labels
+          chmod +x ../label-nodes.sh
+          ../label-nodes.sh clean-all priority 2>/dev/null || true
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          echo "✓ State reset complete"
+  
   - name: setup-nodes
     try:
     - script:
@@ -124,7 +136,7 @@ spec:
     - script:
         content: |
           # Clean up node annotations
-          ../../skyhook/rest_test.sh multi-compartment-test
+          ../skyhook-cli reset multi-compartment-test --confirm 2>/dev/null || true
           # Clean up labels
           ../label-nodes.sh clean-all priority
           ../label-nodes.sh clean-all skyhook.nvidia.com/test-node

@@ -29,7 +29,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../../chainsaw/skyhook/rest_test.sh simple-agent-operator
+          ../../../../operator/bin/skyhook reset simple-agent-operator --confirm 2>/dev/null || true
     - script:
         content: |
           ## reinstall the debug pod in case it was deleted

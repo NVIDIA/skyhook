@@ -43,7 +43,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh interrupt-grouping
+          ../skyhook-cli reset interrupt-grouping --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:

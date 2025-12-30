@@ -18,20 +18,40 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: depends-on
+  name: cli-reset
 spec:
   description: |
-    Test makes sure depends-on works as expected. c depends on a, and b. Make sure a and b complete before c starts.
+    Test the skyhook reset command:
+    - reset: resets all nodes for a Skyhook
   timeouts:
-    assert: 180s
+    assert: 120s
+    exec: 90s
   steps:
-  - try:
-    ## setup step, skyhook to complete
-    - script:
-        content: |
-          ## remove annotation from last run
-          ../skyhook-cli reset depends-on --confirm 2>/dev/null || true
-    - create:
+  # Step 1: Create a Skyhook and wait for it to complete
+  - name: setup-skyhook
+    try:
+    - apply:
         file: skyhook.yaml
     - assert:
-        file: assert-skyhook.yaml
+        file: assert-skyhook-complete.yaml
+
+  # Step 2: Disable the skyhook so it doesn't restart processing after reset
+  - name: disable-skyhook
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli disable cli-reset-test --confirm
+    - assert:
+        file: assert-skyhook-disabled.yaml
+
+  # Step 3: Test reset command
+  - name: test-reset
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset cli-reset-test --confirm
+    - assert:
+        file: assert-nodes-reset.yaml
+

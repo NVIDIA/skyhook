@@ -32,7 +32,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh cleanup-pods "node-role.kubernetes.io/control-plane notin ()"
+          ../skyhook-cli reset cleanup-pods --confirm 2>/dev/null || true
           
     - create:
         file: setup.yaml

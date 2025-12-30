@@ -4,3 +4,6 @@
 .idea
 **/err.txt
 coverage.out
+
+# Symlinks created by Makefile build-cli
+k8s-tests/chainsaw/*/skyhook-cli

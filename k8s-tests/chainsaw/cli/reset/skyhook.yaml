@@ -1,5 +1,3 @@
-#!/bin/bash -eox pipefail
-
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -16,18 +14,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: cli-reset-test
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  packages:
+    test-package:
+      version: "1.0.0"
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
+      configMap:
+        apply.sh: |
+          #!/bin/bash
+          echo "Reset test apply"
+          sleep 2
 
-## helper script
-## clears labels and annotate from nodes with the prefix "skyhook.nvidia.com"
-## note, a lot of tests have a label setup to target, so you might need to put that back
-## example:
-## ❯ kubectl label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e
-
-for node in $(kubectl get nodes -o name); do
-    for anno in $(kubectl annotate --list ${node}); do
-        [[ ${anno} =~ (^skyhook.nvidia.com\/.*)=.* ]] && kubectl annotate ${node} ${BASH_REMATCH[1]}-
-    done
-    for label in $(kubectl label --list ${node}); do
-        [[ ${label} =~ (^skyhook.nvidia.com\/.*)=.* ]] && kubectl label ${node} ${BASH_REMATCH[1]}-
-    done
-done

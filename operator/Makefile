@@ -142,7 +142,7 @@ $(REPORTING):
 	mkdir -p $@
 
 .PHONY: test
-test:: reporting manifests generate fmt vet lint unit-tests e2e-tests cli-e2e-tests helm-tests operator-agent-tests ## Run all tests.
+test:: reporting manifests generate fmt vet lint build-cli unit-tests e2e-tests cli-e2e-tests helm-tests operator-agent-tests ## Run all tests.
 
 ifndef CI
 ## we double define test so we can do thing different if in ci vs local
@@ -168,7 +168,7 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
 CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 
-e2e-tests: chainsaw install run ## Run end to end tests.
+e2e-tests: chainsaw install run ensure-test-symlinks ## Run end to end tests.
 	## requires a cluster to be running with access
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
@@ -176,17 +176,33 @@ e2e-tests: chainsaw install run ## Run end to end tests.
 	$(MAKE) kill 
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
-cli-e2e-tests: chainsaw install run build-cli-with-coverage ## Run CLI end to end tests with coverage.
+cli-e2e-tests: chainsaw install run build-cli-with-coverage ensure-test-symlinks ## Run CLI end to end tests with coverage.
 	## Tests the kubectl-skyhook CLI commands against a real cluster
 	## Requires nodes labeled with skyhook.nvidia.com/test-node=skyhooke2e
 	@mkdir -p $(REPORTING)/cli-cover
+	@# Ensure bin/skyhook exists (build-cli-with-coverage only creates bin/skyhook-cover)
+	@if [ ! -f bin/skyhook ]; then \
+		if [ -f bin/skyhook-cover ]; then \
+			cp bin/skyhook-cover bin/skyhook; \
+		else \
+			echo "Error: bin/skyhook-cover not found. Run build-cli-with-coverage first."; \
+			exit 1; \
+		fi; \
+	fi
 	@# Replace CLI binary with a wrapper that sets GOCOVERDIR for coverage collection
 	@mv bin/skyhook bin/skyhook.orig 2>/dev/null || true
 	@echo '#!/bin/bash' > bin/skyhook
-	@echo 'SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> bin/skyhook
+	@echo '# Resolve actual script location (handles symlinks)' >> bin/skyhook
+	@echo 'if [ -L "$${BASH_SOURCE[0]}" ]; then' >> bin/skyhook
+	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$$(readlink -f "$${BASH_SOURCE[0]}")")" && pwd)"' >> bin/skyhook
+	@echo 'else' >> bin/skyhook
+	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> bin/skyhook
+	@echo 'fi' >> bin/skyhook
 	@echo 'export GOCOVERDIR="$$SCRIPT_DIR/../reporting/cli-cover"' >> bin/skyhook
 	@echo 'exec "$$SCRIPT_DIR/skyhook-cover" "$$@"' >> bin/skyhook
 	@chmod +x bin/skyhook
+	@# Update symlinks to point to the new wrapper script
+	@$(MAKE) ensure-test-symlinks
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	@# Restore original CLI binary
@@ -201,7 +217,7 @@ cli-e2e-tests: chainsaw install run build-cli-with-coverage ## Run CLI end to en
 		echo "ℹ️  No CLI coverage data (this is OK - CLI is covered by unit tests)"; \
 	fi
 
-helm-tests: helm chainsaw
+helm-tests: helm chainsaw ensure-test-symlinks
 	## Here we need to run the operator so that the old CRD can deleted along with
 	## any leftover SCRs. Without this the SCRs may have finalizers which rely on
 	## the operator and will cause the deletion and tests to hang.
@@ -218,13 +234,14 @@ operator-agent-tests: chainsaw install ## Run operator agent tests.
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
-deployment-policy-tests: chainsaw install run ## Run all deployment policy E2E tests (requires 15-node cluster).
+deployment-policy-tests: chainsaw install run ensure-test-symlinks ## Run all deployment policy E2E tests (requires 15-node cluster).
 	## requires a 15-node cluster to be running with access
 	## use 'make create-deployment-policy-cluster' to create the cluster
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
+.PHONY: create-deployment-policy-cluster
 create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deployment policy tests.
 	@echo "🔧 Creating 15-node Kind cluster for deployment policy tests..."
 	@# Fix for Podman: increase kernel keyring quota
@@ -239,8 +256,12 @@ create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deploymen
 		fi; \
 	fi
 	kind delete cluster --name skyhook-dp-test 2>/dev/null || true
-	kind create cluster --name skyhook-dp-test --config ../k8s-tests/chainsaw/deployment-policy/kind-config.yaml
-	@echo "✅ Cluster created! Use 'kubectl config use-context kind-skyhook-dp-test' to switch to it."
+	kind create cluster --name skyhook-dp-test --config ../k8s-tests/chainsaw/deployment-policy/kind-config.yaml --image=kindest/node:v$(KIND_VERSION)
+
+.PHONY: delete-deployment-policy-cluster
+delete-deployment-policy-cluster: ## Delete the 15-node Kind cluster for deployment policy tests.
+	kind delete cluster --name skyhook-dp-test 2>/dev/null || true
+	kubectl config use-context kind-kind || true
 
 ifeq ($(DOCKER_CMD),docker)
 DOCKER_AUTH_FILE=${HOME}/.docker/config.json
@@ -302,13 +323,26 @@ build: build-manager build-cli ## Build manager and CLI binaries.
 build-manager: manifests generate fmt vet lint ## Build manager binary.
 	go build $(GOFLAGS) $(GO_LDFLAGS) -o bin/manager cmd/manager/main.go
 
+.PHONY: ensure-test-symlinks
+ensure-test-symlinks:  ## Ensure symlinks exist in test directories (idempotent).
+	@# Create symlinks in test directories for easy access
+	@# This target is idempotent and can be called even if binaries are cached
+	@# Note: symlinks will be created even if bin/skyhook doesn't exist yet (it will be created by build targets)
+	@for dir in cli deployment-policy skyhook helm; do \
+		ln -sf ../../../operator/bin/skyhook ../k8s-tests/chainsaw/$$dir/skyhook-cli 2>/dev/null || true; \
+	done
+
 .PHONY: build-cli
 CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(VERSION) -X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA)"
-build-cli:  ## Build CLI binary.
+build-cli: ensure-test-symlinks ## Build CLI binary.
 	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/skyhook cmd/cli/main.go
 
-build-cli-with-coverage:  ## Build CLI binary with coverage instrumentation.
+build-cli-with-coverage: ensure-test-symlinks ## Build CLI binary with coverage instrumentation.
 	go build $(GOFLAGS) -cover $(CLI_LDFLAGS) -o bin/skyhook-cover cmd/cli/main.go
+	@# Ensure bin/skyhook exists (copy from cover binary if not cached) so symlinks work
+	@if [ ! -f bin/skyhook ]; then \
+		cp bin/skyhook-cover bin/skyhook; \
+	fi
 
 .PHONY: run
 ENABLE_WEBHOOKS?=false

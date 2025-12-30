@@ -34,6 +34,16 @@ spec:
     assert: 180s
     exec: 180s
   steps:
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset skyhook-valid-policy --confirm 2>/dev/null || true
+          ../skyhook-cli reset skyhook-missing-policy --confirm 2>/dev/null || true
+          ../skyhook-cli reset invalid-skyhook --confirm 2>/dev/null || true
+          echo "✓ State reset complete"
+  
   - try:
     - script:
         content: |

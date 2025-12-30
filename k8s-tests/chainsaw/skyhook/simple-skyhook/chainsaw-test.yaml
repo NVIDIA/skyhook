@@ -28,7 +28,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../rest_test.sh simple-skyhook
+          ../skyhook-cli reset simple-skyhook --confirm 2>/dev/null || true
     - apply: ## set a limit range in the namespace
         file: limitrange.yaml
     - apply:
