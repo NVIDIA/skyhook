@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -15,6 +15,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 
 """
 License Header Formatting Tool
@@ -44,6 +45,7 @@ import argparse
 import re
 from typing import List, Tuple
 import fnmatch
+import subprocess
 
 # Comment style definitions for different file types
 # Maps regex patterns (for matching file names) to comment prefixes
@@ -82,6 +84,45 @@ BUILT_IN_IGNORE_PATTERNS = [
     'chart',         # Chart directory
     'chart/*'        # Anything inside chart directory
 ]
+
+def get_changed_files_from_git(root_dir: str) -> List[str]:
+    """
+    Get list of files that have uncommitted changes in git.
+
+    Returns:
+        List of absolute file paths with changes
+    """
+    try:
+        # Get modified and staged files
+        result = subprocess.run(
+            ['git', 'diff', '--name-only', 'HEAD'],
+            capture_output=True,
+            text=True,
+            cwd=root_dir,
+            check=True
+        )
+
+        result2 = subprocess.run(
+            ['git', 'diff', '--name-only', '--cached'],
+            capture_output=True,
+            text=True,
+            cwd=root_dir,
+            check=True
+        )
+
+        changed_files = set()
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                changed_files.add(os.path.abspath(os.path.join(root_dir, line)))
+
+        for line in result2.stdout.strip().split('\n'):
+            if line:
+                changed_files.add(os.path.abspath(os.path.join(root_dir, line)))
+
+        return list(changed_files)
+
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
 
 def is_block_comment(comment_prefix: str) -> bool:
     """
@@ -500,23 +541,36 @@ def main():
     # This automatically extracts just the part needed for source file headers
     license_text = read_license_template(args.license_file)
 
-    # Step 2: Set up file/directory filtering
+    # Step 2: Get changed files from git
+    changed_files = get_changed_files_from_git(args.root_dir)
+
+    if not changed_files:
+        print("No changed files found.")
+        return
+
+    if args.verbose:
+        print(f"Found {len(changed_files)} changed file(s)")
+
+    # Step 3: Set up file/directory filtering
     # Use built-in patterns to ignore vendor directories, etc.
     ignore_patterns = BUILT_IN_IGNORE_PATTERNS
 
-    # Step 3: Process each supported file type
-    # Each file type has its own regex pattern and comment prefix
-    for pattern, comment_prefix in COMMENT_STYLES.items():
-        # Format the license text for this specific file type
-        # This adds appropriate comment characters and SPDX headers
-        formatted_license = format_license(license_text, comment_prefix, args.year)
-        
-        # Find all files matching this pattern in the directory tree
-        files = find_files(args.root_dir, [pattern], ignore_patterns)
-        
-        # Process each file: add, update, or skip license as needed
-        for file_path in files:
-            insert_license(file_path, formatted_license, args.verbose)
+    # Step 4: Process each changed file
+    for file_path in changed_files:
+        # Skip ignored files
+        rel_path = os.path.relpath(file_path, args.root_dir)
+        if should_ignore(rel_path, ignore_patterns):
+            continue
+
+        # Check if file matches any supported pattern
+        filename = os.path.basename(file_path)
+        for pattern, comment_prefix in COMMENT_STYLES.items():
+            if re.match(pattern, filename):
+                # Format license for this file type
+                formatted_license = format_license(license_text, comment_prefix, args.year)
+                # Process the file
+                insert_license(file_path, formatted_license, args.verbose)
+                break
 
 if __name__ == '__main__':
     main()
