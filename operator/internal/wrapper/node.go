@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/graph"
@@ -395,21 +394,6 @@ func (node *skyhookNode) Cordon() {
 }
 
 func (node *skyhookNode) Uncordon() {
-
-	other := false
-	for key := range node.Annotations {
-		if strings.HasPrefix(key, fmt.Sprintf("%s/cordon_", v1alpha1.METADATA_PREFIX)) &&
-			key != fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName) {
-			other = true
-			break
-		}
-	}
-
-	if other { // if others also hold a cordon, just remove our self
-		delete(node.Annotations, fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
-		node.updated = true
-		return
-	}
 
 	// if we hold a cordon remove it, also we dont want to remove a cordon if we dont have one...
 	_, ok := node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)]

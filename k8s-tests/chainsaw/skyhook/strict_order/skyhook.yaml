@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -30,6 +30,9 @@ spec:
       skyhook.nvidia.com/test-node: skyhooke2e
   packages:
     foobar:
+      interrupt:
+        type: service
+        services: [cron]
       version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
@@ -53,6 +56,9 @@ spec:
       skyhook.nvidia.com/test-node: skyhooke2e
   packages:
     foobar:
+      interrupt:
+        type: service
+        services: [cron]
       version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 

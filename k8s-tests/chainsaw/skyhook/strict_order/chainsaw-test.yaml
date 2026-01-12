@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -33,6 +33,12 @@ spec:
   - try:
     - script:
         content: |
+          ## Verify skyhook-cli binary exists (symlink to operator/bin/skyhook)
+          if [[ ! -x ../skyhook-cli ]]; then
+            echo "ERROR: ../skyhook-cli does not exist or is not executable"
+            echo "Run 'make build-cli' in the operator directory first"
+            exit 1
+          fi
           ## remove annotation/labels from last run
           ../skyhook-cli reset strict-order-skyhook-zzz --confirm 2>/dev/null || true
           ../skyhook-cli reset strict-order-skyhook-b --confirm 2>/dev/null || true
@@ -57,7 +63,7 @@ spec:
           ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-zzz -t status=complete
           ../../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-c -t status=waiting
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t state=complete
-          ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t stage=config
+          ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t stage=post-interrupt
     # make sure that if it was going to start b it will start b
     - sleep:
         duration: 5s
