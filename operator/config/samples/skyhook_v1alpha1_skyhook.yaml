@@ -37,10 +37,10 @@ spec:
   interruptionBudget: 
     percent: 33
   packages:
-    something_important:
+    something-important:
       version: 1.0.0
       image: ghcr.io/nvidia/skyhook-packages/shellscript
-      depends_on:
+      dependsOn:
         tuning: 1.0.0
       configMap:
         apply.sh: |-
@@ -68,7 +68,7 @@ spec:
         grub.conf:
           type: reboot
         sysctl.conf:
-          type: restart_all_services
+          type: restartAllServices
       configMap:
         grub.conf: |-
             hugepagesz=1G

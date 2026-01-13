@@ -49,7 +49,7 @@ var _ = Describe("Lifecycle Commands", func() {
 			cmdFactory:     NewResumeCmd,
 			expectedUse:    "resume <skyhook-name>",
 			expectedVerb:   "Resume",
-			hasConfirmFlag: false,
+			hasConfirmFlag: true,
 		},
 		{
 			name:           "Disable",
@@ -63,7 +63,7 @@ var _ = Describe("Lifecycle Commands", func() {
 			cmdFactory:     NewEnableCmd,
 			expectedUse:    "enable <skyhook-name>",
 			expectedVerb:   "Enable",
-			hasConfirmFlag: false,
+			hasConfirmFlag: true,
 		},
 	}
 

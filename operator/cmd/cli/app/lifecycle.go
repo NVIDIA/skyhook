@@ -89,6 +89,42 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
+			// Fetch the Skyhook to check operator version from its annotation
+			skyhook, err := utils.GetSkyhook(cmd.Context(), kubeClient.Dynamic(), skyhookName)
+			if err != nil {
+				return err
+			}
+
+			// Check operator version compatibility using Skyhook's version annotation
+			// If annotation is missing or invalid (e.g., "dev"), fall back to deployment version
+			opVersion := utils.GetSkyhookVersion(skyhook)
+			if opVersion == "" || !utils.IsValidVersion(opVersion) {
+				// Try to get version from deployment instead
+				deployVersion, err := utils.DiscoverOperatorVersion(cmd.Context(), kubeClient.Kubernetes(), ctx.GlobalFlags.Namespace())
+				if err == nil && utils.IsValidVersion(deployVersion) {
+					opVersion = deployVersion
+				} else {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: unable to determine operator version; "+
+						"cannot verify compatibility (requires %s+)\n", utils.MinAnnotationSupportVersion)
+				}
+			}
+
+			if utils.IsValidVersion(opVersion) && utils.CompareVersions(opVersion, utils.MinAnnotationSupportVersion) < 0 {
+				// Operator is older than v0.8.0 - annotations won't work
+				if cfg.annotation == utils.PauseAnnotation {
+					// pause/resume - feature exists but uses spec field instead of annotation
+					specValue := "true"
+					if cfg.action == "remove" {
+						specValue = "false"
+					}
+					return fmt.Errorf("operator version %s uses spec.pause instead of annotations; "+
+						"use 'kubectl edit skyhook %s' and set spec.pause: %s", opVersion, skyhookName, specValue)
+				}
+				// disable/enable - feature doesn't exist at all in older versions
+				return fmt.Errorf("operator version %s does not support %s; this feature was added in %s",
+					opVersion, cfg.confirmVerb, utils.MinAnnotationSupportVersion)
+			}
+
 			if cfg.action == "set" {
 				err = utils.SetSkyhookAnnotation(cmd.Context(), kubeClient.Dynamic(), skyhookName, cfg.annotation, "true")
 			} else {
@@ -141,12 +177,15 @@ func NewResumeCmd(ctx *cliContext.CLIContext) *cobra.Command {
 
 The operator will resume processing nodes after this command.`,
 		example: `  # Resume a paused Skyhook
-  kubectl skyhook resume gpu-init`,
+  kubectl skyhook resume gpu-init
+
+  # Resume without confirmation
+  kubectl skyhook resume gpu-init --confirm`,
 		annotation:   utils.PauseAnnotation,
 		action:       "remove",
 		verb:         "resumed",
 		confirmVerb:  "resume",
-		needsConfirm: false,
+		needsConfirm: true,
 	})
 }
 
@@ -181,11 +220,14 @@ func NewEnableCmd(ctx *cliContext.CLIContext) *cobra.Command {
 
 The operator will resume normal processing after this command.`,
 		example: `  # Enable a disabled Skyhook
-  kubectl skyhook enable gpu-init`,
+  kubectl skyhook enable gpu-init
+
+  # Enable without confirmation
+  kubectl skyhook enable gpu-init --confirm`,
 		annotation:   utils.DisableAnnotation,
 		action:       "remove",
 		verb:         "enabled",
 		confirmVerb:  "enable",
-		needsConfirm: false,
+		needsConfirm: true,
 	})
 }

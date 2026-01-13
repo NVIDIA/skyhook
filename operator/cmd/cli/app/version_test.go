@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	cliContext "github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 )
 
 // TestNewVersionCmd_ClientOnly verifies the version command works with --client-only flag
@@ -88,6 +89,7 @@ func TestDiscoverOperatorVersion(t *testing.T) {
 					Namespace: "skyhook",
 					Labels: map[string]string{
 						"app.kubernetes.io/version": "v0.9.0",
+						"app.kubernetes.io/name":    "skyhook-operator", // needed for detection
 					},
 				},
 			},
@@ -146,9 +148,39 @@ func TestDiscoverOperatorVersion(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "skyhook-operator-controller-manager",
 					Namespace: "skyhook",
+					Labels: map[string]string{
+						"app.kubernetes.io/name": "skyhook-operator", // needed for detection
+					},
 				},
 			},
 			wantErr: true,
+		},
+		{
+			name: "detection by image name (no skyhook label)",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "custom-named-deployment",
+					Namespace: "skyhook",
+					Labels: map[string]string{
+						"app.kubernetes.io/version": "v1.5.0",
+						"app":                       "my-operator", // no skyhook in labels
+					},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "manager",
+									Image: "nvcr.io/nvidia/skyhook/operator:v1.5.0", // detected by image
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantVer: "v1.5.0",
 		},
 		{
 			name: "latest tag should fail",
@@ -189,7 +221,7 @@ func TestDiscoverOperatorVersion(t *testing.T) {
 				}
 			}
 
-			version, err := discoverOperatorVersion(context.Background(), clientset, "skyhook")
+			version, err := utils.DiscoverOperatorVersion(context.Background(), clientset, "skyhook")
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("discoverOperatorVersion() error = %v, wantErr %v", err, tt.wantErr)
@@ -244,7 +276,7 @@ func TestExtractImageTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractImageTag(tt.image)
+			got := utils.ExtractImageTag(tt.image)
 			if got != tt.want {
 				t.Errorf("extractImageTag(%q) = %q, want %q", tt.image, got, tt.want)
 			}
