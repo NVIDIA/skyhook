@@ -38,6 +38,7 @@ endif
 
 GIT_SHA 		:= $(shell git rev-parse --short HEAD)
 GIT_TAG_LAST 	:= $(shell git tag --list 'operator*' --sort=-v:refname | head -n 1 | cut -d/ -f2)
+CLI_TAG_LAST 	:= $(shell git tag --list 'cli/*' --sort=-v:refname | head -n 1 | cut -d/ -f2)
 
 ## GO Flags
 GO_LDFLAGS  := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA) \
@@ -336,6 +337,40 @@ ensure-test-symlinks:  ## Ensure symlinks exist in test directories (idempotent)
 CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(VERSION) -X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA)"
 build-cli: ensure-test-symlinks ## Build CLI binary.
 	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/skyhook cmd/cli/main.go
+
+CLI_VERSION ?= $(CLI_TAG_LAST)
+CLI_DIST_DIR ?= dist
+cli-release-build: ## Build CLI binaries for all platforms (used by CI release workflow).
+	@echo "Building CLI $(CLI_VERSION) for all platforms..."
+	@mkdir -p $(CLI_DIST_DIR)
+	@# Build for each platform
+	@for os in linux darwin windows; do \
+		for arch in amd64 arm64; do \
+			echo "  Building $$os/$$arch..."; \
+			ext=""; if [ "$$os" = "windows" ]; then ext=".exe"; fi; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GOFLAGS) \
+				-ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(CLI_VERSION) -X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA)" \
+				-o $(CLI_DIST_DIR)/skyhook_$(CLI_VERSION)_$${os}_$${arch}$${ext} cmd/cli/main.go; \
+		done; \
+	done
+	@# Create archives (rename binary to just "skyhook" inside archive)
+	@echo "Creating archives..."
+	@cd $(CLI_DIST_DIR) && for os in linux darwin; do \
+		for arch in amd64 arm64; do \
+			cp skyhook_$(CLI_VERSION)_$${os}_$${arch} skyhook && \
+			tar -czf skyhook_$(CLI_VERSION)_$${os}_$${arch}.tar.gz skyhook && \
+			rm skyhook; \
+		done; \
+	done
+	@cd $(CLI_DIST_DIR) && for arch in amd64 arm64; do \
+		cp skyhook_$(CLI_VERSION)_windows_$${arch}.exe skyhook.exe && \
+		zip -q skyhook_$(CLI_VERSION)_windows_$${arch}.zip skyhook.exe && \
+		rm skyhook.exe; \
+	done
+	@# Generate checksums
+	@echo "Generating checksums..."
+	@cd $(CLI_DIST_DIR) && shasum -a 256 *.tar.gz *.zip > checksums.txt
+	@echo "Done! Artifacts in $(CLI_DIST_DIR)/"
 
 build-cli-with-coverage: ensure-test-symlinks ## Build CLI binary with coverage instrumentation.
 	go build $(GOFLAGS) -cover $(CLI_LDFLAGS) -o bin/skyhook-cover cmd/cli/main.go
