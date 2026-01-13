@@ -20,8 +20,12 @@ name: Operator CI
 on:
   workflow_dispatch: {}
   pull_request:
-    paths:
-      - operator/**
+    paths: &operator-paths
+      - operator/**/*.go
+      - operator/go.mod
+      - operator/go.sum
+      - operator/deps.mk
+      - operator/config/**
       - containers/operator.Dockerfile
       - .github/workflows/operator-ci.yaml
       - k8s-tests/**
@@ -31,12 +35,7 @@ on:
       - main
     tags:
       - operator/*
-    paths:
-      - operator/**/*.go
-      - containers/operator.Dockerfile
-      - .github/workflows/operator-ci.yaml
-      - k8s-tests/**
-      - chart/**
+    paths: *operator-paths
 
 ## these envs control the build and test process below
 env:

@@ -15,7 +15,6 @@
 # limitations under the License.
 
 # Build and release CLI binaries when cli/* tags are pushed
-# Uses GoReleaser for cross-platform builds (standard for kubectl plugins)
 name: CLI Release
 
 on:
@@ -34,9 +33,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
 
       - name: Setup Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v5
@@ -47,18 +43,49 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          # Tag is cli/v0.9.0, extract v0.9.0
-          VERSION=$(echo "${{ github.ref_name }}" | cut -f 2 -d /)
+          # Tag is cli/v0.1.0, extract v0.1.0
+          VERSION="${GITHUB_REF_NAME#cli/}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building CLI version: ${VERSION}"
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+      - name: Build CLI binaries
+        working-directory: operator
+        run: make cli-release-build CLI_VERSION=${{ steps.version.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
-          workdir: operator
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: "Skyhook CLI ${{ steps.version.outputs.version }}"
+          files: |
+            operator/dist/*.tar.gz
+            operator/dist/*.zip
+            operator/dist/checksums.txt
+          body: |
+            ## Skyhook CLI ${{ steps.version.outputs.version }}
+
+            ### Installation
+
+            Download and extract the appropriate archive for your platform.
+            The binary must be named `kubectl-skyhook` for kubectl to discover it as a plugin.
+            Alternatively, it can be used directly as `skyhook` without kubectl.
+
+            ```bash
+            # Linux (amd64)
+            curl -LO https://github.com/NVIDIA/skyhook/releases/download/${{ github.ref_name }}/skyhook_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+            tar -xzf skyhook_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+            sudo mv skyhook /usr/local/bin/kubectl-skyhook
+
+            # macOS (Apple Silicon)
+            curl -LO https://github.com/NVIDIA/skyhook/releases/download/${{ github.ref_name }}/skyhook_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
+            tar -xzf skyhook_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
+            sudo mv skyhook /usr/local/bin/kubectl-skyhook
+            ```
+
+            ### Verify installation
+
+            ```bash
+            kubectl skyhook version --client-only
+            # Or if installed as 'skyhook':
+            skyhook version --client-only
+            ```
