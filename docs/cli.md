@@ -6,6 +6,50 @@ kubectl plugin for managing Skyhook deployments, packages, and nodes.
 
 The Skyhook CLI (`kubectl skyhook`) provides SRE tooling for managing Skyhook operators and their packages across Kubernetes cluster nodes. It supports inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
 
+## Compatibility
+
+### Minimum Operator Version
+
+The CLI requires **operator version v0.8.0 or later** for full functionality of all commands.
+
+### Command Compatibility Matrix
+
+| Command | v0.7.x and earlier | v0.8.0+ |
+|---------|-------------------|---------|
+| `version` | ✅ Full | ✅ Full |
+| `node status` | ✅ Full | ✅ Full |
+| `node list` | ✅ Full | ✅ Full |
+| `node reset` | ✅ Full | ✅ Full |
+| `node ignore/unignore` | ✅ Full | ✅ Full |
+| `package status` | ✅ Full | ✅ Full |
+| `package rerun` | ✅ Full | ✅ Full |
+| `package logs` | ✅ Full | ✅ Full |
+| `reset` | ✅ Full | ✅ Full |
+| `pause` | ❌ Not supported | ✅ Full |
+| `resume` | ❌ Not supported | ✅ Full |
+| `disable` | ❌ Not supported | ✅ Full |
+| `enable` | ❌ Not supported | ✅ Full |
+
+### Breaking Change: Pause/Disable Mechanism
+
+In operator versions **v0.7.x and earlier**, pausing and disabling a Skyhook was done via spec fields:
+
+```yaml
+spec:
+  pause: true  # Old method - no longer used by operator
+```
+
+Starting with **v0.8.0**, the operator uses **annotations** instead:
+
+```yaml
+metadata:
+  annotations:
+    skyhook.nvidia.com/pause: "true"
+    skyhook.nvidia.com/disable: "true"
+```
+
+The CLI's `pause`, `resume`, `disable`, and `enable` commands set these annotations. If you're running an older operator (v0.7.x or earlier), these commands will appear to succeed but the operator won't recognize the annotations - you'll need to edit the Skyhook spec directly using `kubectl edit`.
+
 ## Installation
 
 ```bash
@@ -56,6 +100,8 @@ kubectl skyhook version --timeout 10s
 
 Control Skyhook processing state.
 
+> **Note:** Requires operator v0.8.0+. See [Compatibility](#compatibility) for details.
+
 ```bash
 # Pause a Skyhook (stops processing new nodes)
 kubectl skyhook pause my-skyhook
@@ -68,6 +114,8 @@ kubectl skyhook resume my-skyhook
 ### Disable/Enable Commands
 
 Completely disable or re-enable a Skyhook.
+
+> **Note:** Requires operator v0.8.0+. See [Compatibility](#compatibility) for details.
 
 ```bash
 # Disable a Skyhook completely
@@ -205,6 +253,9 @@ kubectl skyhook node status --skyhook my-skyhook -o json
 ```
 
 ### Emergency Stop
+
+> **Note:** Requires operator v0.8.0+. For older operators, use `kubectl edit skyhook my-skyhook` and set `spec.pause: true`.
+
 ```bash
 # Pause all processing
 kubectl skyhook pause my-skyhook --confirm

@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
@@ -177,34 +178,34 @@ var _ = Describe("Skyhook CLI Tests", func() {
 		})
 	})
 
-	Describe("extractImageTag", func() {
+	Describe("ExtractImageTag", func() {
 		It("should extract tag from simple image reference", func() {
-			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3")
+			tag := utils.ExtractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3")
 			Expect(tag).To(Equal("v1.2.3"))
 		})
 
 		It("should extract tag from image with digest", func() {
-			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3@sha256:abc123")
+			tag := utils.ExtractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3@sha256:abc123")
 			Expect(tag).To(Equal("v1.2.3"))
 		})
 
 		It("should return empty for image without tag", func() {
-			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator")
+			tag := utils.ExtractImageTag("ghcr.io/nvidia/skyhook/operator")
 			Expect(tag).To(BeEmpty())
 		})
 
 		It("should handle image with only digest", func() {
-			tag := extractImageTag("ghcr.io/nvidia/skyhook/operator@sha256:abc123")
+			tag := utils.ExtractImageTag("ghcr.io/nvidia/skyhook/operator@sha256:abc123")
 			Expect(tag).To(BeEmpty())
 		})
 
 		It("should extract latest tag", func() {
-			tag := extractImageTag("nginx:latest")
+			tag := utils.ExtractImageTag("nginx:latest")
 			Expect(tag).To(Equal("latest"))
 		})
 
 		It("should handle image with port in registry", func() {
-			tag := extractImageTag("localhost:5000/myimage:v1.0")
+			tag := utils.ExtractImageTag("localhost:5000/myimage:v1.0")
 			Expect(tag).To(Equal("v1.0"))
 		})
 	})

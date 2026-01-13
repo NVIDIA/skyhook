@@ -98,4 +98,79 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 	})
+
+	Describe("CompareVersions", func() {
+		It("should return -1 when v1 < v2", func() {
+			Expect(CompareVersions("v0.7.6", "v0.8.0")).To(Equal(-1))
+			Expect(CompareVersions("v0.7.0", "v0.7.6")).To(Equal(-1))
+			Expect(CompareVersions("v1.0.0", "v2.0.0")).To(Equal(-1))
+		})
+
+		It("should return 0 when v1 == v2", func() {
+			Expect(CompareVersions("v0.8.0", "v0.8.0")).To(Equal(0))
+			Expect(CompareVersions("v1.2.3", "v1.2.3")).To(Equal(0))
+		})
+
+		It("should return 1 when v1 > v2", func() {
+			Expect(CompareVersions("v0.8.0", "v0.7.6")).To(Equal(1))
+			Expect(CompareVersions("v1.0.0", "v0.9.9")).To(Equal(1))
+			Expect(CompareVersions("v2.0.0", "v1.0.0")).To(Equal(1))
+		})
+
+		It("should handle versions without v prefix", func() {
+			Expect(CompareVersions("0.7.6", "0.8.0")).To(Equal(-1))
+			Expect(CompareVersions("0.8.0", "v0.8.0")).To(Equal(0))
+			Expect(CompareVersions("v0.8.0", "0.7.6")).To(Equal(1))
+		})
+
+		It("should handle empty versions", func() {
+			Expect(CompareVersions("", "v0.8.0")).To(Equal(-1))
+			Expect(CompareVersions("v0.8.0", "")).To(Equal(1))
+			Expect(CompareVersions("", "")).To(Equal(0))
+		})
+
+		It("should return 0 for invalid semver versions like dev", func() {
+			// Invalid versions should return 0 (unknown/equal) not -1
+			Expect(CompareVersions("dev", "v0.8.0")).To(Equal(0))
+			Expect(CompareVersions("vdev", "v0.8.0")).To(Equal(0))
+			Expect(CompareVersions("latest", "v0.8.0")).To(Equal(0))
+			Expect(CompareVersions("v0.8.0", "dev")).To(Equal(0))
+		})
+	})
+
+	Describe("IsValidVersion", func() {
+		It("should return true for valid semver versions", func() {
+			Expect(IsValidVersion("v0.8.0")).To(BeTrue())
+			Expect(IsValidVersion("v1.2.3")).To(BeTrue())
+			Expect(IsValidVersion("0.8.0")).To(BeTrue()) // without v prefix
+			Expect(IsValidVersion("v1.0.0-alpha")).To(BeTrue())
+		})
+
+		It("should return false for invalid versions", func() {
+			Expect(IsValidVersion("")).To(BeFalse())
+			Expect(IsValidVersion("dev")).To(BeFalse())
+			Expect(IsValidVersion("latest")).To(BeFalse())
+			Expect(IsValidVersion("vdev")).To(BeFalse())
+		})
+	})
+
+	Describe("ExtractImageTag", func() {
+		It("should extract tag from image with tag", func() {
+			Expect(ExtractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3")).To(Equal("v1.2.3"))
+			Expect(ExtractImageTag("nginx:1.19")).To(Equal("1.19"))
+		})
+
+		It("should extract tag from image with tag and digest", func() {
+			Expect(ExtractImageTag("ghcr.io/nvidia/skyhook/operator:v1.2.3@sha256:abc123")).To(Equal("v1.2.3"))
+		})
+
+		It("should return empty string for image without tag", func() {
+			Expect(ExtractImageTag("ghcr.io/nvidia/skyhook/operator")).To(Equal(""))
+			Expect(ExtractImageTag("nginx")).To(Equal(""))
+		})
+
+		It("should handle image with only digest", func() {
+			Expect(ExtractImageTag("ghcr.io/nvidia/skyhook/operator@sha256:abc123")).To(Equal(""))
+		})
+	})
 })

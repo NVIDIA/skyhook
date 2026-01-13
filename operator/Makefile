@@ -334,11 +334,10 @@ ensure-test-symlinks:  ## Ensure symlinks exist in test directories (idempotent)
 	done
 
 .PHONY: build-cli
-CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(VERSION) -X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA)"
+CLI_VERSION ?= $(CLI_TAG_LAST)
+CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=$(CLI_VERSION) -X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=$(GIT_SHA)"
 build-cli: ensure-test-symlinks ## Build CLI binary.
 	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/skyhook cmd/cli/main.go
-
-CLI_VERSION ?= $(CLI_TAG_LAST)
 CLI_DIST_DIR ?= dist
 cli-release-build: ## Build CLI binaries for all platforms (used by CI release workflow).
 	@echo "Building CLI $(CLI_VERSION) for all platforms..."

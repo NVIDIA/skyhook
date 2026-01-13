@@ -21,16 +21,13 @@ package app
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/NVIDIA/skyhook/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/skyhook/operator/internal/cli/context"
+	"github.com/NVIDIA/skyhook/operator/internal/cli/utils"
 	"github.com/NVIDIA/skyhook/operator/internal/version"
 )
 
@@ -72,7 +69,7 @@ func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 			cmdCtx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
-			opVersion, err := discoverOperatorVersion(cmdCtx, kubeClient.Kubernetes(), ctx.GlobalFlags.Namespace())
+			opVersion, err := utils.DiscoverOperatorVersion(cmdCtx, kubeClient.Kubernetes(), ctx.GlobalFlags.Namespace())
 			if err != nil {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook operator:\tunknown (%v)\n", err)
 				return nil
@@ -87,57 +84,4 @@ func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	versionCmd.Flags().BoolVar(&clientOnly, "client-only", false, "Only print the plugin version without querying the cluster")
 
 	return versionCmd
-}
-
-func discoverOperatorVersion(ctx context.Context, kube kubernetes.Interface, namespace string) (string, error) {
-	if kube == nil {
-		return "", fmt.Errorf("nil kubernetes client")
-	}
-	if namespace == "" {
-		namespace = cliContext.DefaultNamespace
-	}
-
-	deploymentName := "skyhook-operator-controller-manager"
-	deployment, err := kube.AppsV1().Deployments(namespace).Get(ctx, deploymentName, metav1.GetOptions{})
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return "", fmt.Errorf("skyhook operator deployment %q not found in namespace %q", deploymentName, namespace)
-		}
-		return "", fmt.Errorf("querying operator deployment: %w", err)
-	}
-
-	// Try to get version from Helm label (preferred for Helm deployments)
-	if v := deployment.Labels["app.kubernetes.io/version"]; strings.TrimSpace(v) != "" {
-		return strings.TrimSpace(v), nil
-	}
-
-	// Fallback: parse version from container image tag (works for kustomize deployments)
-	if len(deployment.Spec.Template.Spec.Containers) > 0 {
-		image := deployment.Spec.Template.Spec.Containers[0].Image
-		if tag := extractImageTag(image); tag != "" && tag != "latest" {
-			return tag, nil
-		}
-	}
-
-	return "", fmt.Errorf("unable to determine operator version from deployment labels or image tag")
-}
-
-// extractImageTag extracts the tag from a container image reference.
-// Examples:
-//   - "ghcr.io/nvidia/skyhook/operator:v1.2.3" -> "v1.2.3"
-//   - "ghcr.io/nvidia/skyhook/operator:v1.2.3@sha256:..." -> "v1.2.3"
-//   - "ghcr.io/nvidia/skyhook/operator" -> ""
-func extractImageTag(image string) string {
-	// Remove digest if present (e.g., @sha256:...)
-	if idx := strings.Index(image, "@"); idx > 0 {
-		image = image[:idx]
-	}
-
-	// Split on ":" to get tag
-	parts := strings.Split(image, ":")
-	if len(parts) < 2 {
-		return ""
-	}
-
-	return strings.TrimSpace(parts[len(parts)-1])
 }

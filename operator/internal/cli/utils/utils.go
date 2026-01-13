@@ -27,6 +27,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"golang.org/x/mod/semver"
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -103,6 +105,7 @@ const (
 	PauseAnnotation   = v1alpha1.METADATA_PREFIX + "/pause"
 	DisableAnnotation = v1alpha1.METADATA_PREFIX + "/disable"
 	NodeIgnoreLabel   = v1alpha1.METADATA_PREFIX + "/ignore"
+	VersionAnnotation = v1alpha1.METADATA_PREFIX + "/version"
 )
 
 // SetSkyhookAnnotation sets an annotation on a Skyhook CR using dynamic client
@@ -303,4 +306,152 @@ func outputTableInternal[T any](out io.Writer, cfg TableConfig[T], items []T, wi
 	}
 
 	return tw.Flush()
+}
+
+// Operator version discovery constants
+const (
+	DefaultNamespace = "skyhook"
+	// MinAnnotationSupportVersion is the minimum operator version that supports annotation-based pause/disable
+	MinAnnotationSupportVersion = "v0.8.0"
+)
+
+// CompareVersions compares two semver versions.
+// Returns -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
+// Handles "v" prefix automatically.
+// Returns 0 if either version is invalid (non-semver like "dev").
+func CompareVersions(v1, v2 string) int {
+	// Handle empty versions
+	if v1 == "" {
+		if v2 == "" {
+			return 0
+		}
+		return -1
+	}
+	if v2 == "" {
+		return 1
+	}
+
+	// Ensure "v" prefix
+	if v1[0] != 'v' {
+		v1 = "v" + v1
+	}
+	if v2[0] != 'v' {
+		v2 = "v" + v2
+	}
+
+	// If either version is invalid semver, return 0 (treat as equal/unknown)
+	if !semver.IsValid(v1) || !semver.IsValid(v2) {
+		return 0
+	}
+
+	return semver.Compare(v1, v2)
+}
+
+// IsValidVersion checks if a version string is a valid semver.
+func IsValidVersion(v string) bool {
+	if v == "" {
+		return false
+	}
+	if v[0] != 'v' {
+		v = "v" + v
+	}
+	return semver.IsValid(v)
+}
+
+// GetSkyhook fetches a Skyhook CR by name using the dynamic client.
+func GetSkyhook(ctx context.Context, dynamicClient dynamic.Interface, name string) (*v1alpha1.Skyhook, error) {
+	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	obj, err := dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("getting skyhook %q: %w", name, err)
+	}
+	return UnstructuredToSkyhook(obj)
+}
+
+// GetSkyhookVersion extracts the operator version from a Skyhook's annotation.
+// Returns empty string if the annotation is not present.
+func GetSkyhookVersion(skyhook *v1alpha1.Skyhook) string {
+	if skyhook == nil || skyhook.Annotations == nil {
+		return ""
+	}
+	return skyhook.Annotations[VersionAnnotation]
+}
+
+// DiscoverOperatorVersion queries the cluster to find the Skyhook operator version.
+// It searches for deployments that look like the Skyhook operator (by checking labels
+// or container images for "skyhook") and extracts the version.
+func DiscoverOperatorVersion(ctx context.Context, kube kubernetes.Interface, namespace string) (string, error) {
+	if kube == nil {
+		return "", fmt.Errorf("nil kubernetes client")
+	}
+	if namespace == "" {
+		namespace = DefaultNamespace
+	}
+
+	// List all deployments in the namespace and find the Skyhook operator
+	deployments, err := kube.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("listing deployments in namespace %q: %w", namespace, err)
+	}
+
+	for _, deployment := range deployments.Items {
+		if !isSkyhookOperatorDeployment(&deployment) {
+			continue
+		}
+
+		// Try to get version from Helm label (preferred for Helm deployments)
+		if v := deployment.Labels["app.kubernetes.io/version"]; strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v), nil
+		}
+
+		// Fallback: parse version from container image tag (works for kustomize deployments)
+		for _, container := range deployment.Spec.Template.Spec.Containers {
+			if tag := ExtractImageTag(container.Image); tag != "" && tag != "latest" {
+				return tag, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("unable to determine operator version; no skyhook operator deployment found in namespace %q", namespace)
+}
+
+// isSkyhookOperatorDeployment checks if a deployment looks like the Skyhook operator
+// by examining container images for "skyhook" (most reliable), then labels as fallback.
+func isSkyhookOperatorDeployment(deployment *appsv1.Deployment) bool {
+	// Check container images for "skyhook" (most reliable - image name won't change)
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		if strings.Contains(strings.ToLower(container.Image), "skyhook") {
+			return true
+		}
+	}
+
+	// Fallback: check labels for "skyhook"
+	for key, value := range deployment.Labels {
+		if strings.Contains(strings.ToLower(key), "skyhook") ||
+			strings.Contains(strings.ToLower(value), "skyhook") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ExtractImageTag extracts the tag from a container image reference.
+// Examples:
+//   - "ghcr.io/nvidia/skyhook/operator:v1.2.3" -> "v1.2.3"
+//   - "ghcr.io/nvidia/skyhook/operator:v1.2.3@sha256:..." -> "v1.2.3"
+//   - "ghcr.io/nvidia/skyhook/operator" -> ""
+func ExtractImageTag(image string) string {
+	// Remove digest if present (e.g., @sha256:...)
+	if idx := strings.Index(image, "@"); idx > 0 {
+		image = image[:idx]
+	}
+
+	// Split on ":" to get tag
+	parts := strings.Split(image, ":")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	return strings.TrimSpace(parts[len(parts)-1])
 }
