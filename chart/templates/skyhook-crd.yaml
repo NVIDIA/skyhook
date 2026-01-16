@@ -29,6 +29,9 @@ spec:
     - jsonPath: .status.status
       name: Status
       type: string
+    - jsonPath: .spec.priority
+      name: Priority
+      type: integer
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -40,6 +43,9 @@ spec:
       type: string
     - jsonPath: .status.packageList
       name: Packages
+      type: string
+    - jsonPath: .spec.deploymentPolicy
+      name: Policy
       type: string
     name: v1alpha1
     schema:
