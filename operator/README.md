@@ -28,7 +28,7 @@ spec:
     something_important:
       version: 1.0.0
       image: ghcr.io/nvidia/skyhook-packages/shellscript
-      depends_on:
+      dependsOn:
         tuning: 1.0.0
       configMap:
         apply.sh: |-
