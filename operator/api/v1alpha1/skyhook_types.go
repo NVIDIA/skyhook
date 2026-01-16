@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -711,10 +711,12 @@ func StateToStatus(s State) Status {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:printcolumn:name="Status",type=string,JSONPath=".status.status"
+//+kubebuilder:printcolumn:name="Priority",type=integer,JSONPath=".spec.priority"
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 //+kubebuilder:printcolumn:name="Nodes In-Progress",type=integer,JSONPath=".status.nodesInProgress"
 //+kubebuilder:printcolumn:name="Complete Nodes",type=string,JSONPath=".status.completeNodes"
 //+kubebuilder:printcolumn:name="Packages",type=string,JSONPath=".status.packageList"
+//+kubebuilder:printcolumn:name="Policy",type=string,JSONPath=".spec.deploymentPolicy"
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Cluster
 
