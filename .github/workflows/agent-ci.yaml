@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -132,3 +132,71 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{env.IMAGE_NAME}}/agent
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+  
+  operator-agent-tests:
+    name: Operator Agent Integration Tests
+    runs-on: ubuntu-latest
+    needs: [build-and-push-agent]
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+          cache-dependency-path: operator/go.sum
+      
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create Kubernetes KinD Cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.31.0
+          node_image: kindest/node:v1.35.0
+          config: operator/config/local-dev/kind-config.yaml
+          cluster_name: kind
+      
+      - name: Restore cached Binaries
+        id: cached-binaries
+        uses: actions/cache/restore@v4
+        with:
+          key: 1.25.5-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          restore-keys: 1.25.5-${{ runner.os }}-${{ runner.arch }}-bin-
+          path: |
+            ${{ github.workspace }}/operator/bin
+            ~/.cache/go-build
+      
+      - name: Install dependencies
+        if: steps.cached-binaries.outputs.cache-hit != 'true'
+        run: |
+          cd operator
+          make install-deps
+      
+      - name: Save cached Binaries
+        if: steps.cached-binaries.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: 1.25.5-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          path: |
+            ${{ github.workspace }}/operator/bin
+            ~/.cache/go-build
+      
+      - name: Run operator-agent tests
+        run: |
+          cd operator
+          export GIT_SHA=$(git rev-parse --short ${{ github.sha }})
+          export AGENT_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/agent:${GIT_SHA}"
+          echo "Testing with agent image: ${AGENT_IMAGE}"
+          make operator-agent-tests
