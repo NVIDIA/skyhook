@@ -228,8 +228,14 @@ helm-tests: helm chainsaw ensure-test-symlinks
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/helm $(CHAINSAW_ARGS)
 
 operator-agent-tests: chainsaw install ## Run operator agent tests.
+	@if [ -z "$(AGENT_IMAGE)" ]; then \
+		echo "Error: AGENT_IMAGE is not set. Please set it to the agent image to test against."; \
+		echo "Example: AGENT_IMAGE=ghcr.io/nvidia/skyhook/agent:v6.3.1 make operator-agent-tests"; \
+		exit 1; \
+	fi
+	@echo "Running operator-agent tests with AGENT_IMAGE=$(AGENT_IMAGE)"
 	../k8s-tests/operator-agent/setup.sh kind-worker setup
-	AGENT_IMAGE=ghcr.io/nvidia/skyhook/agent:v6.2.0-30d8b7a $(MAKE) run
+	$(MAKE) run
 	$(CHAINSAW) test --test-dir ../k8s-tests/operator-agent $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown

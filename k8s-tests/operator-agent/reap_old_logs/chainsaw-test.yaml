@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -14,11 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: interrupt-agent-operator
+  name: reap-old-logs-agent-operator
 spec:
   timeouts:
     assert: 240s
@@ -28,18 +29,18 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../../../../operator/bin/skyhook reset simple-agent-operator --confirm 2>/dev/null || true
+          ../../../../operator/bin/skyhook reset reap-old-logs-agent-operator --confirm 2>/dev/null || true
     - script:
         content: |
           ## reinstall the debug pod in case it was deleted
           ../setup.sh kind-worker setup
     - apply:
         file: skyhook.yaml
-    - script:
-        content: |
-          ../check_node.sh kind-worker "ls /var/lib/skyhook/interrupt-agent-operator/interrupts/flags/interrupt-agent-operator*/" "no_op.complete" 60
     - assert:
         file: assert.yaml
+    - script:
+        content: |
+          ../check_node.sh kind-worker "ls /var/log/skyhook/reap-old-logs-agent-operator/shellscript/1.1.1/*.log | wc -l" "5" 2
   - finally:
     - delete:
         file: skyhook.yaml
