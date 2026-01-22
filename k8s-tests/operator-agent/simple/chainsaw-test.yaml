@@ -22,8 +22,8 @@ metadata:
   name: simple-agent-operator
 spec:
   timeouts:
-    assert: 240s
-    exec: 90s
+    assert: 10s
+    exec: 10s
   steps:
   - try:
     - script:
