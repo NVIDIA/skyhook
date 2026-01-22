@@ -228,4 +228,4 @@ jobs:
         run: |
           cd operator
           echo "Testing with agent image: ${AGENT_IMAGE}"
-          make operator-agent-tests
+          make setup-kind-cluster operator-agent-tests
