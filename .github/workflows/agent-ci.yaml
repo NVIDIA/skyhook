@@ -224,9 +224,10 @@ jobs:
       
       - name: Run operator-agent tests
         env:
-          AGENT_IMAGE: ${{ format('{0}/{1}/agent:{2}', toLower(env.REGISTRY), toLower(env.IMAGE_NAME), needs.compute-metadata.outputs.agent-image-tag) }}
+          AGENT_IMAGE: ${{ format('{0}/{1}/agent:{2}', env.REGISTRY, github.repository, needs.compute-metadata.outputs.agent-image-tag) }}
         run: |
           cd operator
+          export AGENT_IMAGE="${AGENT_IMAGE,,}"
           echo "Testing with agent image: ${AGENT_IMAGE}"
           make build-cli
           make setup-kind-cluster operator-agent-tests
