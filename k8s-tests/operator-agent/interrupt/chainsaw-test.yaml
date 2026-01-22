@@ -28,15 +28,21 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../../../../operator/bin/skyhook reset simple-agent-operator --confirm 2>/dev/null || true
+          ../../../operator/bin/skyhook reset interrupt-agent-operator --confirm 2>/dev/null || true
     - script:
         content: |
           ## reinstall the debug pod in case it was deleted
           ../setup.sh kind-worker setup
+    - script:
+        content: |
+          ## clean up from prior runs
+          ../check_node.sh kind-worker "rm -rf /var/log/skyhook/interrupt-agent-operator || true" ".*" 2
+          ../check_node.sh kind-worker "rm -rf /var/lib/skyhook/interrupt-agent-operator || true" ".*" 2
     - apply:
         file: skyhook.yaml
     - script:
         content: |
+          set -e
           ../check_node.sh kind-worker "ls /var/lib/skyhook/interrupt-agent-operator/interrupts/flags/interrupt-agent-operator*/" "no_op.complete" 60
     - assert:
         file: assert.yaml

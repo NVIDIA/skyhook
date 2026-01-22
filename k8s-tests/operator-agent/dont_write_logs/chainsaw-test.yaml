@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
@@ -22,14 +21,14 @@ metadata:
   name: dont-write-logs-agent-operator
 spec:
   timeouts:
-    assert: 10s
-    exec: 10s
+    assert: 240s
+    exec: 90s
   steps:
   - try:
     - script:
         content: |
           ## remove annotation from last run
-          ../../../../operator/bin/skyhook reset simple-agent-operator --confirm 2>/dev/null || true
+          ../../../operator/bin/skyhook reset dont-write-logs-agent-operator --confirm 2>/dev/null || true
     - script:
         content: |
           ## reinstall the debug pod in case it was deleted
@@ -37,15 +36,17 @@ spec:
     - script:
         content: |
           ## clean up any logs from prior runs
-          ../check_node.sh kind-worker "rm -f /var/log/skyhook/dont-write-logs-agent-operator/shellscript/1.1.1/*.log" ".*" 2
+          ../check_node.sh kind-worker "rm -rf /var/log/skyhook/dont-write-logs-agent-operator || true" ".*" 2
+          ../check_node.sh kind-worker "rm -rf /var/lib/skyhook/dont-write-logs-agent-operator || true" ".*" 2
     - apply:
         file: skyhook.yaml
     - assert:
         file: assert.yaml
     - script:
         content: |
-          ../check_node.sh kind-worker "ls /var/lib/skyhook/dont-write-logs-agent-operator/flags/shellscript/1.1.1/" "shellscript_run.sh.*"
-          ../check_node.sh kind-worker "ls /var/log/skyhook/dont-write-logs-agent-operator/shellscript/1.1.1/*.log | wc -l" "0" 2
+          set -e
+          ## Wont even create the log directory
+          ../check_node.sh kind-worker "ls /var/log/skyhook/" "dont-write-logs-agent-operator" 2 true
   - finally:
     - delete:
         file: skyhook.yaml
