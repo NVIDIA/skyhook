@@ -23,12 +23,17 @@ node=$1
 cmd=$2
 check=$3
 timeout=${4:-10}
+invert=${5:-false}
 
 
 # loop until the command returns a non-zero exit code or the timeout is reached
 for i in $(seq 1 ${timeout}); do
     data=$(kubectl exec ${node}-debugger -- chroot /host bash -c "${cmd}")
-    if echo "${data}" | grep -q "${check}"; then
+    check_result=$(echo "${data}" | grep -c "${check}")
+    if [ "$invert" == "true" ]; then
+        check_result=$((! check_result))
+    fi
+    if [ $check_result -gt 0 ]; then
         echo "Check passed"
         exit 0
     else

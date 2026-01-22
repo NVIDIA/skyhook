@@ -20,18 +20,24 @@ metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
-  name: interrupt-agent-operator
+  name: dont-write-logs-agent-operator
 spec:
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
   packages:
-    interrupt-agent-operator:
+    shellscript:
       version: "1.1.1"
       image: ghcr.io/nvidia/skyhook-packages/shellscript
-      interrupt:
-        type: noop
+      env:
+        - name: SKYHOOK_AGENT_WRITE_LOGS
+          value: "false"
       configMap:
         apply.sh: |
           #!/bin/bash
           echo "Hello, world!"
+
+          cat $SKYHOOK_DIR/configmaps/extra.txt
+
+        extra.txt: |
+          This is a test

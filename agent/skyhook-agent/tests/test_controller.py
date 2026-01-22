@@ -23,6 +23,8 @@ import json
 import asyncio
 import textwrap
 import shutil
+import glob
+import time
 
 from datetime import datetime, timezone
 
@@ -91,6 +93,29 @@ PYTHON_EXE=os.getenv("PYTHON_EXE", "python")
 class TestHelpers(unittest.TestCase):
     def setUp(self):
         self.config_data = {"package_name": "foo", "package_version": "1.0.0"}
+
+    def test_nullwriter_discards_writes(self):
+        """Test that NullWriter discards all writes and behaves like a file."""
+        writer = controller.NullWriter()
+        
+        # Test write returns length
+        result = writer.write("test data")
+        self.assertEqual(result, 9)
+        
+        # Test write with empty string
+        result = writer.write("")
+        self.assertEqual(result, 0)
+        
+        # Test flush and close don't raise
+        writer.flush()
+        writer.close()
+    
+    def test_nullwriter_context_manager(self):
+        """Test that NullWriter works as a context manager."""
+        with controller.NullWriter() as writer:
+            writer.write("test")
+            writer.flush()
+        # Should exit cleanly without errors
 
     def test_make_flag_path_uses_args(self):
         path_a = controller.make_flag_path(Step("foo.sh", arguments=["1", "2"], returncodes=(0, 1, 2)), self.config_data, "root_mount")
@@ -176,8 +201,7 @@ class TestHelpers(unittest.TestCase):
     @mock.patch("skyhook_agent.controller.get_log_file")
     @mock.patch("skyhook_agent.controller.subprocess")
     @mock.patch("skyhook_agent.controller.tee")
-    @mock.patch("skyhook_agent.controller.os")
-    def test_run_step_is_successful(self, os_mock, tee_mock, subprocess_mock, log_mock, cleanup_mock):
+    def test_run_step_is_successful(self, tee_mock, subprocess_mock, log_mock, cleanup_mock):
         subprocess_mock.run.return_value = FakeSubprocessResult(0)
         tee_mock.return_value = FakeSubprocessResult(0)
 
@@ -197,7 +221,8 @@ class TestHelpers(unittest.TestCase):
                     f"{log_file}.err",
                     env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
                     write_cmds=False,
-                    no_chmod=False
+                    no_chmod=False,
+                    write_logs=True
                 )
             ]
         )
@@ -246,7 +271,8 @@ class TestHelpers(unittest.TestCase):
                     f"{log_file}.err",
                     write_cmds=False,
                     no_chmod=False,
-                    env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"}
+                    env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
+                    write_logs=True
                 )
             ]
         )
@@ -692,7 +718,8 @@ class TestUseCases(unittest.TestCase):
                         ),
                         env=dict(
                             **{"PREVIOUS_VERSION": "0.0.9", "CURRENT_VERSION": "1.0.0"}, 
-                            **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
+                            **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir}),
+                        write_logs=True
                     )
                 ])
 
@@ -731,7 +758,8 @@ class TestUseCases(unittest.TestCase):
                     ),
                     env=dict(
                         **{"PREVIOUS_VERSION": "2024.07.28", "CURRENT_VERSION": "1.0.0"}, 
-                        **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir})
+                        **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir}),
+                    write_logs=True
                 )
             ])
 
@@ -1360,16 +1388,196 @@ class TestUseCases(unittest.TestCase):
             SKYHOOK_RESOURCE_ID="resource_id", 
             SKYHOOK_DATA_DIR="data_dir", 
             SKYHOOK_ROOT_DIR="skyhook_dir",
-            SKYHOOK_LOG_DIR="log_dir"):
-            SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR = controller._get_env_config()
+            SKYHOOK_LOG_DIR="log_dir",
+            SKYHOOK_AGENT_WRITE_LOGS="false"):
+            SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR, SKYHOOK_AGENT_WRITE_LOGS = controller._get_env_config()
             self.assertEqual(SKYHOOK_RESOURCE_ID, "resource_id")
             self.assertEqual(SKYHOOK_DATA_DIR, "data_dir")
             self.assertEqual(SKYHOOK_ROOT_DIR, "skyhook_dir")
             self.assertEqual(SKYHOOK_LOG_DIR, "log_dir")
+            self.assertFalse(SKYHOOK_AGENT_WRITE_LOGS)
 
         # Test the default values
-        SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR = controller._get_env_config()
+        SKYHOOK_RESOURCE_ID, SKYHOOK_DATA_DIR, SKYHOOK_ROOT_DIR, SKYHOOK_LOG_DIR, SKYHOOK_AGENT_WRITE_LOGS = controller._get_env_config()
         self.assertEqual(SKYHOOK_RESOURCE_ID, "")
         self.assertEqual(SKYHOOK_DATA_DIR, "/skyhook-package")
         self.assertEqual(SKYHOOK_ROOT_DIR, "/etc/skyhook")
         self.assertEqual(SKYHOOK_LOG_DIR, "/var/log/skyhook")
+        self.assertTrue(SKYHOOK_AGENT_WRITE_LOGS)  # Default should be True
+    
+    def test_get_env_config_write_logs_variations(self):
+        """Test SKYHOOK_AGENT_WRITE_LOGS with different values."""
+        # Test "true" value
+        with set_env(SKYHOOK_AGENT_WRITE_LOGS="true"):
+            *_, SKYHOOK_AGENT_WRITE_LOGS = controller._get_env_config()
+            self.assertTrue(SKYHOOK_AGENT_WRITE_LOGS)
+        
+        # Test "True" value (case insensitive)
+        with set_env(SKYHOOK_AGENT_WRITE_LOGS="True"):
+            *_, SKYHOOK_AGENT_WRITE_LOGS = controller._get_env_config()
+            self.assertTrue(SKYHOOK_AGENT_WRITE_LOGS)
+        
+        # Test "false" value
+        with set_env(SKYHOOK_AGENT_WRITE_LOGS="false"):
+            *_, SKYHOOK_AGENT_WRITE_LOGS = controller._get_env_config()
+            self.assertFalse(SKYHOOK_AGENT_WRITE_LOGS)
+        
+        # Test "False" value (case insensitive)
+        with set_env(SKYHOOK_AGENT_WRITE_LOGS="False"):
+            *_, SKYHOOK_AGENT_WRITE_LOGS = controller._get_env_config()
+            self.assertFalse(SKYHOOK_AGENT_WRITE_LOGS)
+        
+        # Test other values default to false
+        with set_env(SKYHOOK_AGENT_WRITE_LOGS="anything"):
+            *_, SKYHOOK_AGENT_WRITE_LOGS = controller._get_env_config()
+            self.assertFalse(SKYHOOK_AGENT_WRITE_LOGS)
+
+    @mock.patch("skyhook_agent.controller.cleanup_old_logs")
+    @mock.patch("skyhook_agent.controller.tee")
+    def test_run_step_with_write_logs_false(self, tee_mock, cleanup_mock):
+        """Test that run_step does not write log files when SKYHOOK_AGENT_WRITE_LOGS is false."""
+        tee_mock.return_value = FakeSubprocessResult(0)
+        
+        with set_env(SKYHOOK_AGENT_WRITE_LOGS="false"):
+            run_step_result = controller.run_step(
+                Step("foo", arguments=["a", "b"], returncodes=[0]), "chroot_dir", "copy_dir", self.config_data
+            )
+        
+        self.assertFalse(run_step_result)
+        
+        # Verify tee was called with write_logs=False and None log paths
+        tee_mock.assert_has_calls(
+            [
+                mock.call(
+                    "chroot_dir",
+                    ["copy_dir/skyhook_dir/foo", "a", "b"],
+                    None,
+                    None,
+                    env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
+                    write_cmds=False,
+                    no_chmod=False,
+                    write_logs=False
+                )
+            ]
+        )
+        # cleanup_old_logs should not be called when write_logs is False
+        cleanup_mock.assert_not_called()
+
+    @mock.patch("skyhook_agent.controller.cleanup_old_logs")
+    @mock.patch("skyhook_agent.controller.get_log_file")
+    @mock.patch("skyhook_agent.controller.tee")
+    def test_run_step_with_write_logs_true(self, tee_mock, get_log_file_mock, cleanup_mock):
+        """Test that run_step writes log files when SKYHOOK_AGENT_WRITE_LOGS is true."""
+        tee_mock.return_value = FakeSubprocessResult(0)
+        get_log_file_mock.return_value = "/log/file.log"
+        
+        with set_env(SKYHOOK_AGENT_WRITE_LOGS="true"):
+            run_step_result = controller.run_step(
+                Step("foo", arguments=["a", "b"], returncodes=[0]), "chroot_dir", "copy_dir", self.config_data
+            )
+        
+        self.assertFalse(run_step_result)
+        
+        # Verify tee was called with the log file path and write_logs=True
+        tee_mock.assert_has_calls(
+            [
+                mock.call(
+                    "chroot_dir",
+                    ["copy_dir/skyhook_dir/foo", "a", "b"],
+                    "/log/file.log",
+                    "/log/file.log.err",
+                    env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
+                    write_cmds=False,
+                    no_chmod=False,
+                    write_logs=True
+                )
+            ]
+        )
+        # cleanup_old_logs should be called when write_logs is True
+        cleanup_mock.assert_called_once()
+
+    @mock.patch("skyhook_agent.controller.sys")
+    def test_tee_with_nullwriter_when_write_logs_false(self, sys_mock):
+        """Test that tee uses NullWriter when write_logs is False."""
+        sys_mock.stdout = FakeIO()
+        sys_mock.stderr = FakeIO()
+        sys_mock.executable = sys.executable
+
+        with tempfile.TemporaryDirectory() as dir:
+            stdout_path = f"{dir}/stdout.log"
+            stderr_path = f"{dir}/stderr.log"
+            
+            # Run tee with write_logs=False
+            result = asyncio.run(
+                controller.tee("", ["echo", "test"], stdout_path, stderr_path, write_logs=False)
+            )
+            
+            # Log files should not be created
+            self.assertFalse(os.path.exists(stdout_path))
+            self.assertFalse(os.path.exists(stderr_path))
+
+    def test_cleanup_old_logs_keeps_only_5_files(self):
+        """Test that cleanup_old_logs removes all but the 5 most recent log files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create directory structure for logs
+            log_dir = f"{temp_dir}/var/log/skyhook/foo/1.0.0"
+            os.makedirs(log_dir, exist_ok=True)
+            
+            # Create a simple step script that succeeds
+            step_dir = f"{temp_dir}/skyhook_dir"
+            os.makedirs(step_dir, exist_ok=True)
+            step_path = f"{step_dir}/test_step.sh"
+            with open(step_path, "w") as f:
+                f.write("#!/bin/sh\necho 'test output'\nexit 0\n")
+            os.chmod(step_path, os.stat(step_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            
+            # Track log files created
+            log_files_created = []
+            
+            # Mock get_log_file and get_host_path_for_steps to use our temp directories
+            def mock_get_log_file(step_path_arg, copy_dir, config_data, root_mount, timestamp=None):
+                if timestamp is None:
+                    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+                log_file = f"{log_dir}/test_step.sh-{timestamp}.log"
+                # Only track actual log files, not glob patterns
+                if timestamp != "*":
+                    log_files_created.append(log_file)
+                return log_file
+            
+            # Run run_step 6 times with delays to ensure different timestamps
+            # Use chroot_dir="local" to avoid permission issues with chroot
+            with mock.patch("skyhook_agent.controller.get_log_file", side_effect=mock_get_log_file), \
+                 mock.patch("skyhook_agent.controller.get_host_path_for_steps", return_value=step_dir), \
+                 mock.patch("skyhook_agent.controller.get_log_dir", return_value=log_dir):
+                
+                for i in range(6):
+                    # Small delay to ensure different timestamps and file modification times
+                    time.sleep(0.05)
+                    
+                    result = controller.run_step(
+                        Step("test_step.sh", arguments=[], returncodes=[0]),
+                        "local",  # chroot_dir - "local" skips actual chroot
+                        temp_dir,  # copy_dir
+                        self.config_data
+                    )
+                    self.assertFalse(result, f"Step {i+1} should have succeeded")
+            
+            # After 6 runs with cleanup, there should be exactly 5 log files
+            actual_log_files = sorted(glob.glob(f"{log_dir}/test_step.sh-*.log"))
+            self.assertEqual(len(actual_log_files), 5, 
+                           f"Expected 5 log files after 6 runs, but found {len(actual_log_files)}: {actual_log_files}")
+            
+            # Verify the oldest log file was removed
+            self.assertFalse(os.path.exists(log_files_created[0]),
+                           f"The oldest log file {log_files_created[0]} should have been removed")
+            
+            # Verify the 5 most recent log files remain
+            for log_file in log_files_created[1:]:
+                self.assertTrue(os.path.exists(log_file),
+                              f"Recent log file {log_file} should still exist")
+            
+            # Verify stderr files also exist for remaining logs
+            for log_file in actual_log_files:
+                stderr_file = f"{log_file}.err"
+                self.assertTrue(os.path.exists(stderr_file),
+                              f"Stderr file {stderr_file} should exist")

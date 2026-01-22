@@ -36,13 +36,13 @@ RUN make build build_version=${AGENT_VERSION}
 # Install the wheel in the builder stage
 RUN python3 -m venv venv && ./venv/bin/pip install /code/skyhook-agent/dist/skyhook_agent*.whl
 
-FROM nvcr.io/nvidia/distroless/python:3.12-v3.4.15
+FROM nvcr.io/nvidia/distroless/python:3.12-v3.5.2
 
 ARG AGENT_VERSION
 ARG GIT_SHA
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/python:3.12-v3.4.15" \
+LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/python:3.12-v3.5.2" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="skyhook-agent" \
       org.opencontainers.image.version="${AGENT_VERSION}" \

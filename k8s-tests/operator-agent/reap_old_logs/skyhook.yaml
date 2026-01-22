@@ -20,18 +20,23 @@ metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
-  name: interrupt-agent-operator
+  name: reap-old-logs-agent-operator
 spec:
   nodeSelectors:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
   packages:
-    interrupt-agent-operator:
+    shellscript:
       version: "1.1.1"
       image: ghcr.io/nvidia/skyhook-packages/shellscript
-      interrupt:
-        type: noop
       configMap:
-        apply.sh: |
+        apply.sh: |-
           #!/bin/bash
-          echo "Hello, world!"
+          sleep 1
+          if [ $(ls /var/log/skyhook/reap-old-logs-agent-operator/shellscript/1.1.1/*.log | wc -l) -eq 5 ]; then
+            echo "5 logs found. After this should still be 5."
+            exit 0
+          else
+            echo "Not enough logs yet. Erroring to produce more."
+            exit 1
+          fi
