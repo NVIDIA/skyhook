@@ -14,7 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.12-bookworm AS builder
+ARG PYTHON_VERSION
+
+FROM python:${PYTHON_VERSION}-bookworm AS builder
 
 ARG AGENT_VERSION 
 
@@ -51,12 +53,12 @@ LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/python:${PYT
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="skyhook-agent" \
       org.opencontainers.image.version="${AGENT_VERSION}" \
-      org.opencontainers.image.revision="${GIT_SHA}"
+      org.opencontainers.image.revision="${GIT_SHA}" \
       python.version="${PYTHON_VERSION}" \
       distroless.version="${DISTROLESS_VERSION}"
 
 # Copy the installed packages and scripts from builder
-COPY --from=builder /code/venv/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /code/venv/lib/python${PYTHON_VERSION}/site-packages /usr/local/lib/python${PYTHON_VERSION}/site-packages
 COPY --from=builder /code/venv/bin/controller /usr/local/bin/
 
 # Run as root so we can chroot
