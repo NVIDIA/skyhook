@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -21,12 +21,6 @@ metadata:
   name: interrupt
 
 spec:
-  description: |
-    Test the interrupt feature of the skyhook operator
-    This test creates a few pods before the skyhook. 1 pods is an invalid package, 1 pod is something to wait on, and 1 pod is something to drain.
-    Additionally this test tests the agentImageOverride, interruption budgets, and dependsOn fields.
-  ## this can't run concurrently because it can cause a race condition where the other skyhooks make the node unschedulable 
-  ## and the pods won't come up
   timeouts:
     assert: 240s
   catch: ## if errors, print the most important info

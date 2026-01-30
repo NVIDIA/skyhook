@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -23,12 +23,6 @@ kind: Test
 metadata:
   name: legacy-interruption-budget-compatibility
 spec:
-  description: |
-    Tests backwards compatibility with legacy InterruptionBudget.
-    - Creates Skyhook with interruptionBudget (count: 3) instead of deploymentPolicy
-    - Verifies that a synthetic __default__ compartment is created
-    - Verifies that the budget ceiling is respected (max 3 nodes in progress)
-    - Ensures existing customers' configurations continue to work
   timeouts:
     exec: 180s
     assert: 120s

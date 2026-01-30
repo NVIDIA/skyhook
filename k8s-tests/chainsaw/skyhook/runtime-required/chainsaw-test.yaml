@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -26,7 +26,7 @@ spec:
   - get:
       apiVersion: v1
       kind: Node
-      selector: skyhook.nvidia.com/test-node=skyhooke2e
+      selector: skyhook.nvidia.com/runtime-required-test=true
       format: yaml
   - get:
       apiVersion: skyhook.nvidia.com/v1alpha1
@@ -34,19 +34,54 @@ spec:
       name: runtime-required
       format: yaml
   steps:
-  - try:
+  # Phase 1: Setup with kind-worker2 blocked
+  - name: setup-and-block-node2
+    try:
     - script:
         content: |
           ## remove annotation from last run
           ../skyhook-cli reset runtime-required --confirm 2>/dev/null || true
-          ## add taints to nodes
-          ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/test-node=skyhooke2e
+          ## label both worker nodes for this test (multi-node isolation)
+          kubectl label node kind-worker skyhook.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
+          kubectl label node kind-worker2 skyhook.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
+          ## add runtime-required taints to both nodes
+          ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/runtime-required-test=true
+          ## add blocking taint to kind-worker2 only (skyhook doesn't tolerate this)
+          kubectl taint node kind-worker2 test-block=true:NoSchedule --overwrite 2>/dev/null || true
+  
+  # Phase 2: Apply skyhook (only kind-worker can run)
+  - name: apply-skyhook
+    try:
     - create:
         file: skyhook.yaml
+  
+  # Phase 3: Assert node1 complete sequence (apply pod -> config pod -> node complete -> node2 blocked)
+  - name: assert-node1-complete-node2-blocked
+    try:
+    - assert:
+        file: assert-node1-complete-node2-blocked.yaml
+  
+  # Phase 4: Unblock kind-worker2
+  - name: unblock-node2
+    try:
+    - script:
+        content: |
+          ## remove blocking taint from kind-worker2
+          kubectl taint node kind-worker2 test-block- 2>/dev/null || true
+  
+  # Phase 5: Assert node2 complete sequence (apply pod -> config pod -> node complete)
+  - name: assert-node2-complete
+    try:
+    - assert:
+        file: assert-node2-complete.yaml
+  
+  # Phase 6: Assert final state (both nodes complete)
+  - name: assert-final-state
+    try:
     - assert:
         file: assert.yaml
     finally:
     - script:
         content: |
           ## remove taints from nodes
-          ../nodes_remove_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/test-node=skyhooke2e
+          ../nodes_remove_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/runtime-required-test=true

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -23,10 +23,6 @@ kind: Test
 metadata:
   name: overlapping-selectors-deployment-policy
 spec:
-  description: |
-    Tests deployment policy with overlapping compartment selectors.
-    Verifies that nodes matching multiple compartments are assigned correctly
-    based on the most specific match (most labels matched).
   timeouts:
     assert: 600s
     exec: 300s

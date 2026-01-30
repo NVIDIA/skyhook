@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -28,6 +28,7 @@ import (
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/skyhook/operator/internal/controller/mock"
 	"github.com/NVIDIA/skyhook/operator/internal/wrapper"
+	wrapperMock "github.com/NVIDIA/skyhook/operator/internal/wrapper/mock"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kptr "k8s.io/utils/ptr"
@@ -152,10 +153,10 @@ var _ = Describe("GetNextSkyhook", func() {
 	It("returns the first not-complete, not-disabled skyhook", func() {
 		// Helper to make a skyhookNodes with given complete/disabled
 		makeSkyhookNodes := func(complete bool, disabled bool) SkyhookNodes {
-			sn_mock := skyhookNodesMock.MockSkyhookNodes{}
-			sn_mock.EXPECT().IsComplete().Return(complete)
-			sn_mock.EXPECT().IsDisabled().Return(disabled)
-			return &sn_mock
+			sn_mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
+			sn_mock.EXPECT().IsComplete().Return(complete).Maybe()
+			sn_mock.EXPECT().IsDisabled().Return(disabled).Maybe()
+			return sn_mock
 		}
 
 		// Not complete, not disabled
@@ -179,6 +180,101 @@ var _ = Describe("GetNextSkyhook", func() {
 		n3 = makeSkyhookNodes(false, false)
 		result = GetNextSkyhook([]SkyhookNodes{n1, n2, n3})
 		Expect(result).To(Equal(n3))
+	})
+})
+
+var _ = Describe("IsNodeReadyForSkyhook", func() {
+	// Helper to create a mock SkyhookNodes with GetNode returning specific completion status
+	makeSkyhookNodesMock := func(name string, priority int, nodeCompletions map[string]bool, disabled bool) *skyhookNodesMock.MockSkyhookNodes {
+		mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
+
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       v1alpha1.SkyhookSpec{Priority: priority},
+		}
+		mock.EXPECT().GetSkyhook().Return(wrapper.NewSkyhookWrapper(skyhook)).Maybe()
+		mock.EXPECT().IsDisabled().Return(disabled).Maybe()
+
+		for nodeName, isComplete := range nodeCompletions {
+			nodeWrapper := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			nodeWrapper.EXPECT().IsComplete().Return(isComplete).Maybe()
+			mock.EXPECT().GetNode(nodeName).Return(v1alpha1.StatusComplete, wrapper.SkyhookNode(nodeWrapper)).Maybe()
+		}
+
+		return mock
+	}
+
+	It("should return true when all higher-priority skyhooks are complete on this node", func() {
+		// Setup: skyhook_a (priority 1) complete on node-1, skyhook_b (priority 2)
+		skyhookA := makeSkyhookNodesMock("skyhook-a", 1, map[string]bool{"node-1": true}, false)
+		skyhookB := makeSkyhookNodesMock("skyhook-b", 2, map[string]bool{"node-1": false}, false)
+
+		allSkyhooks := []SkyhookNodes{skyhookA, skyhookB}
+
+		// node-1 should be ready for skyhook_b because skyhook_a is complete on node-1
+		Expect(IsNodeReadyForSkyhook("node-1", skyhookB, allSkyhooks)).To(BeTrue())
+	})
+
+	It("should return false when a higher-priority skyhook is incomplete on this node", func() {
+		// Setup: skyhook_a (priority 1) incomplete on node-1, skyhook_b (priority 2)
+		skyhookA := makeSkyhookNodesMock("skyhook-a", 1, map[string]bool{"node-1": false}, false)
+		skyhookB := makeSkyhookNodesMock("skyhook-b", 2, map[string]bool{"node-1": false}, false)
+
+		allSkyhooks := []SkyhookNodes{skyhookA, skyhookB}
+
+		// node-1 should NOT be ready for skyhook_b because skyhook_a is incomplete on node-1
+		Expect(IsNodeReadyForSkyhook("node-1", skyhookB, allSkyhooks)).To(BeFalse())
+	})
+
+	It("should return true when higher-priority skyhook doesn't target this node", func() {
+		// Setup: skyhook_a (priority 1) targets only node-2, skyhook_b (priority 2) targets node-1
+		skyhookA := makeSkyhookNodesMock("skyhook-a", 1, map[string]bool{"node-2": false}, false)
+		// GetNode for node-1 should return nil (not found)
+		skyhookA.On("GetNode", "node-1").Return(v1alpha1.StatusUnknown, nil)
+
+		skyhookB := makeSkyhookNodesMock("skyhook-b", 2, map[string]bool{"node-1": false}, false)
+
+		allSkyhooks := []SkyhookNodes{skyhookA, skyhookB}
+
+		// node-1 should be ready for skyhook_b because skyhook_a doesn't target node-1
+		Expect(IsNodeReadyForSkyhook("node-1", skyhookB, allSkyhooks)).To(BeTrue())
+	})
+
+	It("should allow parallel processing when nodes are independent", func() {
+		// Setup: node-1 complete on skyhook_a, node-2 incomplete on skyhook_a
+		skyhookA := makeSkyhookNodesMock("skyhook-a", 1, map[string]bool{"node-1": true, "node-2": false}, false)
+		skyhookB := makeSkyhookNodesMock("skyhook-b", 2, map[string]bool{"node-1": false, "node-2": false}, false)
+
+		allSkyhooks := []SkyhookNodes{skyhookA, skyhookB}
+
+		// node-1 should be ready for skyhook_b (complete on skyhook_a)
+		Expect(IsNodeReadyForSkyhook("node-1", skyhookB, allSkyhooks)).To(BeTrue())
+		// node-2 should NOT be ready for skyhook_b (incomplete on skyhook_a)
+		Expect(IsNodeReadyForSkyhook("node-2", skyhookB, allSkyhooks)).To(BeFalse())
+	})
+
+	It("should skip disabled skyhooks in priority check", func() {
+		// Setup: skyhook_a (priority 1, disabled) incomplete on node-1, skyhook_b (priority 2)
+		skyhookA := makeSkyhookNodesMock("skyhook-a", 1, map[string]bool{"node-1": false}, true)
+		skyhookB := makeSkyhookNodesMock("skyhook-b", 2, map[string]bool{"node-1": false}, false)
+
+		allSkyhooks := []SkyhookNodes{skyhookA, skyhookB}
+
+		// node-1 should be ready for skyhook_b because skyhook_a is disabled
+		Expect(IsNodeReadyForSkyhook("node-1", skyhookB, allSkyhooks)).To(BeTrue())
+	})
+
+	It("should handle same-priority skyhooks by name ordering", func() {
+		// Setup: skyhook_a and skyhook_b both priority 2, ordered by name
+		skyhookA := makeSkyhookNodesMock("skyhook-a", 2, map[string]bool{"node-1": false}, false)
+		skyhookB := makeSkyhookNodesMock("skyhook-b", 2, map[string]bool{"node-1": false}, false)
+
+		allSkyhooks := []SkyhookNodes{skyhookA, skyhookB}
+
+		// skyhook_b (name "b") should wait for skyhook_a (name "a") at same priority
+		Expect(IsNodeReadyForSkyhook("node-1", skyhookB, allSkyhooks)).To(BeFalse())
+		// skyhook_a should be ready (no higher priority or earlier name)
+		Expect(IsNodeReadyForSkyhook("node-1", skyhookA, allSkyhooks)).To(BeTrue())
 	})
 })
 
@@ -609,7 +705,7 @@ var _ = Describe("partitionNodesIntoCompartments", func() {
 var _ = Describe("CleanupRemovedNodes", func() {
 	It("should cleanup removed nodes from all status maps", func() {
 		// Create mock skyhook nodes
-		mockSkyhookNodes := skyhookNodesMock.MockSkyhookNodes{}
+		mockSkyhookNodes := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
 		// Create mock nodes that currently exist
 		mockNode1 := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{Name: "node1"},
@@ -676,7 +772,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		mockSkyhookNodes.EXPECT().GetSkyhook().Return(mockSkyhook)
 
 		// Call the function
-		CleanupRemovedNodes(&mockSkyhookNodes)
+		CleanupRemovedNodes(mockSkyhookNodes)
 
 		// Verify that removed-node was cleaned up from all maps
 		Expect(mockSkyhook.Status.NodeState).To(HaveKey("node1"))
@@ -706,7 +802,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 	It("should not set Updated flag when no nodes are removed", func() {
 		// Create mock skyhook nodes
-		mockSkyhookNodes := skyhookNodesMock.MockSkyhookNodes{}
+		mockSkyhookNodes := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
 		// Create mock nodes that currently exist
 		mockNode1 := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{Name: "node1"},
@@ -752,7 +848,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		mockSkyhookNodes.EXPECT().GetSkyhook().Return(mockSkyhook)
 
 		// Call the function
-		CleanupRemovedNodes(&mockSkyhookNodes)
+		CleanupRemovedNodes(mockSkyhookNodes)
 
 		// Verify that removed-node was cleaned up from all maps
 		Expect(mockSkyhook.Status.NodeState).To(HaveKey("node1"))
@@ -815,7 +911,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		var mockNode2 wrapper.SkyhookNode
 
 		BeforeEach(func() {
-			mockSkyhookNodes = &skyhookNodesMock.MockSkyhookNodes{}
+			mockSkyhookNodes = skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
 
 			// Create a real skyhook for testing
 			mockSkyhook = &wrapper.Skyhook{
@@ -970,7 +1066,9 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusPaused))
 		})
 
-		It("should set status to waiting when another skyhook has higher priority", func() {
+		It("should set per-node waiting status when node is blocked by higher priority skyhook", func() {
+			// Test per-node priority: A node should be waiting if it hasn't completed
+			// higher-priority skyhooks that target that same node.
 			// Create higher priority skyhook (priority 1)
 			higherPrioritySkyhook := &v1alpha1.Skyhook{
 				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-1"},
@@ -1001,6 +1099,68 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
 			}
 
+			// Use the same node for both skyhooks to test per-node waiting
+			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
+
+			skyhookNode1ForHigher, err := wrapper.NewSkyhookNode(node1, higherPrioritySkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNode1ForLower, err := wrapper.NewSkyhookNode(node1, lowerPrioritySkyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			skyhookNodes1 := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(higherPrioritySkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode1ForHigher},
+			}
+
+			skyhookNodes2 := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(lowerPrioritySkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode1ForLower},
+			}
+
+			allSkyhooks := []SkyhookNodes{skyhookNodes1, skyhookNodes2}
+
+			// Call the function - node-1 in skyhook2 should be waiting because
+			// it hasn't completed skyhook1 yet (per-node priority)
+			changed := IntrospectSkyhook(skyhookNodes2, allSkyhooks)
+
+			// Verify the result - node should be waiting
+			Expect(changed).To(BeTrue())
+			// The node status should be waiting (set per-node by IntrospectNode)
+			Expect(skyhookNode1ForLower.Status()).To(Equal(v1alpha1.StatusWaiting))
+		})
+
+		It("should not set waiting status when node is not in higher priority skyhook", func() {
+			// Test that a node doesn't wait if it's not targeted by higher-priority skyhooks
+			higherPrioritySkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-1"},
+				Spec: v1alpha1.SkyhookSpec{
+					Priority: 1,
+					Packages: map[string]v1alpha1.Package{
+						"test-package-1": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package-1", Version: "1.0.0"},
+							Image:      "test-image-1",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+			}
+
+			lowerPrioritySkyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-2"},
+				Spec: v1alpha1.SkyhookSpec{
+					Priority: 2,
+					Packages: map[string]v1alpha1.Package{
+						"test-package-2": {
+							PackageRef: v1alpha1.PackageRef{Name: "test-package-2", Version: "1.0.0"},
+							Image:      "test-image-2",
+						},
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+			}
+
+			// Different nodes for each skyhook
 			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
 			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}}
 
@@ -1022,12 +1182,12 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 			allSkyhooks := []SkyhookNodes{skyhookNodes1, skyhookNodes2}
 
-			// Call the function - skyhook2 should be waiting because skyhook1 has higher priority
-			changed := IntrospectSkyhook(skyhookNodes2, allSkyhooks)
+			// Call the function - node-2 should NOT be waiting because
+			// skyhook1 doesn't target node-2
+			IntrospectSkyhook(skyhookNodes2, allSkyhooks)
 
-			// Verify the result
-			Expect(changed).To(BeTrue())
-			Expect(skyhookNodes2.Status()).To(Equal(v1alpha1.StatusWaiting))
+			// Node-2 should not be waiting (it's not in skyhook1)
+			Expect(skyhookNode2.Status()).NotTo(Equal(v1alpha1.StatusWaiting))
 		})
 
 		It("should not change status when skyhook is complete", func() {
@@ -2143,6 +2303,119 @@ var _ = Describe("Compartment Status Tests", func() {
 
 			// Verify Updated flag was set since cleanup occurred
 			Expect(skyhookNodes.skyhook.Updated).To(BeTrue())
+		})
+	})
+
+	Describe("CollectNodeStatus for per-node ordering", func() {
+		It("should return complete when all nodes are complete", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(true)
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(true)
+
+			skyhookNodes := &skyhookNodes{
+				nodes: []wrapper.SkyhookNode{node1, node2},
+			}
+
+			status := skyhookNodes.CollectNodeStatus()
+			Expect(status).To(Equal(v1alpha1.StatusComplete))
+		})
+
+		It("should return in_progress when any node is in_progress (per-node ordering)", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(false)
+			node1.EXPECT().Status().Return(v1alpha1.StatusInProgress)
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(false)
+			node2.EXPECT().Status().Return(v1alpha1.StatusBlocked)
+
+			skyhookNodes := &skyhookNodes{
+				nodes: []wrapper.SkyhookNode{node1, node2},
+			}
+
+			status := skyhookNodes.CollectNodeStatus()
+			Expect(status).To(Equal(v1alpha1.StatusInProgress))
+		})
+
+		It("should return blocked when all remaining nodes are blocked", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(true)
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(false)
+			node2.EXPECT().Status().Return(v1alpha1.StatusBlocked)
+
+			skyhookNodes := &skyhookNodes{
+				nodes: []wrapper.SkyhookNode{node1, node2},
+			}
+
+			status := skyhookNodes.CollectNodeStatus()
+			Expect(status).To(Equal(v1alpha1.StatusBlocked))
+		})
+
+		It("should return waiting when all remaining nodes are waiting", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(true)
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(false)
+			node2.EXPECT().Status().Return(v1alpha1.StatusWaiting)
+			node3 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node3.EXPECT().IsComplete().Return(false)
+			node3.EXPECT().Status().Return(v1alpha1.StatusWaiting)
+
+			skyhookNodes := &skyhookNodes{
+				nodes: []wrapper.SkyhookNode{node1, node2, node3},
+			}
+
+			status := skyhookNodes.CollectNodeStatus()
+			Expect(status).To(Equal(v1alpha1.StatusWaiting))
+		})
+
+		It("should return erroring when all remaining nodes are erroring", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(false)
+			node1.EXPECT().Status().Return(v1alpha1.StatusErroring)
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(false)
+			node2.EXPECT().Status().Return(v1alpha1.StatusErroring)
+
+			skyhookNodes := &skyhookNodes{
+				nodes: []wrapper.SkyhookNode{node1, node2},
+			}
+
+			status := skyhookNodes.CollectNodeStatus()
+			Expect(status).To(Equal(v1alpha1.StatusErroring))
+		})
+
+		It("should prioritize in_progress over waiting (per-node ordering)", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(false)
+			node1.EXPECT().Status().Return(v1alpha1.StatusInProgress)
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(false)
+			node2.EXPECT().Status().Return(v1alpha1.StatusWaiting)
+
+			skyhookNodes := &skyhookNodes{
+				nodes: []wrapper.SkyhookNode{node1, node2},
+			}
+
+			status := skyhookNodes.CollectNodeStatus()
+			Expect(status).To(Equal(v1alpha1.StatusInProgress))
+		})
+
+		It("should return unknown when nodes are in mixed non-critical states", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(false)
+			node1.EXPECT().Status().Return(v1alpha1.StatusWaiting)
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(false)
+			node2.EXPECT().Status().Return(v1alpha1.StatusBlocked)
+
+			skyhookNodes := &skyhookNodes{
+				nodes: []wrapper.SkyhookNode{node1, node2},
+			}
+
+			status := skyhookNodes.CollectNodeStatus()
+			Expect(status).To(Equal(v1alpha1.StatusUnknown))
 		})
 	})
 })

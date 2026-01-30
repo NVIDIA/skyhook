@@ -28,7 +28,7 @@ spec:
   priority: 1
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       interrupt:
@@ -54,7 +54,7 @@ spec:
   priority: 2
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       interrupt:
@@ -80,7 +80,7 @@ spec:
   priority: 2
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       version: "1.2"
@@ -103,7 +103,7 @@ spec:
   priority: 2
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       version: "1.2"

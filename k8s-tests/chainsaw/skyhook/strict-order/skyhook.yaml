@@ -23,12 +23,11 @@ metadata:
   name: strict-order-skyhook-zzz
   annotations:
     skyhook.nvidia.com/disable: "false"
-    skyhook.nvidia.com/pause: "false"
 spec:
   priority: 1
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       interrupt:
@@ -38,7 +37,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "3" ## making faster so the test works for asserting node condition
+          value: "1" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -49,12 +48,12 @@ metadata:
   name: strict-order-skyhook-b
   annotations:
     skyhook.nvidia.com/disable: "false"
-    skyhook.nvidia.com/pause: "false"
+    skyhook.nvidia.com/pause: "true"
 spec:
   priority: 2
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       interrupt:
@@ -64,7 +63,7 @@ spec:
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "3" ## making faster so the test works for asserting node condition
+          value: "5" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -80,14 +79,14 @@ spec:
   priority: 2
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "1" ## making faster so the test works for asserting node condition
+          value: "5" ## making faster so the test works for asserting node condition
 ---
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -97,17 +96,17 @@ metadata:
     app.kubernetes.io/created-by: skyhook-operator
   name: strict-order-skyhook-d
   annotations:
-    skyhook.nvidia.com/disable: "false"
+    skyhook.nvidia.com/disable: "true"
     skyhook.nvidia.com/pause: "false"
 spec:
   priority: 2
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       version: "1.2"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "1" ## making faster so the test works for asserting node condition
+          value: "5" ## making faster so the test works for asserting node condition

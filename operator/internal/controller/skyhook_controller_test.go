@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -28,6 +28,7 @@ import (
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/skyhook/operator/internal/controller/mock"
 	"github.com/NVIDIA/skyhook/operator/internal/wrapper"
+	wrapperMock "github.com/NVIDIA/skyhook/operator/internal/wrapper/mock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -753,20 +754,9 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(node_to_skyhooks).To(HaveLen(1))
 		Expect(node_to_skyhooks[nodes.Items[0].UID]).To(HaveLen(1))
 	})
-	It("Should only select nodes to remove when all runtime required skyhooks have completed", func() {
-		//node_mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoTestingT)
-		skyhook_a_mock := skyhookNodesMock.MockSkyhookNodes{}
-		skyhook_a_mock.EXPECT().IsComplete().Return(true)
-
-		skyhook_b_mock := skyhookNodesMock.MockSkyhookNodes{}
-		skyhook_b_mock.EXPECT().IsComplete().Return(false).Once()
-
-		// skyhookNodes{
-		// 	skyhook: &wrapper.Skyhook{
-		// 		Updated: true,
-		// 	},
-		// 	nodes: []wrapper.SkyhookNode{},
-		// }
+	It("Should only select nodes to remove when all runtime required skyhooks have completed on that specific node", func() {
+		// Test per-node completion: Node taint should be removed when all skyhooks
+		// are complete ON THAT NODE, regardless of other nodes' completion status.
 
 		node1 := corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
@@ -782,13 +772,37 @@ var _ = Describe("skyhook controller tests", func() {
 			},
 		}
 
+		// Mock node wrappers with different completion states per node
+		node1WrapperA := wrapperMock.NewMockSkyhookNode(GinkgoT())
+		node1WrapperA.EXPECT().GetNode().Return(&node1).Maybe()
+		node1WrapperA.EXPECT().IsComplete().Return(true).Maybe()
+
+		node1WrapperB := wrapperMock.NewMockSkyhookNode(GinkgoT())
+		node1WrapperB.EXPECT().GetNode().Return(&node1).Maybe()
+		// First call returns false, then subsequent calls return true
+		node1WrapperB.EXPECT().IsComplete().Return(false).Once()
+		node1WrapperB.EXPECT().IsComplete().Return(true).Maybe()
+
+		node2WrapperA := wrapperMock.NewMockSkyhookNode(GinkgoT())
+		node2WrapperA.EXPECT().GetNode().Return(&node2).Maybe()
+		node2WrapperA.EXPECT().IsComplete().Return(true).Maybe()
+
+		// skyhook_a: complete on both nodes
+		skyhook_a_mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
+		skyhook_a_mock.EXPECT().GetNode("node1").Return(v1alpha1.StatusComplete, node1WrapperA).Maybe()
+		skyhook_a_mock.EXPECT().GetNode("node2").Return(v1alpha1.StatusComplete, node2WrapperA).Maybe()
+
+		// skyhook_b: incomplete on node1, doesn't target node2
+		skyhook_b_mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
+		skyhook_b_mock.EXPECT().GetNode("node1").Return(v1alpha1.StatusInProgress, node1WrapperB).Maybe()
+
 		node_to_skyhooks := map[types.UID][]SkyhookNodes{
 			node1.UID: {
-				&skyhook_a_mock,
-				&skyhook_b_mock,
+				skyhook_a_mock,
+				skyhook_b_mock,
 			},
 			node2.UID: {
-				&skyhook_a_mock,
+				skyhook_a_mock,
 			},
 		}
 
@@ -797,14 +811,64 @@ var _ = Describe("skyhook controller tests", func() {
 			node2.UID: &node2,
 		}
 
+		// First check: node2 should have taint removed (all skyhooks complete on node2)
+		// node1 should NOT have taint removed (skyhook_b incomplete on node1)
 		to_remove := getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks, node_map)
 		Expect(to_remove).To(HaveLen(1))
 		Expect(to_remove[0].UID).To(BeEquivalentTo(node2.UID))
 
-		skyhook_b_mock.EXPECT().IsComplete().Return(true)
+		// Second check: now node1WrapperB returns true, so both nodes should be removed
 		to_remove = getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks, node_map)
 		Expect(to_remove).To(HaveLen(2))
+	})
 
+	It("Should remove taint per-node even if other nodes in same skyhook are incomplete", func() {
+		// This tests the key behavioral change: Node A's taint is removed when Node A
+		// completes all its skyhooks, even if Node B is still incomplete on those skyhooks.
+
+		nodeA := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "nodeA",
+				UID:  "nodeA",
+			},
+		}
+
+		nodeB := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "nodeB",
+				UID:  "nodeB",
+			},
+		}
+
+		// Both nodes are targeted by the same skyhook
+		// Node A is complete, Node B is incomplete
+		nodeAWrapper := wrapperMock.NewMockSkyhookNode(GinkgoT())
+		nodeAWrapper.EXPECT().GetNode().Return(&nodeA).Maybe()
+		nodeAWrapper.EXPECT().IsComplete().Return(true).Maybe()
+
+		nodeBWrapper := wrapperMock.NewMockSkyhookNode(GinkgoT())
+		nodeBWrapper.EXPECT().GetNode().Return(&nodeB).Maybe()
+		nodeBWrapper.EXPECT().IsComplete().Return(false).Maybe()
+
+		skyhook_mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
+		skyhook_mock.EXPECT().GetNode("nodeA").Return(v1alpha1.StatusComplete, nodeAWrapper).Maybe()
+		skyhook_mock.EXPECT().GetNode("nodeB").Return(v1alpha1.StatusInProgress, nodeBWrapper).Maybe()
+
+		node_to_skyhooks := map[types.UID][]SkyhookNodes{
+			nodeA.UID: {skyhook_mock},
+			nodeB.UID: {skyhook_mock},
+		}
+
+		node_map := map[types.UID]*corev1.Node{
+			nodeA.UID: &nodeA,
+			nodeB.UID: &nodeB,
+		}
+
+		// Node A should have taint removed (complete on nodeA)
+		// Node B should NOT have taint removed (incomplete on nodeB)
+		to_remove := getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks, node_map)
+		Expect(to_remove).To(HaveLen(1))
+		Expect(to_remove[0].UID).To(BeEquivalentTo(nodeA.UID))
 	})
 	It("CreateTolerationForTaint should tolerate the passed taint", func() {
 		taint := corev1.Taint{

@@ -18,12 +18,18 @@ before the nodes that it targets are considered available for general use.
 1. It will NOT add the taint to any nodes targeted by a SCR with `runtimeRequired: true`
 
 # Details
-## When is a node considered ready
-When all of the following is true per node:
-1. All SCRs with `runtimeRequired: true` are complete (ie complete on all nodes)
+## When is the runtime-required taint removed from a node
+The taint is removed from a node when all SCRs with `runtimeRequired: true` that target that node are complete **on that specific node**.
 
-## What happens happens when a node is considered ready
-1. The runtime required taint is removed from the node if it exists.
+**Important**: Taint removal is per-node, not per-skyhook. This means:
+- Node A's taint is removed when all runtime-required skyhooks complete on Node A
+- Node A does NOT wait for Node B to complete those same skyhooks
+- If Node B is stuck or failing, Node A can still have its taint removed and become available
+
+This per-node behavior prevents deadlocks where a few bad nodes would block all other healthy nodes from becoming available.
+
+## What happens when the taint is removed
+1. The node becomes available for general workload scheduling (pods without the runtime-required toleration can now be scheduled on it).
 
 # Why would you use runtime required
 This is useful when you want to gate other work behind the successful completion of some set of Skyhook Packages. This can be for security reasons or for scheduling.

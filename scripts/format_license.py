@@ -557,6 +557,10 @@ def main():
 
     # Step 4: Process each changed file
     for file_path in changed_files:
+        # Skip deleted files (they appear in git diff but don't exist on disk)
+        if not os.path.exists(file_path):
+            continue
+            
         # Skip ignored files
         rel_path = os.path.relpath(file_path, args.root_dir)
         if should_ignore(rel_path, ignore_patterns):

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,9 +20,6 @@ kind: Test
 metadata:
   name: interrupt-grouping
 spec:
-  description: |
-    This tests the grouping of interrupts around services or reboots assuring that we have one interrupt for a group
-    and the priority is correct.
   catch:
       ## if errors, print the most important info
     - get:

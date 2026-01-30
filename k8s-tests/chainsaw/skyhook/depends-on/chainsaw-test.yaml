@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,8 +20,6 @@ kind: Test
 metadata:
   name: depends-on
 spec:
-  description: |
-    Test makes sure depends-on works as expected. c depends on a, and b. Make sure a and b complete before c starts.
   timeouts:
     assert: 180s
   steps:

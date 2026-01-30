@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,16 +20,12 @@ kind: Test
 metadata:
   name: basic
 spec:
-  skip: true ## pointless test, guessing we have enough examples by now
-  description: This is a very simple test that creates a configmap and checks the content is as expected.
+  skip: true
   steps:
-  - description: This steps applies the configmap in the cluster and checks the configmap content.
-    try:
-    - description: Create the configmap.
-      apply:
+  - try:
+    - apply:
         file: configmap.yaml
-    - description: Check the configmap content.
-      assert:
+    - assert:
         file: configmap-assert.yaml
     - script:
         content: cd .. && kubectl get pod -A

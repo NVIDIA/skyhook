@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,10 +20,6 @@ kind: Test
 metadata:
   name: cleanup-pods
 spec:
-  description: |
-    This test runs a simple skyhook with dependsOn. We wait tell completed, then trigger update to force config cycle on package B. Once config
-    is complete, we update again to make the package error, and at the same clear out the node annotation to trigger cleanup.
-    The cleanup should remove pods that are running that should not be running because the node was "Reset".
   timeouts:
     assert: 240s
   steps:
