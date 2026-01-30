@@ -16,6 +16,9 @@ VENV := ./venv/bin/
 REGISTRY ?= ghcr.io
 AGENT_IMAGE ?= nvidia/skyhook/agent
 DOCKER_CMD ?= docker
+PYTHON_VERSION ?= 3.13
+DEBIAN_VERSION ?= trixie
+DISTROLESS_VERSION ?= 4.0.1
 
 .PHONY: all
 all: venv test
@@ -63,6 +66,9 @@ docker-build-only:
 	@echo "Building skyhook-agent $(DOCKER_CMD) image with tags: $(ACTUAL_TAGS)"
 	$(DOCKER_CMD) buildx build $(BUILD_ARGS) --build-arg AGENT_VERSION=$(AGENT_VERSION) \
 		--build-arg GIT_SHA=$(GIT_SHA) \
+		--build-arg DISTROLESS_VERSION=$(DISTROLESS_VERSION) \
+		--build-arg PYTHON_VERSION=$(PYTHON_VERSION) \
+		--build-arg DEBIAN_VERSION=$(DEBIAN_VERSION) \
 		--platform linux/amd64,linux/arm64 $(ACTUAL_TAGS) --metadata-file=metadata.json -f ../containers/agent.Dockerfile .
 
 ##@ Vendor
