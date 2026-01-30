@@ -85,42 +85,97 @@ BUILT_IN_IGNORE_PATTERNS = [
     'chart/*'        # Anything inside chart directory
 ]
 
-def get_changed_files_from_git(root_dir: str) -> List[str]:
+def get_default_branch(root_dir: str) -> str:
     """
-    Get list of files that have uncommitted changes in git.
+    Get the default branch name from git config.
+    
+    Returns:
+        Default branch name (e.g., 'main', 'master')
+    """
+    try:
+        # Try to get remote HEAD (most reliable method)
+        result = subprocess.run(
+            ['git', 'symbolic-ref', 'refs/remotes/origin/HEAD'],
+            capture_output=True,
+            text=True,
+            cwd=root_dir,
+            check=True
+        )
+        # Returns 'refs/remotes/origin/main', extract 'main'
+        return result.stdout.strip().split('/')[-1]
+    except subprocess.CalledProcessError:
+        # Fallback: try init.defaultBranch config
+        try:
+            result = subprocess.run(
+                ['git', 'config', '--get', 'init.defaultBranch'],
+                capture_output=True,
+                text=True,
+                cwd=root_dir,
+                check=True
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            # Ultimate fallback
+            return 'main'
 
+def get_changed_files_from_git(root_dir: str, base_branch: str = None) -> List[str]:
+    """
+    Get list of files that have uncommitted changes or differ from base branch.
+    
+    Args:
+        root_dir: Repository root directory
+        base_branch: Optional base branch to compare against
+    
     Returns:
         List of absolute file paths with changes
     """
     try:
-        # Get modified and staged files
+        changed_files = set()
+        
+        # Always check for uncommitted changes first
         result = subprocess.run(
             ['git', 'diff', '--name-only', 'HEAD'],
-            capture_output=True,
-            text=True,
-            cwd=root_dir,
-            check=True
+            capture_output=True, text=True, cwd=root_dir, check=True
         )
-
-        result2 = subprocess.run(
-            ['git', 'diff', '--name-only', '--cached'],
-            capture_output=True,
-            text=True,
-            cwd=root_dir,
-            check=True
-        )
-
-        changed_files = set()
         for line in result.stdout.strip().split('\n'):
             if line:
                 changed_files.add(os.path.abspath(os.path.join(root_dir, line)))
-
+        
+        # Check staged files
+        result2 = subprocess.run(
+            ['git', 'diff', '--name-only', '--cached'],
+            capture_output=True, text=True, cwd=root_dir, check=True
+        )
         for line in result2.stdout.strip().split('\n'):
             if line:
                 changed_files.add(os.path.abspath(os.path.join(root_dir, line)))
-
+        
+        # If no uncommitted changes and no base branch specified, auto-detect
+        if not changed_files and base_branch is None:
+            # Get current branch
+            current_result = subprocess.run(
+                ['git', 'branch', '--show-current'],
+                capture_output=True, text=True, cwd=root_dir, check=True
+            )
+            current_branch = current_result.stdout.strip()
+            default_branch = get_default_branch(root_dir)
+            
+            # Only compare to default if we're on a different branch
+            if current_branch and current_branch != default_branch:
+                base_branch = default_branch
+        
+        # If base branch specified or auto-detected, get branch diff
+        if base_branch:
+            result3 = subprocess.run(
+                ['git', 'diff', '--name-only', f'{base_branch}...HEAD'],
+                capture_output=True, text=True, cwd=root_dir, check=True
+            )
+            for line in result3.stdout.strip().split('\n'):
+                if line:
+                    changed_files.add(os.path.abspath(os.path.join(root_dir, line)))
+        
         return list(changed_files)
-
+        
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
 
@@ -534,6 +589,7 @@ def main():
     parser.add_argument('--license-file', default='LICENSE',  help='Path to the license template file')
     parser.add_argument('--root-dir', default='.',  help='Root directory to search for files')
     parser.add_argument('--year', help='Year to use in SPDX copyright header (default: current year)')
+    parser.add_argument('--base-branch', help='Base branch to compare against (auto-detected if not specified)')
     parser.add_argument('--verbose', action='store_true', help='Show detailed messages, including when licenses are already formatted')
     args = parser.parse_args()
 
@@ -542,7 +598,7 @@ def main():
     license_text = read_license_template(args.license_file)
 
     # Step 2: Get changed files from git
-    changed_files = get_changed_files_from_git(args.root_dir)
+    changed_files = get_changed_files_from_git(args.root_dir, args.base_branch)
 
     if not changed_files:
         print("No changed files found.")
