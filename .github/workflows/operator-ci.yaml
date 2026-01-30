@@ -271,7 +271,6 @@ jobs:
           GIT_SHA: ${{ needs.compute-metadata.outputs.git-sha }}
           VERSION: ${{ needs.compute-metadata.outputs.version }}
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
           cd operator
           PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
           
