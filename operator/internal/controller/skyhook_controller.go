@@ -73,7 +73,7 @@ const (
 type SkyhookOperatorOptions struct {
 	Namespace            string        `env:"NAMESPACE, default=skyhook"`
 	MaxInterval          time.Duration `env:"DEFAULT_INTERVAL, default=10m"`
-	ImagePullSecret      string        `env:"IMAGE_PULL_SECRET, default=node-init-secret"` //TODO: should this be defaulted?
+	ImagePullSecret      string        `env:"IMAGE_PULL_SECRET"`
 	CopyDirRoot          string        `env:"COPY_DIR_ROOT, default=/var/lib/skyhook"`
 	ReapplyOnReboot      bool          `env:"REAPPLY_ON_REBOOT, default=false"`
 	RuntimeRequiredTaint string        `env:"RUNTIME_REQUIRED_TAINT, default=skyhook.nvidia.com=runtime-required:NoSchedule"`
@@ -1608,11 +1608,6 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 					},
 				},
 			},
-			ImagePullSecrets: []corev1.LocalObjectReference{
-				{
-					Name: opts.ImagePullSecret,
-				},
-			},
 			HostPID:     true,
 			HostNetwork: true,
 			// If you change these go change the SelectNode toleration in cluster_state.go
@@ -1625,6 +1620,13 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 			}, skyhook.Spec.AdditionalTolerations...),
 			Volumes: volumes,
 		},
+	}
+	if opts.ImagePullSecret != "" {
+		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{
+			{
+				Name: opts.ImagePullSecret,
+			},
+		}
 	}
 	return pod
 }
@@ -1819,11 +1821,6 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 					},
 				},
 			},
-			ImagePullSecrets: []corev1.LocalObjectReference{
-				{
-					Name: opts.ImagePullSecret,
-				},
-			},
 			Volumes:     volumes,
 			HostPID:     true,
 			HostNetwork: true,
@@ -1836,6 +1833,13 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 				opts.GetRuntimeRequiredToleration(),
 			}, skyhook.Spec.AdditionalTolerations...),
 		},
+	}
+	if opts.ImagePullSecret != "" {
+		pod.Spec.ImagePullSecrets = []corev1.LocalObjectReference{
+			{
+				Name: opts.ImagePullSecret,
+			},
+		}
 	}
 	if _package.GracefulShutdown != nil {
 		pod.Spec.TerminationGracePeriodSeconds = ptr(int64(_package.GracefulShutdown.Duration.Seconds()))

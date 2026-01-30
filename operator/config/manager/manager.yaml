@@ -79,8 +79,8 @@ spec:
         # versions < 1.19 or on vendors versions which do NOT support this field by default (i.e. Openshift < 4.11 ).
         # seccompProfile:
         #   type: RuntimeDefault
-      imagePullSecrets: 
-        - name: node-init-secret
+      # imagePullSecrets: 
+      #   - name: node-init-secret
       containers:
       - command:
         - /manager
@@ -98,7 +98,7 @@ spec:
           - name: NAMESPACE
             value: skyhook-operator-system
           - name: IMAGE_PULL_SECRET
-            value: node-init-secret
+            value: ""
           - name: COPY_DIR_ROOT
             value: /var/lib/skyhook
           - name: REAPPLY_ON_REBOOT

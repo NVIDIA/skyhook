@@ -166,7 +166,9 @@ spec:
         securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
           | nindent 10 }}
       imagePullSecrets:
+      {{- if .Values.imagePullSecret }}
         - name: {{ quote .Values.imagePullSecret }}
+      {{- end }}
       volumes:
       - name: kube-api-access
         projected:

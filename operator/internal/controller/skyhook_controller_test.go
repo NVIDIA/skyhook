@@ -945,6 +945,77 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(found_toleration).To(BeTrue())
 	})
 
+	It("Pods should not have imagePullSecrets when ImagePullSecret is empty", func() {
+		emptyOpts := SkyhookOperatorOptions{
+			Namespace:            "skyhook",
+			MaxInterval:          time.Second * 61,
+			ImagePullSecret:      "", // Empty - no pull secret
+			CopyDirRoot:          "/tmp",
+			ReapplyOnReboot:      true,
+			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:           "foo:bar",
+			PauseImage:           "foo:bar",
+		}
+
+		pod := createPodFromPackage(
+			emptyOpts,
+			&v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{
+					Name:    "foo",
+					Version: "1.1.2",
+				},
+				Image: "foo/bar",
+			},
+			&wrapper.Skyhook{
+				Skyhook: &v1alpha1.Skyhook{
+					Spec: v1alpha1.SkyhookSpec{
+						RuntimeRequired: true,
+					},
+				},
+			},
+			"node1",
+			v1alpha1.StageApply,
+		)
+		Expect(pod.Spec.ImagePullSecrets).To(BeEmpty())
+	})
+
+	It("Interrupt pods should not have imagePullSecrets when ImagePullSecret is empty", func() {
+		emptyOpts := SkyhookOperatorOptions{
+			Namespace:            "skyhook",
+			MaxInterval:          time.Second * 61,
+			ImagePullSecret:      "", // Empty - no pull secret
+			CopyDirRoot:          "/tmp",
+			ReapplyOnReboot:      true,
+			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:           "foo:bar",
+			PauseImage:           "foo:bar",
+		}
+
+		pod := createInterruptPodForPackage(
+			emptyOpts,
+			&v1alpha1.Interrupt{
+				Type: v1alpha1.REBOOT,
+			},
+			"argEncode",
+			&v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{
+					Name:    "foo",
+					Version: "1.1.2",
+				},
+				Image: "foo/bar",
+			},
+			&wrapper.Skyhook{
+				Skyhook: &v1alpha1.Skyhook{
+					Spec: v1alpha1.SkyhookSpec{
+						RuntimeRequired: true,
+					},
+				},
+			},
+			"node1",
+		)
+		Expect(pod.Spec.ImagePullSecrets).To(BeEmpty())
+	})
+
 	It("should generate deterministic pod names", func() {
 		// Setup basic test data
 		skyhook := &wrapper.Skyhook{
