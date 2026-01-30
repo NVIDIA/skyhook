@@ -36,6 +36,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   PYTHON_VERSION: 3.13
+  DEBIAN_VERSION: trixie
 jobs:
   fetch-distroless-versions:
     name: Fetch Latest Distroless Versions
@@ -172,9 +173,11 @@ jobs:
           echo "🏷️  Tags: ${TAGS}"
           export REGISTRY=${REGISTRY@L}
           export BUILD_ARGS="--push"
-          export DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }}
-          export PYTHON_VERSION=${{ env.PYTHON_VERSION }}
-          make docker-build-only agent_version=${AGENT_VERSION}
+          make docker-build-only \
+            agent_version=${AGENT_VERSION} \
+            DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }} \
+            PYTHON_VERSION=${{ env.PYTHON_VERSION }} \
+            DEBIAN_VERSION=${{ env.DEBIAN_VERSION }}
           cat metadata.json
           echo "digest=$(cat metadata.json | jq -r .\"containerimage.digest\")" >> $GITHUB_OUTPUT
           cat $GITHUB_OUTPUT
@@ -204,7 +207,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.5'
+          go-version: '1.25.6'
           cache-dependency-path: operator/go.sum
       
       - name: Log in to the Container registry
@@ -226,8 +229,8 @@ jobs:
         id: cached-binaries
         uses: actions/cache/restore@v4
         with:
-          key: 1.25.5-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
-          restore-keys: 1.25.5-${{ runner.os }}-${{ runner.arch }}-bin-
+          key: 1.25.6-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          restore-keys: 1.25.6-${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
@@ -242,7 +245,7 @@ jobs:
         if: steps.cached-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          key: 1.25.5-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: 1.25.6-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build

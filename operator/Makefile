@@ -16,7 +16,9 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.25.5
+GO_VERSION ?= 1.25.6
+DEBIAN_VERSION ?= trixie
+DISTROLESS_VERSION ?= 4.0.1
 
 # Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location
@@ -418,6 +420,8 @@ docker-build: ## Build docker image with the manager.
 	--build-arg VERSION=$(VERSION) \
 	--build-arg GIT_SHA=$(GIT_SHA) \
 	--build-arg GO_VERSION=$(GO_VERSION) \
+	--build-arg DEBIAN_VERSION=$(DEBIAN_VERSION) \
+	--build-arg DISTROLESS_VERSION=$(DISTROLESS_VERSION) \
 	-t $(IMG):testing .
 
 ##@ Deployment

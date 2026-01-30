@@ -41,7 +41,8 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: 1.25.5
+  GO_VERSION: 1.25.6
+  DEBIAN_VERSION: trixie
   PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
@@ -289,6 +290,7 @@ jobs:
             --build-arg GIT_SHA=${GIT_SHA} \
             --build-arg VERSION=${VERSION} \
             --build-arg GO_VERSION=${{ env.GO_VERSION }} \
+            --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
             --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.go-version }} \
             --push \
             --platform ${{ matrix.platform }} \

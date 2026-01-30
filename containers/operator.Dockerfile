@@ -16,14 +16,16 @@
 
 # Build the manager binary
 ARG GO_VERSION
+ARG DEBIAN_VERSION
+ARG DISTROLESS_VERSION
 
-FROM golang:${GO_VERSION}-bookworm as builder
+FROM golang:${GO_VERSION}-${DEBIAN_VERSION} as builder
 
-ARG TARGETOS \
-    TARGETARCH \
-    VERSION \
-    GIT_SHA \
-    GO_VERSION
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION
+ARG GIT_SHA
+ARG GO_VERSION
 
 WORKDIR /workspace
 
@@ -39,15 +41,14 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -mod=ven
     -X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=${VERSION}" \
     -a -o manager cmd/manager/main.go
 
-ARG DISTROLESS_VERSION
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless/tree/main/base for more 
 FROM nvcr.io/nvidia/distroless/go:v${DISTROLESS_VERSION}
 
+ARG DISTROLESS_VERSION
+ARG GO_VERSION
 ARG VERSION
-    GIT_SHA \
-    GO_VERSION \
-    DISTROLESS_VERSION
+ARG GIT_SHA
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/go:v${DISTROLESS_VERSION}" \
