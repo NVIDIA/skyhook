@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,15 +20,6 @@ kind: Test
 metadata:
   name: helm-chart-webhook
 spec:
-  description: |
-    Test webhook validation for Skyhook and DeploymentPolicy resources:
-    - Invalid Skyhook (bad dependencies) should be rejected
-    - Invalid DeploymentPolicy (bad config) should be rejected
-    - Skyhook with non-existent policy reference should be rejected
-    - Skyhook with valid policy reference should be accepted
-    - Updating Skyhook to non-existent policy should be rejected
-    - Deleting DeploymentPolicy in use should be rejected
-    - Deleting DeploymentPolicy after Skyhook removed should succeed
   concurrent: false
   timeouts:
     assert: 180s

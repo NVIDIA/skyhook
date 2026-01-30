@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,12 +20,6 @@ kind: Test
 metadata:
   name: cli-lifecycle
 spec:
-  description: |
-    Test all CLI lifecycle commands:
-    - pause: pauses a Skyhook from processing
-    - resume: resumes a paused Skyhook
-    - disable: disables a Skyhook completely
-    - enable: enables a disabled Skyhook
   timeouts:
     assert: 60s
     exec: 30s
@@ -127,4 +121,3 @@ spec:
     - script:
         content: |
           kubectl delete skyhook cli-lifecycle-test 2>/dev/null || true
-

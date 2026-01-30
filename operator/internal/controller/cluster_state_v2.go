@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -286,6 +286,38 @@ func GetNextSkyhook(skyhooks []SkyhookNodes) SkyhookNodes {
 	return nil
 }
 
+// IsNodeReadyForSkyhook checks if a node has completed all higher-priority skyhooks.
+// This enables per-node priority ordering: a node can proceed to lower-priority skyhooks
+// as soon as higher-priority ones complete on that specific node, regardless of other nodes.
+func IsNodeReadyForSkyhook(nodeName string, skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
+	targetPriority := skyhook.GetSkyhook().Spec.Priority
+	targetName := skyhook.GetSkyhook().Name
+
+	for _, other := range allSkyhooks {
+		// Skip disabled skyhooks - they don't block
+		if other.IsDisabled() {
+			continue
+		}
+
+		otherPriority := other.GetSkyhook().Spec.Priority
+		otherName := other.GetSkyhook().Name
+
+		// Skip same or lower priority (higher number) skyhooks
+		// For same priority, use name ordering (skip if other name >= target name)
+		if otherPriority > targetPriority ||
+			(otherPriority == targetPriority && otherName >= targetName) {
+			continue
+		}
+
+		// Check if this higher-priority skyhook targets this node and is incomplete on this node
+		_, nodeInOther := other.GetNode(nodeName)
+		if nodeInOther != nil && !nodeInOther.IsComplete() {
+			return false
+		}
+	}
+	return true
+}
+
 // SkyhookNodes wraps the skyhook and nodes that it pertains too
 type SkyhookNodes interface {
 	CollectNodeStatus() v1alpha1.Status
@@ -376,7 +408,11 @@ func (s *skyhookNodes) SetStatus(status v1alpha1.Status) {
 // CollectNodeStatus collects all the nodes current status
 func (s *skyhookNodes) CollectNodeStatus() v1alpha1.Status {
 	complete := 0
-	status := v1alpha1.StatusUnknown
+	erroring := 0
+	blocked := 0
+	unknown := 0
+	waiting := 0
+	inProgress := 0
 
 	for _, node := range s.nodes {
 		if node.IsComplete() {
@@ -385,25 +421,52 @@ func (s *skyhookNodes) CollectNodeStatus() v1alpha1.Status {
 		}
 		switch node.Status() {
 		case v1alpha1.StatusInProgress:
-			status = v1alpha1.StatusInProgress
+			inProgress += 1
 		case v1alpha1.StatusErroring:
-			// only one erroring means erroring
-			return v1alpha1.StatusErroring
+			erroring += 1
 		case v1alpha1.StatusBlocked:
-			// only one blocked means blocked
-			return v1alpha1.StatusBlocked
+			blocked += 1
 		case v1alpha1.StatusUnknown:
-			// only one unknown means unknown
-			return v1alpha1.StatusUnknown
+			unknown += 1
+		case v1alpha1.StatusWaiting:
+			waiting += 1
 		}
 	}
+
+	remaining := len(s.nodes) - complete
 
 	// all need to be complete to be considered complete
 	if complete == len(s.nodes) {
 		return v1alpha1.StatusComplete
 	}
 
-	return status
+	// if any node is in progress, show progress (per-node ordering: some nodes making progress)
+	if inProgress > 0 {
+		return v1alpha1.StatusInProgress
+	}
+
+	// if all remaining nodes are erroring, the skyhook is erroring
+	if erroring > 0 && erroring == remaining {
+		return v1alpha1.StatusErroring
+	}
+
+	// if all remaining nodes are blocked, the skyhook is blocked
+	if blocked > 0 && blocked == remaining {
+		return v1alpha1.StatusBlocked
+	}
+
+	// if all remaining nodes are unknown, the skyhook is unknown
+	if unknown > 0 && unknown == remaining {
+		return v1alpha1.StatusUnknown
+	}
+
+	// if all remaining nodes are waiting, the skyhook is waiting
+	if waiting > 0 && waiting == remaining {
+		return v1alpha1.StatusWaiting
+	}
+
+	// mixed states - default to unknown
+	return v1alpha1.StatusUnknown
 }
 
 // Pick will grab node if exists
@@ -670,7 +733,8 @@ func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 		}
 	}
 
-	// override the node status if the skyhook is in a skyhook controlled state. (e.g. disabled, paused, waiting, blocked)
+	// override the node status if the skyhook is in a skyhook controlled state. (e.g. disabled, paused, blocked)
+	// Note: Waiting status is now handled per-node in IntrospectNode using IsNodeReadyForSkyhook
 	if collectNodeStatus != v1alpha1.StatusComplete {
 		switch {
 		case skyhook.IsDisabled():
@@ -682,10 +746,8 @@ func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 		case hasMissingPolicy:
 			collectNodeStatus = v1alpha1.StatusBlocked
 
-		default:
-			if nextSkyhook := GetNextSkyhook(allSkyhooks); nextSkyhook != nil && nextSkyhook != skyhook {
-				collectNodeStatus = v1alpha1.StatusWaiting
-			}
+			// Per-node priority: Don't set skyhook-level waiting status
+			// Individual nodes will be set to waiting in IntrospectNode if they're blocked by higher-priority skyhooks
 		}
 	} else if hasMissingPolicy {
 		// Even if all nodes are complete, if policy is missing, we should still be blocked
@@ -697,7 +759,7 @@ func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 	}
 
 	for _, node := range skyhook.GetNodes() {
-		if IntrospectNode(node, skyhook) {
+		if IntrospectNode(node, skyhook, allSkyhooks) {
 			change = true
 		}
 	}
@@ -779,16 +841,25 @@ func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
 	return changed
 }
 
-func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes) bool {
+func IntrospectNode(node wrapper.SkyhookNode, skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 	skyhookStatus := skyhook.Status()
 
 	nodeStatus := node.Status()
 	node.SetStatus(nodeStatus)
 
-	// Check if skyhook status should override node status
-	if isSkyhookControlledNodeStatus(skyhookStatus) {
+	// Check if skyhook status should override node status (for disabled, paused)
+	// Note: Waiting is now handled per-node below
+	if skyhookStatus == v1alpha1.StatusDisabled || skyhookStatus == v1alpha1.StatusPaused {
 		if nodeStatus != skyhookStatus {
 			node.SetStatus(skyhookStatus)
+		}
+		return node.Changed()
+	}
+
+	// Check per-node priority: if this node is waiting on higher-priority skyhooks
+	if !node.IsComplete() && !IsNodeReadyForSkyhook(node.GetNode().Name, skyhook, allSkyhooks) {
+		if nodeStatus != v1alpha1.StatusWaiting {
+			node.SetStatus(v1alpha1.StatusWaiting)
 		}
 		return node.Changed()
 	}

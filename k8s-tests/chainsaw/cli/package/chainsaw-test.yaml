@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,11 +20,6 @@ kind: Test
 metadata:
   name: cli-package
 spec:
-  description: |
-    Test all CLI package commands:
-    - package status: shows package status across nodes
-    - package logs: retrieves logs from package pods
-    - package rerun: forces a package to re-run
   timeouts:
     assert: 120s
     exec: 90s
@@ -96,4 +91,3 @@ spec:
     - script:
         content: |
           ../skyhook-cli reset cli-package-test --confirm 2>/dev/null || true
-

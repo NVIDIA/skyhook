@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,13 +20,19 @@ kind: Test
 metadata:
   name: cli-reset
 spec:
-  description: |
-    Test the skyhook reset command:
-    - reset: resets all nodes for a Skyhook
   timeouts:
     assert: 120s
     exec: 90s
   steps:
+  # Step 0: Reset state from previous runs
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset cli-reset-test --confirm 2>/dev/null || true
+          echo "✓ State reset complete"
+  
   # Step 1: Create a Skyhook and wait for it to complete
   - name: setup-skyhook
     try:
@@ -54,4 +60,3 @@ spec:
           ../skyhook-cli reset cli-reset-test --confirm
     - assert:
         file: assert-nodes-reset.yaml
-

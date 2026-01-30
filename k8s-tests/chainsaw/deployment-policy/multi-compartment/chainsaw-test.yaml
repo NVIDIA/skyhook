@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -23,9 +23,6 @@ kind: Test
 metadata:
   name: multi-compartment-deployment-policy
 spec:
-  description: |
-    Tests deployment policy with multiple compartments using exponential strategy.
-    Verifies compartment assignment, budget enforcement, and batch progression.
   timeouts:
     assert: 600s
     exec: 300s  # Increased for 15-node rollout

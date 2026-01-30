@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -25,11 +25,11 @@ spec:
   runtimeRequired: true
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      skyhook.nvidia.com/runtime-required-test: "true"
   packages:
     spencer:
       version: "3.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
       env: 
         - name: SLEEP_LEN
-          value: "1"
+          value: "2"

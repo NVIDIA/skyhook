@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,12 +20,6 @@ kind: Test
 metadata:
   name: cli-node
 spec:
-  description: |
-    Test all CLI node commands:
-    - node list: shows nodes targeted by a Skyhook
-    - node status: shows Skyhook activity on nodes  
-    - node ignore/unignore: excludes/includes nodes from processing
-    - node reset: resets package state on a node
   timeouts:
     assert: 120s
     exec: 90s
@@ -116,4 +110,3 @@ spec:
           for NODE in $(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}'); do
             kubectl label node "$NODE" skyhook.nvidia.com/ignore- 2>/dev/null || true
           done
-

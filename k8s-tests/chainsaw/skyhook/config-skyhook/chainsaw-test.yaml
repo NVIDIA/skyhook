@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,13 +20,6 @@ kind: Test
 metadata:
   name: config-skyhook
 spec:
-  description: This test validates that configuration changes are working for the operator. It asserts this by first making sure that a simple skyhook definition works as 
-    expected and starts applying packages. It then immediately updates two packages before the SCR finishes, one with a package interrupt and another without, on a configmap 
-    key which has a config interrupt defined and asserts that the specified config interrupts are merged and run for both of those packages. This first change also tests a
-    case where if a config change with a config interrupt happens on a package with no package interrupt while other packages are running the interrupts will be merged and ran
-    accordingly but the package with the config changes may be skipeed and hang, and this asserts that it doesn't hang in that condition. Then once that completes the same two
-    packages have the key with a config interrupt changed and it's asserted that the config, interrupt, and post-interrupt runs for both those packages. Then once that completes 
-    again it does one more update on a key for the same two packages which doesn't have a config interrupt defined and makes sure that the config steps are ran for that.
   timeouts:
     assert: 360s
   catch: ## if errors, print the most important info

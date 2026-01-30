@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -343,14 +343,12 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	skyhook := GetNextSkyhook(clusterState.skyhooks)
-	if skyhook != nil && !skyhook.IsPaused() {
-
-		result, err = r.RunSkyhookPackages(ctx, clusterState, nodePicker, skyhook)
-		if err != nil {
-			logger.Error(err, "error processing skyhook", "skyhook", skyhook.GetSkyhook().Name)
-			errs = append(errs, err)
-		}
+	// Process all non-complete, non-disabled skyhooks (in priority order)
+	// Each skyhook is processed only for nodes that are ready (all higher-priority skyhooks complete on that node)
+	// This enables per-node priority ordering: nodes can progress independently
+	result, err = r.processSkyhooksPerNode(ctx, clusterState, nodePicker, logger)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
 	err = r.HandleRuntimeRequired(ctx, clusterState)
@@ -369,6 +367,49 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// default happy retry after max
 	return ctrl.Result{RequeueAfter: r.opts.MaxInterval}, nil
+}
+
+// processSkyhooksPerNode processes all skyhooks for nodes that are ready (per-node priority ordering).
+// A node is ready for a skyhook if all higher-priority skyhooks are complete on that specific node.
+func (r *SkyhookReconciler) processSkyhooksPerNode(ctx context.Context, clusterState *clusterState, nodePicker *NodePicker, logger logr.Logger) (*ctrl.Result, error) {
+	var result *ctrl.Result
+	var errs []error
+
+	for _, skyhook := range clusterState.skyhooks {
+		if skyhook.IsComplete() || skyhook.IsDisabled() || skyhook.IsPaused() {
+			continue
+		}
+
+		// Check if any nodes are ready for this skyhook
+		if !hasReadyNodesForSkyhook(skyhook, clusterState.skyhooks) {
+			continue
+		}
+
+		res, err := r.RunSkyhookPackages(ctx, clusterState, nodePicker, skyhook)
+		if err != nil {
+			logger.Error(err, "error processing skyhook", "skyhook", skyhook.GetSkyhook().Name)
+			errs = append(errs, err)
+		}
+		if res != nil {
+			result = res
+		}
+	}
+
+	if len(errs) > 0 {
+		return result, utilerrors.NewAggregate(errs)
+	}
+	return result, nil
+}
+
+// hasReadyNodesForSkyhook checks if any nodes are ready to process this skyhook.
+// A node is ready if it's not complete and all higher-priority skyhooks are complete on that node.
+func hasReadyNodesForSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
+	for _, node := range skyhook.GetNodes() {
+		if !node.IsComplete() && IsNodeReadyForSkyhook(node.GetNode().Name, skyhook, allSkyhooks) {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldReturn(updates bool, err error) (bool, ctrl.Result, error) {
@@ -556,6 +597,11 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 	selectedNode := nodePicker.SelectNodes(skyhook)
 
 	for _, node := range selectedNode {
+		// Skip nodes that are waiting on higher-priority skyhooks
+		// This enables per-node priority ordering
+		if !IsNodeReadyForSkyhook(node.GetNode().Name, skyhook, clusterState.skyhooks) {
+			continue
+		}
 
 		if node.IsComplete() && !node.Changed() {
 			continue
@@ -2262,18 +2308,23 @@ func groupSkyhooksByNode(clusterState *clusterState) (map[types.UID][]SkyhookNod
 }
 
 // Get the nodes to remove runtime required taint from node that all skyhooks targeting that node have completed
+// Note: This checks per-node completion, not skyhook-level completion. A node's taint is removed when all
+// runtime-required skyhooks are complete ON THAT SPECIFIC NODE, regardless of other nodes' completion status.
 func getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks map[types.UID][]SkyhookNodes, nodes map[types.UID]*corev1.Node) []*corev1.Node {
 	to_remove := make([]*corev1.Node, 0)
 	for node_uid, skyhooks := range node_to_skyhooks {
+		node := nodes[node_uid]
 		all_complete := true
 		for _, skyhook := range skyhooks {
-			if !skyhook.IsComplete() {
+			// Check if THIS specific node is complete for this skyhook (not all nodes)
+			_, nodeWrapper := skyhook.GetNode(node.Name)
+			if nodeWrapper == nil || !nodeWrapper.IsComplete() {
 				all_complete = false
 				break
 			}
 		}
 		if all_complete {
-			to_remove = append(to_remove, nodes[node_uid])
+			to_remove = append(to_remove, node)
 		}
 	}
 	return to_remove

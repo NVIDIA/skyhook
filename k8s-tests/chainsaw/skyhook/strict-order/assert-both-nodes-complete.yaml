@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -14,13 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Worker node complete (d still disabled)
 apiVersion: v1
 kind: Node
 metadata:
+  name: kind-worker
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
+    skyhook.nvidia.com/strict-order-test: "true"
   annotations:
     skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
     skyhook.nvidia.com/status_strict-order-skyhook-b: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-c: in_progress
+    skyhook.nvidia.com/status_strict-order-skyhook-c: complete
+    skyhook.nvidia.com/status_strict-order-skyhook-d: disabled
+---
+# Worker2 node complete (d still disabled)
+apiVersion: v1
+kind: Node
+metadata:
+  name: kind-worker2
+  labels:
+    skyhook.nvidia.com/strict-order-test: "true"
+  annotations:
+    skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
+    skyhook.nvidia.com/status_strict-order-skyhook-b: complete
+    skyhook.nvidia.com/status_strict-order-skyhook-c: complete
     skyhook.nvidia.com/status_strict-order-skyhook-d: disabled
