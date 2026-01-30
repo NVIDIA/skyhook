@@ -34,7 +34,7 @@ Settings | Description | Default |
 | controllerManager.manager.agent.repository | Where to get the image from | "ghcr.io/nvidia/skyhook/agent" |
 | controllerManager.manager.agent.tag | what version of the agent to run | defaults to the current latest, but is not latest example v6.1.5 |
 | controllerManager.manager.agent.digest | content-addressable pin for the agent image. Same precedence rules as above: if both tag and digest are provided, the digest controls which image is pulled. | "" |
-| imagePullSecret | the secret used to pull the operator controller image, agent image, and package images. | node-init-secret |
+| imagePullSecret | the secret used to pull the operator controller image, agent image, and package images. | "" |
 | estimatedPackageCount | estimated number of packages to be installed on the cluster, this is used to calculate the resources for the operator controller. | 1 |
 | estimatedNodeCount | estimated number of nodes in the cluster, this is used to calculate the resources for the operator controller | 1 |
 
@@ -43,6 +43,22 @@ Settings | Description | Default |
 - **runtimeRequired**: If your systems nodes have this taint make sure to add the toleration to the controllerManager.tolerations
 - **CRD**: This project currently has one CRD and its not managed the ["recommended" way](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/). Its part of the templates. Meaning it will be updated with the `helm upgrade`. We decided it was better do it this way for this project. Doing it either way has consequences and this route has worked well for upgrades so far our deployments.
 - **Image pinning (tag vs digest)**: You can set either an image tag or a digest. If both are set, the digest is prioritized; the tag is ignored for selection and may appear as `tag@digest` only for readability. This applies to both operator and agent images.
+
+## Upgrade Notes
+
+### Breaking Change: imagePullSecret Default Changed
+
+**Previous behavior:** The `imagePullSecret` value defaulted to `node-init-secret`. If this secret didn't exist, kubelet logs would show errors about the missing secret.
+
+**New behavior:** The `imagePullSecret` value now defaults to empty (`""`). No imagePullSecrets will be added to pods unless explicitly configured.
+
+**Migration:** If you rely on `node-init-secret` for pulling images from private registries, you must now explicitly set `imagePullSecret` in your values:
+
+```yaml
+imagePullSecret: "node-init-secret"
+```
+
+If you use public images (like the default ghcr.io images), no action is needed.
 
 ### Resource Management
 Skyhook uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your Skyhook CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.
