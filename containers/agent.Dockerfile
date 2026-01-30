@@ -15,8 +15,10 @@
 # limitations under the License.
 
 ARG PYTHON_VERSION
+ARG DEBIAN_VERSION
+ARG DISTROLESS_VERSION
 
-FROM python:${PYTHON_VERSION}-bookworm AS builder
+FROM python:${PYTHON_VERSION}-${DEBIAN_VERSION} AS builder
 
 ARG AGENT_VERSION 
 
@@ -38,15 +40,12 @@ RUN make build build_version=${AGENT_VERSION}
 # Install the wheel in the builder stage
 RUN python3 -m venv venv && ./venv/bin/pip install /code/skyhook-agent/dist/skyhook_agent*.whl
 
-ARG DISTROLESS_VERSION \
-    PYTHON_VERSION
-
 FROM nvcr.io/nvidia/distroless/python:${PYTHON_VERSION}-v${DISTROLESS_VERSION}
 
-ARG AGENT_VERSION \
-    GIT_SHA \
-    DISTROLESS_VERSION \
-    PYTHON_VERSION
+ARG PYTHON_VERSION
+ARG DISTROLESS_VERSION
+ARG AGENT_VERSION
+ARG GIT_SHA
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/python:${PYTHON_VERSION}-v${DISTROLESS_VERSION}" \
