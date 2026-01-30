@@ -35,7 +35,26 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PYTHON_VERSION: 3.12
 jobs:
+  fetch-distroless-versions:
+    name: Fetch Latest Distroless Versions
+    runs-on: ubuntu-latest
+    outputs:
+      distroless-version: ${{ steps.fetch.outputs.distroless-version }}
+    steps:
+      - name: Fetch versions from NVIDIA CDN
+        id: fetch
+        run: |
+          # Fetch the versions.json file
+          VERSIONS_JSON=$(curl -fsSL https://developer.download.nvidia.com/distroless-oss/versions.json)
+          
+          # Extract latest Python v4 version (format: "v4.0.1" -> "4.0.1")
+          DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r ".v4.python.\"${PYTHON_VERSION}\"" | sed 's/^v//')
+          
+          echo "distroless-version=${DISTROLESS_VERSION}" >> $GITHUB_OUTPUT
+          echo "📦 Python ${PYTHON_VERSION} v4 Distroless Version: ${DISTROLESS_VERSION}"
+  
   compute-metadata:
     name: Compute Image Metadata
     runs-on: ubuntu-latest
@@ -108,7 +127,7 @@ jobs:
           cat test-summary.md >> $GITHUB_STEP_SUMMARY
   build-and-push-agent:
     runs-on: ubuntu-latest
-    needs: [test, compute-metadata] # Don't run the build and push if the unit tests fail
+    needs: [test, compute-metadata, fetch-distroless-versions] # Don't run the build and push if the unit tests fail
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:
       contents: read
@@ -149,6 +168,8 @@ jobs:
           echo "🏷️  Tags: ${TAGS}"
           export REGISTRY=${REGISTRY@L}
           export BUILD_ARGS="--push"
+          export DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }}
+          export PYTHON_VERSION=${{ env.PYTHON_VERSION }}
           make docker-build-only agent_version=${AGENT_VERSION}
           cat metadata.json
           echo "digest=$(cat metadata.json | jq -r .\"containerimage.digest\")" >> $GITHUB_OUTPUT

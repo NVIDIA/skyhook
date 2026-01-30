@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -19,11 +19,11 @@ ARG GO_VERSION
 
 FROM golang:${GO_VERSION}-bookworm as builder
 
-ARG TARGETOS
-ARG TARGETARCH
-ARG VERSION
-ARG GIT_SHA
-ARG GO_VERSION
+ARG TARGETOS \
+    TARGETARCH \
+    VERSION \
+    GIT_SHA \
+    GO_VERSION
 
 WORKDIR /workspace
 
@@ -35,25 +35,28 @@ COPY ./ ./
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -mod=vendor \
-    -ldflags "-X github.com/NVIDIA/skyhook/internal/version.GIT_SHA=${GIT_SHA}\
-    -X github.com/NVIDIA/skyhook/internal/version.VERSION=${VERSION}" \
+    -ldflags "-X github.com/NVIDIA/skyhook/operator/internal/version.GIT_SHA=${GIT_SHA}\
+    -X github.com/NVIDIA/skyhook/operator/internal/version.VERSION=${VERSION}" \
     -a -o manager cmd/manager/main.go
 
+ARG DISTROLESS_VERSION
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless/tree/main/base for more 
-FROM nvcr.io/nvidia/distroless/go:v3.2.2
+FROM nvcr.io/nvidia/distroless/go:v${DISTROLESS_VERSION}
 
 ARG VERSION
-ARG GIT_SHA
-ARG GO_VERSION
+    GIT_SHA \
+    GO_VERSION \
+    DISTROLESS_VERSION
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/go:v3.2.2" \
+LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/go:v${DISTROLESS_VERSION}" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="skyhook-operator" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${GIT_SHA}" \
-      go.version="${GO_VERSION}"
+      go.version="${GO_VERSION}" \
+      distroless.version="${DISTROLESS_VERSION}"
 
 WORKDIR /
 COPY --from=builder /workspace/manager .
