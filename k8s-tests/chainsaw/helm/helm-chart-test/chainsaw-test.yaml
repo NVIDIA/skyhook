@@ -62,13 +62,16 @@ spec:
         file: skyhook.yaml
     - assert:
         file: assert-skyhook-complete.yaml
+    - script:
+        content: |
+          ## Remove helm chart (pre-delete hook should clean up Skyhooks/DeploymentPolicies)
+          ## If cleanup fails or times out, helm uninstall will fail
+          ../uninstall-helm-chart.sh foobar
     finally:
     - script:
         content: |
-          ## Cleanup deployment policy test resources
+          ## Cleanup any remaining resources
           ../skyhook-cli reset helm-test-skyhook --confirm 2>/dev/null || true
-          kubectl delete skyhook helm-test-skyhook --ignore-not-found || true
-          kubectl delete deploymentpolicy helm-test-policy -n skyhook --ignore-not-found || true
     - script:
         content: |
           ## Remove taint from nodes
@@ -76,5 +79,5 @@ spec:
           ../untaint-nodes.sh dedicated=system-cpu:NoSchedule
     - script:
         content: |
-          ## Remove helm chart
-          ../uninstall-helm-chart.sh foobar
+          ## Remove helm chart if still present
+          ../uninstall-helm-chart.sh foobar || true

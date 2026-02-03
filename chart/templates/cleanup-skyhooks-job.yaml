@@ -1,12 +1,13 @@
-{{- if .Values.webhook.enable }}
+{{- if .Values.cleanup.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "{{ include "chart.fullname" . }}-webhook-cleanup"
+  name: "{{ include "chart.fullname" . }}-skyhook-cleanup"
   namespace: "{{ .Release.Namespace }}"
   annotations:
     "helm.sh/hook": pre-delete
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-5"
 spec:
   activeDeadlineSeconds: {{ .Values.cleanup.jobTimeoutSeconds }}
   template:
@@ -14,6 +15,10 @@ spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      {{- with .Values.controllerManager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -65,10 +70,10 @@ spec:
         - /bin/sh
         - -c
         - |
-          NAMESPACE="{{ .Release.Namespace }}"
-          VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
-          MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
-          kubectl delete secret -n $NAMESPACE "{{ .Values.webhook.secretName | default "webhook-cert" }}" || true
-          kubectl delete validatingwebhookconfiguration $VALIDATING_WEBHOOK_CONFIGURATION_NAME || true
-          kubectl delete mutatingwebhookconfiguration $MUTATING_WEBHOOK_CONFIGURATION_NAME || true
-{{- end }} 
+          # Delete all Skyhook resources (cluster-scoped)
+          # Using || true to ensure job succeeds even if delete times out
+          kubectl delete skyhooks --all --ignore-not-found || true
+          # Delete all DeploymentPolicy resources (cluster-scoped)
+          kubectl delete deploymentpolicies --all --ignore-not-found || true
+          echo "Cleanup completed"
+{{- end }}

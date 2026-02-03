@@ -161,6 +161,15 @@ webhook:
   removalTag: latest
   removalDigest: "sha256:1bc359beb3ae3982591349df11db50b0917b0596e8bed8ab9cf0c8a84a3502d1"
 
+## cleanup: Configuration for pre-delete cleanup jobs
+cleanup:
+  ## enabled: When true, automatically deletes all Skyhook and DeploymentPolicy
+  ## resources before helm uninstall. Recommended to prevent orphaned CRs.
+  enabled: true
+  ## jobTimeoutSeconds: Hard deadline for the entire cleanup job.
+  ## The job will be killed if it exceeds this time.
+  jobTimeoutSeconds: 120
+
 metrics:
   addServiceAccountBinding: false
   serviceAccountName: prometheus
