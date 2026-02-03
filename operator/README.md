@@ -217,14 +217,14 @@ helm install skyhook-operator ./chart --namespace skyhook
 
 to remove operator from a cluster:
 ```
-## remove operator
+## remove operator (automatic cleanup enabled by default)
 helm uninstall skyhook-operator --namespace skyhook
 
 ## delete CRD
 make uninstall
 ```
 
-**NOTE**: because there is a finalizer on it you need to need to delete the SCRs before uninstalling the CRD or operator. If you remove the operator first, delete the CRD or SCR can hang trying to finalize. Easiest way to fix is re install the operator. You can clean up by hand, but could be some work. cleaning up: configmaps, uncording nodes, removing taints, and deleting running pods
+**NOTE**: The Helm chart includes automatic cleanup of Skyhook and DeploymentPolicy resources during uninstall (enabled by default). If you've disabled automatic cleanup (`cleanup.enabled: false`), you must manually delete SCRs before uninstalling to avoid finalizer issues. If you remove the operator before deleting SCRs with finalizers, they can hang. To fix: reinstall the operator, delete resources, then uninstall properly. Manual cleanup may require removing configmaps, uncordoning nodes, removing taints, and deleting running pods.
 
 
 ## Helm Chart and General Config infra

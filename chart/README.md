@@ -37,6 +37,8 @@ Settings | Description | Default |
 | imagePullSecret | the secret used to pull the operator controller image, agent image, and package images. | "" |
 | estimatedPackageCount | estimated number of packages to be installed on the cluster, this is used to calculate the resources for the operator controller. | 1 |
 | estimatedNodeCount | estimated number of nodes in the cluster, this is used to calculate the resources for the operator controller | 1 |
+| cleanup.enabled | Automatically delete all Skyhook and DeploymentPolicy resources during helm uninstall. Recommended to prevent orphaned CRs. | true |
+| cleanup.jobTimeoutSeconds | Hard deadline for the entire cleanup job during uninstall. The job will be killed if it exceeds this time. | 120 |
 
 ### NOTES
 - **estimatedPackageCount** and **estimatedNodeCount** are used to size the resource requirements. Default setting should be good for nodes > 1000 and packages 1-2 or nodes > 500 and packages >= 4. If your approaching this size deployment it would make sense to set these. You can also override them by explicitly with `controllerManager.manager.resources` the values file has an example.
@@ -70,3 +72,52 @@ This Helm chart follows independent versioning from the operator and agent compo
 ### Chart Version vs App Version
 - **Chart version** (`version` in Chart.yaml): Tracks changes to chart templates, values, and configuration (NOTE: agent version in set in the values.)
 - **App version** (`appVersion` in Chart.yaml): Recommended stable operator version for this chart release
+
+## Uninstalling
+
+### Automatic Cleanup (Default Behavior)
+
+By default, the Helm chart includes a pre-delete hook that automatically cleans up all Skyhook and DeploymentPolicy custom resources before uninstalling. This prevents orphaned resources that could cause issues during reinstallation.
+
+```bash
+# Uninstall with automatic cleanup (default)
+helm uninstall skyhook --namespace skyhook
+```
+
+The pre-delete hook will:
+- Delete all Skyhook resources cluster-wide
+- Delete all DeploymentPolicy resources cluster-wide
+- Wait for finalizers to be processed
+- Proceed with uninstall even if cleanup times out (job deadline: 2 minutes, configurable via `cleanup.jobTimeoutSeconds`)
+
+### Disabling Automatic Cleanup
+
+If you need to preserve Skyhook resources during uninstall (e.g., for backup/migration scenarios), disable the cleanup feature:
+
+```yaml
+# values.yaml
+cleanup:
+  enabled: false
+```
+
+When disabled, you must manually delete resources before uninstalling to avoid issues:
+
+```bash
+# Manual cleanup when automatic cleanup is disabled
+kubectl delete skyhooks --all
+kubectl delete deploymentpolicies --all
+helm uninstall skyhook --namespace skyhook
+```
+
+### Configuring Timeout Values
+
+For large clusters or when resources have complex finalizers, you may need to adjust the job timeout:
+
+```yaml
+# values.yaml
+cleanup:
+  enabled: true
+  jobTimeoutSeconds: 180  # 3 minutes total job deadline
+```
+
+**Note:** The job will be killed if it exceeds `jobTimeoutSeconds`. The default of 120 seconds (2 minutes) should be sufficient for most clusters.

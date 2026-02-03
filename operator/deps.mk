@@ -75,7 +75,7 @@ CHAINSAW ?= $(LOCALBIN)/chainsaw
 HELMIFY ?= $(LOCALBIN)/helmify
 HELM ?= $(LOCALBIN)/helm
 
-.PHONY: kustomize
+.PHONY: $(LOCALBIN) kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary. If wrong version is installed, it will be removed before downloading.
 $(KUSTOMIZE): $(LOCALBIN)
 	@if test -x $(LOCALBIN)/kustomize && ! $(LOCALBIN)/kustomize version | grep -q $(KUSTOMIZE_VERSION); then \
@@ -84,44 +84,44 @@ $(KUSTOMIZE): $(LOCALBIN)
 	fi
 	test -s $(LOCALBIN)/kustomize || GOBIN=$(LOCALBIN) GO111MODULE=on go install sigs.k8s.io/kustomize/kustomize/v5@$(KUSTOMIZE_VERSION)
 
-.PHONY: controller-gen
+.PHONY: $(LOCALBIN) controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary. If wrong version is installed, it will be overwritten.
 $(CONTROLLER_GEN): $(LOCALBIN)
 	test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
-.PHONY: envtest
+.PHONY: $(LOCALBIN) envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.22
 	$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN)
 
-.PHONY: gocover-cobertura
+.PHONY: $(LOCALBIN) gocover-cobertura
 gocover-cobertura: ## Download gocover-cobertura locally if necessary.
 	test -s $(LOCALBIN)/gocover-cobertura || GOBIN=$(LOCALBIN) go install github.com/boumenot/gocover-cobertura@$(GOCOVER_VERSION)
 
 .PHONY: ginkgo
-ginkgo: ## Download ginkgo locally if necessary.
+ginkgo: $(LOCALBIN)  ## Download ginkgo locally if necessary.
 	test -s $(LOCALBIN)/ginkgo || GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
 
 .PHONY: mockery
-mockery: ## Download mockery locally if necessary.
+mockery: $(LOCALBIN)  ## Download mockery locally if necessary.
 	test -s $(LOCALBIN)/mockery ||  GOBIN=$(LOCALBIN) go install github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 
 .PHONY: chainsaw
-chainsaw: ## Download chainsaw locally if necessary.
+chainsaw: $(LOCALBIN)  ## Download chainsaw locally if necessary.
 	test -s $(LOCALBIN)/chainsaw || GOBIN=$(LOCALBIN) go install github.com/kyverno/chainsaw@$(CHAINSAW_VERSION)
 
 .PHONY: helm
-helm: ## Download helm locally if necessary.
+helm: $(LOCALBIN) ## Download helm locally if necessary.
 	test -s $(LOCALBIN)/helm || curl -s -L https://get.helm.sh/helm-$(HELM_VERSION)-$(OS)-$(ARCH).tar.gz |\
 		tar --no-same-owner --strip-components=1 -zxv -C $(LOCALBIN) $(OS)-$(ARCH)/helm
 	$(LOCALBIN)/helm plugin list | grep cm-push > /dev/null || $(LOCALBIN)/helm plugin install https://github.com/chartmuseum/helm-push
 
 .PHONY: helmify
-helmify: ## Download helmify locally if necessary.
+helmify: $(LOCALBIN)  ## Download helmify locally if necessary.
 	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/arttor/helmify/cmd/helmify@$(HELMIFY_VERSION)
 
 .PHONY: go-licenses
-go-licenses: ## Download  go-licenses locally if necessary.
+go-licenses: $(LOCALBIN)  ## Download  go-licenses locally if necessary.
 	test -s $(LOCALBIN)/go-licenses || GOBIN=$(LOCALBIN) go install github.com/google/go-licenses@$(GO_LICENSES_VERSION)

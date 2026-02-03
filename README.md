@@ -141,19 +141,53 @@ kubectl wait --for=jsonpath='{.status.status}'=complete skyhook/skyhook-sample -
 kubectl describe skyhook skyhook-sample
 ```
 
-### ⚠️ Important: Before Uninstalling **(really only important if you want to reinstall)**
+### Uninstalling
 
-**Always delete all Skyhook Custom Resources before running `helm uninstall`:**
+**Automatic Cleanup (Default):** By default, the Helm chart includes a pre-delete hook that automatically cleans up all Skyhook and DeploymentPolicy resources before uninstalling:
 
 ```bash
-# Delete all Skyhook resources first (REQUIRED before uninstall)
-kubectl delete skyhooks --all --all-namespaces
+# Uninstall the chart (cleanup happens automatically)
+helm uninstall skyhook --namespace skyhook
+```
+
+The pre-delete hook will:
+- Delete all Skyhook resources
+- Delete all DeploymentPolicy resources  
+- Complete quickly if no resources exist
+- Wait for finalizers to be processed if resources exist
+- Proceed with uninstall even if cleanup times out (job deadline: 2 minutes)
+
+**Configuration Options:**
+
+To disable automatic cleanup and manage resources manually:
+
+```bash
+helm install skyhook ./chart --namespace skyhook --set cleanup.enabled=false
+```
+
+To adjust the job timeout:
+
+```bash
+helm install skyhook ./chart --namespace skyhook \
+  --set cleanup.jobTimeoutSeconds=180
+```
+
+**Manual Cleanup (if needed):**
+
+If you disabled automatic cleanup or need to clean up resources manually:
+
+```bash
+# Delete all Skyhook resources first
+kubectl delete skyhooks --all
+
+# Delete all DeploymentPolicy resources
+kubectl delete deploymentpolicies --all
 
 # Then uninstall the chart
 helm uninstall skyhook --namespace skyhook
 ```
 
-**Why?** If you `helm uninstall` while Skyhook CRs still exist, finalizers will leave the CRD in a broken state, causing reinstalls to fail.
+**Why cleanup matters:** If you uninstall while Skyhook CRs with finalizers still exist, it can leave resources in a broken state that may cause reinstall issues.
 
 ## Monitoring and Troubleshooting
 
