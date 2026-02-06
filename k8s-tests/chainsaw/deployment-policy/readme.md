@@ -15,6 +15,7 @@ make create-deployment-policy-cluster
 
 | Test | Description |
 |------|-------------|
+| [batch-state-reset](./batch-state-reset/) | Auto-reset on completion and config precedence (CLI reset tested in `cli/deployment-policy/`) |
 | [legacy-compatibility](./legacy-compatibility/) | Backwards compatibility with legacy `interruptionBudget` |
 | [linear-strategy](./linear-strategy/) | Linear ramp-up rollout strategy with incremental batch growth |
 | [multi-compartment](./multi-compartment/) | Multiple compartments with exponential strategy |

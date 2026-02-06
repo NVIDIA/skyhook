@@ -725,6 +725,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 // HandleVersionChange updates the state for the node or skyhook if a version is changed on a package
 func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 	toUninstall := make([]*v1alpha1.Package, 0)
+	versionChangeDetected := false
 
 	for _, node := range skyhook.GetNodes() {
 		nodeState, err := node.State()
@@ -751,7 +752,9 @@ func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 				if err != nil {
 					return nil, fmt.Errorf("error updating node status: %w", err)
 				}
+				versionChangeDetected = true
 			} else if exists && _package.Version != packageStatus.Version {
+				versionChangeDetected = true
 				comparison := version.Compare(_package.Version, packageStatus.Version)
 				if comparison == -2 {
 					return nil, errors.New("error comparing package versions: invalid version string provided enabling webhooks validates versions before being applied")
@@ -815,6 +818,11 @@ func HandleVersionChange(skyhook SkyhookNodes) ([]*v1alpha1.Package, error) {
 			// set the node and skyhook status to in progress
 			node.SetStatus(v1alpha1.StatusInProgress)
 		}
+	}
+
+	// Auto-reset batch state when version changes are detected (if configured)
+	if versionChangeDetected {
+		resetSkyhookBatchState(skyhook)
 	}
 
 	return toUninstall, nil
@@ -1310,6 +1318,12 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 	if exists {
 		// nothing to do here, already running
 		return nil
+	}
+
+	// Ensure the node metadata configmap exists before creating the pod
+	// This prevents a race where the pod starts before its required configmap is created
+	if err := r.UpsertNodeLabelsAnnotationsPackages(ctx, skyhookNode.GetSkyhook(), skyhookNode.GetNode()); err != nil {
+		return fmt.Errorf("error upserting node metadata configmap: %w", err)
 	}
 
 	argEncode, err := _interrupt.ToArgs()
@@ -2221,6 +2235,12 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 	if exists {
 		// nothing to do here, already running
 		return nil
+	}
+
+	// Ensure the node metadata configmap exists before creating the pod
+	// This prevents a race where the pod starts before its required configmap is created
+	if err := r.UpsertNodeLabelsAnnotationsPackages(ctx, skyhookNode.GetSkyhook(), skyhookNode.GetNode()); err != nil {
+		return fmt.Errorf("error upserting node metadata configmap: %w", err)
 	}
 
 	pod := createPodFromPackage(r.opts, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name, stage)

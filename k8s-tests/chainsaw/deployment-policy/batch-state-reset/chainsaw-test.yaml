@@ -1,0 +1,122 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: batch-state-reset
+spec:
+  description: Test batch state reset - auto-reset on completion, config precedence, and manual CLI reset
+  timeouts:
+    assert: 240s
+    exec: 30s
+
+  steps:
+  - name: reset-state
+    description: Clean up state from previous test runs
+    try:
+    - script:
+        content: |
+          # Reset node annotations for skyhooks used in this test
+          ../skyhook-cli reset test-auto-reset-enabled --confirm 2>/dev/null || true
+          ../skyhook-cli reset test-override-disabled --confirm 2>/dev/null || true
+          # Delete any leftover resources from previous runs
+          kubectl delete skyhook test-auto-reset-enabled --ignore-not-found
+          kubectl delete skyhook test-override-disabled --ignore-not-found
+          kubectl delete deploymentpolicy test-batch-reset-policy --ignore-not-found
+          # Clean up labels from previous runs
+          chmod +x ../label-nodes.sh
+          ../label-nodes.sh clean-all tier 2>/dev/null || true
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          echo "✓ State reset complete"
+
+  - name: setup-nodes
+    description: Label nodes for testing
+    try:
+    - script:
+        content: |
+          chmod +x ../label-nodes.sh
+          # Label first 8 worker nodes
+          ../label-nodes.sh add 0-7 tier=1 skyhook.nvidia.com/test-node=batch-reset-test
+          echo "✓ Node labeling complete"
+          kubectl get nodes -L tier,skyhook.nvidia.com/test-node --sort-by=.metadata.name | head -10
+
+  - name: apply-policy
+    description: Apply deployment policy with auto-reset enabled
+    try:
+    - apply:
+        file: deployment-policy.yaml
+
+  # Test 1: Auto-reset enabled (inherits from policy)
+  - name: test-auto-reset-enabled
+    description: Test auto-reset on completion (config enabled)
+    try:
+    - apply:
+        file: skyhook-auto-reset.yaml
+    - sleep:
+        duration: 5s
+    - assert:
+        file: assert-auto-reset-complete.yaml
+
+  # Clean up test 1 before test 2
+  - name: cleanup-test-1
+    description: Clean up test 1 resources and reset node state
+    try:
+    - script:
+        content: |
+          # Reset node state from test 1
+          ../skyhook-cli reset test-auto-reset-enabled --confirm 2>/dev/null || true
+          # Delete test 1 skyhook
+          kubectl delete skyhook test-auto-reset-enabled --ignore-not-found --wait=true
+          echo "✓ Test 1 cleanup complete"
+
+  # Test 2: Config precedence (Skyhook override disables reset)
+  - name: test-config-precedence
+    description: Test Skyhook override disables auto-reset (precedence)
+    try:
+    - apply:
+        file: skyhook-override-disabled.yaml
+    - sleep:
+        duration: 5s
+    - assert:
+        file: assert-override-complete.yaml
+
+  - name: cleanup
+    description: Clean up resources and labels
+    try:
+    - delete:
+        ref:
+          apiVersion: skyhook.nvidia.com/v1alpha1
+          kind: Skyhook
+          name: test-auto-reset-enabled
+    - delete:
+        ref:
+          apiVersion: skyhook.nvidia.com/v1alpha1
+          kind: Skyhook
+          name: test-override-disabled
+    - delete:
+        ref:
+          apiVersion: skyhook.nvidia.com/v1alpha1
+          kind: DeploymentPolicy
+          name: test-batch-reset-policy
+    - script:
+        content: |
+          ../label-nodes.sh clean-all tier
+          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node

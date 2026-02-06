@@ -25,6 +25,7 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `package rerun` | ✅ Full | ✅ Full |
 | `package logs` | ✅ Full | ✅ Full |
 | `reset` | ✅ Full | ✅ Full |
+| `deployment-policy reset` | ❌ Not supported | ✅ Full |
 | `pause` | ❌ Not supported | ✅ Full |
 | `resume` | ❌ Not supported | ✅ Full |
 | `disable` | ❌ Not supported | ✅ Full |
@@ -126,6 +127,62 @@ kubectl skyhook disable my-skyhook --confirm
 kubectl skyhook enable my-skyhook
 ```
 
+### Reset Command
+
+Reset all package state for a Skyhook, causing re-execution from the beginning.
+
+```bash
+# Reset all nodes for a Skyhook (also resets batch state by default)
+kubectl skyhook reset gpu-init --confirm
+
+# Preview changes without applying (dry-run)
+kubectl skyhook reset gpu-init --dry-run
+
+# Reset nodes only, preserve deployment policy batch state
+kubectl skyhook reset gpu-init --skip-batch-reset --confirm
+```
+
+| Flag | Description |
+|------|-------------|
+| `--confirm, -y` | Skip confirmation prompt |
+| `--skip-batch-reset` | Skip resetting deployment policy batch state |
+
+> **Note:** By default, `reset` also resets the deployment policy batch state so the next rollout starts from batch 1. Use `--skip-batch-reset` to preserve the existing batch state.
+
+### Deployment Policy Commands
+
+Manage deployment policy batch state.
+
+> **Note:** Requires operator v0.8.0+.
+
+```bash
+# Reset batch state for a Skyhook (starts rollout from batch 1)
+kubectl skyhook deployment-policy reset gpu-init --confirm
+
+# Preview what would be reset (dry-run)
+kubectl skyhook deployment-policy reset gpu-init --dry-run
+
+# Using the short alias
+kubectl skyhook dp reset gpu-init --confirm
+```
+
+The `deployment-policy reset` command resets the batch processing state for all compartments in the specified Skyhook, including:
+- Current batch number (reset to 1)
+- Consecutive failure count
+- Completed and failed node counts
+- Stop flag
+
+| Flag | Description |
+|------|-------------|
+| `--confirm, -y` | Skip confirmation prompt |
+
+**When to use**:
+- After a rollout completes and you want to start a new rollout fresh
+- When batch processing is stuck and needs to be reset
+- Before re-running a rollout with the same deployment policy
+
+See [Deployment Policy documentation](deployment_policy.md) for details on auto-reset configuration.
+
 ### Node Commands
 
 Manage Skyhook nodes across the cluster.
@@ -208,10 +265,12 @@ kubectl skyhook --help
 # Command group help
 kubectl skyhook node --help
 kubectl skyhook package --help
+kubectl skyhook deployment-policy --help
 
 # Specific command help
 kubectl skyhook node reset --help
 kubectl skyhook package rerun --help
+kubectl skyhook deployment-policy reset --help
 ```
 
 ## Common Usage Patterns
@@ -252,6 +311,18 @@ kubectl skyhook node status
 kubectl skyhook node status --skyhook my-skyhook -o json
 ```
 
+### Resetting a Rollout
+```bash
+# 1. Full reset: nodes + batch state (starts everything fresh)
+kubectl skyhook reset my-skyhook --confirm
+
+# 2. Or reset only batch state (keep node state, restart batch progression)
+kubectl skyhook deployment-policy reset my-skyhook --confirm
+
+# 3. Or reset only nodes (keep batch progression)
+kubectl skyhook reset my-skyhook --skip-batch-reset --confirm
+```
+
 ### Emergency Stop
 
 > **Note:** Requires operator v0.8.0+. For older operators, use `kubectl edit skyhook my-skyhook` and set `spec.pause: true`.
@@ -289,7 +360,11 @@ kubectl skyhook node list --skyhook my-skyhook -o yaml
 operator/cmd/cli/app/           # CLI commands
 ├── cli.go                      # Root command (NewSkyhookCommand)
 ├── version.go                  # Version command
+├── reset.go                    # Reset command (nodes + batch state)
 ├── lifecycle.go                # Pause, resume, disable, enable commands
+├── deploymentpolicy/           # Deployment policy subcommands
+│   ├── deploymentpolicy.go     # Parent command
+│   └── deploymentpolicy_reset.go  # Batch state reset
 ├── node/                       # Node subcommands
 │   ├── node.go                 # Parent command
 │   ├── node_list.go
@@ -314,10 +389,13 @@ main()
   └── cli.Execute()
       └── NewSkyhookCommand(ctx)
           ├── NewVersionCmd(ctx)
+          ├── NewResetCmd(ctx)
           ├── NewPauseCmd(ctx)
           ├── NewResumeCmd(ctx)
           ├── NewDisableCmd(ctx)
           ├── NewEnableCmd(ctx)
+          ├── deploymentpolicy.NewDeploymentPolicyCmd(ctx)
+          │   └── NewResetCmd(ctx)
           ├── node.NewNodeCmd(ctx)
           │   ├── NewListCmd(ctx)
           │   ├── NewStatusCmd(ctx)

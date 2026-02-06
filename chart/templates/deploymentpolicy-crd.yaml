@@ -267,6 +267,11 @@ spec:
                 required:
                 - strategy
                 type: object
+              resetBatchStateOnCompletion:
+                default: false
+                description: ResetBatchStateOnCompletion controls whether batch state
+                  is reset when rollout completes or spec changes
+                type: boolean
             required:
             - default
             type: object

@@ -1,0 +1,538 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helm-template
+spec:
+  concurrent: true
+  timeouts:
+    exec: 30s
+  bindings:
+  - name: CHART
+    value: ../../../../chart
+  - name: CHAINSAW_BIN
+    value: ../../../../operator/bin/chainsaw
+  steps:
+
+  ## ── Render correctness ──────────────────────────────────────────────
+
+  - name: default-limitrange
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/limitrange.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: v1
+          kind: LimitRange
+          spec:
+            limits:
+            - type: Container
+              default:
+                cpu: 500m
+                memory: 512Mi
+              defaultRequest:
+                cpu: 250m
+                memory: 256Mi
+          EXPECTED
+
+  - name: default-cleanup-skyhooks-job-resources
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                containers:
+                - name: cleanup
+                  resources:
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+                    requests:
+                      cpu: 250m
+                      memory: 256Mi
+          EXPECTED
+
+  - name: default-cleanup-webhook-job-resources
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/cleanup-webhook-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                containers:
+                - name: cleanup
+                  resources:
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+                    requests:
+                      cpu: 250m
+                      memory: 256Mi
+          EXPECTED
+
+  - name: limitrange-disabled-null-fallback-resources
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## LimitRange disabled, but cleanup job should still have fallback resources
+          helm template test-release ${CHART} -n skyhook --set-json 'limitRange=null' \
+            -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                containers:
+                - name: cleanup
+                  resources:
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+                    requests:
+                      cpu: 250m
+                      memory: 256Mi
+          EXPECTED
+
+  - name: limitrange-disabled-null-no-limitrange
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## -s errors when a gated template produces no output
+          helm template test-release ${CHART} -n skyhook --set-json 'limitRange=null' \
+            -s templates/limitrange.yaml
+        check:
+          ($error != null): true
+
+  - name: limitrange-disabled-false-no-limitrange
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook --set 'limitRange=false' \
+            -s templates/limitrange.yaml
+        check:
+          ($error != null): true
+
+  - name: webhook-disabled-no-webhook-cleanup-job
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook --set 'webhook.enable=false' \
+            -s templates/cleanup-webhook-job.yaml
+        check:
+          ($error != null): true
+
+  - name: cleanup-disabled-no-skyhook-cleanup-job
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook --set 'cleanup.enabled=false' \
+            -s templates/cleanup-skyhooks-job.yaml
+        check:
+          ($error != null): true
+
+  ## ── Validation error paths ──────────────────────────────────────────
+
+  - name: reject-default-namespace
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n default 2>&1 || true
+        check:
+          (contains($stdout, 'not allowed for security reasons')): true
+
+  - name: reject-selector-and-affinity-conflict
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.selectors.dedicated=system-workload' \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].key=foo' \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].operator=Exists' \
+            2>&1 || true
+        check:
+          (contains($stdout, 'Cannot specify both controllerManager.selectors and controllerManager.nodeAffinity.matchExpressions')): true
+
+  - name: reject-pdb-gte-replicas
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.podDisruptionBudget.minAvailable=2' \
+            --set 'controllerManager.replicas=2' \
+            2>&1 || true
+        check:
+          (contains($stdout, 'minAvailable must be less than controllerManager.replicas')): true
+
+  ## ── Feature toggles ─────────────────────────────────────────────────
+
+  - name: rbac-roles-disabled-by-default
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/skyhook_viewer_role.yaml
+        check:
+          ($error != null): true
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/skyhook_editor_role.yaml
+        check:
+          ($error != null): true
+
+  - name: rbac-viewer-role-enabled
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'rbac.createSkyhookViewerRole=true' \
+            -s templates/skyhook_viewer_role.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: skyhook-viewer-role
+          EXPECTED
+
+  - name: rbac-editor-role-enabled
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'rbac.createSkyhookEditorRole=true' \
+            -s templates/skyhook_editor_role.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: skyhook-editor-role
+          EXPECTED
+
+  - name: image-pull-secret
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'imagePullSecret=my-registry-secret' \
+            -s templates/deployment.yaml
+        check:
+          (contains($stdout, 'my-registry-secret')): true
+
+  - name: host-network-disabled-by-default
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/deployment.yaml
+        check:
+          "(contains($stdout, 'hostNetwork: true'))": false
+
+  - name: host-network-enabled
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'useHostNetwork=true' \
+            -s templates/deployment.yaml
+        check:
+          "(contains($stdout, 'hostNetwork: true'))": true
+
+  - name: metrics-binding-disabled-by-default
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/metrics-reader-rbac.yaml
+        check:
+          "(contains($stdout, 'kind: ClusterRoleBinding'))": false
+
+  - name: metrics-binding-enabled
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'metrics.addServiceAccountBinding=true' \
+            -s templates/metrics-reader-rbac.yaml
+        check:
+          "(contains($stdout, 'kind: ClusterRoleBinding'))": true
+          "(contains($stdout, 'name: prometheus'))": true
+
+  ## ── Cleanup job scheduling parity ───────────────────────────────────
+  ## These tests render a single Job template with -s (--show-only),
+  ## then use `chainsaw assert` with an inline heredoc to structurally
+  ## match the Job's pod spec.
+
+  - name: cleanup-jobs-inherit-tolerations-skyhooks
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.tolerations[0].key=dedicated' \
+            --set 'controllerManager.tolerations[0].operator=Equal' \
+            --set 'controllerManager.tolerations[0].value=system-cpu' \
+            --set 'controllerManager.tolerations[0].effect=NoSchedule' \
+            -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                tolerations:
+                - key: dedicated
+                  operator: Equal
+                  value: system-cpu
+                  effect: NoSchedule
+          EXPECTED
+
+  - name: cleanup-jobs-inherit-tolerations-webhook
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.tolerations[0].key=dedicated' \
+            --set 'controllerManager.tolerations[0].operator=Equal' \
+            --set 'controllerManager.tolerations[0].value=system-cpu' \
+            --set 'controllerManager.tolerations[0].effect=NoSchedule' \
+            -s templates/cleanup-webhook-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                tolerations:
+                - key: dedicated
+                  operator: Equal
+                  value: system-cpu
+                  effect: NoSchedule
+          EXPECTED
+
+  - name: cleanup-jobs-inherit-selectors-skyhooks
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.selectors.dedicated=system-workload' \
+            -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                nodeSelector:
+                  dedicated: system-workload
+          EXPECTED
+
+  - name: cleanup-jobs-inherit-selectors-webhook
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.selectors.dedicated=system-workload' \
+            -s templates/cleanup-webhook-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                nodeSelector:
+                  dedicated: system-workload
+          EXPECTED
+
+  - name: cleanup-jobs-inherit-node-affinity-skyhooks
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].key=gpu-type' \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].operator=In' \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].values[0]=a100' \
+            -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                affinity:
+                  nodeAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                      nodeSelectorTerms:
+                      - matchExpressions:
+                        - key: gpu-type
+                          operator: In
+                          values:
+                          - a100
+          EXPECTED
+
+  - name: cleanup-jobs-inherit-node-affinity-webhook
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].key=gpu-type' \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].operator=In' \
+            --set 'controllerManager.nodeAffinity.matchExpressions[0].values[0]=a100' \
+            -s templates/cleanup-webhook-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          spec:
+            template:
+              spec:
+                affinity:
+                  nodeAffinity:
+                    requiredDuringSchedulingIgnoredDuringExecution:
+                      nodeSelectorTerms:
+                      - matchExpressions:
+                        - key: gpu-type
+                          operator: In
+                          values:
+                          - a100
+          EXPECTED

@@ -2418,4 +2418,233 @@ var _ = Describe("Compartment Status Tests", func() {
 			Expect(status).To(Equal(v1alpha1.StatusUnknown))
 		})
 	})
+
+	Describe("SetStatus with auto-reset on completion", func() {
+		It("should reset batch state when transitioning to Complete with config enabled", func() {
+			// Create a skyhook with batch state in compartments
+			skyhook := &v1alpha1.Skyhook{
+				Spec: v1alpha1.SkyhookSpec{
+					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
+						ResetBatchStateOnCompletion: kptr.To(true),
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.StatusInProgress,
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"compartment-1": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:        5,
+								ConsecutiveFailures: 2,
+								CompletedNodes:      10,
+								FailedNodes:         1,
+								ShouldStop:          false,
+								LastBatchSize:       3,
+								LastBatchFailed:     true,
+							},
+						},
+						"compartment-2": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:        3,
+								ConsecutiveFailures: 0,
+								CompletedNodes:      5,
+								FailedNodes:         0,
+								ShouldStop:          false,
+								LastBatchSize:       2,
+								LastBatchFailed:     false,
+							},
+						},
+					},
+				},
+			}
+
+			deploymentPolicy := &v1alpha1.DeploymentPolicy{
+				Spec: v1alpha1.DeploymentPolicySpec{
+					ResetBatchStateOnCompletion: kptr.To(true),
+				},
+			}
+
+			skyhookNodes := &skyhookNodes{
+				skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+				deploymentPolicy: deploymentPolicy,
+			}
+
+			// Transition to Complete
+			skyhookNodes.SetStatus(v1alpha1.StatusComplete)
+
+			// Verify batch state was reset for all compartments
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState).NotTo(BeNil())
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(1))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.ConsecutiveFailures).To(Equal(0))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(0))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.FailedNodes).To(Equal(0))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.LastBatchSize).To(Equal(0))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.LastBatchFailed).To(BeFalse())
+
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-2"].BatchState.CurrentBatch).To(Equal(1))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-2"].BatchState.CompletedNodes).To(Equal(0))
+
+			// Verify Updated flag was set
+			Expect(skyhookNodes.skyhook.Updated).To(BeTrue())
+		})
+
+		It("should not reset batch state when config is disabled", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Spec: v1alpha1.SkyhookSpec{
+					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
+						ResetBatchStateOnCompletion: kptr.To(false),
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.StatusInProgress,
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"compartment-1": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:        5,
+								ConsecutiveFailures: 2,
+								CompletedNodes:      10,
+								FailedNodes:         1,
+								LastBatchSize:       3,
+								LastBatchFailed:     true,
+							},
+						},
+					},
+				},
+			}
+
+			deploymentPolicy := &v1alpha1.DeploymentPolicy{
+				Spec: v1alpha1.DeploymentPolicySpec{
+					ResetBatchStateOnCompletion: kptr.To(true),
+				},
+			}
+
+			skyhookNodes := &skyhookNodes{
+				skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+				deploymentPolicy: deploymentPolicy,
+			}
+
+			// Transition to Complete
+			skyhookNodes.SetStatus(v1alpha1.StatusComplete)
+
+			// Verify batch state was NOT reset (Skyhook config overrides Policy)
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(5))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.ConsecutiveFailures).To(Equal(2))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(10))
+		})
+
+		It("should respect policy-level config when skyhook config is not set", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Spec: v1alpha1.SkyhookSpec{
+					// No DeploymentPolicyOptions set
+				},
+				Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.StatusInProgress,
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"compartment-1": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:   5,
+								CompletedNodes: 10,
+							},
+						},
+					},
+				},
+			}
+
+			deploymentPolicy := &v1alpha1.DeploymentPolicy{
+				Spec: v1alpha1.DeploymentPolicySpec{
+					ResetBatchStateOnCompletion: kptr.To(true),
+				},
+			}
+
+			skyhookNodes := &skyhookNodes{
+				skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+				deploymentPolicy: deploymentPolicy,
+			}
+
+			// Transition to Complete
+			skyhookNodes.SetStatus(v1alpha1.StatusComplete)
+
+			// Verify batch state was reset based on policy config
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(1))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(0))
+			Expect(skyhookNodes.skyhook.Updated).To(BeTrue())
+		})
+
+		It("should not reset when not transitioning to Complete", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Spec: v1alpha1.SkyhookSpec{
+					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
+						ResetBatchStateOnCompletion: kptr.To(true),
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.StatusWaiting,
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"compartment-1": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:   5,
+								CompletedNodes: 10,
+							},
+						},
+					},
+				},
+			}
+
+			deploymentPolicy := &v1alpha1.DeploymentPolicy{
+				Spec: v1alpha1.DeploymentPolicySpec{
+					ResetBatchStateOnCompletion: kptr.To(true),
+				},
+			}
+
+			skyhookNodes := &skyhookNodes{
+				skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+				deploymentPolicy: deploymentPolicy,
+			}
+
+			// Transition to InProgress (not Complete)
+			skyhookNodes.SetStatus(v1alpha1.StatusInProgress)
+
+			// Verify batch state was NOT reset
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(5))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(10))
+		})
+
+		It("should not reset when already Complete", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Spec: v1alpha1.SkyhookSpec{
+					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
+						ResetBatchStateOnCompletion: kptr.To(true),
+					},
+				},
+				Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.StatusComplete, // Already complete
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"compartment-1": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:   5,
+								CompletedNodes: 10,
+							},
+						},
+					},
+				},
+			}
+
+			deploymentPolicy := &v1alpha1.DeploymentPolicy{
+				Spec: v1alpha1.DeploymentPolicySpec{
+					ResetBatchStateOnCompletion: kptr.To(true),
+				},
+			}
+
+			skyhookNodes := &skyhookNodes{
+				skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+				deploymentPolicy: deploymentPolicy,
+			}
+
+			// Set to Complete again (no transition)
+			skyhookNodes.SetStatus(v1alpha1.StatusComplete)
+
+			// Verify batch state was NOT reset (already was complete)
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(5))
+			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(10))
+		})
+	})
 })

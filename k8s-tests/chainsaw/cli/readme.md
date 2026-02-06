@@ -17,6 +17,7 @@ The CLI tests require:
 | [node](./node/) | Node list, status, ignore, unignore, and reset commands |
 | [package](./package/) | Package status, logs, and rerun commands |
 | [reset](./reset/) | Skyhook reset command |
+| [deployment-policy](./deployment-policy/) | Deployment policy batch state reset command |
 
 ## CLI Commands Tested
 
@@ -40,6 +41,9 @@ The CLI tests require:
 
 ### Reset Command
 - `skyhook reset <skyhook>` - Resets all nodes for a Skyhook
+
+### Deployment Policy Commands
+- `skyhook deployment-policy reset <skyhook>` - Resets batch processing state for a Skyhook
 
 ## Running the Tests
 
