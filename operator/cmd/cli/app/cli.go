@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -23,6 +23,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/NVIDIA/skyhook/operator/cmd/cli/app/deploymentpolicy"
 	"github.com/NVIDIA/skyhook/operator/cmd/cli/app/node"
 	pkg "github.com/NVIDIA/skyhook/operator/cmd/cli/app/package"
 	"github.com/NVIDIA/skyhook/operator/internal/cli/context"
@@ -69,6 +70,7 @@ func NewSkyhookCommand(ctx *context.CLIContext) *cobra.Command {
 		NewVersionCmd(ctx),
 		pkg.NewPackageCmd(ctx),
 		node.NewNodeCmd(ctx),
+		deploymentpolicy.NewDeploymentPolicyCmd(ctx),
 		NewPauseCmd(ctx),
 		NewResumeCmd(ctx),
 		NewDisableCmd(ctx),

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -147,6 +147,18 @@ type DeploymentPolicySpec struct {
 	// Compartments, each with selector and budget; optional strategy
 	// +optional
 	Compartments []Compartment `json:"compartments,omitempty"`
+	// ResetBatchStateOnCompletion controls whether batch state is reset when rollout completes or spec changes
+	// +optional
+	// +kubebuilder:default=true
+	ResetBatchStateOnCompletion *bool `json:"resetBatchStateOnCompletion,omitempty"`
+}
+
+// DeploymentPolicyOptions allows per-Skyhook overrides of DeploymentPolicy settings
+type DeploymentPolicyOptions struct {
+	// ResetBatchStateOnCompletion overrides the DeploymentPolicy setting for this Skyhook
+	// +optional
+	// +kubebuilder:default=true
+	ResetBatchStateOnCompletion *bool `json:"resetBatchStateOnCompletion,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -307,12 +319,15 @@ func (s *DeploymentStrategy) EvaluateBatchResult(state *BatchProcessingState, ba
 
 // getBatchThreshold returns the batch threshold from the active strategy
 func (s *DeploymentStrategy) getBatchThreshold() int {
+	if s == nil {
+		return 100
+	}
 	switch {
-	case s.Fixed != nil:
+	case s.Fixed != nil && s.Fixed.BatchThreshold != nil:
 		return *s.Fixed.BatchThreshold
-	case s.Linear != nil:
+	case s.Linear != nil && s.Linear.BatchThreshold != nil:
 		return *s.Linear.BatchThreshold
-	case s.Exponential != nil:
+	case s.Exponential != nil && s.Exponential.BatchThreshold != nil:
 		return *s.Exponential.BatchThreshold
 	default:
 		return 100
@@ -321,12 +336,15 @@ func (s *DeploymentStrategy) getBatchThreshold() int {
 
 // getSafetyLimit returns the safety limit from the active strategy
 func (s *DeploymentStrategy) getSafetyLimit() int {
+	if s == nil {
+		return 50
+	}
 	switch {
-	case s.Fixed != nil:
+	case s.Fixed != nil && s.Fixed.SafetyLimit != nil:
 		return *s.Fixed.SafetyLimit
-	case s.Linear != nil:
+	case s.Linear != nil && s.Linear.SafetyLimit != nil:
 		return *s.Linear.SafetyLimit
-	case s.Exponential != nil:
+	case s.Exponential != nil && s.Exponential.SafetyLimit != nil:
 		return *s.Exponential.SafetyLimit
 	default:
 		return 50
@@ -336,6 +354,9 @@ func (s *DeploymentStrategy) getSafetyLimit() int {
 // getFailureThreshold returns the failure threshold from the active strategy
 // Returns nil if failureThreshold is not set (indicating no limit on consecutive failures)
 func (s *DeploymentStrategy) getFailureThreshold() *int {
+	if s == nil {
+		return nil
+	}
 	switch {
 	case s.Fixed != nil:
 		return s.Fixed.FailureThreshold

@@ -162,6 +162,10 @@ func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1al
 	for _, deploymentPolicy := range deploymentPolicies.Items {
 		if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
 			policyFound = true
+			// Store the deployment policy reference for auto-reset logic
+			policyCopy := deploymentPolicy.DeepCopy()
+			ret.skyhooks[idx].(*skyhookNodes).deploymentPolicy = policyCopy
+
 			for _, compartment := range deploymentPolicy.Spec.Compartments {
 				// Load persisted batch state from CompartmentStatuses if it exists
 				var batchState *v1alpha1.BatchProcessingState
@@ -341,16 +345,18 @@ type SkyhookNodes interface {
 	AddCompartment(name string, compartment *wrapper.Compartment)
 	AddCompartmentNode(name string, node wrapper.SkyhookNode) error
 	AssignNodeToCompartment(node wrapper.SkyhookNode) (string, error)
+	GetDeploymentPolicy() *v1alpha1.DeploymentPolicy
 }
 
 var _ SkyhookNodes = &skyhookNodes{}
 
 // skyhookNodes impl's. SkyhookNodes
 type skyhookNodes struct {
-	skyhook      *wrapper.Skyhook
-	nodes        []wrapper.SkyhookNode
-	priorStatus  v1alpha1.Status
-	compartments map[string]*wrapper.Compartment
+	skyhook          *wrapper.Skyhook
+	nodes            []wrapper.SkyhookNode
+	priorStatus      v1alpha1.Status
+	compartments     map[string]*wrapper.Compartment
+	deploymentPolicy *v1alpha1.DeploymentPolicy
 }
 
 func (s *skyhookNodes) GetPriorStatus() v1alpha1.Status {
@@ -401,8 +407,16 @@ func (s *skyhookNodes) Status() v1alpha1.Status {
 
 func (s *skyhookNodes) SetStatus(status v1alpha1.Status) {
 	s.priorStatus = s.skyhook.Status.Status
+	oldStatus := s.skyhook.Status.Status
 
 	s.skyhook.SetStatus(status)
+
+	// Auto-reset batch state when transitioning to Complete (if configured)
+	// We must reset BOTH the persisted status AND the in-memory compartment wrapper's BatchState
+	// Otherwise updateCompartmentStatuses will overwrite the reset with stale values
+	if oldStatus != v1alpha1.StatusComplete && status == v1alpha1.StatusComplete {
+		resetSkyhookBatchState(s)
+	}
 }
 
 // CollectNodeStatus collects all the nodes current status
@@ -478,6 +492,30 @@ func (s *skyhookNodes) GetNode(name string) (v1alpha1.Status, wrapper.SkyhookNod
 		}
 	}
 	return v1alpha1.StatusUnknown, nil
+}
+
+func (s *skyhookNodes) GetDeploymentPolicy() *v1alpha1.DeploymentPolicy {
+	return s.deploymentPolicy
+}
+
+// resetSkyhookBatchState resets all compartment batch states to fresh values if configured.
+// This is used when transitioning to Complete or when a version change is detected.
+func resetSkyhookBatchState(skyhook SkyhookNodes) {
+	if !skyhook.GetSkyhook().Skyhook.ShouldResetBatchStateOnCompletion(skyhook.GetDeploymentPolicy()) {
+		return
+	}
+
+	// Reset persisted compartment statuses via the canonical API method
+	if skyhook.GetSkyhook().Skyhook.ResetCompartmentBatchStates() {
+		skyhook.GetSkyhook().Updated = true
+	}
+
+	// Reset in-memory compartment wrapper batch states to stay in sync
+	for _, compartment := range skyhook.GetCompartments() {
+		compartment.BatchState = v1alpha1.BatchProcessingState{
+			CurrentBatch: 1,
+		}
+	}
 }
 
 func (s *skyhookNodes) UpdateCondition() bool { // TODO: might make sense to make this a ready, not what it is now
@@ -781,6 +819,12 @@ func evaluateCompletedBatches(skyhook SkyhookNodes) bool {
 	compartments := skyhook.GetCompartments()
 	if len(compartments) == 0 {
 		return false // No compartments to evaluate
+	}
+
+	// Skip batch evaluation when skyhook is Complete - this prevents overwriting
+	// the batch state that was just reset by SetStatus transitioning to Complete
+	if skyhook.Status() == v1alpha1.StatusComplete {
+		return false
 	}
 
 	changed := false

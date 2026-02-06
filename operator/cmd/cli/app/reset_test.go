@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -101,6 +101,23 @@ var _ = Describe("Reset Command", func() {
 			confirmFlag := cmd.Flags().Lookup("confirm")
 			Expect(confirmFlag).NotTo(BeNil())
 			Expect(confirmFlag.Shorthand).To(Equal("y"))
+		})
+
+		It("should have skip-batch-reset flag", func() {
+			ctx := context.NewCLIContext(nil)
+			cmd := NewResetCmd(ctx)
+
+			skipBatchResetFlag := cmd.Flags().Lookup("skip-batch-reset")
+			Expect(skipBatchResetFlag).NotTo(BeNil())
+			Expect(skipBatchResetFlag.DefValue).To(Equal("false"))
+		})
+
+		It("should mention batch reset in help text", func() {
+			ctx := context.NewCLIContext(nil)
+			cmd := NewResetCmd(ctx)
+
+			Expect(cmd.Long).To(ContainSubstring("batch state"))
+			Expect(cmd.Long).To(ContainSubstring("--skip-batch-reset"))
 		})
 	})
 

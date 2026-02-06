@@ -23,6 +23,8 @@ kind: DeploymentPolicy
 metadata:
   name: my-policy
 spec:
+  # Reset batch state automatically when rollout completes or spec version changes
+  resetBatchStateOnCompletion: true  # default: true
   # Default applies to nodes that don't match any compartment
   default:
     budget:
@@ -240,6 +242,94 @@ compartments:
 
 ---
 
+## Batch State Reset
+
+When using progressive rollout strategies (linear, exponential), the operator tracks batch processing state per compartment — current batch number, consecutive failures, completed/failed node counts, etc. This state persists across reconciliations so the rollout can scale up progressively.
+
+However, when a rollout **completes** or a **spec version changes**, you typically want the next rollout to start fresh from batch 1 rather than continuing with scaled-up batch sizes. Batch state reset handles this automatically.
+
+### Auto-Reset Triggers
+
+Batch state is automatically reset when **either** of these events occurs (if configured):
+
+1. **Rollout completion** — When a Skyhook's status transitions to `Complete`
+2. **Spec version change** — When a package version changes in the Skyhook spec
+
+After reset, the next reconciliation starts from batch 1 with all counters cleared.
+
+### Configuration
+
+Auto-reset is controlled by two fields with a precedence hierarchy:
+
+| Field | Location | Description |
+|-------|----------|-------------|
+| `spec.resetBatchStateOnCompletion` | DeploymentPolicy | Default setting for all Skyhooks using this policy |
+| `spec.deploymentPolicyOptions.resetBatchStateOnCompletion` | Skyhook | Per-Skyhook override (takes precedence) |
+
+**Precedence order** (highest to lowest):
+1. Skyhook's `deploymentPolicyOptions.resetBatchStateOnCompletion`
+2. DeploymentPolicy's `resetBatchStateOnCompletion`
+3. Default: `true` (safe by default for new resources)
+
+### Examples
+
+**Enable auto-reset (default behavior for new policies)**:
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: DeploymentPolicy
+metadata:
+  name: my-policy
+spec:
+  resetBatchStateOnCompletion: true  # Enabled by default
+  default:
+    budget:
+      percent: 25
+```
+
+**Disable auto-reset for a specific Skyhook** (override the policy):
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: my-skyhook
+spec:
+  deploymentPolicy: my-policy
+  deploymentPolicyOptions:
+    resetBatchStateOnCompletion: false  # Override: keep batch state across rollouts
+```
+
+**Disable auto-reset at the policy level**:
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: DeploymentPolicy
+metadata:
+  name: preserve-state-policy
+spec:
+  resetBatchStateOnCompletion: false  # All Skyhooks using this policy keep batch state
+```
+
+### Manual Reset
+
+You can also reset batch state manually using the CLI:
+
+```bash
+# Reset batch state for a specific Skyhook
+kubectl skyhook deployment-policy reset my-skyhook --confirm
+
+# Preview what would be reset (dry-run)
+kubectl skyhook deployment-policy reset my-skyhook --dry-run
+
+# The 'reset' command also resets batch state by default
+kubectl skyhook reset my-skyhook --confirm
+
+# To reset nodes only without resetting batch state
+kubectl skyhook reset my-skyhook --skip-batch-reset --confirm
+```
+
+See [CLI documentation](cli.md) for full command details.
+
+---
+
 ## Using with Skyhooks
 
 Reference a policy by name:
@@ -251,6 +341,8 @@ metadata:
   name: my-skyhook
 spec:
   deploymentPolicy: my-policy  # References DeploymentPolicy
+  deploymentPolicyOptions:     # Optional per-Skyhook overrides
+    resetBatchStateOnCompletion: true
   nodeSelectors:
     matchLabels:
       workload: gpu
@@ -262,6 +354,7 @@ spec:
 - DeploymentPolicy is **cluster-scoped** (not namespaced)
 - Each node is assigned to a compartment based on selectors
 - Nodes not matching any compartment use the `default` settings
+- `deploymentPolicyOptions` allows per-Skyhook overrides of policy settings
 
 ---
 

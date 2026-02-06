@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -24,6 +24,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 )
 
 func TestUtils(t *testing.T) {
@@ -171,6 +173,147 @@ var _ = Describe("CLI Utility Functions", func() {
 
 		It("should handle image with only digest", func() {
 			Expect(ExtractImageTag("ghcr.io/nvidia/skyhook/operator@sha256:abc123")).To(Equal(""))
+		})
+	})
+
+	Describe("ResetCompartmentBatchStates (API method)", func() {
+		It("should handle skyhook with nil CompartmentStatuses", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: nil,
+				},
+			}
+			result := skyhook.ResetCompartmentBatchStates()
+			Expect(result).To(BeFalse())
+			Expect(skyhook.Status.CompartmentStatuses).To(BeNil())
+		})
+
+		It("should handle skyhook with empty CompartmentStatuses", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{},
+				},
+			}
+			result := skyhook.ResetCompartmentBatchStates()
+			Expect(result).To(BeFalse())
+			Expect(skyhook.Status.CompartmentStatuses).To(BeEmpty())
+		})
+
+		It("should reset batch state for a single compartment", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"default": {
+							Matched:         10,
+							Ceiling:         3,
+							InProgress:      2,
+							Completed:       5,
+							ProgressPercent: 50,
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:        3,
+								ConsecutiveFailures: 2,
+								CompletedNodes:      5,
+								FailedNodes:         1,
+								ShouldStop:          true,
+								LastBatchSize:       4,
+								LastBatchFailed:     true,
+							},
+						},
+					},
+				},
+			}
+
+			result := skyhook.ResetCompartmentBatchStates()
+			Expect(result).To(BeTrue())
+
+			Expect(skyhook.Status.CompartmentStatuses).To(HaveKey("default"))
+			compartment := skyhook.Status.CompartmentStatuses["default"]
+
+			// Verify non-batch fields are preserved
+			Expect(compartment.Matched).To(Equal(10))
+			Expect(compartment.Ceiling).To(Equal(3))
+			Expect(compartment.InProgress).To(Equal(2))
+			Expect(compartment.Completed).To(Equal(5))
+			Expect(compartment.ProgressPercent).To(Equal(50))
+
+			// Verify batch state is reset to fresh state
+			Expect(compartment.BatchState).NotTo(BeNil())
+			Expect(compartment.BatchState.CurrentBatch).To(Equal(1))
+			Expect(compartment.BatchState.ConsecutiveFailures).To(Equal(0))
+			Expect(compartment.BatchState.CompletedNodes).To(Equal(0))
+			Expect(compartment.BatchState.FailedNodes).To(Equal(0))
+			Expect(compartment.BatchState.ShouldStop).To(BeFalse())
+			Expect(compartment.BatchState.LastBatchSize).To(Equal(0))
+			Expect(compartment.BatchState.LastBatchFailed).To(BeFalse())
+		})
+
+		It("should reset batch state for multiple compartments", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"compartment-a": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:        5,
+								ConsecutiveFailures: 3,
+								CompletedNodes:      20,
+								FailedNodes:         5,
+								ShouldStop:          true,
+								LastBatchSize:       10,
+								LastBatchFailed:     true,
+							},
+						},
+						"compartment-b": {
+							BatchState: &v1alpha1.BatchProcessingState{
+								CurrentBatch:        2,
+								ConsecutiveFailures: 0,
+								CompletedNodes:      10,
+								FailedNodes:         0,
+								ShouldStop:          false,
+								LastBatchSize:       5,
+								LastBatchFailed:     false,
+							},
+						},
+					},
+				},
+			}
+
+			result := skyhook.ResetCompartmentBatchStates()
+			Expect(result).To(BeTrue())
+
+			// Verify both compartments are reset
+			for _, compartmentName := range []string{"compartment-a", "compartment-b"} {
+				Expect(skyhook.Status.CompartmentStatuses).To(HaveKey(compartmentName))
+				compartment := skyhook.Status.CompartmentStatuses[compartmentName]
+
+				Expect(compartment.BatchState).NotTo(BeNil())
+				Expect(compartment.BatchState.CurrentBatch).To(Equal(1))
+				Expect(compartment.BatchState.ConsecutiveFailures).To(Equal(0))
+				Expect(compartment.BatchState.CompletedNodes).To(Equal(0))
+				Expect(compartment.BatchState.FailedNodes).To(Equal(0))
+				Expect(compartment.BatchState.ShouldStop).To(BeFalse())
+				Expect(compartment.BatchState.LastBatchSize).To(Equal(0))
+				Expect(compartment.BatchState.LastBatchFailed).To(BeFalse())
+			}
+		})
+
+		It("should handle compartment without existing batch state", func() {
+			skyhook := &v1alpha1.Skyhook{
+				Status: v1alpha1.SkyhookStatus{
+					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+						"default": {
+							Matched:    10,
+							BatchState: nil,
+						},
+					},
+				},
+			}
+
+			result := skyhook.ResetCompartmentBatchStates()
+			Expect(result).To(BeTrue())
+
+			compartment := skyhook.Status.CompartmentStatuses["default"]
+			Expect(compartment.BatchState).NotTo(BeNil())
+			Expect(compartment.BatchState.CurrentBatch).To(Equal(1))
 		})
 	})
 })

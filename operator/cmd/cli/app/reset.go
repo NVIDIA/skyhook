@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -44,7 +44,8 @@ const (
 
 // resetOptions holds the options for the reset command
 type resetOptions struct {
-	confirm bool
+	confirm        bool
+	skipBatchReset bool
 }
 
 // NewResetCmd creates the reset command
@@ -60,12 +61,19 @@ This command removes all Skyhook state from all nodes that have state for the
 specified Skyhook, causing the operator to re-execute all packages from the beginning.
 
 Unlike 'node reset' which resets specific nodes, 'skyhook reset' resets ALL nodes
-that have state for the specified Skyhook.`,
+that have state for the specified Skyhook.
+
+By default, this command also resets the deployment policy batch state, allowing
+the rollout to start fresh from batch 1. Use --skip-batch-reset to preserve the
+existing batch state.`,
 		Example: `  # Reset all nodes for gpu-init Skyhook
   kubectl skyhook reset gpu-init --confirm
 
   # Preview changes without applying (dry-run)
-  kubectl skyhook reset gpu-init --dry-run`,
+  kubectl skyhook reset gpu-init --dry-run
+
+  # Reset nodes only, preserve batch state
+  kubectl skyhook reset gpu-init --skip-batch-reset --confirm`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			skyhookName := args[0]
@@ -81,6 +89,7 @@ that have state for the specified Skyhook.`,
 	}
 
 	cmd.Flags().BoolVarP(&opts.confirm, "confirm", "y", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVar(&opts.skipBatchReset, "skip-batch-reset", false, "Skip resetting deployment policy batch state")
 
 	return cmd
 }
@@ -128,6 +137,11 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s (%d packages)\n", nodeName, len(nodeState))
 	}
 
+	// Show batch reset info
+	if !opts.skipBatchReset {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nBatch state will also be reset (use --skip-batch-reset to preserve)\n")
+	}
+
 	// Dry run check
 	if cliCtx.GlobalFlags.DryRun {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n[dry-run] No changes applied\n")
@@ -138,6 +152,9 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	if !opts.confirm {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for Skyhook %q on %d node(s).\n", skyhookName, len(nodesToReset))
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "All packages will re-run from the beginning.\n")
+		if !opts.skipBatchReset {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state will be reset to start from batch 1.\n")
+		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Continue? [y/N]: ")
 
 		reader := bufio.NewReader(cmd.InOrStdin())
@@ -154,11 +171,34 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	}
 
 	// Apply changes - clear all skyhook-related annotations and labels
+	successCount, updateErrors := resetNodeAnnotations(ctx, cmd, kubeClient, nodesToReset, skyhookName, cliCtx)
+
+	// Print results
+	if len(updateErrors) > 0 {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nErrors resetting some nodes:\n")
+		for _, e := range updateErrors {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", e)
+		}
+	}
+
+	if successCount > 0 {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for Skyhook %q\n", successCount, skyhookName)
+	}
+
+	// Reset batch state unless --skip-batch-reset is set
+	if !opts.skipBatchReset {
+		resetBatchStateForReset(ctx, cmd, kubeClient, skyhookName)
+	}
+
+	return nil
+}
+
+// resetNodeAnnotations removes all skyhook-related annotations and labels from nodes
+func resetNodeAnnotations(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, nodesToReset []string, skyhookName string, cliCtx *cliContext.CLIContext) (int, []string) {
 	var updateErrors []string
 	successCount := 0
 
 	for _, nodeName := range nodesToReset {
-		// Clear all annotations and labels for this skyhook
 		annotationsToRemove := []string{
 			nodeStateAnnotationPrefix + skyhookName,
 			statusAnnotationPrefix + skyhookName,
@@ -182,7 +222,6 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 				continue // Already removed
 			}
 			if err := utils.RemoveNodeAnnotation(ctx, kubeClient.Kubernetes(), nodeName, annKey); err != nil {
-				// Don't fail if annotation doesn't exist - just log it
 				if cliCtx.GlobalFlags.Verbose {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to remove annotation %q from node %q: %v\n", annKey, nodeName, err)
 				}
@@ -192,7 +231,6 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 		// Remove labels (non-critical, so we don't fail if they don't exist)
 		for _, labelKey := range labelsToRemove {
 			if err := utils.RemoveNodeLabel(ctx, kubeClient.Kubernetes(), nodeName, labelKey); err != nil {
-				// Don't fail if label doesn't exist - just log it
 				if cliCtx.GlobalFlags.Verbose {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to remove label %q from node %q: %v\n", labelKey, nodeName, err)
 				}
@@ -202,17 +240,29 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 		successCount++
 	}
 
-	// Print results
-	if len(updateErrors) > 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nErrors resetting some nodes:\n")
-		for _, e := range updateErrors {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", e)
-		}
+	return successCount, updateErrors
+}
+
+// resetBatchStateForReset resets the batch state for a Skyhook if dynamic client is available
+func resetBatchStateForReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string) {
+	if kubeClient.Dynamic() == nil {
+		return
 	}
 
-	if successCount > 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for Skyhook %q\n", successCount, skyhookName)
+	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
+	if err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get skyhook for batch reset: %v\n", err)
+		return
 	}
 
-	return nil
+	if len(skyhook.Status.CompartmentStatuses) == 0 {
+		return
+	}
+
+	skyhook.ResetCompartmentBatchStates()
+	if err := utils.PatchSkyhookStatus(ctx, kubeClient.Dynamic(), skyhookName, skyhook.Status); err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to reset batch state: %v\n", err)
+		return
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state reset for Skyhook %q\n", skyhookName)
 }

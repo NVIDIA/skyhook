@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -454,4 +454,30 @@ func ExtractImageTag(image string) string {
 	}
 
 	return strings.TrimSpace(parts[len(parts)-1])
+}
+
+// PatchSkyhookStatus patches the status subresource of a Skyhook CR using the dynamic client.
+// This is used to update status fields without triggering a spec update.
+func PatchSkyhookStatus(ctx context.Context, dynamicClient dynamic.Interface, skyhookName string, status v1alpha1.SkyhookStatus) error {
+	statusBytes, err := json.Marshal(map[string]interface{}{
+		"status": status,
+	})
+	if err != nil {
+		return fmt.Errorf("marshaling status: %w", err)
+	}
+
+	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	_, err = dynamicClient.Resource(gvr).Patch(
+		ctx,
+		skyhookName,
+		types.MergePatchType,
+		statusBytes,
+		metav1.PatchOptions{},
+		"status",
+	)
+	if err != nil {
+		return fmt.Errorf("patching skyhook %q status: %w", skyhookName, err)
+	}
+
+	return nil
 }

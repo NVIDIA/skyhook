@@ -349,6 +349,52 @@ func (_c *MockSkyhookNodes_GetCompartments_Call) RunAndReturn(run func() map[str
 	return _c
 }
 
+// GetDeploymentPolicy provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) GetDeploymentPolicy() *v1alpha1.DeploymentPolicy {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetDeploymentPolicy")
+	}
+
+	var r0 *v1alpha1.DeploymentPolicy
+	if returnFunc, ok := ret.Get(0).(func() *v1alpha1.DeploymentPolicy); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*v1alpha1.DeploymentPolicy)
+		}
+	}
+	return r0
+}
+
+// MockSkyhookNodes_GetDeploymentPolicy_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetDeploymentPolicy'
+type MockSkyhookNodes_GetDeploymentPolicy_Call struct {
+	*mock.Call
+}
+
+// GetDeploymentPolicy is a helper method to define mock.On call
+func (_e *MockSkyhookNodes_Expecter) GetDeploymentPolicy() *MockSkyhookNodes_GetDeploymentPolicy_Call {
+	return &MockSkyhookNodes_GetDeploymentPolicy_Call{Call: _e.mock.On("GetDeploymentPolicy")}
+}
+
+func (_c *MockSkyhookNodes_GetDeploymentPolicy_Call) Run(run func()) *MockSkyhookNodes_GetDeploymentPolicy_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_GetDeploymentPolicy_Call) Return(deploymentPolicy *v1alpha1.DeploymentPolicy) *MockSkyhookNodes_GetDeploymentPolicy_Call {
+	_c.Call.Return(deploymentPolicy)
+	return _c
+}
+
+func (_c *MockSkyhookNodes_GetDeploymentPolicy_Call) RunAndReturn(run func() *v1alpha1.DeploymentPolicy) *MockSkyhookNodes_GetDeploymentPolicy_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetNode provides a mock function for the type MockSkyhookNodes
 func (_mock *MockSkyhookNodes) GetNode(name string) (v1alpha1.Status, wrapper.SkyhookNode) {
 	ret := _mock.Called(name)

@@ -14,6 +14,31 @@ spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      {{- with .Values.controllerManager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.controllerManager.selectors }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.controllerManager.nodeAffinity.matchExpressions }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              {{- range .Values.controllerManager.nodeAffinity.matchExpressions }}
+              - key: {{ .key }}
+                operator: {{ .operator }}
+                {{- if .values }}
+                values:
+                {{- range .values }}
+                - {{ . }}
+                {{- end }}
+                {{- end }}
+              {{- end }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -54,13 +79,23 @@ spec:
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: kube-api-access
           readOnly: true
+        # Guard against limitRange being disabled (set to null/false) with fallback defaults
         resources:
+        {{- if .Values.limitRange }}
           limits:
             cpu: {{ .Values.limitRange.default.cpu }}
             memory: {{ .Values.limitRange.default.memory }}
           requests:
             cpu: {{ .Values.limitRange.defaultRequest.cpu }}
             memory: {{ .Values.limitRange.defaultRequest.memory }}
+        {{- else }}
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        {{- end }}
         command:
         - /bin/sh
         - -c

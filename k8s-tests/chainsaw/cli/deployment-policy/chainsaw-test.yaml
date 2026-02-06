@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cli-deployment-policy-reset
+spec:
+  timeouts:
+    assert: 120s
+    exec: 90s
+  steps:
+  # Step 0: Reset state and label worker nodes
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli reset cli-dp-reset-test --confirm 2>/dev/null || true
+          kubectl delete skyhook cli-dp-reset-test --ignore-not-found
+          kubectl delete deploymentpolicy cli-dp-reset-policy --ignore-not-found
+          # Label 2 worker nodes so batch progression occurs (1→2 batches)
+          kubectl label node kind-worker skyhook.nvidia.com/dp-reset-test=true --overwrite 2>/dev/null || true
+          kubectl label node kind-worker2 skyhook.nvidia.com/dp-reset-test=true --overwrite 2>/dev/null || true
+          echo "✓ State reset complete"
+
+  # Step 1: Apply deployment policy with exponential strategy
+  - name: setup-policy
+    try:
+    - apply:
+        file: deployment-policy.yaml
+
+  # Step 2: Create Skyhook with auto-reset disabled (override) and wait for completion
+  - name: setup-skyhook
+    try:
+    - apply:
+        file: skyhook.yaml
+    - assert:
+        file: assert-complete-preserved.yaml
+
+  # Step 3: Test deployment-policy reset command
+  - name: test-deployment-policy-reset
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../skyhook-cli deployment-policy reset cli-dp-reset-test --confirm
+          sleep 2
+    - assert:
+        file: assert-manual-reset.yaml
+
+  # Step 4: Cleanup
+  - name: cleanup
+    try:
+    - delete:
+        ref:
+          apiVersion: skyhook.nvidia.com/v1alpha1
+          kind: Skyhook
+          name: cli-dp-reset-test
+    - delete:
+        ref:
+          apiVersion: skyhook.nvidia.com/v1alpha1
+          kind: DeploymentPolicy
+          name: cli-dp-reset-policy
+    - script:
+        content: |
+          kubectl label node kind-worker skyhook.nvidia.com/dp-reset-test- 2>/dev/null || true
+          kubectl label node kind-worker2 skyhook.nvidia.com/dp-reset-test- 2>/dev/null || true

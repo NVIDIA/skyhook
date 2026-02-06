@@ -60,6 +60,10 @@ type SkyhookSpec struct {
 	// +optional
 	DeploymentPolicy string `json:"deploymentPolicy,omitempty"`
 
+	// DeploymentPolicyOptions allows per-Skyhook overrides of DeploymentPolicy settings
+	// +optional
+	DeploymentPolicyOptions *DeploymentPolicyOptions `json:"deploymentPolicyOptions,omitempty"`
+
 	// InterruptionBudget configures how many nodes that match node selectors that allowed to be interrupted at once.
 	InterruptionBudget InterruptionBudget `json:"interruptionBudget,omitempty"`
 
@@ -765,4 +769,45 @@ func (s *Skyhook) IsDisabled() bool {
 		return val == "true"
 	}
 	return false
+}
+
+// ShouldResetBatchStateOnCompletion determines whether batch state should be reset
+// based on the Skyhook's deployment policy options and the referenced DeploymentPolicy.
+// The Skyhook's deploymentPolicyOptions takes precedence over the DeploymentPolicy setting.
+// Returns false by default if neither is set.
+func (s *Skyhook) ShouldResetBatchStateOnCompletion(policy *DeploymentPolicy) bool {
+	// Check Skyhook-level override first (highest precedence)
+	if s.Spec.DeploymentPolicyOptions != nil && s.Spec.DeploymentPolicyOptions.ResetBatchStateOnCompletion != nil {
+		return *s.Spec.DeploymentPolicyOptions.ResetBatchStateOnCompletion
+	}
+
+	// Check DeploymentPolicy setting
+	if policy != nil && policy.Spec.ResetBatchStateOnCompletion != nil {
+		return *policy.Spec.ResetBatchStateOnCompletion
+	}
+
+	// Default to false if neither is set
+	return false
+}
+
+// ResetCompartmentBatchStates resets all compartment batch states to fresh values.
+// Returns true if any compartments were reset, false if there was nothing to reset.
+func (s *Skyhook) ResetCompartmentBatchStates() bool {
+	if len(s.Status.CompartmentStatuses) == 0 {
+		return false
+	}
+
+	for name, cs := range s.Status.CompartmentStatuses {
+		cs.BatchState = &BatchProcessingState{
+			CurrentBatch:        1,
+			ConsecutiveFailures: 0,
+			CompletedNodes:      0,
+			FailedNodes:         0,
+			ShouldStop:          false,
+			LastBatchSize:       0,
+			LastBatchFailed:     false,
+		}
+		s.Status.CompartmentStatuses[name] = cs
+	}
+	return true
 }

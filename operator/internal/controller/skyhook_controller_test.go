@@ -1601,3 +1601,200 @@ func TestGenerateValidPodNames(t *testing.T) {
 	g.Expect(name).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`))
 	g.Expect(len(name)).To(Equal(25)) // "test-name-node-1-" + 8 char hash
 }
+
+func TestHandleVersionChangeAutoReset(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should reset batch state when version change detected with config enabled", func(t *testing.T) {
+		// Create a skyhook with batch state and an old package version
+		skyhook := &v1alpha1.Skyhook{
+			Spec: v1alpha1.SkyhookSpec{
+				DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
+					ResetBatchStateOnCompletion: ptr(true),
+				},
+				Packages: v1alpha1.Packages{
+					"test-package": v1alpha1.Package{
+						PackageRef: v1alpha1.PackageRef{
+							Name:    "test-package",
+							Version: "v2.0.0", // New version
+						},
+						Image: "test-image",
+					},
+				},
+			},
+			Status: v1alpha1.SkyhookStatus{
+				CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+					"compartment-1": {
+						BatchState: &v1alpha1.BatchProcessingState{
+							CurrentBatch:        5,
+							ConsecutiveFailures: 2,
+							CompletedNodes:      10,
+							FailedNodes:         1,
+							LastBatchSize:       3,
+							LastBatchFailed:     true,
+						},
+					},
+				},
+			},
+		}
+
+		deploymentPolicy := &v1alpha1.DeploymentPolicy{
+			Spec: v1alpha1.DeploymentPolicySpec{
+				ResetBatchStateOnCompletion: ptr(true),
+			},
+		}
+
+		// Create a mock node with old package version
+		node := wrapperMock.NewMockSkyhookNode(t)
+		node.EXPECT().State().Return(v1alpha1.NodeState{
+			"test-package|v1.0.0": v1alpha1.PackageStatus{
+				Name:    "test-package",
+				Version: "v1.0.0", // Old version
+				Image:   "test-image",
+				Stage:   v1alpha1.StageConfig,
+				State:   v1alpha1.StateComplete,
+			},
+		}, nil)
+		node.EXPECT().Upsert(v1alpha1.PackageRef{Name: "test-package", Version: "v2.0.0"}, "test-image", v1alpha1.StateInProgress, v1alpha1.StageUpgrade, int32(0), "").Return(nil).Maybe()
+		node.EXPECT().PackageStatus("test-package|v2.0.0").Return(&v1alpha1.PackageStatus{Stage: v1alpha1.StageUpgrade}, true).Once()
+		node.EXPECT().SetStatus(v1alpha1.StatusInProgress).Maybe()
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+			nodes:            []wrapper.SkyhookNode{node},
+			deploymentPolicy: deploymentPolicy,
+		}
+
+		// Call HandleVersionChange
+		_, err := HandleVersionChange(skyhookNodes)
+		g.Expect(err).To(BeNil())
+
+		// Verify batch state was reset
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState).NotTo(BeNil())
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(1))
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.ConsecutiveFailures).To(Equal(0))
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(0))
+		g.Expect(skyhookNodes.skyhook.Updated).To(BeTrue())
+	})
+
+	t.Run("should not reset batch state when config is disabled", func(t *testing.T) {
+		skyhook := &v1alpha1.Skyhook{
+			Spec: v1alpha1.SkyhookSpec{
+				DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
+					ResetBatchStateOnCompletion: ptr(false),
+				},
+				Packages: v1alpha1.Packages{
+					"test-package": v1alpha1.Package{
+						PackageRef: v1alpha1.PackageRef{
+							Name:    "test-package",
+							Version: "v2.0.0",
+						},
+						Image: "test-image",
+					},
+				},
+			},
+			Status: v1alpha1.SkyhookStatus{
+				CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+					"compartment-1": {
+						BatchState: &v1alpha1.BatchProcessingState{
+							CurrentBatch:   5,
+							CompletedNodes: 10,
+						},
+					},
+				},
+			},
+		}
+
+		deploymentPolicy := &v1alpha1.DeploymentPolicy{
+			Spec: v1alpha1.DeploymentPolicySpec{
+				ResetBatchStateOnCompletion: ptr(true),
+			},
+		}
+
+		node := wrapperMock.NewMockSkyhookNode(t)
+		node.EXPECT().State().Return(v1alpha1.NodeState{
+			"test-package|v1.0.0": v1alpha1.PackageStatus{
+				Name:    "test-package",
+				Version: "v1.0.0",
+				Image:   "test-image",
+				Stage:   v1alpha1.StageConfig,
+				State:   v1alpha1.StateComplete,
+			},
+		}, nil)
+		node.EXPECT().Upsert(v1alpha1.PackageRef{Name: "test-package", Version: "v2.0.0"}, "test-image", v1alpha1.StateInProgress, v1alpha1.StageUpgrade, int32(0), "").Return(nil).Maybe()
+		node.EXPECT().PackageStatus("test-package|v2.0.0").Return(&v1alpha1.PackageStatus{Stage: v1alpha1.StageUpgrade}, true).Once()
+		node.EXPECT().SetStatus(v1alpha1.StatusInProgress).Maybe()
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+			nodes:            []wrapper.SkyhookNode{node},
+			deploymentPolicy: deploymentPolicy,
+		}
+
+		_, err := HandleVersionChange(skyhookNodes)
+		g.Expect(err).To(BeNil())
+
+		// Verify batch state was NOT reset (config disabled)
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(5))
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(10))
+	})
+
+	t.Run("should not reset when no version changes detected", func(t *testing.T) {
+		skyhook := &v1alpha1.Skyhook{
+			Spec: v1alpha1.SkyhookSpec{
+				DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
+					ResetBatchStateOnCompletion: ptr(true),
+				},
+				Packages: v1alpha1.Packages{
+					"test-package": v1alpha1.Package{
+						PackageRef: v1alpha1.PackageRef{
+							Name:    "test-package",
+							Version: "v1.0.0", // Same version
+						},
+						Image: "test-image",
+					},
+				},
+			},
+			Status: v1alpha1.SkyhookStatus{
+				CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
+					"compartment-1": {
+						BatchState: &v1alpha1.BatchProcessingState{
+							CurrentBatch:   5,
+							CompletedNodes: 10,
+						},
+					},
+				},
+			},
+		}
+
+		deploymentPolicy := &v1alpha1.DeploymentPolicy{
+			Spec: v1alpha1.DeploymentPolicySpec{
+				ResetBatchStateOnCompletion: ptr(true),
+			},
+		}
+
+		node := wrapperMock.NewMockSkyhookNode(t)
+		node.EXPECT().State().Return(v1alpha1.NodeState{
+			"test-package|v1.0.0": v1alpha1.PackageStatus{
+				Name:    "test-package",
+				Version: "v1.0.0", // Same version
+				Image:   "test-image",
+				Stage:   v1alpha1.StageConfig,
+				State:   v1alpha1.StateComplete,
+			},
+		}, nil)
+
+		skyhookNodes := &skyhookNodes{
+			skyhook:          wrapper.NewSkyhookWrapper(skyhook),
+			nodes:            []wrapper.SkyhookNode{node},
+			deploymentPolicy: deploymentPolicy,
+		}
+
+		_, err := HandleVersionChange(skyhookNodes)
+		g.Expect(err).To(BeNil())
+
+		// Verify batch state was NOT reset (no version change)
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CurrentBatch).To(Equal(5))
+		g.Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(10))
+	})
+}
