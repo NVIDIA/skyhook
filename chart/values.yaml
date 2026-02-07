@@ -90,7 +90,7 @@ controllerManager:
     agent:
       repository: nvcr.io/nvidia/skyhook/agent
       tag: "v6.4.0"
-      digest: "" # manifest list digest (multi-arch) - update after CI publishes images
+      digest: "sha256:2bc0fe8c5c11130c843859dd0c8325e316bf4a9bb1d5883554c90a7a0574a771" # manifest list digest (multi-arch) - update after CI publishes images
 
     # resources: If this is defined it will override the default calculation for resources
     # from estimatedNodeCount and estimatedPackageCount. The below values are
