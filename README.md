@@ -72,7 +72,7 @@ helm search repo skyhook ## should show the latest version
 
 # basic install
 helm install skyhook skyhook/skyhook-operator \
-  --version v0.11.1 \
+  --version v0.12.0 \
   --namespace skyhook \
   --create-namespace
 ```
