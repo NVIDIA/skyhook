@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
@@ -127,7 +128,27 @@ func (r *WebhookController) SetupWithManager(mgr ctrl.Manager) error {
 		For(&corev1.Secret{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			return obj.GetNamespace() == r.namespace && obj.GetName() == r.opts.SecretName
 		}))).
+		// Watch webhook configurations so the leader detects external changes (e.g. Helm upgrade
+		// resetting caBundle) and fixes them immediately instead of waiting for the 24h requeue.
+		Watches(&admissionregistrationv1.ValidatingWebhookConfiguration{},
+			handler.EnqueueRequestsFromMapFunc(r.webhookConfigToSecret),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return obj.GetName() == validatingWebhookConfigName
+			}))).
+		Watches(&admissionregistrationv1.MutatingWebhookConfiguration{},
+			handler.EnqueueRequestsFromMapFunc(r.webhookConfigToSecret),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return obj.GetName() == mutatingWebhookConfigName
+			}))).
 		Complete(r)
+}
+
+// webhookConfigToSecret maps webhook config change events back to the cert Secret,
+// so the existing Reconcile() can verify and fix the caBundle.
+func (r *WebhookController) webhookConfigToSecret(_ context.Context, _ client.Object) []reconcile.Request {
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Name: r.opts.SecretName, Namespace: r.namespace},
+	}}
 }
 
 // permissions
@@ -480,8 +501,8 @@ func deploymentPolicyMutatingRules() []admissionregistrationv1.RuleWithOperation
 func validatingWebhookNeedsUpdate(webhook *admissionregistrationv1.ValidatingWebhook, caBundle []byte, expectedRules []admissionregistrationv1.RuleWithOperations) bool {
 	needUpdate := false
 
-	// Check if CABundle needs to be set
-	if len(webhook.ClientConfig.CABundle) == 0 {
+	// Check if CABundle needs to be set or updated (catches both empty and stale values)
+	if !bytes.Equal(webhook.ClientConfig.CABundle, caBundle) {
 		webhook.ClientConfig.CABundle = caBundle
 		needUpdate = true
 	}
@@ -499,8 +520,8 @@ func validatingWebhookNeedsUpdate(webhook *admissionregistrationv1.ValidatingWeb
 func mutatingWebhookNeedsUpdate(webhook *admissionregistrationv1.MutatingWebhook, caBundle []byte, expectedRules []admissionregistrationv1.RuleWithOperations) bool {
 	needUpdate := false
 
-	// Check if CABundle needs to be set
-	if len(webhook.ClientConfig.CABundle) == 0 {
+	// Check if CABundle needs to be set or updated (catches both empty and stale values)
+	if !bytes.Equal(webhook.ClientConfig.CABundle, caBundle) {
 		webhook.ClientConfig.CABundle = caBundle
 		needUpdate = true
 	}
