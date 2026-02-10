@@ -7,7 +7,6 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    caBundle: ""
     service:
       name: skyhook-operator-webhook-service
       namespace: {{ .Release.Namespace }}
@@ -34,7 +33,6 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    caBundle: ""
     service:
       name: skyhook-operator-webhook-service
       namespace: {{ .Release.Namespace }}
