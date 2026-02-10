@@ -293,6 +293,32 @@ var _ = Describe("WebhookController", Ordered, func() {
 			Expect(needsUpdate).To(BeTrue(), "should detect empty CABundle")
 			Expect(webhook.ClientConfig.CABundle).To(Equal(caBundle), "CABundle should be updated")
 		})
+
+		It("should update CABundle when stale (non-empty but wrong)", func() {
+			expectedRules := skyhookRules()
+			correctCA := []byte("correct-ca")
+			staleCA := []byte("stale-ca-from-previous-cert")
+
+			validatingWebhook := admissionregistrationv1.ValidatingWebhook{
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: staleCA,
+				},
+				Rules: expectedRules,
+			}
+			needsUpdate := validatingWebhookNeedsUpdate(&validatingWebhook, correctCA, expectedRules)
+			Expect(needsUpdate).To(BeTrue(), "should detect stale validating CABundle")
+			Expect(validatingWebhook.ClientConfig.CABundle).To(Equal(correctCA))
+
+			mutatingWebhook := admissionregistrationv1.MutatingWebhook{
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					CABundle: staleCA,
+				},
+				Rules: expectedRules,
+			}
+			needsUpdate = mutatingWebhookNeedsUpdate(&mutatingWebhook, correctCA, expectedRules)
+			Expect(needsUpdate).To(BeTrue(), "should detect stale mutating CABundle")
+			Expect(mutatingWebhook.ClientConfig.CABundle).To(Equal(correctCA))
+		})
 	})
 
 	Describe("Disk and Secret-to-Disk Sync Logic", func() {
