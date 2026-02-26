@@ -28,6 +28,7 @@ METRICS_SOURCE="${METRICS_SOURCE:-kube}"
 OUTPUT_FILE=""
 CLEAR_ANNOTATIONS=1
 FAKE_LABELS=0
+PACKAGES=1
 DEFAULT_OUTPUT_PREFIX="scale_test_results"
 NODE_READY_TIMEOUT=2400
 SKYHOOK_COMPLETE_TIMEOUT=2400
@@ -50,6 +51,7 @@ Options:
   --output               Write CSV results to this path (default: ./scale_test_results_<timestamp>.csv)
   --no-clear-annotations Do not remove skyhook annotations/labels from nodes (Skyhook/Policy CRs are still deleted)
   --fake-labels N        Add N fake labels to the node group at test start (skyhook/fake_1=1 .. skyhook/fake_N=N) to test operator scaling vs label count
+  --packages N           Number of packages in the Skyhook CR (default: 1). Duplicates wait10s as wait10s_1, wait10s_2, ... wait10s_N.
   --help                 This help.
 
 Prerequisites: kubectl context set to cluster, aws CLI, jq. For kube metrics: metrics-server.
@@ -69,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --output)              OUTPUT_FILE="$2"; shift 2 ;;
     --no-clear-annotations) CLEAR_ANNOTATIONS=0; shift ;;
     --fake-labels)         FAKE_LABELS="$2"; shift 2 ;;
+    --packages)            PACKAGES="$2"; shift 2 ;;
     --help)                usage ;;
     *) echo "Unknown option: $1"; usage ;;
   esac
@@ -84,6 +87,9 @@ done
 if [[ "$METRICS_SOURCE" != "kube" && "$METRICS_SOURCE" != "prometheus" ]]; then
   echo "Invalid --metrics-source (must be kube or prometheus)"
   exit 1
+fi
+if [[ "${PACKAGES:-1}" -lt 1 ]]; then
+  PACKAGES=1
 fi
 
 # Default output file so we always write measurements as we go
@@ -264,9 +270,52 @@ ensure_no_test_resources() {
   sleep 5
 }
 
+# Emit Skyhook YAML with N packages (wait10s_1 .. wait10s_N), each same as wait10s (sleep 10).
+generate_skyhook_yaml() {
+  local n=$1
+  cat <<EOF
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: scale-test-skyhook
+spec:
+  deploymentPolicy: scale-test-policy
+  nodeSelectors:
+    matchLabels:
+      eks.amazonaws.com/nodegroup: ${NODEGROUP}
+  packages:
+EOF
+  local i=1
+  while [[ $i -le $n ]]; do
+    cat <<INNER
+    wait10s-${i}-pkg:
+      version: "1.0.0"
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
+      configMap:
+        apply.sh: |-
+          #!/bin/bash
+          sleep 10
+        apply_check.sh: |-
+          #!/bin/bash
+          true
+        config.sh: |-
+          #!/bin/bash
+          true
+        config_check.sh: |-
+          #!/bin/bash
+          true
+INNER
+    i=$((i + 1))
+  done
+}
+
 apply_policy_and_skyhook() {
   sed "s/NODEGROUP_PLACEHOLDER/${NODEGROUP}/g" "$POLICY_YAML" | kubectl apply -f -
-  sed "s/NODEGROUP_PLACEHOLDER/${NODEGROUP}/g" "$SKYHOOK_YAML" | kubectl apply -f -
+  if [[ "${PACKAGES:-1}" -le 1 ]]; then
+    sed "s/NODEGROUP_PLACEHOLDER/${NODEGROUP}/g" "$SKYHOOK_YAML" | kubectl apply -f -
+  else
+    generate_skyhook_yaml "$PACKAGES" | kubectl apply -f -
+  fi
 }
 
 wait_for_rollout_start() {
