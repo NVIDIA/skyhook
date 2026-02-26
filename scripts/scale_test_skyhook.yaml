@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Minimal Skyhook for scale test: single shellscript package that waits 10s.
+# NODEGROUP_PLACEHOLDER is replaced by the script with --node-group value.
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: scale-test-skyhook
+spec:
+  deploymentPolicy: scale-test-policy
+  nodeSelectors:
+    matchLabels:
+      eks.amazonaws.com/nodegroup: NODEGROUP_PLACEHOLDER
+  packages:
+    wait10s:
+      version: "1.0.0"
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
+      configMap:
+        apply.sh: |-
+          #!/bin/bash
+          sleep 10
+        apply_check.sh: |-
+          #!/bin/bash
+          true
+        config.sh: |-
+          #!/bin/bash
+          true
+        config_check.sh: |-
+          #!/bin/bash
+          true
