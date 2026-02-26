@@ -4,7 +4,23 @@
 #
 # Scale test for skyhook-operator: scale EKS node group stepwise, run a minimal
 # 10s Skyhook with exponential policy, record operator memory at each phase.
-# Requires: kubectl, aws CLI, jq. Optional: metrics-server (for --metrics-source=kube).
+#
+# Assumptions:
+#   - EKS cluster already exists; kubectl context is set to that cluster.
+#   - A node group exists and is the one you pass via --node-group (script scales
+#     it with aws eks update-nodegroup-config and uses it as node selector).
+#   - skyhook-operator is installed in the cluster (default namespace: skyhook-operator).
+#
+# Metrics endpoint (for --metrics-source):
+#   - kube (default): uses kubectl top for operator pod memory. Install metrics-server
+#     in the cluster, e.g.:
+#       kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#   - prometheus: script port-forwards the operator pod :8080 to localhost:18080 and
+#     scrapes /metrics (process_resident_memory_bytes etc.). No extra install; operator
+#     exposes :8080/metrics. If using the Helm chart, the metrics service is
+#     skyhook-operator-controller-manager-metrics-service (see docs/metrics/README.md).
+#
+# Requires: kubectl, aws CLI, jq.
 set -euo pipefail
 
 SKYHOOK_NAME="scale-test-skyhook"
