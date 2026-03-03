@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# DeploymentPolicy for scale test: exponential rollout matching all nodes in the node group.
+# NODEGROUP_PLACEHOLDER is replaced by the script with --node-group value.
+---
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: DeploymentPolicy
+metadata:
+  name: scale-test-policy
+spec:
+  resetBatchStateOnCompletion: true
+  default:
+    budget:
+      count: 1
+    strategy:
+      exponential:
+        initialBatch: 1
+        growthFactor: 4
+  compartments:
+  - name: scale-test-nodes
+    selector:
+      matchLabels:
+        eks.amazonaws.com/nodegroup: NODEGROUP_PLACEHOLDER
+    budget:
+      percent: 100
+    strategy:
+      exponential:
+        initialBatch: 1
+        growthFactor: 4
+        batchThreshold: 100
+        safetyLimit: 50
