@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -136,6 +136,45 @@ var _ = Describe("SkyhookNode", func() {
 			pkgs, err = skyhookNode.RunNext()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pkgs).To(BeEmpty())
+		})
+	})
+
+	Context("HasSkyhookAnnotations", func() {
+		It("should return false for node with no annotations", func() {
+			node := &skyhookNode{Node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "new-node",
+				},
+			},
+			}
+			Expect(node.HasSkyhookAnnotations()).To(BeFalse())
+		})
+
+		It("should return false for node with non-skyhook annotations", func() {
+			node := &skyhookNode{Node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-with-other-annotations",
+					Annotations: map[string]string{
+						"kubernetes.io/arch": "amd64",
+						"some-other/key":     "value",
+					},
+				},
+			},
+			}
+			Expect(node.HasSkyhookAnnotations()).To(BeFalse())
+		})
+
+		It("should return true for node with skyhook annotations", func() {
+			node := &skyhookNode{Node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "processed-node",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_myskyhook": `{"some":"state"}`,
+					},
+				},
+			},
+			}
+			Expect(node.HasSkyhookAnnotations()).To(BeTrue())
 		})
 	})
 })

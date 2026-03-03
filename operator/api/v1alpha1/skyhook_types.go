@@ -77,6 +77,12 @@ type SkyhookSpec struct {
 	//+kubebuilder:default=false
 	RuntimeRequired bool `json:"runtimeRequired,omitempty"`
 
+	// AutoTaintNewNodes enables the operator to automatically apply the runtime-required taint
+	// to new nodes that match this Skyhook's node selector. Only meaningful when RuntimeRequired is true.
+	// A node is considered "new" if it has no skyhook.nvidia.com/* annotations.
+	//+kubebuilder:default=false
+	AutoTaintNewNodes bool `json:"autoTaintNewNodes,omitempty"`
+
 	// Priority determines the order in which skyhooks are applied. Lower values are applied first.
 	//+kubebuilder:validation:Minimum=1
 	//+kubebuilder:default=200

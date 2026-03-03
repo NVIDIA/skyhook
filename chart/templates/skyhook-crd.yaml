@@ -111,6 +111,13 @@ spec:
                       type: string
                   type: object
                 type: array
+              autoTaintNewNodes:
+                default: false
+                description: |-
+                  AutoTaintNewNodes enables the operator to automatically apply the runtime-required taint
+                  to new nodes that match this Skyhook's node selector. Only meaningful when RuntimeRequired is true.
+                  A node is considered "new" if it has no skyhook.nvidia.com/* annotations.
+                type: boolean
               deploymentPolicy:
                 description: DeploymentPolicy is the name of a DeploymentPolicy for
                   rollout settings

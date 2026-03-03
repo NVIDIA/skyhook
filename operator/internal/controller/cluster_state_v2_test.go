@@ -2647,4 +2647,111 @@ var _ = Describe("Compartment Status Tests", func() {
 			Expect(skyhookNodes.skyhook.Status.CompartmentStatuses["compartment-1"].BatchState.CompletedNodes).To(Equal(10))
 		})
 	})
+
+	Context("getAutoTaintNodes", func() {
+		runtimeRequiredTaint := corev1.Taint{
+			Key:    "skyhook.nvidia.com",
+			Value:  "runtime-required",
+			Effect: corev1.TaintEffectNoSchedule,
+		}
+
+		It("should taint new node with no annotations and no taint", func() {
+			nodeList := &corev1.NodeList{
+				Items: []corev1.Node{
+					{ObjectMeta: metav1.ObjectMeta{Name: "new-node", UID: "new-node-uid"}},
+				},
+			}
+			skyhookList := &v1alpha1.SkyhookList{
+				Items: []v1alpha1.Skyhook{
+					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
+				},
+			}
+
+			cs, _ := BuildState(skyhookList, nodeList, nil)
+			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Name).To(Equal("new-node"))
+		})
+
+		It("should not taint node that already has the taint", func() {
+			nodeList := &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "tainted-node", UID: "tainted-node-uid"},
+						Spec: corev1.NodeSpec{
+							Taints: []corev1.Taint{runtimeRequiredTaint},
+						},
+					},
+				},
+			}
+			skyhookList := &v1alpha1.SkyhookList{
+				Items: []v1alpha1.Skyhook{
+					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
+				},
+			}
+
+			cs, _ := BuildState(skyhookList, nodeList, nil)
+			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			Expect(result).To(HaveLen(0))
+		})
+
+		It("should not taint node with skyhook annotations", func() {
+			nodeList := &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "processed-node",
+							UID:  "processed-node-uid",
+							Annotations: map[string]string{
+								"skyhook.nvidia.com/nodeState_myskyhook": `{}`,
+							},
+						},
+					},
+				},
+			}
+			skyhookList := &v1alpha1.SkyhookList{
+				Items: []v1alpha1.Skyhook{
+					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
+				},
+			}
+
+			cs, _ := BuildState(skyhookList, nodeList, nil)
+			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			Expect(result).To(HaveLen(0))
+		})
+
+		It("should not taint when autoTaintNewNodes is false", func() {
+			nodeList := &corev1.NodeList{
+				Items: []corev1.Node{
+					{ObjectMeta: metav1.ObjectMeta{Name: "new-node", UID: "new-node-uid"}},
+				},
+			}
+			skyhookList := &v1alpha1.SkyhookList{
+				Items: []v1alpha1.Skyhook{
+					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: false}},
+				},
+			}
+
+			cs, _ := BuildState(skyhookList, nodeList, nil)
+			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			Expect(result).To(HaveLen(0))
+		})
+
+		It("should not taint when runtimeRequired is false", func() {
+			nodeList := &corev1.NodeList{
+				Items: []corev1.Node{
+					{ObjectMeta: metav1.ObjectMeta{Name: "new-node", UID: "new-node-uid"}},
+				},
+			}
+			skyhookList := &v1alpha1.SkyhookList{
+				Items: []v1alpha1.Skyhook{
+					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: false, AutoTaintNewNodes: true}},
+				},
+			}
+
+			cs, _ := BuildState(skyhookList, nodeList, nil)
+			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			Expect(result).To(HaveLen(0))
+		})
+	})
 })

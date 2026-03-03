@@ -294,6 +294,11 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// handle auto-tainting new nodes first so it
+	if yes, result, err := shouldReturn(r.HandleAutoTaint(ctx, clusterState)); yes {
+		return result, err
+	}
+
 	if yes, result, err := shouldReturn(r.HandleMigrations(ctx, clusterState)); yes {
 		return result, err
 	}
@@ -2352,6 +2357,35 @@ func getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks map[types.UID][]Skyho
 		}
 	}
 	return to_remove
+}
+
+// HandleAutoTaint applies the runtime-required taint to new nodes matching runtime-required
+// Skyhooks that have AutoTaintNewNodes enabled.
+func (r *SkyhookReconciler) HandleAutoTaint(ctx context.Context, clusterState *clusterState) (bool, error) {
+	taint_to_add := r.opts.GetRuntimeRequiredTaint()
+	to_taint := clusterState.getAutoTaintNodes(taint_to_add)
+	errs := make([]error, 0)
+	changed := false
+	for _, node := range to_taint {
+		newNode, updated, _ := taints.AddOrUpdateTaint(node, &taint_to_add)
+		if !updated {
+			continue
+		}
+		// add annotation to indicate that the node was auto-tainted
+		if newNode.Annotations == nil {
+			newNode.Annotations = make(map[string]string)
+		}
+		newNode.Annotations[fmt.Sprintf("%s/autoTaint_%s", v1alpha1.METADATA_PREFIX, taint_to_add.Key)] = "true"
+
+		if err := r.Patch(ctx, newNode, client.MergeFrom(node)); err != nil {
+			errs = append(errs, err)
+		}
+		changed = true
+	}
+	if len(errs) > 0 {
+		return changed, utilerrors.NewAggregate(errs)
+	}
+	return changed, nil
 }
 
 // setPodResources sets resources for all containers and init containers in the pod if override is set, else leaves empty for LimitRange

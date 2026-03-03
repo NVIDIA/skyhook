@@ -33,6 +33,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	k8staints "k8s.io/kubernetes/pkg/util/taints"
 )
 
 // tracks original objects
@@ -223,6 +225,37 @@ func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1al
 			}
 		}
 	}
+}
+
+// getAutoTaintNodes returns nodes that should be auto-tainted with the runtime-required taint.
+// A node should be auto-tainted if:
+// 1. It matches a Skyhook with RuntimeRequired=true AND AutoTaintNewNodes=true
+// 2. It doesn't already have the runtime-required taint
+// 3. It has no Skyhook annotations (it's a "new" node)
+func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
+	seen := make(map[types.UID]bool)
+	result := make([]*corev1.Node, 0)
+	for _, skyhook := range cs.skyhooks {
+		if !skyhook.GetSkyhook().Spec.RuntimeRequired || !skyhook.GetSkyhook().Spec.AutoTaintNewNodes {
+			continue
+		}
+		for _, nodeWrapper := range skyhook.GetNodes() {
+			node := nodeWrapper.GetNode()
+			if seen[node.UID] {
+				continue
+			}
+			seen[node.UID] = true
+			if k8staints.TaintExists(node.Spec.Taints, &taint) {
+				continue
+			}
+			if nodeWrapper.HasSkyhookAnnotations() {
+				continue
+			}
+			result = append(result, node)
+
+		}
+	}
+	return result
 }
 
 // createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility

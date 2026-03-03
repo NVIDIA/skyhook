@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/NVIDIA/skyhook/operator/api/v1alpha1"
 	"github.com/NVIDIA/skyhook/operator/internal/graph"
@@ -47,6 +48,7 @@ type SkyhookNode interface {
 	NextStage(_package *v1alpha1.Package) *v1alpha1.Stage
 	HasInterrupt(_package v1alpha1.Package) bool
 	UpdateCondition()
+	HasSkyhookAnnotations() bool
 }
 
 // SkyhookNodeOnly wraps the node with just a skyhook name
@@ -382,6 +384,17 @@ func (node *skyhookNode) RemoveTaint(key string) {
 		node.Spec.Taints = temp
 		node.updated = true
 	}
+}
+
+// HasSkyhookAnnotations returns true if the node has any annotation with the
+// skyhook.nvidia.com/ prefix, indicating it has been previously touched by the Skyhook operator.
+func (node *skyhookNode) HasSkyhookAnnotations() bool {
+	for key := range node.Annotations {
+		if strings.HasPrefix(key, v1alpha1.METADATA_PREFIX+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (node *skyhookNode) Cordon() {

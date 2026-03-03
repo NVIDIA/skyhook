@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: auto-taint-new-nodes
+spec:
+  timeouts:
+    assert: 240s
+  catch:
+  - get:
+      apiVersion: v1
+      kind: Node
+      name: kind-worker
+      format: yaml
+  - get:
+      apiVersion: skyhook.nvidia.com/v1alpha1
+      kind: Skyhook
+      format: yaml
+  steps:
+  # Phase 1: Setup - strip all skyhook annotations so the node is genuinely "new"
+  - name: setup
+    try:
+    - script:
+        content: |
+          ../skyhook-cli reset auto-taint-new-nodes --confirm 2>/dev/null || true
+          ../skyhook-cli reset auto-taint-second --confirm 2>/dev/null || true
+          ## remove all skyhook.nvidia.com/ annotations from kind-worker so it looks new
+          kubectl get node kind-worker -o go-template='{{range $k, $v := .metadata.annotations}}{{$k}}{{"\n"}}{{end}}' | grep '^skyhook\.nvidia\.com/' | while read key; do
+            kubectl annotate node kind-worker "${key}-" 2>/dev/null || true
+          done
+          ## remove any runtime-required taint
+          kubectl taint node kind-worker skyhook.nvidia.com=runtime-required:NoSchedule- 2>/dev/null || true
+
+  # Phase 2: First auto-taint skyhook — node is new, should be tainted
+  - name: apply-first-skyhook
+    try:
+    - create:
+        file: skyhook.yaml
+
+  # Phase 3: Assert the operator auto-applied the taint
+  - name: assert-taint-applied
+    try:
+    - assert:
+        file: assert-taint-applied.yaml
+
+  # Phase 4: Assert first skyhook completes and taint is removed
+  - name: assert-first-complete
+    try:
+    - assert:
+        file: assert-complete.yaml
+
+  # Phase 5: Second auto-taint skyhook — node already has skyhook annotations, should NOT be tainted
+  - name: apply-second-skyhook
+    try:
+    - create:
+        file: skyhook-second.yaml
+
+  # Phase 6: Assert the node was NOT tainted (it's not new anymore)
+  - name: assert-no-taint
+    try:
+    - assert:
+        file: assert-no-taint.yaml
+    finally:
+    - script:
+        content: |
+          kubectl taint node kind-worker skyhook.nvidia.com=runtime-required:NoSchedule- 2>/dev/null || true
