@@ -35,6 +35,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: 1.26.0
   PYTHON_VERSION: 3.13
   DEBIAN_VERSION: trixie
 jobs:
@@ -266,10 +267,10 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
       
-      - name: Set up Go
+      - name: Set up Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.6'
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: operator/go.sum
       
       - name: Log in to the Container registry
@@ -291,8 +292,8 @@ jobs:
         id: cached-binaries
         uses: actions/cache/restore@v4
         with:
-          key: 1.25.6-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
-          restore-keys: 1.25.6-${{ runner.os }}-${{ runner.arch }}-bin-
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
@@ -307,7 +308,7 @@ jobs:
         if: steps.cached-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          key: 1.25.6-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build

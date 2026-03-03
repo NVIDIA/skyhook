@@ -109,7 +109,7 @@ func (d *dag[T]) Add(name string, object T, dependencies ...string) error {
 
 // leaves handle edge cases where there are more then one leaf, and from is a subset of the leaves not in the from
 func (d *dag[T]) leaves(from []string) []string {
-	leaves := make([]string, 0)
+	leaves := make([]string, 0, len(d.leafs))
 	for _, f := range d.leafs {
 		leaves = append(leaves, f.name)
 	}
@@ -122,7 +122,7 @@ func (d *dag[T]) leaves(from []string) []string {
 
 // diff returns the elements in a that are not in b
 func diff(a, b []string) []string {
-	ret := make([]string, 0)
+	ret := make([]string, 0, len(a))
 	for _, v := range a {
 		if !slices.Contains(b, v) {
 			ret = append(ret, v)
@@ -179,7 +179,7 @@ func (d *dag[T]) Next(from ...string) ([]string, error) {
 }
 
 func (d *dag[T]) Get(from ...string) []T {
-	ret := make([]T, 0)
+	ret := make([]T, 0, len(from))
 	for _, f := range from {
 		ret = append(ret, d.vertices[f].object)
 	}
@@ -188,7 +188,7 @@ func (d *dag[T]) Get(from ...string) []T {
 
 func (d *dag[T]) Valid() error {
 	if len(d.placeholders) > 0 {
-		miss := make([]string, 0)
+		miss := make([]string, 0, len(d.placeholders))
 		for k := range d.placeholders {
 			miss = append(miss, k)
 		}
@@ -198,7 +198,7 @@ func (d *dag[T]) Valid() error {
 }
 
 func flat[T any](m map[string]*vertex[T]) []*vertex[T] {
-	root := make([]*vertex[T], 0)
+	root := make([]*vertex[T], 0, len(m))
 	for _, val := range m {
 		root = append(root, val)
 	}
@@ -214,7 +214,7 @@ func sortEdges[T any](e []*vertex[T]) {
 }
 
 func getNames[T any](vs []*vertex[T]) []string {
-	ret := make([]string, 0)
+	ret := make([]string, 0, len(vs))
 	for _, v := range vs {
 		ret = append(ret, v.name)
 	}

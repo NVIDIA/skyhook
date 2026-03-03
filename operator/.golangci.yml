@@ -61,6 +61,7 @@ linters:
         path: api/*
       - linters:
           - dupl
+          - prealloc
         path: _test\.go
       - linters:
           - dupl
