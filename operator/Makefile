@@ -16,9 +16,9 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.25.6
+GO_VERSION ?= 1.26.0
 DEBIAN_VERSION ?= trixie
-DISTROLESS_VERSION ?= 4.0.1
+DISTROLESS_VERSION ?= 4.0.2
 
 # Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location

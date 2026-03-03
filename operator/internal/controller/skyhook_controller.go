@@ -1386,7 +1386,7 @@ func fudgeInterruptWithPriority(next []*v1alpha1.Package, configUpdates map[stri
 		}
 	}
 
-	packageNames := make([]string, 0)
+	packageNames := make([]string, 0, len(next))
 	for _, pkg := range next {
 		packageNames = append(packageNames, pkg.Name)
 	}
