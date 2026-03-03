@@ -43,7 +43,7 @@ ENVTEST_K8S_VERSION ?= 1.35.0
 GOCOVER_VERSION ?= v1.4.0
 GINKGO_VERSION ?= v2.27.2
 MOCKERY_VERSION ?= v3.5.0
-CHAINSAW_VERSION ?= v0.2.10
+CHAINSAW_VERSION ?= v0.2.14
 HELM_VERSION ?= v3.18.5
 HELMIFY_VERSION ?= v0.4.12
 GO_LICENSES_VERSION ?= v1.6.0
@@ -109,8 +109,9 @@ mockery: $(LOCALBIN)  ## Download mockery locally if necessary.
 	test -s $(LOCALBIN)/mockery ||  GOBIN=$(LOCALBIN) go install github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 
 .PHONY: chainsaw
-chainsaw: $(LOCALBIN)  ## Download chainsaw locally if necessary.
-	test -s $(LOCALBIN)/chainsaw || GOBIN=$(LOCALBIN) go install github.com/kyverno/chainsaw@$(CHAINSAW_VERSION)
+chainsaw: $(LOCALBIN)  ## Download chainsaw binary if necessary.
+	test -s $(LOCALBIN)/chainsaw || curl -sSfL https://github.com/kyverno/chainsaw/releases/download/$(CHAINSAW_VERSION)/chainsaw_$(OS)_$(ARCH).tar.gz | \
+		tar --no-same-owner -zxv -C $(LOCALBIN) chainsaw
 
 .PHONY: helm
 helm: $(LOCALBIN) ## Download helm locally if necessary.

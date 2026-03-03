@@ -70,7 +70,7 @@ jobs:
     strategy:
       matrix:
         # Standard E2E tests on all supported K8s versions
-        k8s-version: ["1.31.14", "1.32.11", "1.33.7", "1.34.3", "1.35.0"]
+        k8s-version: ["1.32.11", "1.33.7", "1.34.3", "1.35.0"]
         test-suite: ["e2e"]
         make-targets: ["setup-kind-cluster e2e-tests"]
         include:

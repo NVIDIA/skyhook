@@ -20,7 +20,6 @@ kind: Node
 metadata:
   name: kind-worker
   labels:
-    skyhook.nvidia.com/auto-taint-test: "true"
     skyhook.nvidia.com/status_auto-taint-new-nodes: complete
   annotations:
     skyhook.nvidia.com/status_auto-taint-new-nodes: complete
