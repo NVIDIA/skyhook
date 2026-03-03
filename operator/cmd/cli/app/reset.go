@@ -39,6 +39,7 @@ const (
 	statusAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/status_"
 	cordonAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/cordon_"
 	versionAnnotationPrefix   = v1alpha1.METADATA_PREFIX + "/version_"
+	autoTaintAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/autoTaint_"
 	statusLabelPrefix         = v1alpha1.METADATA_PREFIX + "/status_"
 )
 
@@ -204,6 +205,7 @@ func resetNodeAnnotations(ctx context.Context, cmd *cobra.Command, kubeClient *c
 			statusAnnotationPrefix + skyhookName,
 			cordonAnnotationPrefix + skyhookName,
 			versionAnnotationPrefix + skyhookName,
+			autoTaintAnnotationPrefix + skyhookName,
 		}
 		labelsToRemove := []string{
 			statusLabelPrefix + skyhookName,
