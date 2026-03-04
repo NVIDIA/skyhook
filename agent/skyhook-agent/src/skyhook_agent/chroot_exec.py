@@ -66,6 +66,7 @@ def chroot_exec(config: dict, chroot_dir: str):
         process_env = _get_process_env(container_env, skyhook_env, _get_chroot_env())
         print("config:", config)
         print("copy_dir:", copy_dir)
+        
         if not copy_dir.startswith("/"):
             raise ValueError(f"copy_dir must be an absolute path: {copy_dir}")
         subprocess.run(cmds, check=True, env=process_env, cwd=copy_dir)
