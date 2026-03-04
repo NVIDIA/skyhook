@@ -100,7 +100,6 @@ mirror-operator-image:
         HEALTHCHECK_TCP_PORT: "2376"
   variables:
     GHCR_REGISTRY: ghcr.io
-    NVCR_REGISTRY: nvcr.io
     GHCR_REGISTRY_IMAGE: "${GHCR_REGISTRY}/nvidia/skyhook/operator"
     NVCR_REGISTRY_IMAGE: "${NVCR_REGISTRY}/skyhook/operator"
     DOCKER_HOST: tcp://docker:2376
@@ -108,7 +107,7 @@ mirror-operator-image:
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   before_script:
-    - echo "{\"auths\":{\"${NVCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${NVCR_REGISTRY_USER}" "${NVCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"${GHCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${GHCR_REGISTRY_USER}" "${GHCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > config.json
+    - echo "{\"auths\":{\"nvcr.io\":{\"auth\":\"$(printf "%s:%s" "${NVCR_REGISTRY_USER}" "${NVCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"${GHCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${GHCR_REGISTRY_USER}" "${GHCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > config.json
   script:
     - until docker info >/dev/null 2>&1; do sleep 1; done
     - export IMG_TAG="${CI_COMMIT_TAG#operator/}"
@@ -144,7 +143,7 @@ mirror-agent-image:
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   before_script:
-    - echo "{\"auths\":{\"${NVCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${NVCR_REGISTRY_USER}" "${NVCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"${GHCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${GHCR_REGISTRY_USER}" "${GHCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > config.json
+    - echo "{\"auths\":{\"nvcr.io\":{\"auth\":\"$(printf "%s:%s" "${NVCR_REGISTRY_USER}" "${NVCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"${GHCR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${GHCR_REGISTRY_USER}" "${GHCR_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > config.json
   script:
     - until docker info >/dev/null 2>&1; do sleep 1; done
     - export IMG_TAG="${CI_COMMIT_TAG#agent/}"
