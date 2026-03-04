@@ -157,7 +157,7 @@ class NullWriter:
         return False
 
 
-async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, write_cmds=False, no_chmod=False, env: dict[str, str] = {}, write_logs: bool=True, **kwargs):
+async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sink_path: str, copy_dir: str, write_cmds=False, no_chmod=False, env: dict[str, str] = {}, write_logs: bool=True, **kwargs):
     """
     Run the cmd in a subprocess and keep the stream of stdout/stderr and merge both into
     the sink_path as a log.
@@ -174,7 +174,7 @@ async def tee(chroot_dir: str, cmd: List[str], stdout_sink_path: str, stderr_sin
             sys.stdout.write(" ".join(cmd) + "\n")
             stdout_sink_f.write(" ".join(cmd) + "\n")
         with tempfile.NamedTemporaryFile(mode="w", delete=True) as f:
-            f.write(json.dumps({"cmd": cmd, "no_chmod": no_chmod, "env": env}))
+            f.write(json.dumps({"cmd": cmd, "no_chmod": no_chmod, "env": env, "copy_dir": copy_dir}))
             f.flush()
             
             # Run the special chroot_exec.py script to chroot into the directory and run the command
@@ -252,7 +252,7 @@ def set_flag(flag_file: str, msg: str = "") -> None:
         f.write(msg)
 
 
-def _run(chroot_dir: str, cmds: list[str], log_path: str|None, write_cmds=False, no_chmod=False, env: dict[str, str] = {}, write_logs: bool=True, **kwargs) -> int:
+def _run(chroot_dir: str, cmds: list[str], log_path: str|None, copy_dir: str, write_cmds=False, no_chmod=False, env: dict[str, str] = {}, write_logs: bool=True, **kwargs) -> int:
     """
     Synchronous wrapper around the tee command to have logs written to disk
     """
@@ -269,6 +269,7 @@ def _run(chroot_dir: str, cmds: list[str], log_path: str|None, write_cmds=False,
             no_chmod=no_chmod,
             env=env,
             write_logs=write_logs,
+            copy_dir=copy_dir,
             **kwargs
         )
     )
@@ -333,7 +334,8 @@ def run_step(
         [step_path, *step.arguments],
         log_file,
         env=env,
-        write_logs=SKYHOOK_AGENT_WRITE_LOGS)
+        write_logs=SKYHOOK_AGENT_WRITE_LOGS,
+        copy_dir=copy_dir)
     
     if SKYHOOK_AGENT_WRITE_LOGS:
         cleanup_old_logs(get_log_file(step_path, copy_dir, config_data, chroot_dir, "*"))
@@ -512,6 +514,7 @@ def do_interrupt(interrupt_data: str, root_mount: str, copy_dir: str) -> bool:
             root_mount,
             cmd,
             get_log_file(f"interrupts/{interrupt_id}", copy_dir, config_data, root_mount),
+            copy_dir=copy_dir,
             write_cmds=True,
             no_chmod=True
         )

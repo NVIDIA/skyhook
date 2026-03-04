@@ -16,7 +16,7 @@
 
 import unittest
 from unittest import mock
-from skyhook_agent.chroot_exec import _get_process_env, _get_chroot_env
+from skyhook_agent.chroot_exec import _get_process_env, _get_chroot_env, chroot_exec
 
 
 class TestChrootExec(unittest.TestCase):
@@ -227,6 +227,68 @@ class TestChrootExec(unittest.TestCase):
             "PATH": "/usr/bin:/bin"
         }
         self.assertEqual(result, expected)
+
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    @mock.patch('skyhook_agent.chroot_exec._get_chroot_env')
+    @mock.patch('skyhook_agent.chroot_exec.os.chmod')
+    @mock.patch('skyhook_agent.chroot_exec.os.chdir')
+    @mock.patch('skyhook_agent.chroot_exec.os.chroot')
+    def test_chroot_exec_without_copy_dir_raises(
+        self, mock_chroot, mock_chdir, mock_chmod, mock_get_chroot_env, mock_subprocess_run
+    ):
+        """Test chroot_exec with no copy_dir in config raises ValueError"""
+        config = {
+            "cmd": ["/some/step.sh", "arg1"],
+            "no_chmod": True,
+            "env": {},
+        }
+        with self.assertRaises(ValueError) as ctx:
+            chroot_exec(config, "/chroot/path")
+        self.assertIn("copy_dir must be set in config", str(ctx.exception))
+        mock_subprocess_run.assert_not_called()
+
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    @mock.patch('skyhook_agent.chroot_exec._get_chroot_env')
+    @mock.patch('skyhook_agent.chroot_exec.os.chmod')
+    @mock.patch('skyhook_agent.chroot_exec.os.chdir')
+    @mock.patch('skyhook_agent.chroot_exec.os.chroot')
+    def test_chroot_exec_with_copy_dir_relative_raises(
+        self, mock_chroot, mock_chdir, mock_chmod, mock_get_chroot_env, mock_subprocess_run
+    ):
+        """Test chroot_exec with relative copy_dir raises ValueError"""
+        mock_get_chroot_env.return_value = {}
+        mock_subprocess_run.return_value = mock.MagicMock(returncode=0)
+        config = {
+            "cmd": ["/skyhook_data/skyhook_dir/step.sh"],
+            "no_chmod": True,
+            "env": {},
+            "copy_dir": "skyhook_data",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            chroot_exec(config, "/chroot/path")
+        self.assertIn("copy_dir must be an absolute path", str(ctx.exception))
+        mock_subprocess_run.assert_not_called()
+
+    @mock.patch('skyhook_agent.chroot_exec.subprocess.run')
+    @mock.patch('skyhook_agent.chroot_exec._get_chroot_env')
+    @mock.patch('skyhook_agent.chroot_exec.os.chmod')
+    @mock.patch('skyhook_agent.chroot_exec.os.chdir')
+    @mock.patch('skyhook_agent.chroot_exec.os.chroot')
+    def test_chroot_exec_with_copy_dir_absolute_sets_cwd_as_given(
+        self, mock_chroot, mock_chdir, mock_chmod, mock_get_chroot_env, mock_subprocess_run
+    ):
+        """Test chroot_exec with absolute copy_dir passes cwd through to subprocess.run"""
+        mock_get_chroot_env.return_value = {}
+        mock_subprocess_run.return_value = mock.MagicMock(returncode=0)
+        config = {
+            "cmd": ["/skyhook_data/skyhook_dir/step.sh"],
+            "no_chmod": True,
+            "env": {},
+            "copy_dir": "/skyhook_data",
+        }
+        chroot_exec(config, "/chroot/path")
+        call_kwargs = mock_subprocess_run.call_args[1]
+        self.assertEqual(call_kwargs["cwd"], "/skyhook_data")
 
 
 if __name__ == '__main__':
