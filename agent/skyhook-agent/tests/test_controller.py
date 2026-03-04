@@ -970,76 +970,76 @@ class TestUseCases(unittest.TestCase):
                 self.assertFalse(os.path.exists(f"{controller.get_flag_dir(root_dir)}/ALL_CHECKED"))
                 self.assertTrue(result)
 
-    # @mock.patch("skyhook_agent.controller.get_log_file")
-    # @mock.patch("skyhook_agent.controller.datetime")
-    # def test_step_logs_are_sent_to_outputs_and_log_file(
-    #     self, datetime_mock, log_file_mock
-    # ):
-    #     m = mock.MagicMock()
-    #     datetime_mock.now.return_value = m
-    #     m.isoformat.return_value = "isoformat"
-    #     # Need to close the temp file here because CI doesn't like trying to execute it while a file handle is still open
-    #     with tempfile.TemporaryDirectory() as temp_d:
-    #         os.makedirs(f"{temp_d}/skyhook_dir")
-    #         log_file_mock.return_value = f"{temp_d}/log"
-    #         with open(f"{temp_d}/skyhook_dir/foo.sh", "w", newline='\n', encoding='utf-8') as step_file:
-    #             # Make simple step script that outputs to stdout and stderr
-    #             step_file.write(
-    #                 textwrap.dedent(
-    #                     """#!/bin/sh
-    #                     for i in 1 2; do
-    #                         echo "$i"
-    #                         >&2 echo "$i err"
-    #                         sleep $i
-    #                     done
-    #                     """
-    #                 )
-    #             )
-    #         os.chmod(f"{temp_d}/skyhook_dir/foo.sh", os.stat(f"{temp_d}/skyhook_dir/foo.sh").st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
-    #         stdout_buff, stderr_buff = (FakeIO(), FakeIO())
-    #         with mock.patch.object(
-    #             controller.sys, "stderr", stderr_buff
-    #         ), mock.patch.object(controller.sys, "stdout", stdout_buff):
-    #             failed = controller.run_step(Step("foo.sh", arguments=[], returncodes=[0]), "local", temp_d, config_data=self.config_data)
-    #         os.remove(step_file.name)
-    #         if failed:
-    #             # This means it failed
-    #             print(stdout_buff.read())
-    #             print(stderr_buff.read())
-    #             self.fail("Step should not have failed")
-    #         with open(f"{temp_d}/log", "r") as log_f:
-    #             # Compare sorted to avoid any issues wrt to sequencing of the async writes
-    #             self.assertEqual(
-    #                 sorted(log_f.read().split("\n")),
-    #                 sorted(
-    #                     [
-    #                         "[out]isoformat ",
-    #                         "[out]isoformat 1",
-    #                         "[out]isoformat 2",
-    #                     ]
-    #                 ),
-    #             )
-    #         with open(f"{temp_d}/log.err", "r") as log_f:
-    #             self.assertEqual(
-    #                 sorted(log_f.read().strip().split("\n")),
-    #                 sorted(
-    #                     [
-    #                         "[err]isoformat",
-    #                         "[err]isoformat 1 err",
-    #                         "[err]isoformat 2 err",
-    #                     ]
-    #                 ),
-    #             )
+    @mock.patch("skyhook_agent.controller.get_log_file")
+    @mock.patch("skyhook_agent.controller.datetime")
+    def test_step_logs_are_sent_to_outputs_and_log_file(
+        self, datetime_mock, log_file_mock
+    ):
+        m = mock.MagicMock()
+        datetime_mock.now.return_value = m
+        m.isoformat.return_value = "isoformat"
+        # Need to close the temp file here because CI doesn't like trying to execute it while a file handle is still open
+        with tempfile.TemporaryDirectory() as temp_d:
+            os.makedirs(f"{temp_d}/skyhook_dir")
+            log_file_mock.return_value = f"{temp_d}/log"
+            with open(f"{temp_d}/skyhook_dir/foo.sh", "w", newline='\n', encoding='utf-8') as step_file:
+                # Make simple step script that outputs to stdout and stderr
+                step_file.write(
+                    textwrap.dedent(
+                        """#!/bin/sh
+                        for i in 1 2; do
+                            echo "$i"
+                            >&2 echo "$i err"
+                            sleep $i
+                        done
+                        """
+                    )
+                )
+            os.chmod(f"{temp_d}/skyhook_dir/foo.sh", os.stat(f"{temp_d}/skyhook_dir/foo.sh").st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
+            stdout_buff, stderr_buff = (FakeIO(), FakeIO())
+            with mock.patch.object(
+                controller.sys, "stderr", stderr_buff
+            ), mock.patch.object(controller.sys, "stdout", stdout_buff):
+                failed = controller.run_step(Step("foo.sh", arguments=[], returncodes=[0]), "local", temp_d, config_data=self.config_data)
+            os.remove(step_file.name)
+            if failed:
+                # This means it failed
+                print(stdout_buff.read())
+                print(stderr_buff.read())
+                self.fail("Step should not have failed")
+            with open(f"{temp_d}/log", "r") as log_f:
+                # Compare sorted to avoid any issues wrt to sequencing of the async writes
+                self.assertEqual(
+                    sorted(log_f.read().split("\n")),
+                    sorted(
+                        [
+                            "[out]isoformat ",
+                            "[out]isoformat 1",
+                            "[out]isoformat 2",
+                        ]
+                    ),
+                )
+            with open(f"{temp_d}/log.err", "r") as log_f:
+                self.assertEqual(
+                    sorted(log_f.read().strip().split("\n")),
+                    sorted(
+                        [
+                            "[err]isoformat",
+                            "[err]isoformat 1 err",
+                            "[err]isoformat 2 err",
+                        ]
+                    ),
+                )
 
-    #         self.assertEqual(
-    #             stdout_buff.read_lines(),
-    #             ["[out]isoformat 1", "[out]isoformat 2", "[out]isoformat SUCEEDED: foo.sh ", ""],
-    #         )
+            self.assertEqual(
+                stdout_buff.read_lines(),
+                ["[out]isoformat 1", "[out]isoformat 2", "[out]isoformat SUCEEDED: foo.sh ", ""],
+            )
 
-    #         self.assertEqual(
-    #             stderr_buff.read_lines(),
-    #             ["[err]isoformat 1 err", "[err]isoformat 2 err", "[err]isoformat "],
-    #         )
+            self.assertEqual(
+                stderr_buff.read_lines(),
+                ["[err]isoformat 1 err", "[err]isoformat 2 err", "[err]isoformat "],
+            )
     
     @mock.patch("skyhook_agent.controller.os")
     @mock.patch("skyhook_agent.controller.glob")
