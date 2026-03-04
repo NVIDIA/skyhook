@@ -150,7 +150,7 @@ class TestHelpers(unittest.TestCase):
 
             with tempfile.NamedTemporaryFile('w') as f:
                 result = asyncio.run(
-                    controller.tee("", ["ls", dir], f.name, f"{dir}/foo.err", write_cmds=True)
+                    controller.tee("", ["ls", dir], f.name, f"{dir}/foo.err", "tmp", write_cmds=True)
                 )
                 self.assertEqual(
                     f"ls {dir}",
@@ -222,7 +222,8 @@ class TestHelpers(unittest.TestCase):
                     env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
                     write_cmds=False,
                     no_chmod=False,
-                    write_logs=True
+                    write_logs=True,
+                    copy_dir="copy_dir"
                 )
             ]
         )
@@ -272,7 +273,8 @@ class TestHelpers(unittest.TestCase):
                     write_cmds=False,
                     no_chmod=False,
                     env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
-                    write_logs=True
+                    write_logs=True,
+                    copy_dir="copy_dir"
                 )
             ]
         )
@@ -719,7 +721,8 @@ class TestUseCases(unittest.TestCase):
                         env=dict(
                             **{"PREVIOUS_VERSION": "0.0.9", "CURRENT_VERSION": "1.0.0"}, 
                             **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir}),
-                        write_logs=True
+                        write_logs=True,
+                        copy_dir=copy_dir
                     )
                 ])
 
@@ -759,7 +762,8 @@ class TestUseCases(unittest.TestCase):
                     env=dict(
                         **{"PREVIOUS_VERSION": "2024.07.28", "CURRENT_VERSION": "1.0.0"}, 
                         **{"STEP_ROOT": f"{root_dir}/{copy_dir}/skyhook_dir", "SKYHOOK_DIR": copy_dir}),
-                    write_logs=True
+                    write_logs=True,
+                    copy_dir=copy_dir
                 )
             ])
 
@@ -1096,8 +1100,8 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True),
-                mock.call(root_dir, ["systemctl", "restart", "containerd"], controller.get_log_file("interrupts/service_restart_1", copy_dir, config_data, root_dir), write_cmds=True, no_chmod=True)
+                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", copy_dir, config_data, root_dir), copy_dir=copy_dir, write_cmds=True, no_chmod=True),
+                mock.call(root_dir, ["systemctl", "restart", "containerd"], controller.get_log_file("interrupts/service_restart_1", copy_dir, config_data, root_dir), copy_dir=copy_dir, write_cmds=True, no_chmod=True)
             ])
 
     @mock.patch("skyhook_agent.controller._run")
@@ -1165,9 +1169,9 @@ class TestUseCases(unittest.TestCase):
             
             self.assertEqual(result, False)
             expected_calls = [
-                mock.call(root_dir, ["systemctl", "daemon-reload"], mock.ANY, write_cmds=True, no_chmod=True),
-                mock.call(root_dir, ["systemctl", "restart", "foo"], mock.ANY, write_cmds=True, no_chmod=True),
-                mock.call(root_dir, ["systemctl", "restart", "bar"], mock.ANY, write_cmds=True, no_chmod=True)
+                mock.call(root_dir, ["systemctl", "daemon-reload"], mock.ANY, copy_dir=copy_dir, write_cmds=True, no_chmod=True),
+                mock.call(root_dir, ["systemctl", "restart", "foo"], mock.ANY, copy_dir=copy_dir, write_cmds=True, no_chmod=True),
+                mock.call(root_dir, ["systemctl", "restart", "bar"], mock.ANY, copy_dir=copy_dir, write_cmds=True, no_chmod=True)
             ]
             run_mock.assert_has_calls(expected_calls)
             self.assertEqual(run_mock.call_count, 3)
@@ -1200,7 +1204,7 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
+                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), copy_dir=copy_dir, write_cmds=True, no_chmod=True)
             ])
 
             self.assertEqual(result, True)
@@ -1233,7 +1237,7 @@ class TestUseCases(unittest.TestCase):
                 "package_version": "version"
             }
             run_mock.assert_has_calls([
-                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), write_cmds=True, no_chmod=True)
+                mock.call(root_dir, ["systemctl", "daemon-reload"], controller.get_log_file("interrupts/service_restart_0", "copy_dir", config_data, root_dir), copy_dir=copy_dir, write_cmds=True, no_chmod=True)
             ])
 
     def test_interrupt_noop_makes_the_flag_file(self):
@@ -1456,7 +1460,8 @@ class TestUseCases(unittest.TestCase):
                     env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
                     write_cmds=False,
                     no_chmod=False,
-                    write_logs=False
+                    write_logs=False,
+                    copy_dir="copy_dir"
                 )
             ]
         )
@@ -1489,7 +1494,8 @@ class TestUseCases(unittest.TestCase):
                     env={"STEP_ROOT": "copy_dir/skyhook_dir", "SKYHOOK_DIR": "copy_dir"},
                     write_cmds=False,
                     no_chmod=False,
-                    write_logs=True
+                    write_logs=True,
+                    copy_dir="copy_dir"
                 )
             ]
         )
@@ -1509,7 +1515,7 @@ class TestUseCases(unittest.TestCase):
             
             # Run tee with write_logs=False
             result = asyncio.run(
-                controller.tee("", ["echo", "test"], stdout_path, stderr_path, write_logs=False)
+                controller.tee("", ["echo", "test"], stdout_path, stderr_path, "tmp", write_logs=False)
             )
             
             # Log files should not be created
