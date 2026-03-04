@@ -48,6 +48,9 @@ def chroot_exec(config: dict, chroot_dir: str):
     cmds = config["cmd"]
     no_chmod = config["no_chmod"]
     skyhook_env = config["env"]
+    if "copy_dir" not in config or config["copy_dir"] is None:
+        raise ValueError("copy_dir must be set in config")
+    copy_dir = config["copy_dir"]
 
     # Capture container environment before chroot
     container_env = dict(os.environ)
@@ -61,7 +64,10 @@ def chroot_exec(config: dict, chroot_dir: str):
             os.chmod(cmds[0], os.stat(cmds[0]).st_mode | stat.S_IXGRP | stat.S_IXUSR | stat.S_IXOTH)
 
         process_env = _get_process_env(container_env, skyhook_env, _get_chroot_env())
-        subprocess.run(cmds, check=True, env=process_env)
+
+        if not copy_dir.startswith("/"):
+            raise ValueError(f"copy_dir must be an absolute path: {copy_dir}")
+        subprocess.run(cmds, check=True, env=process_env, cwd=copy_dir)
     except:
         raise
 
