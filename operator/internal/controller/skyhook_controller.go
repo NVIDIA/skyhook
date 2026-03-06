@@ -2199,20 +2199,6 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 		}
 	}
 
-	// if stage != v1alpha1.StageApply {
-	// 	// If a node gets rest by a user, the about method will return the wrong node state. Above sources it from the skyhook status.
-	// 	// check if the node has nothing, reset it then apply the package.
-	// 	nodeState, err := skyhookNode.State()
-	// 	if err != nil {
-	// 		return fmt.Errorf("error getting node state: %w", err)
-	// 	}
-
-	// 	_, found := nodeState[_package.GetUniqueName()]
-	// 	if !found {
-	// 		stage = v1alpha1.StageApply
-	// 	}
-	// }
-
 	nextStage := skyhookNode.NextStage(_package)
 	if nextStage != nil {
 		stage = *nextStage

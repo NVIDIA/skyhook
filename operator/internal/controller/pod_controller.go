@@ -155,6 +155,19 @@ func (r *SkyhookReconciler) UpdateNodeState(ctx context.Context, pod *corev1.Pod
 		return false, fmt.Errorf("error creating node wrapper: %w", err)
 	}
 
+	// If the node has no nodeState annotation, the annotation was intentionally deleted
+	// (e.g., manual node reset). The skyhook controller always creates the annotation
+	// before creating pods, so a missing annotation means external intervention.
+	// Don't recreate it - let the skyhook controller handle the reset via
+	// ValidateRunningPackages which will clean up stale pods.
+	initialState, err := skyhookNode.State()
+	if err != nil {
+		return false, fmt.Errorf("error reading node state: %w", err)
+	}
+	if initialState == nil {
+		return false, nil
+	}
+
 	updated := false
 	if state == v1alpha1.StateComplete {
 		updated, err = r.HandleCompletePod(ctx, skyhookNode, packagePtr, containerName)
