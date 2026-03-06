@@ -1578,6 +1578,70 @@ var _ = Describe("Resource Comparison", func() {
 	})
 })
 
+var _ = Describe("pod controller tests", func() {
+	It("should not recreate annotation when nodeState is missing (node reset)", func() {
+		nodeName := "test-node-reset"
+
+		// Create a node WITHOUT any skyhook nodeState annotation
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: nodeName,
+			},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		defer func() {
+			_ = k8sClient.Delete(ctx, node)
+		}()
+
+		// Build the package annotation for the pod
+		pkg := &PackageSkyhook{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "bb",
+				Version: "1.2",
+			},
+			Skyhook: "test-skyhook-reset",
+			Stage:   v1alpha1.StageConfig,
+			Image:   "ghcr.io/nvidia/skyhook/agentless",
+		}
+		pkgData, err := json.Marshal(pkg)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create a pod that looks like a completed skyhook pod on the node
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-reset-pod",
+				Namespace: opts.Namespace,
+				Labels: map[string]string{
+					fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): "test-skyhook-reset",
+				},
+				Annotations: map[string]string{
+					fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX): string(pkgData),
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName:   nodeName,
+				Containers: []corev1.Container{{Name: "test", Image: "busybox"}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+		defer func() {
+			_ = k8sClient.Delete(ctx, pod)
+		}()
+
+		// Call UpdateNodeState - should skip because nodeState annotation is missing
+		requeue, err := operator.UpdateNodeState(ctx, pod, v1alpha1.StateErroring, "bb-config", 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(requeue).To(BeFalse())
+
+		// Verify the node still has no nodeState annotation
+		var updatedNode corev1.Node
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, &updatedNode)).To(Succeed())
+		annotationKey := fmt.Sprintf("%s/nodeState_test-skyhook-reset", v1alpha1.METADATA_PREFIX)
+		_, hasAnnotation := updatedNode.Annotations[annotationKey]
+		Expect(hasAnnotation).To(BeFalse(), "nodeState annotation should not be recreated after reset")
+	})
+})
+
 func TestGenerateValidPodNames(t *testing.T) {
 	g := NewWithT(t)
 
