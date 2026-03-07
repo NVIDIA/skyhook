@@ -1,0 +1,18 @@
+# ConfigMap after glob update (only dexter is updated)
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: config-skyhook-dexter-1.2.3
+  namespace: skyhook
+  labels:
+    skyhook.nvidia.com/name: config-skyhook
+  ownerReferences:
+  - apiVersion: skyhook.nvidia.com/v1alpha1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Skyhook
+    name: config-skyhook
+data:
+  game.properties: |
+    changed via glob
