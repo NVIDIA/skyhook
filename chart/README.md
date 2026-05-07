@@ -22,21 +22,28 @@ Settings | Description | Default |
 ---| --- | --- |
 | controllerManager.tolerations | add tolerations to the controller manager pod | [] |
 | controllerManager.selectors | add node selectors to the controller manager pod | {} |
-| controllerManager.manager.env.copyDirRoot | Directory for which the operator will work from on the host. Some environments may require this to be set to a specific directory. | /tmp |
-| webhooks.enable | Enable the webhook setup in the operator controller. Default is "true" and is required for production. | "true" |
+| controllerManager.nodeAffinity.matchExpressions | advanced node affinity expressions for the controller manager pod. Cannot be used together with `controllerManager.selectors` — choose one. | [] |
+| controllerManager.manager.env.copyDirRoot | Directory for which the operator will work from on the host. Some environments may require this to be set to a specific directory. | /var/lib/skyhook |
+| controllerManager.manager.env.agentLogRoot | Directory the agent will write logs to on the host. Some environments may require this to be set to a specific directory. | /var/log/skyhook |
+| webhook.enable | Enable the webhook setup in the operator controller. Default is "true" and is required for production. | "true" |
 | controllerManager.manager.env.leaderElection | Enable leader election for the operator controller. Default is "true" and is required for production. | "true" |
 | controllerManager.manager.env.logLevel | Log level for the operator controller. If you want more or less logs, change this value to "debug" or "error". | "info" |
 | controllerManager.manager.env.reapplyOnReboot | Reapply the packages on reboot. This is useful for systems that are read-only. | "false" |
 | controllerManager.manager.env.runtimeRequiredTaint | This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag. This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete. | skyhook.nvidia.com=runtime-required:NoSchedule | 
-| controllerManager.manager.image.repository | Where to get the image from | "ghcr.io/nvidia/nodewright/operator" |
+| controllerManager.manager.image.repository | Where to get the image from | "nvcr.io/nvidia/skyhook/operator" |
 | controllerManager.manager.image.tag | what version of the operator to run | defaults to appVersion |
 | controllerManager.manager.image.digest | content-addressable pin for the operator image. If set, the digest determines the pulled image. If both tag and digest are provided, the digest takes precedence; the rendered image may include `tag@digest` but the digest controls selection. | "" |
-| controllerManager.manager.agent.repository | Where to get the image from | "ghcr.io/nvidia/skyhook/agent" |
+| controllerManager.manager.agent.repository | Where to get the image from | "nvcr.io/nvidia/skyhook/agent" |
 | controllerManager.manager.agent.tag | what version of the agent to run | defaults to the current latest, but is not latest example v6.1.5 |
 | controllerManager.manager.agent.digest | content-addressable pin for the agent image. Same precedence rules as above: if both tag and digest are provided, the digest controls which image is pulled. | "" |
 | imagePullSecret | the secret used to pull the operator controller image, agent image, and package images. | "" |
+| useHostNetwork | run the operator pods with `hostNetwork: true`. Required in environments where the apiserver is only reachable on the host network. | false |
 | estimatedPackageCount | estimated number of packages to be installed on the cluster, this is used to calculate the resources for the operator controller. | 1 |
 | estimatedNodeCount | estimated number of nodes in the cluster, this is used to calculate the resources for the operator controller | 1 |
+| rbac.createSkyhookViewerRole | create a `ClusterRole` that grants read-only access to Skyhook and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
+| rbac.createSkyhookEditorRole | create a `ClusterRole` that grants read/write access to Skyhook and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
+| limitRange.default | namespace-wide default CPU/memory **limits** applied to every container that doesn't set its own. Set both `default` and `defaultRequest` (or omit `limitRange` entirely to disable). See [../docs/resource_management.md](../docs/resource_management.md). | cpu: 500m, memory: 512Mi |
+| limitRange.defaultRequest | namespace-wide default CPU/memory **requests** applied to every container that doesn't set its own. | cpu: 250m, memory: 256Mi |
 | cleanup.enabled | Automatically delete all Skyhook and DeploymentPolicy resources during helm uninstall. Recommended to prevent orphaned CRs. | true |
 | cleanup.jobTimeoutSeconds | Hard deadline for the entire cleanup job during uninstall. The job will be killed if it exceeds this time. | 120 |
 
@@ -60,7 +67,7 @@ Settings | Description | Default |
 imagePullSecret: "node-init-secret"
 ```
 
-If you use public images (like the default ghcr.io images), no action is needed.
+If you use public images (like the default `nvcr.io/nvidia/skyhook/*` images), no action is needed.
 
 ### Resource Management
 Skyhook uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your Skyhook CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.
