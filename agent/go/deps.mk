@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+## this makefile is for installing deps and controlling the versioning
+## its included in the main makefile, but its a lot to look at these
+## plus ci can watch this file to know to build a new build image
+
+GOLANGCI_LINT_VERSION ?= v2.12.2
+
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+
+.PHONY: install-deps
+install-deps: golangci-lint ## Install all dependencies.
+
+.PHONY: golangci-lint
+golangci-lint: $(LOCALBIN) ## Download golangci-lint locally if necessary.
+	@[ -f $(GOLANGCI_LINT) ] || { \
+	set -e ;\
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh | sh -s -- -b $(shell dirname $(GOLANGCI_LINT)) $(GOLANGCI_LINT_VERSION) ;\
+	}
