@@ -29,7 +29,6 @@ import (
 	semver "github.com/NVIDIA/nodewright/operator/internal/version"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,8 +47,7 @@ func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	skyhookWebhook := &SkyhookWebhook{
 		Client: mgr.GetClient(),
 	}
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+	return ctrl.NewWebhookManagedBy(mgr, r).
 		WithDefaulter(skyhookWebhook).
 		WithValidator(skyhookWebhook).
 		Complete()
@@ -66,15 +64,10 @@ type SkyhookWebhook struct {
 	Client client.Client
 }
 
-var _ admission.CustomDefaulter = &SkyhookWebhook{}
+var _ admission.Defaulter[*Skyhook] = &SkyhookWebhook{}
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
-func (r *SkyhookWebhook) Default(ctx context.Context, obj runtime.Object) error {
-
-	skyhook, ok := obj.(*Skyhook)
-	if !ok {
-		return fmt.Errorf("object is not a Skyhook")
-	}
+func (r *SkyhookWebhook) Default(ctx context.Context, skyhook *Skyhook) error {
 
 	skyhooklog.Info("default", "name", skyhook.Name)
 
@@ -87,15 +80,10 @@ func (r *SkyhookWebhook) Default(ctx context.Context, obj runtime.Object) error 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 //+kubebuilder:webhook:path=/validate-skyhook-nvidia-com-v1alpha1-skyhook,mutating=false,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=skyhooks,verbs=create;update,versions=v1alpha1,name=vskyhook.kb.io,admissionReviewVersions=v1
 
-var _ admission.CustomValidator = &SkyhookWebhook{}
+var _ admission.Validator[*Skyhook] = &SkyhookWebhook{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-
-	skyhook, ok := obj.(*Skyhook)
-	if !ok {
-		return nil, fmt.Errorf("object is not a Skyhook")
-	}
+func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
 	skyhooklog.Info("validate create", "name", skyhook.Name)
 
@@ -107,88 +95,80 @@ func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, obj runtime.Object)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldSkyhook, newSkyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhook, ok := newObj.(*Skyhook)
-	if !ok {
-		return nil, fmt.Errorf("object is not a Skyhook")
-	}
+	skyhooklog.Info("validate update", "name", newSkyhook.Name)
 
-	skyhooklog.Info("validate update", "name", skyhook.Name)
-
-	if err := skyhook.Validate(); err != nil {
+	if err := newSkyhook.Validate(); err != nil {
 		return nil, err
 	}
 
 	var warnings admission.Warnings
 
 	// Uninstall-specific validations require the old object
-	if oldObj != nil {
-		oldSkyhook, ok := oldObj.(*Skyhook)
-		if ok {
-			// Check for removal of uninstall-enabled packages
-			for name, oldPkg := range oldSkyhook.Spec.Packages {
-				if _, stillExists := skyhook.Spec.Packages[name]; !stillExists {
-					if oldPkg.UninstallEnabled() {
-						if !isPackageFullyUninstalled(oldSkyhook, name) {
-							return nil, fmt.Errorf(
-								"package %q has uninstall.enabled=true; set uninstall.apply=true "+
-									"and wait for completion before removing from spec", name)
-						}
+	if oldSkyhook != nil {
+		// Check for removal of uninstall-enabled packages
+		for name, oldPkg := range oldSkyhook.Spec.Packages {
+			if _, stillExists := newSkyhook.Spec.Packages[name]; !stillExists {
+				if oldPkg.UninstallEnabled() {
+					if !isPackageFullyUninstalled(oldSkyhook, name) {
+						return nil, fmt.Errorf(
+							"package %q has uninstall.enabled=true; set uninstall.apply=true "+
+								"and wait for completion before removing from spec", name)
 					}
 				}
 			}
+		}
 
-			// Reject version downgrade unless the package has already been explicitly
-			// uninstalled on all nodes. The user must have flipped uninstall.apply=true
-			// on the old spec AND waited for the uninstall to complete (package absent
-			// from every tracked node's state) before changing the version.
-			for name, oldPkg := range oldSkyhook.Spec.Packages {
-				newPkg, exists := skyhook.Spec.Packages[name]
-				if !exists {
-					continue
-				}
-				if newPkg.Version == oldPkg.Version {
-					continue
-				}
-				if !semver.IsValid(newPkg.Version) || !semver.IsValid(oldPkg.Version) {
-					continue // not comparable; Validate() rejects invalid formats separately
-				}
-				if semver.Compare(newPkg.Version, oldPkg.Version) != -1 {
-					continue // upgrade or equal — allowed
-				}
-
-				if !oldPkg.UninstallEnabled() {
-					continue // explicit uninstall not required for this package
-				}
-
-				// Downgrade. Required:
-				//   (a) OLD spec already had uninstall.apply=true, AND
-				//   (b) package absent from all nodes (uninstall complete per D2).
-				if !oldPkg.IsUninstalling() {
-					return nil, fmt.Errorf(
-						"package %q: downgrade not allowed — set uninstall.apply=true first, "+
-							"wait for uninstall to complete, then change version", name)
-				}
-				if !isPackageFullyUninstalled(oldSkyhook, name) {
-					return nil, fmt.Errorf(
-						"package %q: downgrade not allowed — uninstall has not yet completed "+
-							"on all nodes. Wait for the uninstall to finish, then change version", name)
-				}
+		// Reject version downgrade unless the package has already been explicitly
+		// uninstalled on all nodes. The user must have flipped uninstall.apply=true
+		// on the old spec AND waited for the uninstall to complete (package absent
+		// from every tracked node's state) before changing the version.
+		for name, oldPkg := range oldSkyhook.Spec.Packages {
+			newPkg, exists := newSkyhook.Spec.Packages[name]
+			if !exists {
+				continue
+			}
+			if newPkg.Version == oldPkg.Version {
+				continue
+			}
+			if !semver.IsValid(newPkg.Version) || !semver.IsValid(oldPkg.Version) {
+				continue // not comparable; Validate() rejects invalid formats separately
+			}
+			if semver.Compare(newPkg.Version, oldPkg.Version) != -1 {
+				continue // upgrade or equal — allowed
 			}
 
-			// Warn (not reject) on cancel: apply going from true to false
-			for name, oldPkg := range oldSkyhook.Spec.Packages {
-				newPkg, exists := skyhook.Spec.Packages[name]
-				if exists && oldPkg.IsUninstalling() && !newPkg.IsUninstalling() {
-					warnings = append(warnings, fmt.Sprintf(
-						"package %q: uninstall cancelled — nodes where uninstall completed will need to re-install", name))
-				}
+			if !oldPkg.UninstallEnabled() {
+				continue // explicit uninstall not required for this package
+			}
+
+			// Downgrade. Required:
+			//   (a) OLD spec already had uninstall.apply=true, AND
+			//   (b) package absent from all nodes (uninstall complete per D2).
+			if !oldPkg.IsUninstalling() {
+				return nil, fmt.Errorf(
+					"package %q: downgrade not allowed — set uninstall.apply=true first, "+
+						"wait for uninstall to complete, then change version", name)
+			}
+			if !isPackageFullyUninstalled(oldSkyhook, name) {
+				return nil, fmt.Errorf(
+					"package %q: downgrade not allowed — uninstall has not yet completed "+
+						"on all nodes. Wait for the uninstall to finish, then change version", name)
+			}
+		}
+
+		// Warn (not reject) on cancel: apply going from true to false
+		for name, oldPkg := range oldSkyhook.Spec.Packages {
+			newPkg, exists := newSkyhook.Spec.Packages[name]
+			if exists && oldPkg.IsUninstalling() && !newPkg.IsUninstalling() {
+				warnings = append(warnings, fmt.Sprintf(
+					"package %q: uninstall cancelled — nodes where uninstall completed will need to re-install", name))
 			}
 		}
 	}
 
-	if err := r.validateDeploymentPolicyExists(ctx, skyhook); err != nil {
+	if err := r.validateDeploymentPolicyExists(ctx, newSkyhook); err != nil {
 		return warnings, err
 	}
 
@@ -217,11 +197,7 @@ func isPackageFullyUninstalled(skyhook *Skyhook, packageName string) bool {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *SkyhookWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	skyhook, ok := obj.(*Skyhook)
-	if !ok {
-		return nil, fmt.Errorf("object is not a Skyhook")
-	}
+func (r *SkyhookWebhook) ValidateDelete(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
 	skyhooklog.Info("validate delete", "name", skyhook.Name)
 
