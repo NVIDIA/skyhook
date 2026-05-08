@@ -47,7 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/kubernetes/pkg/util/taints"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -160,7 +160,7 @@ func (o *SkyhookOperatorOptions) GetRuntimeRequiredToleration() corev1.Toleratio
 // force type checking against this interface
 var _ reconcile.Reconciler = &SkyhookReconciler{}
 
-func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, recorder record.EventRecorder, opts SkyhookOperatorOptions) (*SkyhookReconciler, error) {
+func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, recorder events.EventRecorder, opts SkyhookOperatorOptions) (*SkyhookReconciler, error) {
 
 	err := opts.Validate()
 	if err != nil {
@@ -180,7 +180,7 @@ func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, recorder reco
 type SkyhookReconciler struct {
 	client.Client
 	scheme   *runtime.Scheme
-	recorder record.EventRecorder
+	recorder events.EventRecorder
 	opts     SkyhookOperatorOptions
 	dal      dal.DAL
 }
@@ -610,8 +610,8 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 
 			if id != "" && id != node.GetNode().Status.NodeInfo.BootID { // node rebooted
 				if r.opts.ReapplyOnReboot {
-					r.recorder.Eventf(skyhook.GetSkyhook().Skyhook, EventTypeNormal, EventsReasonNodeReboot, "detected reboot, resetting node [%s] to be reapplied", node.GetNode().Name)
-					r.recorder.Eventf(node.GetNode(), EventTypeNormal, EventsReasonNodeReboot, "detected reboot, resetting node for [%s] to be reapplied", node.GetSkyhook().Name)
+					r.recorder.Eventf(skyhook.GetSkyhook().Skyhook, nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node [%s] to be reapplied", node.GetNode().Name)
+					r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node for [%s] to be reapplied", node.GetSkyhook().Name)
 					node.Reset()
 				}
 				skyhook.GetSkyhook().Status.NodeBootIds[node.GetNode().Name] = node.GetNode().Status.NodeInfo.BootID
@@ -783,7 +783,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 			}
 
 			if node.IsComplete() {
-				r.recorder.Eventf(node.GetNode(), EventTypeNormal, EventsReasonSkyhookStateChange, "Skyhook [%s] complete.", skyhook.GetSkyhook().Name)
+				r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookStateChange, "MarkComplete", "Skyhook [%s] complete.", skyhook.GetSkyhook().Name)
 
 				// since node is complete remove from priority
 				skyhook.GetSkyhook().RemoveNodePriority(node.GetNode().Name)
@@ -820,7 +820,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 
 		if skyhook.GetPriorStatus() != "" && skyhook.GetPriorStatus() != skyhook.Status() {
 			// we transitioned, fire event
-			r.recorder.Eventf(skyhook.GetSkyhook(), EventTypeNormal, EventsReasonSkyhookStateChange, "Skyhook transitioned [%s] -> [%s]", skyhook.GetPriorStatus(), skyhook.Status())
+			r.recorder.Eventf(skyhook.GetSkyhook(), nil, EventTypeNormal, EventsReasonSkyhookStateChange, "Transition", "Skyhook transitioned [%s] -> [%s]", skyhook.GetPriorStatus(), skyhook.Status())
 		}
 	}
 
@@ -1481,8 +1481,10 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 				})
 				r.recorder.Eventf(
 					skyhook.GetSkyhook().Skyhook,
+					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
+					"BlockDelete",
 					"Cannot delete Skyhook %s: malformed nodeState. Repair and retry.",
 					skyhook.GetSkyhook().Name,
 				)
@@ -1507,8 +1509,10 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 				})
 				r.recorder.Eventf(
 					skyhook.GetSkyhook().Skyhook,
+					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
+					"BlockDelete",
 					"Cannot delete Skyhook %s: paused with uninstall work pending. Unpause to proceed.",
 					skyhook.GetSkyhook().Name,
 				)
@@ -1536,8 +1540,10 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 				})
 				r.recorder.Eventf(
 					skyhook.GetSkyhook().Skyhook,
+					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
+					"BlockDelete",
 					"Cannot delete Skyhook %s: disabled with uninstall work pending. Re-enable to proceed.",
 					skyhook.GetSkyhook().Name,
 				)
@@ -1674,7 +1680,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 		return true, nil
 	}
 
-	r.recorder.Eventf(skyhookNode.GetNode(), EventTypeNormal, EventsReasonSkyhookInterrupt,
+	r.recorder.Eventf(skyhookNode.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookDrain, "DrainNode",
 		"draining node [%s] package [%s:%s] from [skyhook:%s]",
 		skyhookNode.GetNode().Name,
 		_package.Name,
@@ -1745,7 +1751,7 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 
 	_ = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, stage, 0, _package.ContainerSHA)
 
-	r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, EventTypeNormal, EventsReasonSkyhookInterrupt,
+	r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, nil, EventTypeNormal, EventsReasonSkyhookInterrupt, "InterruptNode",
 		"Interrupting node [%s] package [%s:%s] from [skyhook:%s]",
 		skyhookNode.GetNode().Name,
 		_package.Name,
@@ -2710,8 +2716,8 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 		Message:            fmt.Sprintf("Applying package [%s:%s] to node [%s]", _package.Name, _package.Version, skyhookNode.GetNode().Name),
 	})
 
-	r.recorder.Eventf(skyhookNode.GetNode(), EventTypeNormal, EventsReasonSkyhookApply, "Applying package [%s:%s] from [skyhook:%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetSkyhook().Name, stage)
-	r.recorder.Eventf(skyhookNode.GetSkyhook(), EventTypeNormal, EventsReasonSkyhookApply, "Applying package [%s:%s] to node [%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetNode().Name, stage)
+	r.recorder.Eventf(skyhookNode.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookApply, "ApplyPackage", "Applying package [%s:%s] from [skyhook:%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetSkyhook().Name, stage)
+	r.recorder.Eventf(skyhookNode.GetSkyhook(), nil, EventTypeNormal, EventsReasonSkyhookApply, "ApplyPackage", "Applying package [%s:%s] to node [%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetNode().Name, stage)
 
 	skyhookNode.GetSkyhook().Updated = true
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -124,7 +124,7 @@ func main() {
 	cont, err := controller.NewSkyhookReconciler(
 		mgr.GetScheme(),
 		mgr.GetClient(),
-		mgr.GetEventRecorderFor("skyhook-controller"),
+		mgr.GetEventRecorder("skyhook-controller"),
 		options.SkyhookOperatorOptions)
 	if err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Skyhook")
