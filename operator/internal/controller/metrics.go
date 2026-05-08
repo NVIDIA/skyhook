@@ -28,6 +28,14 @@ import (
 const (
 	// LegacyPolicyName is used when no deployment policy is specified (backward compatibility)
 	LegacyPolicyName = "legacy"
+
+	// Prometheus label keys shared across multiple metric vectors.
+	labelSkyhookName     = "skyhook_name"
+	labelPackageName     = "package_name"
+	labelPackageVersion  = "package_version"
+	labelPolicyName      = "policy_name"
+	labelCompartmentName = "compartment_name"
+	labelStrategy        = "strategy"
 )
 
 var (
@@ -37,7 +45,7 @@ var (
 			Name: "skyhook_status",
 			Help: "Binary metric indicating the status of the Skyhook Custom Resource (1 if in that status, 0 otherwise)",
 		},
-		[]string{"skyhook_name", "status"},
+		[]string{labelSkyhookName, "status"},
 	)
 
 	// node metrics
@@ -46,7 +54,7 @@ var (
 			Name: "skyhook_node_status_count",
 			Help: "Number of nodes in the cluster by status for the Skyhook Custom Resource",
 		},
-		[]string{"skyhook_name", "status"},
+		[]string{labelSkyhookName, "status"},
 	)
 
 	skyhook_node_target_count = prometheus.NewGaugeVec(
@@ -54,7 +62,7 @@ var (
 			Name: "skyhook_node_target_count",
 			Help: "Total number of nodes targeted by this Skyhook Custom Resource",
 		},
-		[]string{"skyhook_name"},
+		[]string{labelSkyhookName},
 	)
 
 	// package metrics
@@ -63,7 +71,7 @@ var (
 			Name: "skyhook_package_state_count",
 			Help: "Number of nodes in the cluster by state for this package",
 		},
-		[]string{"skyhook_name", "package_name", "package_version", "state"},
+		[]string{labelSkyhookName, labelPackageName, labelPackageVersion, "state"},
 	)
 
 	skyhook_package_stage_count = prometheus.NewGaugeVec(
@@ -71,7 +79,7 @@ var (
 			Name: "skyhook_package_stage_count",
 			Help: "Number of nodes in the cluster by stage for this package",
 		},
-		[]string{"skyhook_name", "package_name", "package_version", "stage"},
+		[]string{labelSkyhookName, labelPackageName, labelPackageVersion, "stage"},
 	)
 
 	skyhook_package_restarts_count = prometheus.NewGaugeVec(
@@ -79,7 +87,7 @@ var (
 			Name: "skyhook_package_restarts_count",
 			Help: "Number of restarts for this package on this node",
 		},
-		[]string{"skyhook_name", "package_name", "package_version"},
+		[]string{labelSkyhookName, labelPackageName, labelPackageVersion},
 	)
 
 	// rollout metrics (per-compartment)
@@ -88,7 +96,7 @@ var (
 			Name: "skyhook_rollout_matched_nodes",
 			Help: "Number of nodes matched by this compartment's selector",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 
 	skyhook_rollout_ceiling = prometheus.NewGaugeVec(
@@ -96,7 +104,7 @@ var (
 			Name: "skyhook_rollout_ceiling",
 			Help: "Maximum number of nodes that can be in progress at once in this compartment",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 
 	skyhook_rollout_in_progress = prometheus.NewGaugeVec(
@@ -104,7 +112,7 @@ var (
 			Name: "skyhook_rollout_in_progress",
 			Help: "Number of nodes currently in progress in this compartment",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 
 	skyhook_rollout_completed = prometheus.NewGaugeVec(
@@ -112,7 +120,7 @@ var (
 			Name: "skyhook_rollout_completed",
 			Help: "Number of nodes completed in this compartment",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 
 	skyhook_rollout_progress_percent = prometheus.NewGaugeVec(
@@ -120,7 +128,7 @@ var (
 			Name: "skyhook_rollout_progress_percent",
 			Help: "Percentage of nodes completed in this compartment (0-100)",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 
 	skyhook_rollout_current_batch = prometheus.NewGaugeVec(
@@ -128,7 +136,7 @@ var (
 			Name: "skyhook_rollout_current_batch",
 			Help: "Current batch number in the rollout strategy (0 if no batch processing)",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 
 	skyhook_rollout_consecutive_failures = prometheus.NewGaugeVec(
@@ -136,7 +144,7 @@ var (
 			Name: "skyhook_rollout_consecutive_failures",
 			Help: "Number of consecutive batch failures in this compartment",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 
 	skyhook_rollout_should_stop = prometheus.NewGaugeVec(
@@ -144,7 +152,7 @@ var (
 			Name: "skyhook_rollout_should_stop",
 			Help: "Binary metric indicating if rollout should be stopped due to failures (1 = stopped, 0 = continuing)",
 		},
-		[]string{"skyhook_name", "policy_name", "compartment_name", "strategy"},
+		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
 	)
 )
 

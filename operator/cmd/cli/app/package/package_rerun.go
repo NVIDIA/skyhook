@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -39,6 +39,15 @@ var skyhookGVR = schema.GroupVersionResource{
 	Group:    v1alpha1.GroupVersion.Group,
 	Version:  v1alpha1.GroupVersion.Version,
 	Resource: "skyhooks",
+}
+
+// validRerunStages lists the package stages that can be targeted by `kubectl skyhook` rerun/logs commands.
+// Uninstall-* and upgrade are operator-internal and not user-rerunnable.
+var validRerunStages = map[v1alpha1.Stage]bool{
+	v1alpha1.StageApply:         true,
+	v1alpha1.StageConfig:        true,
+	v1alpha1.StageInterrupt:     true,
+	v1alpha1.StagePostInterrupt: true,
 }
 
 // nodeStateAnnotationKey returns the annotation key for node state
@@ -106,14 +115,9 @@ Nodes can be specified using exact names or regex patterns. Multiple
 
 			// Validate stage if provided
 			if opts.stage != "" {
-				validStages := map[string]bool{
-					"apply":          true,
-					"config":         true,
-					"interrupt":      true,
-					"post-interrupt": true,
-				}
-				if !validStages[opts.stage] {
-					return fmt.Errorf("invalid stage %q: must be one of apply, config, interrupt, post-interrupt", opts.stage)
+				if !validRerunStages[v1alpha1.Stage(opts.stage)] {
+					return fmt.Errorf("invalid stage %q: must be one of %s, %s, %s, %s", opts.stage,
+						v1alpha1.StageApply, v1alpha1.StageConfig, v1alpha1.StageInterrupt, v1alpha1.StagePostInterrupt)
 				}
 			}
 

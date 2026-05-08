@@ -36,15 +36,15 @@ ifndef ARCH
 endif
 
 ## versions
-GOLANGCI_LINT_VERSION ?= v2.10.1
+GOLANGCI_LINT_VERSION ?= v2.12.2
 KUSTOMIZE_VERSION ?= v5.4.1
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
-ENVTEST_K8S_VERSION ?= 1.35.0
+CONTROLLER_TOOLS_VERSION ?= v0.21.0
+ENVTEST_K8S_VERSION ?= 1.36.0
 GOCOVER_VERSION ?= v1.4.0
-GINKGO_VERSION ?= v2.27.2
-MOCKERY_VERSION ?= v3.5.0
-CHAINSAW_VERSION ?= v0.2.14
-HELM_VERSION ?= v3.18.5
+GINKGO_VERSION ?= v2.28.1
+MOCKERY_VERSION ?= v3.7.0
+CHAINSAW_VERSION ?= v0.2.15
+HELM_VERSION ?= v4.1.4
 HELMIFY_VERSION ?= v0.4.12
 GO_LICENSES_VERSION ?= v1.6.0
 
@@ -65,7 +65,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 golangci-lint: ## Download golangci locally if necessary. 
 	@[ -f $(GOLANGCI_LINT) ] || { \
 	set -e ;\
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell dirname $(GOLANGCI_LINT)) $(GOLANGCI_LINT_VERSION) ;\
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh | sh -s -- -b $(shell dirname $(GOLANGCI_LINT)) $(GOLANGCI_LINT_VERSION) ;\
 	}
 
 

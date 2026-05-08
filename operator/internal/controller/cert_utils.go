@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -55,7 +55,7 @@ func (c *webhookCert) ToSecret(name, namespace, serviceName string) *corev1.Secr
 			},
 		},
 		Data: map[string][]byte{
-			"ca.crt":  c.CABytes,
+			"ca.crt":  c.CABytes, //nolint:goconst
 			"tls.crt": []byte(c.TLSCert),
 			"tls.key": []byte(c.TLSKey),
 		},

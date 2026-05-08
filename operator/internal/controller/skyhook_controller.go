@@ -69,6 +69,21 @@ const (
 	InterruptContainerName = "interrupt"
 
 	SkyhookFinalizer = "skyhook.nvidia.com/skyhook"
+
+	// Annotation values used as truthy/falsy strings on Skyhook and Node objects.
+	annotationTrueValue  = "true"
+	annotationFalseValue = "false"
+
+	// Field selector keys used when filtering pod lists by node.
+	fieldSelectorNodeName = "spec.nodeName"
+
+	// Volume + mountpath shared by every package container's host-root mount.
+	volumeNameRootMount = "root-mount"
+	mountPathRoot       = "/root"
+
+	// Environment variable names propagated into package containers.
+	envSkyhookResourceID = "SKYHOOK_RESOURCE_ID"
+	envSkyhookNodeOrder  = "SKYHOOK_NODE_ORDER"
 )
 
 type SkyhookOperatorOptions struct {
@@ -191,7 +206,7 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// indexes allow for query on fields to use the local cache
 	indexer := mgr.GetFieldIndexer()
 	err := indexer.
-		IndexField(context.TODO(), &corev1.Pod{}, "spec.nodeName", func(o client.Object) []string {
+		IndexField(context.TODO(), &corev1.Pod{}, fieldSelectorNodeName, func(o client.Object) []string {
 			pod, ok := o.(*corev1.Pod)
 			if !ok {
 				return nil
@@ -1195,7 +1210,7 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 						// with the updated configmap
 						pods, err := r.dal.GetPods(ctx,
 							client.MatchingFields{
-								"spec.nodeName": node.GetNode().Name,
+								fieldSelectorNodeName: node.GetNode().Name,
 							},
 							client.MatchingLabels{
 								fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhook.GetSkyhook().Name,
@@ -1366,7 +1381,7 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook Skyhoo
 func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.SkyhookNode) (bool, error) {
 
 	pods, err := r.dal.GetPods(ctx, client.MatchingFields{
-		"spec.nodeName": skyhookNode.GetNode().Name,
+		fieldSelectorNodeName: skyhookNode.GetNode().Name,
 	})
 	if err != nil {
 		return false, err
@@ -1625,7 +1640,7 @@ func (r *SkyhookReconciler) HasNonInterruptWork(ctx context.Context, skyhookNode
 	pods, err := r.dal.GetPods(ctx,
 		client.MatchingLabelsSelector{Selector: selector},
 		client.MatchingFields{
-			"spec.nodeName": skyhookNode.GetNode().Name,
+			fieldSelectorNodeName: skyhookNode.GetNode().Name,
 		},
 	)
 	if err != nil {
@@ -1650,7 +1665,7 @@ func (r *SkyhookReconciler) HasRunningPackages(ctx context.Context, skyhookNode 
 	pods, err := r.dal.GetPods(ctx,
 		client.HasLabels{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX)},
 		client.MatchingFields{
-			"spec.nodeName": skyhookNode.GetNode().Name,
+			fieldSelectorNodeName: skyhookNode.GetNode().Name,
 		},
 	)
 	if err != nil {
@@ -1670,7 +1685,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 	}
 
 	pods, err := r.dal.GetPods(ctx, client.MatchingFields{
-		"spec.nodeName": skyhookNode.GetNode().Name,
+		fieldSelectorNodeName: skyhookNode.GetNode().Name,
 	})
 	if err != nil {
 		return false, err
@@ -1917,7 +1932,7 @@ func (r *SkyhookReconciler) PodExists(ctx context.Context, nodeName, skyhookName
 
 	pods, err := r.dal.GetPods(ctx,
 		client.MatchingFields{
-			"spec.nodeName": nodeName,
+			fieldSelectorNodeName: nodeName,
 		},
 		client.MatchingLabels{
 			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhookName,
@@ -1947,7 +1962,7 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 
 	volumes := []corev1.Volume{
 		{
-			Name: "root-mount",
+			Name: volumeNameRootMount,
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Path: "/",
@@ -1969,8 +1984,8 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 	}
 	volumeMounts := []corev1.VolumeMount{
 		{
-			Name:             "root-mount",
-			MountPath:        "/root",
+			Name:             volumeNameRootMount,
+			MountPath:        mountPathRoot,
 			MountPropagation: ptr(corev1.MountPropagationHostToContainer),
 		},
 	}
@@ -1992,7 +2007,7 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 				{
 					Name:  InterruptContainerName,
 					Image: getAgentImage(opts, _package),
-					Args:  []string{"interrupt", "/root", copyDir, argEncode},
+					Args:  []string{"interrupt", mountPathRoot, copyDir, argEncode},
 					Env:   getAgentConfigEnvVars(opts, _package.Name, _package.Version, skyhook.ResourceID(), skyhook.Name, skyhook.NodeOrder(nodeName)),
 					SecurityContext: &corev1.SecurityContext{
 						Privileged: ptr(true),
@@ -2085,14 +2100,14 @@ func getAgentConfigEnvVars(opts SkyhookOperatorOptions, packageName string, pack
 		},
 		{
 			Name:  "COPY_RESOLV",
-			Value: "false",
+			Value: annotationFalseValue,
 		},
 		{
-			Name:  "SKYHOOK_RESOURCE_ID",
+			Name:  envSkyhookResourceID,
 			Value: fmt.Sprintf("%s_%s_%s", resourceID, packageName, packageVersion),
 		},
 		{
-			Name:  "SKYHOOK_NODE_ORDER",
+			Name:  envSkyhookNodeOrder,
 			Value: strconv.Itoa(nodeOrder),
 		},
 	}
@@ -2106,7 +2121,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 
 	volumes := []corev1.Volume{
 		{
-			Name: "root-mount",
+			Name: volumeNameRootMount,
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Path: "/",
@@ -2127,8 +2142,8 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 
 	volumeMounts := []corev1.VolumeMount{
 		{
-			Name:             "root-mount",
-			MountPath:        "/root",
+			Name:             volumeNameRootMount,
+			MountPath:        mountPathRoot,
 			MountPropagation: ptr(corev1.MountPropagationHostToContainer),
 		},
 		{
@@ -2163,8 +2178,8 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 		skyhook.UID,
 		skyhook.Generation,
 	)
-	applyargs := []string{strings.ToLower(string(stage)), "/root", copyDir}
-	checkargs := []string{strings.ToLower(string(stage) + "-check"), "/root", copyDir}
+	applyargs := []string{strings.ToLower(string(stage)), mountPathRoot, copyDir}
+	checkargs := []string{strings.ToLower(string(stage) + "-check"), mountPathRoot, copyDir}
 
 	agentEnvs := append(
 		_package.Env,
@@ -2187,7 +2202,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 				{
 					Name:            fmt.Sprintf("%s-init", trunstr(_package.Name, 43)),
 					Image:           getPackageImage(_package),
-					ImagePullPolicy: "Always",
+					ImagePullPolicy: corev1.PullAlways,
 					Command:         []string{"/bin/sh"},
 					Args: []string{
 						"-c",
@@ -2207,7 +2222,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 				{
 					Name:            fmt.Sprintf("%s-%s", trunstr(_package.Name, 43), stage),
 					Image:           getAgentImage(opts, _package),
-					ImagePullPolicy: "Always",
+					ImagePullPolicy: corev1.PullAlways,
 					Args:            applyargs,
 					Env:             agentEnvs,
 					SecurityContext: &corev1.SecurityContext{
@@ -2218,7 +2233,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 				{
 					Name:            fmt.Sprintf("%s-%scheck", trunstr(_package.Name, 43), stage),
 					Image:           getAgentImage(opts, _package),
-					ImagePullPolicy: "Always",
+					ImagePullPolicy: corev1.PullAlways,
 					Args:            checkargs,
 					Env:             agentEnvs,
 					SecurityContext: &corev1.SecurityContext{
@@ -2812,7 +2827,7 @@ func (r *SkyhookReconciler) HandleAutoTaint(ctx context.Context, clusterState *c
 		if newNode.Annotations == nil {
 			newNode.Annotations = make(map[string]string)
 		}
-		newNode.Annotations[fmt.Sprintf("%s/autoTaint_%s", v1alpha1.METADATA_PREFIX, taint_to_add.Key)] = "true"
+		newNode.Annotations[fmt.Sprintf("%s/autoTaint_%s", v1alpha1.METADATA_PREFIX, taint_to_add.Key)] = annotationTrueValue
 
 		if err := r.Patch(ctx, newNode, client.MergeFrom(node)); err != nil {
 			errs = append(errs, err)

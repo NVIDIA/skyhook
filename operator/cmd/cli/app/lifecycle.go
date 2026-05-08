@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -30,6 +30,13 @@ import (
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
+type lifecycleAction string
+
+const (
+	lifecycleActionSet    lifecycleAction = "set"
+	lifecycleActionRemove lifecycleAction = "remove"
+)
+
 // lifecycleConfig defines the configuration for a lifecycle command
 type lifecycleConfig struct {
 	use          string
@@ -37,7 +44,7 @@ type lifecycleConfig struct {
 	long         string
 	example      string
 	annotation   string
-	action       string // "set" or "remove"
+	action       lifecycleAction
 	verb         string // past tense for output message (e.g., "paused", "resumed")
 	confirmVerb  string // verb for confirmation prompt (e.g., "pause", "disable")
 	needsConfirm bool
@@ -114,7 +121,7 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 				if cfg.annotation == utils.PauseAnnotation {
 					// pause/resume - feature exists but uses spec field instead of annotation
 					specValue := "true"
-					if cfg.action == "remove" {
+					if cfg.action == lifecycleActionRemove {
 						specValue = "false"
 					}
 					return fmt.Errorf("operator version %s uses spec.pause instead of annotations; "+
@@ -125,7 +132,7 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 					opVersion, cfg.confirmVerb, utils.MinAnnotationSupportVersion)
 			}
 
-			if cfg.action == "set" {
+			if cfg.action == lifecycleActionSet {
 				err = utils.SetSkyhookAnnotation(cmd.Context(), kubeClient.Dynamic(), skyhookName, cfg.annotation, "true")
 			} else {
 				err = utils.RemoveSkyhookAnnotation(cmd.Context(), kubeClient.Dynamic(), skyhookName, cfg.annotation)
@@ -161,7 +168,7 @@ but will not interrupt any currently running operations.`,
   # Pause without confirmation
   kubectl skyhook pause gpu-init --confirm`,
 		annotation:   utils.PauseAnnotation,
-		action:       "set",
+		action:       lifecycleActionSet,
 		verb:         "paused",
 		confirmVerb:  "pause",
 		needsConfirm: true,
@@ -182,7 +189,7 @@ The operator will resume processing nodes after this command.`,
   # Resume without confirmation
   kubectl skyhook resume gpu-init --confirm`,
 		annotation:   utils.PauseAnnotation,
-		action:       "remove",
+		action:       lifecycleActionRemove,
 		verb:         "resumed",
 		confirmVerb:  "resume",
 		needsConfirm: true,
@@ -204,7 +211,7 @@ and the Skyhook will be effectively inactive.`,
   # Disable without confirmation
   kubectl skyhook disable gpu-init --confirm`,
 		annotation:   utils.DisableAnnotation,
-		action:       "set",
+		action:       lifecycleActionSet,
 		verb:         "disabled",
 		confirmVerb:  "disable",
 		needsConfirm: true,
@@ -225,7 +232,7 @@ The operator will resume normal processing after this command.`,
   # Enable without confirmation
   kubectl skyhook enable gpu-init --confirm`,
 		annotation:   utils.DisableAnnotation,
-		action:       "remove",
+		action:       lifecycleActionRemove,
 		verb:         "enabled",
 		confirmVerb:  "enable",
 		needsConfirm: true,

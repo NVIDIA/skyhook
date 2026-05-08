@@ -28,7 +28,7 @@ LOCAL_REGISTRY ?= localhost:5005
 LOCAL_OPERATOR_IMG ?= $(LOCAL_REGISTRY)/skyhook-operator:testing
 
 ## default Kubernetes version for kind-based development clusters
-KIND_VERSION ?= $(ENVTEST_K8S_VERSION)
+KIND_VERSION ?= 1.36.0
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -186,7 +186,7 @@ type nodeListOutput struct {
 // nodeListTableConfig returns the table configuration for node list output
 func nodeListTableConfig() utils.TableConfig[nodeListEntry] {
 	return utils.TableConfig[nodeListEntry]{
-		Headers: []string{"NODE", "STATUS", "PACKAGES"},
+		Headers: []string{"NODE", "STATUS", "PACKAGES"}, //nolint:goconst
 		Extract: func(e nodeListEntry) []string {
 			status := e.Status
 			if e.Status == string(v1alpha1.StateErroring) {
