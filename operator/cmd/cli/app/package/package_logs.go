@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -91,9 +91,9 @@ By default, it shows logs from the most relevant stage container.`,
 
 			// Validate stage if provided
 			if opts.stage != "" {
-				validStages := map[string]bool{"apply": true, "config": true, "interrupt": true, "post-interrupt": true}
-				if !validStages[opts.stage] {
-					return fmt.Errorf("invalid stage %q: must be one of apply, config, interrupt, post-interrupt", opts.stage)
+				if !validRerunStages[v1alpha1.Stage(opts.stage)] {
+					return fmt.Errorf("invalid stage %q: must be one of %s, %s, %s, %s", opts.stage,
+						v1alpha1.StageApply, v1alpha1.StageConfig, v1alpha1.StageInterrupt, v1alpha1.StagePostInterrupt)
 				}
 			}
 

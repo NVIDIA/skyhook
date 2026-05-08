@@ -16,7 +16,7 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.26.2
+GO_VERSION ?= 1.26.3
 DEBIAN_VERSION ?= trixie
 DISTROLESS_VERSION ?= 4.0.2
 
@@ -28,7 +28,7 @@ LOCAL_REGISTRY ?= localhost:5005
 LOCAL_OPERATOR_IMG ?= $(LOCAL_REGISTRY)/skyhook-operator:testing
 
 ## default Kubernetes version for kind-based development clusters
-KIND_VERSION ?= $(ENVTEST_K8S_VERSION)
+KIND_VERSION ?= 1.36.0
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook

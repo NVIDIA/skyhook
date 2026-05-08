@@ -856,7 +856,7 @@ func (s *Skyhook) IsPaused() bool {
 		return false
 	}
 	if val, ok := s.Annotations[fmt.Sprintf("%s/pause", METADATA_PREFIX)]; ok {
-		return val == "true"
+		return val == "true" //nolint:goconst
 	}
 	return false
 }

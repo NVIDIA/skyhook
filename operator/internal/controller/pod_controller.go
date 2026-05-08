@@ -179,7 +179,7 @@ func (r *SkyhookReconciler) UpdateNodeState(ctx context.Context, pod *corev1.Pod
 			return true, fmt.Errorf("error updating node with state from pod: %w", err)
 		}
 
-		r.recorder.Eventf(&node, EventTypeNormal, EventsReasonSkyhookApply, "Package [%s:%s] state %s on [skyhook:%s]", packagePtr.Name, packagePtr.Version, state, packagePtr.Skyhook)
+		r.recorder.Eventf(&node, nil, EventTypeNormal, EventsReasonSkyhookApply, "UpdateNodeState", "Package [%s:%s] state %s on [skyhook:%s]", packagePtr.Name, packagePtr.Version, state, packagePtr.Skyhook)
 	}
 
 	return false, nil

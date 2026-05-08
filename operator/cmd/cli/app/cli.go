@@ -39,6 +39,9 @@ const (
 	ExitCodeError   ExitCode = 1
 )
 
+// commandName is the kubectl-skyhook plugin's invocation name (kubectl picks it up from the binary).
+const commandName = "skyhook"
+
 // ToInt converts the ExitCode to an integer
 func (e ExitCode) ToInt() int {
 	return int(e)
@@ -48,7 +51,7 @@ func (e ExitCode) ToInt() int {
 func NewSkyhookCommand(ctx *context.CLIContext) *cobra.Command {
 	// skyhookCmd represents the root command
 	skyhookCmd := &cobra.Command{
-		Use:           "skyhook",
+		Use:           commandName,
 		Short:         "Skyhook SRE plugin",
 		Long:          "kubectl-compatible helper for managing Skyhook deployments.",
 		Version:       internalVersion.Summary(),

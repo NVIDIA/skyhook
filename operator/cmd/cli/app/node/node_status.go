@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -260,7 +260,7 @@ func runNodeStatus(ctx context.Context, kubeClient *client.Client, nodePatterns 
 // nodeStatusTableConfig returns the table configuration for node status output
 func nodeStatusTableConfig() utils.TableConfig[nodeSkyhookSummary] {
 	return utils.TableConfig[nodeSkyhookSummary]{
-		Headers: []string{"NODE", "SKYHOOK", "STATUS", "PACKAGES"},
+		Headers: []string{"NODE", "SKYHOOK", "STATUS", "PACKAGES"}, //nolint:goconst
 		Extract: func(s nodeSkyhookSummary) []string {
 			return []string{
 				s.NodeName,

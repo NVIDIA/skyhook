@@ -1050,7 +1050,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 // CheckNodeIgnoreLabel checks if a node has the ignore label set to true
 func CheckNodeIgnoreLabel(node wrapper.SkyhookNode) bool {
 	ignoreLabel := fmt.Sprintf("%s/ignore", v1alpha1.METADATA_PREFIX)
-	if val, ok := node.GetNode().Labels[ignoreLabel]; ok && val == "true" {
+	if val, ok := node.GetNode().Labels[ignoreLabel]; ok && val == annotationTrueValue {
 		return true
 	}
 	return false

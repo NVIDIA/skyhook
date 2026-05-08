@@ -81,7 +81,7 @@ var _ = BeforeSuite(func() {
 		// the tests directly. When we run make test it will be setup and used automatically.
 		// NOTE: Also, this version needs to match what is installed in the make file
 		BinaryAssetsDirectory: filepath.Join("..", "..", "bin", "k8s",
-			fmt.Sprintf("1.35.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
+			fmt.Sprintf("1.36.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
 		// AttachControlPlaneOutput: true,
 		// UseExistingCluster:       ptr[bool](true),
 	}
@@ -125,7 +125,7 @@ var _ = BeforeSuite(func() {
 	operator, err = NewSkyhookReconciler(
 		k8sManager.GetScheme(),
 		k8sManager.GetClient(),
-		k8sManager.GetEventRecorderFor("skyhook-controller"),
+		k8sManager.GetEventRecorder("skyhook-controller"),
 		opts,
 	)
 	Expect(err).ToNot(HaveOccurred())

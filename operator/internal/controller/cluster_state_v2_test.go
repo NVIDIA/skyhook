@@ -36,10 +36,6 @@ import (
 	kptr "k8s.io/utils/ptr"
 )
 
-const (
-	annotationTrueValue = "true"
-)
-
 var testLogger = logr.Discard()
 
 func findSkyhookStatusCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {
