@@ -7,6 +7,7 @@ Step-by-step process for releasing Skyhook components using **release branches**
 Skyhook uses **release branches** (`release/v{MAJOR.MINOR}.x`) to manage integrated releases and patches.
 
 **Key Principles:**
+
 - **Operator-centric**: Most releases are driven by operator features and bug fixes
 - **Agent follows**: Agent changes typically only require chart patch releases 
 - **Chart coordinates**: Chart version tracks the overall release and defines compatibility
@@ -83,6 +84,7 @@ git push origin agent/v6.4.1 chart/v0.9.1
 <summary>Click to expand legacy workflows</summary>
 
 #### Operator Release (Legacy)
+
 ```bash
 git checkout main && git pull origin main
 git tag operator/v1.2.3
@@ -90,6 +92,7 @@ git push origin operator/v1.2.3
 ```
 
 #### Agent Release (Legacy)
+
 ```bash
 git checkout main && git pull origin main
 git tag agent/v1.2.3
@@ -97,6 +100,7 @@ git push origin agent/v1.2.3
 ```
 
 #### Chart Release (Legacy)
+
 ```bash
 git checkout -b release/chart-v1.2.3
 # Update Chart.yaml, create PR, merge
@@ -110,6 +114,7 @@ git push origin chart/v1.2.3
 ## Release Checklist
 
 **Before tagging:**
+
 - [ ] All PRs merged to main
 - [ ] For charts: Chart.yaml updated and merged
 - [ ] Tests passing
@@ -149,9 +154,11 @@ Manifests:
 Update the digest in `chart/values.yaml` for kube-rbac-proxy, operator, and agent images:
 
 Note:
+
 - Always use the multi-arch manifest digest (top-level Digest from imagetools), not a single-arch child manifest digest.
 
 **After tagging:**
+
 - [ ] CI/CD pipeline completes
 - [ ] Images published successfully
 - [ ] Test deployment with new version
@@ -175,6 +182,7 @@ git push origin :refs/tags/operator/v1.2.3
 ## Rollback
 
 For problematic releases:
+
 1. Tag new patch release with fixes
 2. For critical issues: Update chart `appVersion` to previous stable version
 

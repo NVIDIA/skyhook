@@ -6,6 +6,7 @@ This directory contains example [Kyverno](https://kyverno.io/) policies for use 
 - `skyhook-viewer-binding.yaml`: Example RBAC binding for Kyverno to view Skyhook resources.
 
 **Note:**
+
 - This directory was previously at the repo root and has been moved to `docs/kyverno/` for clarity.
 - If you use these policies, ensure you enable the `skyhook-viewer-role` in your Helm values and bind Kyverno to that role.
 

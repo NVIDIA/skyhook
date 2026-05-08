@@ -173,12 +173,23 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
 CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 
-e2e-tests: chainsaw install run build-cli ensure-test-symlinks ## Run end to end tests.
+# POOL_NON_DEFAULT lists every pool except the default (core). Adding a new
+# pool: append it here AND to the matrix in .github/workflows/operator-ci.yaml.
+POOL_NON_DEFAULT := interrupt uninstall lifecycle
+POOL_NOTIN_SELECTOR := pool notin ($(shell echo $(POOL_NON_DEFAULT) | tr ' ' ','))
+
+e2e-tests: chainsaw install run build-cli ensure-test-symlinks ## Run end to end tests. Set POOL=<name> to run a single pool; unset runs all.
 	## requires a cluster to be running with access
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
+ifeq ($(POOL),core)
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook --selector '$(POOL_NOTIN_SELECTOR)' $(CHAINSAW_ARGS)
+else ifneq ($(POOL),)
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook --selector 'pool=$(POOL)' $(CHAINSAW_ARGS)
+else
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook $(CHAINSAW_ARGS)
-	$(MAKE) kill 
+endif
+	$(MAKE) kill
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
 cli-e2e-tests: chainsaw install run build-cli-with-coverage ensure-test-symlinks ## Run CLI end to end tests with coverage.

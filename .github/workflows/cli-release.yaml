@@ -24,6 +24,8 @@ on:
 
 env:
   GO_VERSION: 1.26.3
+  # Opt all JS actions into Node 24 ahead of GitHub's Node 20 phase-out.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   release:
@@ -32,7 +34,7 @@ jobs:
       contents: write  # Required to create releases
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -44,7 +46,7 @@ jobs:
           sudo mv git-cliff /usr/local/bin/
 
       - name: Setup Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: operator/go.sum
@@ -74,7 +76,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: "Skyhook CLI ${{ steps.version.outputs.version }}"

@@ -8,6 +8,7 @@ silent reconcile error), and that repairing the annotation clears the
 condition on the next reconcile.
 
 Two controller changes make this work:
+
 1. `NewSkyhookNodeOnly` (in `internal/wrapper/node.go`) no longer aborts
    construction on a parse failure — it returns a wrapper whose cached state
    is empty so downstream `State()` callers re-encounter the error. Without

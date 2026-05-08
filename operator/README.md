@@ -1,6 +1,7 @@
 ## Getting Started
 
 ### Dependencies
+
 The operator handles its own certificate management for webhooks, so no additional dependencies are required.
 
 ### Usage Example Custom Resource
@@ -88,11 +89,11 @@ Packages can depend on each other, so if you needed `something_important` to be 
 ## Development
 
 ### Prerequisites
+
 - go version v1.26.3+
 - docker version 17.03+ or podman 4.9.4+ (project makefile kind of assumes podman)
 - kubectl version v1.27.3+.
 - Access to a Kubernetes v1.27+ cluster. (We test on 1.32+, could work on older, not regularly tested. Could be api compatibilities issues.)
-
 
 **Install the CRDs into the cluster:**
 ```sh
@@ -102,7 +103,8 @@ make install
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 
 privileges or be logged in as admin.
 
-**Run the Operator**
+### Run the Operator
+
 ```sh
 make run ## will run in background process, not in kubernetes
 make kill ## kills background process
@@ -124,6 +126,7 @@ kubectl apply -k config/samples/
 >**NOTE**: Ensure that the samples has default values to test it out.
 
 ### To Uninstall
+
 **Delete the instances (CRs) from the cluster:**
 
 ```sh
@@ -200,6 +203,7 @@ Build Dependencies
 The helm repos are currently being migrated. Please use the chart directly in this repo.
 
 Operator containers:
+
 - ghcr.io/nvidia/skyhook/operator
 
 ## Deploy from main
@@ -226,9 +230,8 @@ make uninstall
 
 **NOTE**: The Helm chart includes automatic cleanup of Skyhook and DeploymentPolicy resources during uninstall (enabled by default). If you've disabled automatic cleanup (`cleanup.enabled: false`), you must manually delete SCRs before uninstalling to avoid finalizer issues. If you remove the operator before deleting SCRs with finalizers, they can hang. To fix: reinstall the operator, delete resources, then uninstall properly. Manual cleanup may require removing configmaps, uncordoning nodes, removing taints, and deleting running pods.
 
-
 ## Helm Chart and General Config infra
+
 This repo uses kubebuilder for scaffolding this project, and lots of functions in the makefile are hooked up to this as well. Kubebuilder for the most part manages the [config](./config) directory which uses kustomize heavily. To convert this structure into helm, we using a tool call helmify. Its a generic tool that converts this kubebuilder kustomize into a helm chart. It does not do everything, just a lot of it. So once you call `make generate-helm` you might need to make some additional changes or revert some of its changes. At some point we might want to stop using it if if becomes more work, but for now it does a pretty good job keep the two different ways of managing config in sync. 
 
 Common work flow looks like: change something that requires updating config. First do `make manifest` and `make generate`. This will alter the config based on comments let in code. Example would be in the CRD `//+kubebuilder:validation:Enum=service;reboot`. Changes to the CRD will require those 2 make functions( well depending what you change might need just one). Then to keep in sync do `make generate-helm` which ask `are you sure` this is because it might not do exactly what you think. To keep in sync you need to say Y, and edit the chart as needed or do it by hand. Depending on what you did. Might make sense to do this in a clean git state so you can see what its doing. Mostly making it sound scarier then it is, just be warned.
-

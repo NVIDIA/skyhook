@@ -1,12 +1,15 @@
 # Skyhook Helm Chart
+
 Skyhook was developed for modifying the underlying host OS in Kubernetes clusters. Think of it as a package manager like apt/yum for linux but for whole cluster management. The package manager (Skyhook Operator) manages the lifecycle (install/configure/uninstall/upgrade) of the packages (Skyhook Custom Resource, often SCR for short). It is Kubernetes aware, making cluster modifications easy. This enables Skyhook to schedule updates around important workloads and do rolling updates. It can be used in any cluster environment: self-managed clusters, on-prem clusters, cloud clusters, etc. 
 
-### Benefits
+## Benefits
+
  - The requested changes (the Packages) are native Kubernetes resources they can be combined and applied with common tools like ArgoCD, Helm, Flux etc. This means that all the tooling to manage applications can package customizations right alongside them to get applied, removed and upgraded as the applications themselves are.
  - Autoscaling, with skyhook if you want to enable autoscaling on your cluster but need to modify all Nodes added to a cluster, you need something that is kubernetes aware. Skyhook as feature to make sure you nodes are ready before then enter the cluster.
  - Upgrades are first class, with skyhook you can make deploy changes to your cluster and can wait for running workloads to finish before applying changes.
 
-### Key Features
+## Key Features
+
 - **interruptionBudget:** percent of nodes or count
 - **nodeSelectors:** selectors for which nodes to apply too (node labels)
 - **podNonInterruptLabels:**  labels for pods to **never** interrupt
@@ -15,9 +18,10 @@ Skyhook was developed for modifying the underlying host OS in Kubernetes cluster
 - **configMap:** per package
 - **env vars:** per package
 - **additionalTolerations:**  are tolerations added to the packages
-- [**runtimeRequired**](docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
+- [**runtimeRequired**](../docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
 
 ## Important Chart Settings
+
 Settings | Description | Default |
 ---| --- | --- |
 | controllerManager.tolerations | add tolerations to the controller manager pod | [] |
@@ -48,6 +52,7 @@ Settings | Description | Default |
 | cleanup.jobTimeoutSeconds | Hard deadline for the entire cleanup job during uninstall. The job will be killed if it exceeds this time. | 120 |
 
 ### NOTES
+
 - **estimatedPackageCount** and **estimatedNodeCount** are used to size the resource requirements. Default setting should be good for nodes > 1000 and packages 1-2 or nodes > 500 and packages >= 4. If your approaching this size deployment it would make sense to set these. You can also override them by explicitly with `controllerManager.manager.resources` the values file has an example.
 - **runtimeRequired**: If your systems nodes have this taint make sure to add the toleration to the controllerManager.tolerations
 - **CRD**: This project currently has one CRD and its not managed the ["recommended" way](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/). Its part of the templates. Meaning it will be updated with the `helm upgrade`. We decided it was better do it this way for this project. Doing it either way has consequences and this route has worked well for upgrades so far our deployments.
@@ -70,6 +75,7 @@ imagePullSecret: "node-init-secret"
 If you use public images (like the default `nvcr.io/nvidia/skyhook/*` images), no action is needed.
 
 ### Resource Management
+
 Skyhook uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your Skyhook CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.
 
 ## Versioning
@@ -77,6 +83,7 @@ Skyhook uses Kubernetes LimitRange to set default CPU/memory requests/limits for
 This Helm chart follows independent versioning from the operator and agent components. The chart's `appVersion` field specifies the recommended stable operator version that provides a good default for installations. See [../docs/versioning.md](../docs/versioning.md) for more details on versioning.
 
 ### Chart Version vs App Version
+
 - **Chart version** (`version` in Chart.yaml): Tracks changes to chart templates, values, and configuration (NOTE: agent version in set in the values.)
 - **App version** (`appVersion` in Chart.yaml): Recommended stable operator version for this chart release
 
@@ -92,6 +99,7 @@ helm uninstall skyhook --namespace skyhook
 ```
 
 The pre-delete hook will:
+
 - Delete all Skyhook resources cluster-wide
 - Delete all DeploymentPolicy resources cluster-wide
 - Wait for finalizers to be processed

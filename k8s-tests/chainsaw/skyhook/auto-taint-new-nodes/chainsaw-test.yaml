@@ -19,6 +19,8 @@ apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
   name: auto-taint-new-nodes
+  labels:
+    pool: interrupt
 spec:
   timeouts:
     assert: 240s

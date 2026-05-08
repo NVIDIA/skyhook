@@ -131,7 +131,6 @@ ctlptl: $(LOCALBIN) ## Download ctlptl binary if necessary.
 helm: $(LOCALBIN) ## Download helm locally if necessary.
 	test -s $(LOCALBIN)/helm || curl -s -L https://get.helm.sh/helm-$(HELM_VERSION)-$(OS)-$(ARCH).tar.gz |\
 		tar --no-same-owner --strip-components=1 -zxv -C $(LOCALBIN) $(OS)-$(ARCH)/helm
-	$(LOCALBIN)/helm plugin list | grep cm-push > /dev/null || $(LOCALBIN)/helm plugin install https://github.com/chartmuseum/helm-push
 
 .PHONY: helmify
 helmify: $(LOCALBIN)  ## Download helmify locally if necessary.

@@ -1,7 +1,9 @@
 # Requirements
+
 1. Release tag must be in the format `vMajor.Minor.Patch` generally all releases will be a Major or Minor. Patch is reserved for a release that fixes an already released Major or Minor version.
 
-# How to make a release
+## How to make a release
+
 1. Be absolutely sure the helm chart is how you want to release. We CANNOT delete helm chart releases from ngc.nvidia.com.
 1. Run changelog generation from the last tag
     1. clone dgx/infra/tools
@@ -14,8 +16,10 @@
 1. Update any old releases if they have open issues that are fixed in this version
 1. Create a branch using the system outlined in the Branch Strategy section
 
-# Branch Strategy
+## Branch Strategy
+
 We use long lived branches in order to be able to release patches for old versions. The strategy is as follows:
+
 1. If this is a Major or Minor release create a branch to be able to put patches into. Examples:
     1. Release `v0.5.0` will have a branch `branch-v0.5.x` and any patch would be tagged from this branch for example `v0.5.1`
     1. Release `v1.0.0` will have branch `branch-v1.0.x`

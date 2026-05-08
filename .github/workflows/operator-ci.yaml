@@ -20,7 +20,7 @@ name: Operator CI
 on:
   workflow_dispatch: {}
   pull_request:
-    paths: &operator-paths
+    paths:
       - operator/**/*.go
       - operator/go.mod
       - operator/go.sum
@@ -35,7 +35,16 @@ on:
       - main
     tags:
       - operator/*
-    paths: *operator-paths
+    paths:
+      - operator/**/*.go
+      - operator/go.mod
+      - operator/go.sum
+      - operator/deps.mk
+      - operator/config/**
+      - containers/operator.Dockerfile
+      - .github/workflows/operator-ci.yaml
+      - k8s-tests/**
+      - chart/**
 
 ## these envs control the build and test process below
 env:
@@ -43,6 +52,11 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   GO_VERSION: 1.26.3
   DEBIAN_VERSION: trixie
+  # Opt all JS actions into Node 24. Node 20 is being phased out by GitHub
+  # Actions starting June 2026; this avoids the deprecation warnings without
+  # waiting for each action (checkout/setup-go/cache/upload-artifact) to
+  # publish a Node 24 release.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   KIND_BINARY_VERSION: v0.31.0
   PLATFORMS: linux/amd64,linux/arm64
   PUSH_TO_REGISTRY: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
@@ -74,6 +88,7 @@ jobs:
         # Standard E2E tests on all supported K8s versions
         k8s-version: ["1.32.11", "1.33.7", "1.34.3", "1.35.0"]
         test-suite: ["e2e"]
+        pool: ["core", "interrupt", "uninstall", "lifecycle"]
         make-targets: ["setup-kind-cluster e2e-tests"]
         include:
           # Deployment policy tests on 15-node cluster (K8s 1.35 only)
@@ -92,20 +107,20 @@ jobs:
             test-suite: helm-tests
             make-targets: "helm-tests"
       fail-fast: false  # Continue testing other versions if one fails
-    name: ${{ matrix.test-suite }} (k8s-${{ matrix.k8s-version }})
+    name: ${{ matrix.test-suite }}${{ matrix.pool && format('/{0}', matrix.pool) || '' }} (k8s-${{ matrix.k8s-version }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-tags: true
           fetch-depth: 0
       - name: Setup Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: operator/go.sum
       - name: Log in to the Container registry
         if: matrix.test-suite != 'unit-tests' # unit tests don't need a container registry login
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -113,7 +128,7 @@ jobs:
       # Cache build tools and dependencies for faster builds
       - name: Restore cached Binaries
         id: cached-binaries
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
           restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
@@ -128,7 +143,7 @@ jobs:
       - name: Save cached Binaries
         id: save-cached-binaries
         if: steps.cached-binaries.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
           path: |
@@ -137,7 +152,7 @@ jobs:
       - name: Create Kubernetes KinD Cluster v${{ matrix.k8s-version }}
         if: matrix.test-suite != 'unit-tests' && matrix.test-suite != 'helm-tests' # unit tests don't need a cluster; helm-tests uses ctlptl
         id: kind
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.14.0
         with:
           version: ${{ env.KIND_BINARY_VERSION }}
           node_image: kindest/node:v${{ matrix.k8s-version }}
@@ -160,15 +175,17 @@ jobs:
           make setup-kind-cluster
       # Run test suite
       - name: Run ${{ matrix.test-suite }} tests
+        env:
+          POOL: ${{ matrix.pool }}
         run: |
           cd operator
           make ${{ matrix.make-targets }} merge-coverage
       # Save coverage artifacts from any test suite that generates them
       - name: Upload coverage artifact
         if: hashFiles('operator/reporting/cover.out') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: coverage-${{ matrix.test-suite }}-k8s-${{ matrix.k8s-version }}
+          name: coverage-${{ matrix.test-suite }}${{ matrix.pool && format('-{0}', matrix.pool) || '' }}-k8s-${{ matrix.k8s-version }}
           path: operator/reporting/cover.out
           retention-days: 1
           if-no-files-found: ignore
@@ -180,13 +197,13 @@ jobs:
     # Only upload coverage for PRs and main branch pushes, not for tags
     if: success() && !startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Download all coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: coverage-*
           path: coverage-artifacts
@@ -209,7 +226,7 @@ jobs:
           echo "📊 Total Combined Coverage:"
           go tool cover -func reporting/cover.out | grep total
       - name: Upload to Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@v2.3.6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: operator/reporting/cover.out
@@ -224,7 +241,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tags: ${{ steps.meta.outputs.tags }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Compute metadata
@@ -271,18 +288,18 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build and tag container image for single platform on native hardware
       - name: Build the operator container image (${{ matrix.platform }})
@@ -339,7 +356,7 @@ jobs:
       id-token: write
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -380,8 +397,33 @@ jobs:
       # Generate supply chain security attestation for the multi-platform manifest
       - name: Generate artifact attestation
         if: env.PUSH_TO_REGISTRY == 'true'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.manifest.outputs.subject-name }}
           subject-digest: ${{ steps.manifest.outputs.digest }}
           push-to-registry: true
+
+  # Single required check for branch protection. operator-ci, agent-ci,
+  # and lint-ci all publish a check named `ci-gate` — GitHub composes
+  # same-named required checks, so every ci-gate that posts must pass.
+  # lint-ci is the always-runs workflow (no path filter) so a ci-gate
+  # always appears on every PR; this workflow's ci-gate posts only when
+  # operator-ci's path filter triggers.
+  #
+  # The if: always() + jq result==success pattern is the standard fix
+  # for GitHub Actions' "skipped == green" pitfall.
+  #
+  # needs: only includes jobs that ALWAYS run. upload-coverage skips on
+  # tag builds and create-manifest skips on fork PRs — including either
+  # would make the gate fail red on legitimate skips.
+  ci-gate:
+    name: ci-gate
+    needs: [tests, build-operator]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          echo "$results" | jq -e 'to_entries | all(.value.result == "success")'

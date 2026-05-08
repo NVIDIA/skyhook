@@ -19,11 +19,13 @@ chart/v{version}       # Chart releases
 ## Component Versioning
 
 ### Operator & Agent
+
 - **Independent versioning** with their own release cycles
 - **Semantic versioning**: MAJOR.MINOR.PATCH
 - **Compatibility**: Maintained through well-defined interfaces
 
 ### Helm Chart  
+
 - **Independent from operator/agent** (starting at v0.8.0 these will start to diverge in version number)
 - **Chart version** (`version`): Tracks chart template/config changes
 - **App version** (`appVersion`): Recommended stable operator version
@@ -31,6 +33,7 @@ chart/v{version}       # Chart releases
 ## Chart Behavior
 
 ### Chart.yaml
+
 example:
 ```yaml
 version: v1.0.0        # Chart version (independent)
@@ -38,6 +41,7 @@ appVersion: v0.7.0   # Recommended operator version
 ```
 
 ### Image Tag Defaults
+
 ```yaml
 # values.yaml
 image:
@@ -48,6 +52,7 @@ image: "ghcr.io/nvidia/skyhook/operator:0.7.0"
 ```
 
 ### Image Pinning: Tag vs Digest
+
 - You can specify either a tag or a digest for images.
 - If both are provided, the **digest takes precedence** and determines the image pulled. The rendered image reference may display as `:tag@sha256:...`, but the digest controls selection.
 
@@ -63,6 +68,7 @@ release/v0.10.x   # Contains operator v0.10.0 + (agent v6.3.0*) + chart v0.10.x
 *Agent versions may not change every release - operator drives the release cycle
 
 ### Why Release Branches:
+
 - **Operator-centric releases** - most releases are driven by operator features and bugs
 - **Chart defines compatibility** - each branch contains a tested, compatible set of all components  
 - **Agent follows operator** - agent changes typically only require chart patch releases
@@ -70,6 +76,7 @@ release/v0.10.x   # Contains operator v0.10.0 + (agent v6.3.0*) + chart v0.10.x
 - **Connected git history** - preserves relationships between operator, agent, and chart changes
 
 ### Branch Workflow:
+
 1. **Main development** happens on `main` branch
 2. **Release preparation** creates `release/v{MAJOR.MINOR}.x` branch (typically driven by operator changes)
 3. **Patch releases** are developed and tagged from release branches
@@ -106,12 +113,13 @@ git branch -r | grep release/
 For step-by-step instructions on how to release components, see [release-process.md](release-process.md).
 
 **CI/CD triggers on git tags:**
+
 - `operator/vx.y.z` → publishes operator image
 - `agent/vx.y.z` → publishes agent image  
 - `chart/vx.y.z` → publishes helm chart
 
 **Chart versioning:**
+
 - **PATCH**: Bug fixes, docs
 - **MINOR**: New features, config options  
 - **MAJOR**: Breaking changes to chart, or compatibility with agent or operator.
-

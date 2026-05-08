@@ -5,6 +5,7 @@ These tests validate that the Helm chart templates render correctly under variou
 ## What It Tests
 
 ### Render Correctness
+
 1. **default-limitrange** -- LimitRange renders with correct default values (500m/512Mi limits, 250m/256Mi requests)
 2. **default-cleanup-skyhooks-job-resources** -- Skyhook cleanup job has correct resource limits/requests
 3. **default-cleanup-webhook-job-resources** -- Webhook cleanup job has correct resource limits/requests
@@ -15,27 +16,30 @@ These tests validate that the Helm chart templates render correctly under variou
 8. **cleanup-disabled-no-skyhook-cleanup-job** -- `cleanup.enabled: false` omits the skyhook cleanup job
 
 ### Validation Error Paths
-9. **reject-default-namespace** -- Deploying to the `default` namespace produces an error
-10. **reject-selector-and-affinity-conflict** -- Setting both `controllerManager.selectors` and `controllerManager.nodeAffinity.matchExpressions` produces an error
-11. **reject-pdb-gte-replicas** -- `podDisruptionBudget.minAvailable >= replicas` produces an error
+
+1. **reject-default-namespace** -- Deploying to the `default` namespace produces an error
+2. **reject-selector-and-affinity-conflict** -- Setting both `controllerManager.selectors` and `controllerManager.nodeAffinity.matchExpressions` produces an error
+3. **reject-pdb-gte-replicas** -- `podDisruptionBudget.minAvailable >= replicas` produces an error
 
 ### Feature Toggles
-12. **rbac-roles-disabled-by-default** -- Viewer and editor ClusterRoles are absent by default
-13. **rbac-viewer-role-enabled** -- `rbac.createSkyhookViewerRole: true` renders the viewer ClusterRole
-14. **rbac-editor-role-enabled** -- `rbac.createSkyhookEditorRole: true` renders the editor ClusterRole
-15. **image-pull-secret** -- `imagePullSecret` renders the secret name in the Deployment
-16. **host-network-disabled-by-default** -- `hostNetwork: true` is absent by default
-17. **host-network-enabled** -- `useHostNetwork: true` renders `hostNetwork: true` in the Deployment
-18. **metrics-binding-disabled-by-default** -- Prometheus ClusterRoleBinding is absent by default
-19. **metrics-binding-enabled** -- `metrics.addServiceAccountBinding: true` renders the binding
+
+1. **rbac-roles-disabled-by-default** -- Viewer and editor ClusterRoles are absent by default
+2. **rbac-viewer-role-enabled** -- `rbac.createSkyhookViewerRole: true` renders the viewer ClusterRole
+3. **rbac-editor-role-enabled** -- `rbac.createSkyhookEditorRole: true` renders the editor ClusterRole
+4. **image-pull-secret** -- `imagePullSecret` renders the secret name in the Deployment
+5. **host-network-disabled-by-default** -- `hostNetwork: true` is absent by default
+6. **host-network-enabled** -- `useHostNetwork: true` renders `hostNetwork: true` in the Deployment
+7. **metrics-binding-disabled-by-default** -- Prometheus ClusterRoleBinding is absent by default
+8. **metrics-binding-enabled** -- `metrics.addServiceAccountBinding: true` renders the binding
 
 ### Cleanup Job Scheduling Parity
-20. **cleanup-jobs-inherit-tolerations-skyhooks** -- Tolerations propagate to skyhook cleanup job
-21. **cleanup-jobs-inherit-tolerations-webhook** -- Tolerations propagate to webhook cleanup job
-22. **cleanup-jobs-inherit-selectors-skyhooks** -- Node selectors propagate to skyhook cleanup job
-23. **cleanup-jobs-inherit-selectors-webhook** -- Node selectors propagate to webhook cleanup job
-24. **cleanup-jobs-inherit-node-affinity-skyhooks** -- Node affinity propagates to skyhook cleanup job
-25. **cleanup-jobs-inherit-node-affinity-webhook** -- Node affinity propagates to webhook cleanup job
+
+1. **cleanup-jobs-inherit-tolerations-skyhooks** -- Tolerations propagate to skyhook cleanup job
+2. **cleanup-jobs-inherit-tolerations-webhook** -- Tolerations propagate to webhook cleanup job
+3. **cleanup-jobs-inherit-selectors-skyhooks** -- Node selectors propagate to skyhook cleanup job
+4. **cleanup-jobs-inherit-selectors-webhook** -- Node selectors propagate to webhook cleanup job
+5. **cleanup-jobs-inherit-node-affinity-skyhooks** -- Node affinity propagates to skyhook cleanup job
+6. **cleanup-jobs-inherit-node-affinity-webhook** -- Node affinity propagates to webhook cleanup job
 
 ## Template Scoping With `-s`
 
@@ -79,6 +83,7 @@ Use when you need to verify specific fields exist at the correct YAML path in a 
 ```
 
 Key details:
+
 - `-s templates/foo.yaml` renders only that one template (scoped output)
 - The rendered YAML is written to a temp file (`/tmp/rendered.yaml`)
 - The expected YAML is piped via heredoc to `chainsaw assert --file -`
@@ -148,12 +153,14 @@ Used for: namespace validation, selector/affinity conflict, PDB validation.
 ## How It Differs From Other Helm Tests
 
 The other tests in `k8s-tests/chainsaw/helm/` (e.g., `helm-chart-test`, `helm-scale-test`, `helm-node-affinity-test`) are **integration tests** that:
+
 - Install the chart into a real cluster with `helm install`
 - Apply Skyhook/DeploymentPolicy CRs
 - Assert on live cluster state (running pods, scheduled workloads)
 - Require a running operator and Kind cluster
 
 This test is a **template rendering test** that:
+
 - Only runs `helm template` (no cluster state changes)
 - Validates the YAML output is structurally correct
 - Runs in ~8 seconds with no cluster dependencies (though chainsaw does need a kubeconfig)
@@ -164,6 +171,7 @@ Both types are complementary -- template tests catch rendering bugs fast, integr
 ## Background
 
 The cleanup job templates (`cleanup-webhook-job.yaml`, `cleanup-skyhooks-job.yaml`) had two issues:
+
 1. They referenced `.Values.limitRange.default.cpu` without a nil guard, so setting `limitRange` to `null` or `false` caused a Helm render error
 2. They didn't inherit the operator's scheduling constraints (tolerations, selectors, affinity), so cleanup jobs could fail to schedule on constrained clusters
 

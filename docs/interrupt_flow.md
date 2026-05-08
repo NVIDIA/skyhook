@@ -30,11 +30,13 @@ When a package requires an interrupt (such as a reboot or service restart), Skyh
 The **uninstall → cordon → wait → drain → apply/upgrade → config → interrupt** sequence is critical for several reasons:
 
 ### Safety First
+
 - Workloads are safely removed before any potentially disruptive operations
 - Prevents data loss or service interruption for running applications
 - Ensures the node is in a clean state before package operations begin
 
 ### Use Cases
+
 This ordering is particularly important for scenarios such as:
 
 - **Kernel module changes**: Unloading kernel modules while workloads are present could cause system instability
@@ -61,6 +63,7 @@ spec:
 ```
 
 **Flow:**
+
 1. **Cordon**: Node becomes unschedulable
 2. **Wait**: Any non-interrupt workloads are given time to complete
 3. **Drain**: Remaining workloads are evicted
