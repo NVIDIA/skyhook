@@ -55,11 +55,13 @@ The test validates that the Helm chart correctly translates the `nodeAffinity.ma
 The Helm chart enforces a clear separation between simple selectors and advanced node affinity:
 
 ### Validation Behavior
+
 - **Cannot use both** `selectors` and `nodeAffinity.matchExpressions` together
 - The chart will fail with an error if both are defined
 - This prevents conflicting or confusing node selection rules
 
 ### Error Message
+
 ```
 Error: Cannot specify both controllerManager.selectors and controllerManager.nodeAffinity.matchExpressions. 
 Use nodeAffinity.matchExpressions for complex node selection or selectors for simple key-value matching.
@@ -99,6 +101,7 @@ controllerManager:
 ```
 
 ### Usage Recommendations
+
 - Use `selectors` for simple key-value node selection
 - Use `nodeAffinity.matchExpressions` for complex node selection with operators like `In`, `NotIn`, `Exists`, `DoesNotExist`
 - Choose one approach - they cannot be mixed 

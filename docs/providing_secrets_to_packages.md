@@ -9,6 +9,7 @@ Some packages require the use of secret information to accomplish their work. Th
 ## [Setup a Kubernetes secret](https://kubernetes.io/docs/concepts/configuration/secret/)
 
 There are many ways to do this the details of which are outside the scope of this document. Some examples are:
+
  * [Use vault to manage secrets](https://developer.hashicorp.com/vault/tutorials/kubernetes/vault-secrets-operator)
  * Manually create a secret
 
@@ -33,7 +34,7 @@ env:
         key: db-password
 ```
 
-##  Use the environment variables in the step scripts to do work.
+## Use the environment variables in the step scripts to do work.
 
 Using the example above a script to query the database would be:
 ```bash
@@ -41,4 +42,3 @@ Using the example above a script to query the database would be:
 
 echo "select count(*) from app.users;" | PGPASSWORD=${DB_PASSWORD} psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME}
 ```
-

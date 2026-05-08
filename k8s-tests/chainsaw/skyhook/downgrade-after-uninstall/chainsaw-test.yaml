@@ -19,6 +19,8 @@ apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
   name: downgrade-after-uninstall
+  labels:
+    pool: uninstall
 spec:
   timeouts:
     assert: 240s

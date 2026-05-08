@@ -22,7 +22,9 @@ kubectl apply -f https://raw.githubusercontent.com/kyverno/kyverno/main/definiti
 ## Available Policies
 
 ### Restrict Package Images
+
 The `disable_packages.yaml` policy demonstrates how to restrict which container images can be used in Skyhook packages. This is particularly useful for:
+
 - Preventing the use of potentially dangerous images (e.g., those containing shell scripts)
 - Enforcing the use of approved container registries
 - Maintaining security standards across your cluster
@@ -34,6 +36,7 @@ kubectl apply -f disable_packages.yaml
 ```
 
 The policy will prevent the creation of Skyhook resources that contain packages with restricted image patterns. Currently, it blocks:
+
 - Images containing 'shellscript' anywhere in the image name
 - Images from Docker Hub (matching 'docker.io/*')
 
@@ -67,9 +70,9 @@ The creation will be denied with an appropriate error message.
 ## Customizing Policies
 
 The example policies are templates that you can modify to fit your security needs. Common customizations include:
+
 - Adding additional restricted image patterns
 - Modifying the validation rules
 - Adjusting the failure action (warn vs enforce)
 
 See the [Kyverno documentation](https://kyverno.io/docs/) for more details on policy customization.
-

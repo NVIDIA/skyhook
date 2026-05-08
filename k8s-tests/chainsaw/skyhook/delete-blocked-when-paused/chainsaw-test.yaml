@@ -19,6 +19,8 @@ apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
   name: delete-blocked-when-paused
+  labels:
+    pool: lifecycle
 spec:
   timeouts:
     assert: 240s

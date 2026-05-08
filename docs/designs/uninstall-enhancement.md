@@ -7,12 +7,15 @@ Capability discovery from container images or registries (OCI labels, layer insp
 ## Problems
 
 ### Uninstall configuration loss
+
 The way uninstall is triggered is by deleting a package definition. This has a major problem in that all the environment variables and configmaps will not be available to the package when it runs uninstall which breaks many assumptions on different packages and makes uninstall not usable.
 
 ### Label removal
+
 Once uninstalled the labels and annotations need to be removed. However, not all packages actually support uninstall. So a package needs a way to let the operator know that it is okay to remove labels/annotations related to a package.
 
 ### Finalizer and uninstall
+
 When a Skyhook Custom Resource is deleted the packages are not cleaned up. Finalizer should trigger an uninstall if the packages mark themselves as supporting uninstall.
 
 ## Goals
@@ -159,7 +162,7 @@ sequenceDiagram
 ## Migration and testing
 
 - **Breaking change**: Clusters that rely on “remove package from spec → uninstall” must move to **`uninstall.apply: true`** (with **`uninstall.enabled: true`**) before removing keys, subject to admission rules.
-- **Chainsaw**: [`k8s-tests/chainsaw/skyhook/uninstall-upgrade-skyhook`](../../k8s-tests/chainsaw/skyhook/uninstall-upgrade-skyhook) currently documents removal-driven uninstall; update scenarios for `uninstall.apply`, explicit `uninstall.enabled`, and admission.
+- **Chainsaw**: [`k8s-tests/chainsaw/skyhook/`](../../k8s-tests/chainsaw/skyhook/) currently documents removal-driven uninstall scenarios; update them for `uninstall.apply`, explicit `uninstall.enabled`, and admission.
 - **Docs**: User-facing README / operator docs should describe uninstall and the requirement to set **`uninstall.enabled: true`** for packages that support uninstall.
 
 ---

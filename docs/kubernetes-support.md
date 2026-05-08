@@ -39,11 +39,13 @@ This document outlines Skyhook's approach to supporting different Kubernetes ver
 ### When Versions Change
 
 **For new Kubernetes releases:**
+
 1. Wait **4+ weeks** after K8s release for ecosystem stability
 2. Add to our CI testing matrix
 3. Include in next Skyhook release
 
 **For EOL Kubernetes versions:**
+
 1. Stop including in new Skyhook releases
 2. Existing Skyhook versions continue to work
 3. Users should upgrade K8s and then upgrade Skyhook
@@ -51,11 +53,13 @@ This document outlines Skyhook's approach to supporting different Kubernetes ver
 ## Upgrade Strategy
 
 ### Our Approach
+
 - Update Kubernetes client libraries when we add support for new versions
 - Test on both supported Kubernetes versions before each release
 - Provide clear migration guidance when dropping version support
 
 ### For Users
+
 We understand many installations run slightly older Kubernetes versions. Our strategy balances staying current while giving users time to upgrade:
 
 - **6-week notice** before dropping support for a Kubernetes version
@@ -73,10 +77,12 @@ We understand many installations run slightly older Kubernetes versions. Our str
 ### Migration Path
 
 **If you're on an older Kubernetes version:**
+
 1. **First:** Upgrade your Kubernetes cluster to a supported version (1.31, 1.32, 1.33, 1.34, or 1.35)
 2. **Then:** Upgrade to the latest Skyhook version
 
 **If you're on Kubernetes 1.30:**
+
 - **Option A:** Upgrade to K8s 1.31/1.32/1.33/1.34/1.35, then use latest Skyhook
 - **Option B:** Stay on Skyhook v0.8.x until you can upgrade Kubernetes
 
@@ -87,6 +93,7 @@ We understand many installations run slightly older Kubernetes versions. Our str
 ### Why don't you support EOL Kubernetes versions in new releases?
 
 As a small project, we focus our efforts on actively maintained Kubernetes versions. This allows us to:
+
 - Ensure better quality and security
 - Adopt new Kubernetes features when they're stable  
 - Keep our testing matrix manageable
@@ -95,6 +102,7 @@ As a small project, we focus our efforts on actively maintained Kubernetes versi
 ### What if I'm stuck on an older Kubernetes version?
 
 **You can still use Skyhook!** Just use an older Skyhook version that was built for your K8s version:
+
 - Older releases continue to work and don't disappear
 - Check our release notes for which Skyhook version supports your K8s version
 - Plan your Kubernetes upgrade timeline, then upgrade Skyhook afterward
@@ -102,6 +110,7 @@ As a small project, we focus our efforts on actively maintained Kubernetes versi
 ### Why wait 4 weeks before supporting new Kubernetes versions?
 
 We've learned that brand new Kubernetes versions often have:
+
 - Ecosystem compatibility issues
 - Updated client library dependencies  
 - Undiscovered bugs that get fixed in patch releases
@@ -111,6 +120,7 @@ Waiting 4+ weeks lets the ecosystem stabilize and gives us confidence in support
 ### How do you test compatibility?
 
 For each Skyhook release, we test against all supported Kubernetes versions using:
+
 - GitHub Actions matrix builds with multiple K8s versions (currently 1.31, 1.32, 1.33, 1.34, 1.35)
 - Local testing with [kind](https://kind.sigs.k8s.io/)
 - Basic functionality and integration tests

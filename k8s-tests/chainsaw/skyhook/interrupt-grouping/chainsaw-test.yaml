@@ -19,6 +19,8 @@ apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
   name: interrupt-grouping
+  labels:
+    pool: interrupt
 spec:
   catch:
       ## if errors, print the most important info

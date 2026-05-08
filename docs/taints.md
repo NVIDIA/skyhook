@@ -17,6 +17,7 @@ status:
 The legacy `skyhook.nvidia.com/TaintNotTolerable` condition type is retained for one release to allow existing consumers time to migrate.
 
 Metrics:
+
  * skyhook_node_status_count status=blocked
 
 # Default tolerations
@@ -25,7 +26,6 @@ The following taints are always tolerated by Skyhook
 
  * Runtime Required
  * Cordon taint: `node.kubernetes.io/unschedulable`
-
 
 # Common Symptoms
 
@@ -37,6 +37,7 @@ The following are common ways a user might know they have taint problem:
 # Solutions
 
 This can be solved in a few different ways:
+
  1. Remove the problem taint(s) from the node(s)
  2. Change the `nodeSelectors` for the Skyhook Custom Resources to avoid the nodes
  3. Set the `additionalTolerations` on the Skyhook Custom Resources to enable toleration of the taints. An example doing this is included below.

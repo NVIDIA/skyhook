@@ -18,6 +18,7 @@ For more information on each suite, refer to their respective README files.
 ## Creating a New Test
 
 To create a new test:
+
 1. Make a new folder in the appropriate test suite directory
 2. Add a file named `chainsaw-test.yaml` with the test configuration
 3. Add a `README.md` documenting the test (see standards below)
@@ -30,6 +31,7 @@ All E2E tests must have a `README.md` file in their test directory. This provide
 ### README Structure
 
 Each test README should include:
+
 - **Test Name** as H1 heading
 - **Purpose** section explaining what is being tested
 - **Test Scenario** describing the test flow/steps
@@ -67,6 +69,7 @@ Brief description of what this test validates.
 ```
 
 ### What NOT to Do
+
 - **Do not** use `spec.description` in `chainsaw-test.yaml` files for documentation
 - **Do not** use long YAML comments to document tests
 - Keep YAML files focused on test configuration only

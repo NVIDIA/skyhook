@@ -19,6 +19,8 @@ apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
   name: depends-on
+  labels:
+    pool: core
 spec:
   timeouts:
     assert: 90s

@@ -25,6 +25,7 @@ spec:
         cpu: 250m
         memory: 256Mi
 ```
+
 - If a pod/container does **not** specify its own resources, these defaults are applied.
 - You can configure these values via the Helm chart or Kustomize overlays.
 
@@ -47,6 +48,7 @@ spec:
         memoryRequest: "128Mi"
         memoryLimit: "256Mi"
 ```
+
 - If **any** of the four fields (`cpuRequest`, `cpuLimit`, `memoryRequest`, `memoryLimit`) are set, **all four must be set** and must be positive values.
 - If no override is set, the namespace's LimitRange applies.
 
@@ -99,10 +101,12 @@ If you do **not** want any default resource requests or limits applied to your S
 - **Helm:** Set `limitRange: {}` or remove the `limitRange` section from your `values.yaml`.
 
 If there is **no LimitRange** and you do **not** set resource requests/limits in your package overrides, then:
+
 - Your pods/containers will run with **no resource requests or limits**.
 - This means they will be scheduled as "BestEffort" pods, which may be evicted first under resource pressure and may not get guaranteed CPU/memory.
 
 **Note:**
+
 - Disabling resource limits is not recommended for production clusters, as it can lead to resource contention and unpredictable scheduling.
 - Only do this if you have a specific reason and understand the implications.
 
@@ -118,6 +122,7 @@ Instead, their resource requests/limits are determined only by the namespace def
 - Any `resources:` overrides set for the original package are **not applied** to the uninstall pod.
 
 **Note:**
+
 - Ensure defaults are big enough for uninstall processes if using the uninstall package life cycle.
 
 ---

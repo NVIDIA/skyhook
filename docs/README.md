@@ -33,3 +33,5 @@ This directory contains user and operator documentation for Skyhook. Here you'll
 - **Process**
   - [Releases](releases.md):
       Release notes and upgrade information for Skyhook.
+
+  - [CI test pools](ci-test-pools.md) — how the chainsaw e2e suite is partitioned across parallel CI jobs.

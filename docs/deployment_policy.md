@@ -7,6 +7,7 @@ Deployment Policy provides fine-grained control over how Skyhook rolls out updat
 ## Overview
 
 A **DeploymentPolicy** is a Kubernetes Custom Resource that separates rollout configuration from the Skyhook Custom Resource, allowing you to:
+
 - Reuse the same policy across multiple Skyhooks
 - Apply different strategies to different node groups (e.g., production vs. test)
 - Control rollout speed and safety with configurable thresholds
@@ -56,21 +57,27 @@ spec:
 ## Core Concepts
 
 ### Compartments
+
 A named group of nodes selected by labels with:
+
 - **Selector**: Kubernetes `LabelSelector` to match nodes
 - **Budget**: Maximum nodes in progress at once (count or percent)
 - **Strategy**: Rollout pattern (fixed, linear, or exponential)
 
 ### Budgets
+
 Defines the ceiling for concurrent nodes:
+
 - **Count**: Fixed number (e.g., `count: 3`)
 - **Percent**: Percentage of matched nodes (e.g., `percent: 25`)
 
 **Rounding for Percent**: `ceiling = max(1, int(matched_nodes × percent / 100))`
+
 - Always rounds **down**
 - Minimum is **1** (unless 0 nodes match)
 
 **Examples**:
+
 | Matched Nodes | Percent | Ceiling |
 |---------------|---------|---------|
 | 10 | 25% | 2 |
@@ -83,6 +90,7 @@ Defines the ceiling for concurrent nodes:
 ## Rollout Strategies
 
 ### Fixed Strategy
+
 Constant batch size throughout the rollout.
 
 ```yaml
@@ -99,6 +107,7 @@ strategy:
 ---
 
 ### Linear Strategy
+
 Increases by delta on success, decreases on failure.
 
 ```yaml
@@ -118,6 +127,7 @@ strategy:
 ---
 
 ### Exponential Strategy
+
 Multiplies by growth factor on success, divides on failure.
 
 ```yaml
@@ -148,6 +158,7 @@ All strategies share these parameters:
 ### Default Values
 
 When strategy parameters are not specified, the operator applies these defaults:
+
 - `initialBatch`: 1
 - `batchThreshold`: 100
 - `safetyLimit`: 50
@@ -158,11 +169,13 @@ When strategy parameters are not specified, the operator applies these defaults:
 ### Safety Limit Behavior
 
 **Before safetyLimit** (e.g., < 50% progress):
+
 - Failures count toward `failureThreshold` (if set)
 - Batch sizes slow down (linear/exponential)
 - Reaching `failureThreshold` stops the rollout (if set)
 
 **After safetyLimit** (e.g., ≥ 50% progress):
+
 - Rollout continues despite failures
 - Batch sizes don't slow down
 - `failureThreshold` is ignored (rollout assumed "safe enough" to complete)
@@ -186,6 +199,7 @@ Each package pod also receives a `SKYHOOK_NODE_ORDER` environment variable refle
 Compartments use standard Kubernetes label selectors:
 
 ### Match Labels
+
 ```yaml
 selector:
   matchLabels:
@@ -243,10 +257,12 @@ compartments:
 ```
 
 **Node with labels** `region=us-west, env=production, priority=critical`:
+
 - Matches all three compartments
 - **Winner**: `critical` (fixed strategy is safest)
 
 **Node with labels** `region=us-west, env=production`:
+
 - Matches `us-west` (exponential) and `production` (linear)
 - **Winner**: `production` (linear is safer than exponential)
 
@@ -277,6 +293,7 @@ Auto-reset is controlled by two fields with a precedence hierarchy:
 | `spec.deploymentPolicyOptions.resetBatchStateOnCompletion` | Skyhook | Per-Skyhook override (takes precedence) |
 
 **Precedence order** (highest to lowest):
+
 1. Skyhook's `deploymentPolicyOptions.resetBatchStateOnCompletion`
 2. DeploymentPolicy's `resetBatchStateOnCompletion`
 3. Default: `true` (safe by default for new resources)
@@ -363,6 +380,7 @@ spec:
 ```
 
 **Behavior**:
+
 - DeploymentPolicy is **cluster-scoped** (not namespaced)
 - Each node is assigned to a compartment based on selectors
 - Nodes not matching any compartment use the `default` settings
@@ -375,6 +393,7 @@ spec:
 The legacy `interruptionBudget` field is still supported but **DeploymentPolicy is recommended**.
 
 ### Before
+
 ```yaml
 spec:
   interruptionBudget:
@@ -382,6 +401,7 @@ spec:
 ```
 
 ### After
+
 ```yaml
 # 1. Create DeploymentPolicy
 apiVersion: skyhook.nvidia.com/v1alpha1
@@ -417,10 +437,10 @@ Deployment Policy rollout behavior is exposed via Prometheus metrics. See [Metri
 ## Examples
 
 See `/operator/config/samples/deploymentpolicy_v1alpha1_deploymentpolicy.yaml` for a complete sample showing:
+
 - Critical nodes (count=1, fixed strategy)
 - Production nodes (count=3, linear strategy)
 - Staging nodes (percent=33, exponential strategy)
 - Test nodes (percent=50, fast exponential)
 
 ---
-

@@ -1,6 +1,4 @@
-# NodeWright
-
-*Formerly known as Skyhook*
+# NodeWright (formerly Skyhook)
 
 [![Pipeline Status](https://github.com/NVIDIA/skyhook/actions/workflows/operator-ci.yaml/badge.svg)](https://github.com/NVIDIA/skyhook/actions/workflows/operator-ci.yaml)
 [![Coverage Status](https://coveralls.io/repos/github/NVIDIA/skyhook/badge.svg)](https://coveralls.io/github/NVIDIA/skyhook)
@@ -39,11 +37,13 @@ NodeWright works in any Kubernetes environment (self-managed, on-prem, cloud) an
 - Declarative configuration management for host-level changes
 
 ## Benefits
+
  - **Native Kubernetes integration** - Packages are standard Kubernetes resources compatible with GitOps tools like ArgoCD, Helm, and Flux
  - **Autoscaling support** - Ensure newly created nodes are properly configured before schedulable
  - **First-class upgrades** - Deploys changes with minimal disruption, waiting for running workloads to complete when needed
 
 ## Key Features
+
 - **Interruption Budget:** percent of nodes or count
 - **Node Selectors:** selectors for which nodes to apply too (node labels)
 - **Pod Non Interrupt Labels:**  labels for pods to **never** interrupt
@@ -57,12 +57,12 @@ NodeWright works in any Kubernetes environment (self-managed, on-prem, cloud) an
 
 There are a few pre-built generalist packages available at [NVIDIA/skyhook-packages](https://github.com/NVIDIA/skyhook-packages)
 
-
 ## Installation via Helm
 
 Install NodeWright quickly using Helm without downloading the repository:
 
 ### Prerequisites
+
 - Kubernetes cluster (tested on v1.30+)
 - Helm 3.x installed
 - Container registry access credentials (if using private registries)
@@ -156,6 +156,7 @@ helm uninstall skyhook --namespace skyhook
 ```
 
 The pre-delete hook will:
+
 - Delete all Skyhook resources
 - Delete all DeploymentPolicy resources  
 - Complete quickly if no resources exist
@@ -197,12 +198,14 @@ helm uninstall skyhook --namespace skyhook
 ## Monitoring and Troubleshooting
 
 ### Watch NodeWright apply packages
+
 ```
 kubectl get pods -w -n skyhook
 ```
 There will be a pod for each lifecycle stage (apply, config, etc.) per package per node matching the selector.
 
 ### Check NodeWright resource status
+
 ```bash
 # Check overall status
 kubectl get skyhooks
@@ -213,13 +216,16 @@ kubectl describe skyhook <skyhook-name>
 The Status will show the overall package status as well as the status of each node
 
 ### Check node annotations for package state
+
 ```bash
 # View node state annotations for a specific Skyhook
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_<skyhook-name>}{"\n"}{end}'
 ```
 
 ### Stages
+
 The operator will apply steps in a package throughout different lifecycle stages. This ensures that the right steps are applied in the right situations and in the correct order.
+
 - Upgrade: This stage will be ran whenever a package's version is upgraded in the SCR.
 - Uninstall: This stage runs only when explicitly requested — either by setting `uninstall.apply: true` on a package with `uninstall.enabled: true`, or during Skyhook CR deletion (finalizer-driven) for `uninstall.enabled: true` packages. See [Explicit Uninstall](docs/uninstall.md).
 - Apply: This stage will always be ran at least once.
@@ -230,11 +236,13 @@ The operator will apply steps in a package throughout different lifecycle stages
 The stages are applied in this order:
 
 **Without Interrupts:**
+
 - Uninstall -> Apply -> Config (No Upgrade)
 - Upgrade -> Config (With Upgrade)
 
 **With Interrupts:**
 For packages that require interrupts, the node is first cordoned and drained to ensure workloads are safely evacuated before package operations begin:
+
 - Uninstall -> Apply -> Config -> Interrupt -> Post-Interrupt (No Upgrade)
 - Upgrade -> Config -> Interrupt -> Post-Interrupt (With Upgrade)
 
@@ -250,11 +258,13 @@ operator to know which way the package is going while also enforcing best versio
 **For definitions of Status, State, and Stage concepts used throughout the operator, see [docs/operator-status-definitions.md](docs/operator-status-definitions.md).**
 
 ## Packages
+
 Part of how the operator works is the [NodeWright agent](agent/README.md). Packages have to be created in way so the operator knows how to use them. This is where the agent comes into play, more on that later. A package is a container that meets these requirements:
 
 - Container shall have `bash`, so needs to be at least something like busybox/alpine
 - Config that is valid, jsonschema is used to valid this config. The agent has a tool build in to valid the config. This tool should be used to test packages before publishing.
 - The file system structure needs to adhere to:
+
 ```
 /skyhook-package
 ├── skyhook_dir/{steps}
@@ -271,15 +281,19 @@ See the [examples/](examples/) directory for sample manifests, usage patterns, a
 See [docs/kyverno/README.md](docs/kyverno/README.md) for example Kyverno policies and guidance on restricting images or packages in NodeWright resources.
 
 ## [NodeWright Operator](operator/README.md)
+
 The operator is a Kubernetes operator that monitors cluster events and coordinates the installation and lifecycle of NodeWright packages.
 
 ## [NodeWright Agent](agent/README.md)
+
 The agent is what does the operator's work and is a separate container from the package. The agent knows how to read a package (/skyhook_package/config.json) and implements the [lifecycle](#stages) packages go through.
 
 ## [NodeWright CLI](docs/cli.md)
+
 A kubectl plugin for managing NodeWright deployments, packages, and nodes. Provides SRE tooling for inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
 
 ### Quick Install
+
 ```bash
 # Build from source
 make build-cli
@@ -310,4 +324,3 @@ Please report security vulnerabilities through [NVIDIA's Security Vulnerability 
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-

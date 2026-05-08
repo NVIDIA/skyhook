@@ -134,12 +134,14 @@ New consumers should read the canonical bare condition types now. Existing consu
 The typical stage progression depends on whether the package has interrupts:
 
 ### Without Interrupts:
+
 ```
 uninstall → apply → config
 upgrade → config
 ```
 
 ### With Interrupts:
+
 When a package requires an interrupt, the node is first cordoned and drained before package operations begin:
 ```
 uninstall (if downgrading) → cordon → wait → drain → apply → config → interrupt → post-interrupt

@@ -39,11 +39,11 @@ packages:
       apply: true      # triggers uninstall
 ```
 
-2. The operator creates uninstall pods on each target node. These pods run with the **full package configuration** (ConfigMap, env, resources) — not a synthetic stub.
+1. The operator creates uninstall pods on each target node. These pods run with the **full package configuration** (ConfigMap, env, resources) — not a synthetic stub.
 
-3. After uninstall completes on all nodes, the package is absent from node state (absent = uninstalled).
+2. After uninstall completes on all nodes, the package is absent from node state (absent = uninstalled).
 
-4. You may now safely remove the package from `spec.packages`. The webhook allows removal once the package is fully uninstalled.
+3. You may now safely remove the package from `spec.packages`. The webhook allows removal once the package is fully uninstalled.
 
 ### Uninstall Lifecycle
 
@@ -129,6 +129,7 @@ The legacy "downgrade triggers an uninstall pod for the old version" behavior ha
 ## DAG Dependency Interaction
 
 If package A is being uninstalled and package B depends on A:
+
 - B is **blocked** (cannot run) because A is no longer in the completed set
 - Uninstall does **not** cascade — B remains installed
 - A `Blocked` condition is set with a message indicating the broken dependency
@@ -152,6 +153,7 @@ To migrate to the explicit model:
 ### Rollback safety
 
 If the operator is rolled back to a version without explicit uninstall support:
+
 - The `uninstall` field is preserved by Kubernetes but ignored by the old operator
 - Packages at `StageUninstall` will be handled by the old version-change logic
 - **Before rolling back**: remove `uninstall` config from all CRs to avoid packages stuck in `apply: true` state
@@ -183,6 +185,7 @@ Look for `Blocked` condition with the dependency chain message.
 ### Webhook rejection on package removal
 
 If the webhook rejects removal of an `enabled: true` package:
+
 1. Set `uninstall.apply: true` on the package
 2. Wait for uninstall to complete (package absent from all node states)
 3. Then remove the package from spec

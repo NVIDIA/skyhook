@@ -24,12 +24,15 @@ make create-deployment-policy-cluster
 ## Key Concepts
 
 ### Deployment Policy
+
 A custom resource that defines how nodes should be grouped into compartments and how packages should be rolled out to them.
 
 ### Compartments
+
 Logical groups of nodes with their own rollout strategy and budget. Nodes are assigned to compartments based on label selectors.
 
 ### Rollout Strategies
+
 - **Fixed**: Process a fixed number of nodes per batch
 - **Exponential**: Double the batch size with each iteration (1, 2, 4, 8...)
 - **Linear**: Increase batch size linearly (delta-based growth)

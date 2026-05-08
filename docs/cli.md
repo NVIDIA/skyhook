@@ -67,11 +67,13 @@ kubectl skyhook version
 ## Usage Structure
 
 ### Basic Command Structure
+
 ```
 kubectl skyhook [global-flags] <command> [subcommand] [flags] [arguments]
 ```
 
 ### Global Flags
+
 - `-h, --help` - Show help for any command
 - `--version` - Show version information
 - `-n, --namespace` - Kubernetes namespace (default: "skyhook")
@@ -167,6 +169,7 @@ kubectl skyhook dp reset gpu-init --confirm
 ```
 
 The `deployment-policy reset` command resets the batch processing state for all compartments in the specified Skyhook, including:
+
 - Current batch number (reset to 1)
 - Consecutive failure count
 - Completed and failed node counts
@@ -178,6 +181,7 @@ The `deployment-policy reset` command resets the batch processing state for all 
 | `--confirm, -y` | Skip confirmation prompt |
 
 **When to use**:
+
 - After a rollout completes and you want to start a new rollout fresh
 - When batch processing is stuck and needs to be reset
 - Before re-running a rollout with the same deployment policy
@@ -277,6 +281,7 @@ kubectl skyhook deployment-policy reset --help
 ## Common Usage Patterns
 
 ### Debugging a Failed Package
+
 ```bash
 # 1. Check package status
 kubectl skyhook package status my-package --skyhook my-skyhook -o wide
@@ -289,6 +294,7 @@ kubectl skyhook package rerun my-package --skyhook my-skyhook --node worker-1 --
 ```
 
 ### Node Maintenance
+
 ```bash
 # 1. Ignore node before maintenance
 kubectl skyhook node ignore worker-1
@@ -301,6 +307,7 @@ kubectl skyhook node reset worker-1 --skyhook my-skyhook --confirm
 ```
 
 ### Cluster-Wide Status Check
+
 ```bash
 # List all nodes for a Skyhook
 kubectl skyhook node list --skyhook my-skyhook
@@ -313,6 +320,7 @@ kubectl skyhook node status --skyhook my-skyhook -o json
 ```
 
 ### Resetting a Rollout
+
 ```bash
 # 1. Full reset: nodes + batch state (starts everything fresh)
 kubectl skyhook reset my-skyhook --confirm
@@ -357,6 +365,7 @@ kubectl skyhook node list --skyhook my-skyhook -o yaml
 ## Architecture
 
 ### Package Structure
+
 ```
 operator/cmd/cli/app/           # CLI commands
 ├── cli.go                      # Root command (NewSkyhookCommand)
@@ -385,6 +394,7 @@ operator/internal/cli/          # Shared CLI utilities
 ```
 
 ### Command Creation Flow
+
 ```
 main()
   └── cli.Execute()
@@ -410,6 +420,7 @@ main()
 ```
 
 ### Testing
+
 ```bash
 # Run CLI tests
 make test-cli

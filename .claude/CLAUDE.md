@@ -58,6 +58,7 @@ make build-cli          # kubectl-skyhook → bin/skyhook
 
 make unit-tests         # ginkgo unit tests + envtest (fake apiserver), writes to reporting/
 make test               # full suite: manifests, generate, fmt, vet, lint, unit + e2e + cli-e2e + helm + operator-agent
+make e2e-tests          # chainsaw e2e against current cluster (set POOL=<name> to run one pool — see docs/ci-test-pools.md)
 make watch-tests        # ginkgo watch mode
 
 make run                # runs controller as background process against current kubeconfig (ENABLE_WEBHOOKS=false by default)
@@ -138,6 +139,7 @@ Semantic versioning is strictly enforced so the operator can detect upgrade vs. 
 ### Agent (Python)
 
 The agent is a container entrypoint the operator injects alongside every package. It:
+
 - Reads `/skyhook-package/config.json` (validated against `schemas/`)
 - Dispatches to the requested stage/step
 - Uses `chroot_exec.py` to run step scripts inside the host root mount
@@ -255,7 +257,7 @@ If you find yourself writing a long comment to explain a clever block, consider 
 ### Anti-patterns
 
 | Anti-pattern | Correct approach |
-|---|---|
+| --- | --- |
 | Edit a file you haven't read | `Read` before `Edit` |
 | Add flags / knobs / abstractions not requested | Build only what was asked |
 | Invent a new error/logging/testing style | Match the nearest existing file |

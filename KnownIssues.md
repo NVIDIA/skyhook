@@ -2,7 +2,7 @@
 
 This is a list of know issues within the Skyhook Operator and details the work-around, how to recreate it, a work-around, and a fix if there is one.
 
-### v0.5.0: Uninstalling breaks when theres an invalid image
+## v0.5.0: Uninstalling breaks when theres an invalid image
 
 Problem: If a package has an invalid image that doesn't exist or can't be pulled, and then they fix that image and decrease the version then the uninstall will be stuck with an image pull error as it will try to run that uninstall on that old invalid image.
     

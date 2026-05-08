@@ -39,6 +39,8 @@ env:
   PYTHON_VERSION: 3.13
   DEBIAN_VERSION: trixie
   PUSH_TO_REGISTRY: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+  # Opt all JS actions into Node 24 ahead of GitHub's Node 20 phase-out.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   fetch-distroless-versions:
     name: Fetch Latest Distroless Versions
@@ -68,7 +70,7 @@ jobs:
       tags: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Compute metadata
@@ -113,9 +115,9 @@ jobs:
       checks: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Run unittests
@@ -123,7 +125,7 @@ jobs:
           cd agent
           make test
       - name: Generate Summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@v2.6
         if: always()
         with:
           paths: "agent/skyhook-agent/test-results.xml"
@@ -150,18 +152,18 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build and tag container image for single platform on native hardware
       - name: Build the agent container image (${{ matrix.platform }})
@@ -218,7 +220,7 @@ jobs:
       id-token: write
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -257,7 +259,7 @@ jobs:
       # Generate supply chain security attestation for the multi-platform manifest
       - name: Generate artifact attestation
         if: env.PUSH_TO_REGISTRY == 'true'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.manifest.outputs.subject-name }}
           subject-digest: ${{ steps.manifest.outputs.digest }}
@@ -273,26 +275,26 @@ jobs:
       packages: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-tags: true
           fetch-depth: 0
       
       - name: Set up Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: operator/go.sum
       
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Create Kubernetes KinD Cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.14.0
         with:
           version: v0.31.0
           node_image: kindest/node:v1.35.0
@@ -301,7 +303,7 @@ jobs:
       
       - name: Restore cached Binaries
         id: cached-binaries
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
           restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
@@ -317,7 +319,7 @@ jobs:
       
       - name: Save cached Binaries
         if: steps.cached-binaries.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
           path: |
@@ -333,3 +335,22 @@ jobs:
           echo "Testing with agent image: ${AGENT_IMAGE}"
           make build-cli
           make setup-kind-cluster operator-agent-tests
+
+  # See operator-ci.yaml's ci-gate for rationale. operator-ci, agent-ci,
+  # and lint-ci all publish a check named `ci-gate` — GitHub composes
+  # same-named required checks, so every ci-gate that posts must pass.
+  # lint-ci has no path filter so a ci-gate always appears on every PR.
+  # needs: only includes jobs that ALWAYS run. create-manifest and
+  # operator-agent-tests skip on fork PRs (need GHCR write secrets) —
+  # including either would make the gate fail red on legitimate skips.
+  ci-gate:
+    name: ci-gate
+    needs: [test, build-agent]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          echo "$results" | jq -e 'to_entries | all(.value.result == "success")'
