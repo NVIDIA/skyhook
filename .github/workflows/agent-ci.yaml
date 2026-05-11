@@ -21,6 +21,7 @@ on:
       - main
     paths:
       - agent/**
+      - '!agent/go/**'
       - containers/agent.Dockerfile
       - .github/workflows/agent-ci.yaml
   push:
@@ -30,6 +31,7 @@ on:
       - agent/*
     paths:
       - agent/**
+      - '!agent/go/**'
       - containers/agent.Dockerfile
       - .github/workflows/agent-ci.yaml
 env:
