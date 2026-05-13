@@ -163,6 +163,56 @@ Note:
 - [ ] Images published successfully
 - [ ] Test deployment with new version
 
+### Verify release signatures and attestations
+
+Release workflows publish keyless Sigstore signatures, CycloneDX SBOM attestations, and SLSA v1 provenance attestations for release artifacts. The expected OIDC issuer is:
+
+```bash
+https://token.actions.githubusercontent.com
+```
+
+The expected certificate identity is any NodeWright workflow identity under the release repository:
+
+```bash
+https://github.com/NVIDIA/nodewright/.*
+```
+
+Resolve the artifact digest first, then verify by immutable digest:
+
+```bash
+IMAGE=ghcr.io/nvidia/nodewright/operator
+TAG=v0.15.0
+DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r '.digest')
+SUBJECT="${IMAGE}@${DIGEST}"
+IDENTITY='https://github.com/NVIDIA/nodewright/.*'
+ISSUER='https://token.actions.githubusercontent.com'
+
+cosign verify \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  "${SUBJECT}"
+cosign verify-attestation \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  --type cyclonedx \
+  "${SUBJECT}"
+cosign verify-attestation \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  --type https://slsa.dev/provenance/v1 \
+  "${SUBJECT}"
+```
+
+Use the same command pattern for each released artifact:
+
+| Artifact | OCI subject |
+|----------|-------------|
+| GHCR operator image | `ghcr.io/nvidia/nodewright/operator` |
+| GHCR agent image | `ghcr.io/nvidia/nodewright/agent` |
+| NVCR operator image | `nvcr.io/nvidia/skyhook/operator` |
+| NVCR agent image | `nvcr.io/nvidia/skyhook/agent` |
+| NGC Helm OCI chart | `nvcr.io/nvidia/skyhook/skyhook-operator` |
+
 ## Common Commands
 
 ```bash
