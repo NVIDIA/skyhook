@@ -19,8 +19,9 @@ Want to contribute to Skyhook (NodeWright)? We welcome bug reports, feature requ
 1. Fork the repository and create a branch from `main`.
 2. Make your changes and ensure tests pass (`make test` in the relevant component directory).
 3. Run `make fmt` to format code and add license headers.
-4. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message and sign off (see below).
-5. Open a pull request against `main`. The PR template will guide you through the checklist.
+4. When you bump a Go or Python dependency, run `make notices` and commit the refreshed `THIRD_PARTY_NOTICES.md` files alongside your change. See [`docs/release-process.md`](docs/release-process.md) for the workflow.
+5. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message and sign off (see below).
+6. Open a pull request against `main`. The PR template will guide you through the checklist.
 
 ## Developer Certificate of Origin (DCO)
 

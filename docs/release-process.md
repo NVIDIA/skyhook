@@ -185,6 +185,50 @@ git tag -d operator/v1.2.3
 git push origin :refs/tags/operator/v1.2.3
 ```
 
+## Third-Party Notices
+
+Skyhook ships `THIRD_PARTY_NOTICES.md` files that list every third-party module shipped in its released artifacts, along with verbatim license text. Three files are maintained:
+
+| File | Covers | Tool |
+| --- | --- | --- |
+| `operator/THIRD_PARTY_NOTICES.md` | Operator + CLI (Go) | `go-licenses` |
+| `agent/THIRD_PARTY_NOTICES.md` | Agent (Python) | `pip-licenses` |
+| `THIRD_PARTY_NOTICES.md` (repo root) | Combined rollup for `chart/` releases | Composed from the two component files |
+
+### Regenerating locally
+
+```bash
+# All three at once:
+make notices
+
+# Or per-component:
+make notices-operator   # operator + CLI Go deps
+make notices-agent      # agent Python deps
+make notices-rollup     # root rollup (run after the two above)
+```
+
+Prerequisites:
+
+- `go-licenses` — installed via `make -C operator go-licenses` (writes `operator/bin/go-licenses`).
+- Python 3 — required for the generator script and the agent pass's pip-licenses venv.
+
+The agent pass caches a Python venv at `agent/.notices-venv`. First run installs `pip-licenses` and the agent's pinned deps (~30s). Subsequent runs reuse the venv (~2s).
+
+### When to regenerate
+
+Run `make notices` and commit the refreshed file(s) whenever you:
+
+- Bump a Go dependency (changes to `operator/go.mod`, `operator/go.sum`, or `operator/vendor/`).
+- Bump a Python dependency (changes to `agent/skyhook-agent/pyproject.toml` or `agent/vendor/`).
+
+### CI behavior
+
+- **Merge gate** (`.github/workflows/merge-gate.yaml`): when Go dependency files change in a PR, the `verify-licenses` job runs `make -C operator license-check` to confirm every dep's license is on the approved list. The job is required and a paired skip job satisfies the check when deps don't change.
+- **Release upload** (`.github/workflows/release.yml`): every operator/agent/chart release regenerates the notices files in CI and attaches the appropriate one as a release asset:
+  - `operator/v*` → `operator/THIRD_PARTY_NOTICES.md`
+  - `agent/v*` → `agent/THIRD_PARTY_NOTICES.md`
+  - `chart/v*` → root `THIRD_PARTY_NOTICES.md` (the combined rollup, since chart packages both images)
+
 ## Rollback
 
 For problematic releases:

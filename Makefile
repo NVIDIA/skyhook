@@ -53,6 +53,24 @@ fmt: ## Run formatters for operator and agent.
 license-fmt: ## Run license header formatting for all code.
 	python3 scripts/format_license.py --root-dir . --license-file LICENSE
 
+##@ Licenses
+
+.PHONY: notices
+notices: ## Regenerate operator/, agent/, and root THIRD_PARTY_NOTICES.md files.
+	@python3 scripts/generate-notices.py all
+
+.PHONY: notices-operator
+notices-operator: ## Regenerate only operator/THIRD_PARTY_NOTICES.md.
+	@python3 scripts/generate-notices.py operator
+
+.PHONY: notices-agent
+notices-agent: ## Regenerate only agent/THIRD_PARTY_NOTICES.md.
+	@python3 scripts/generate-notices.py agent
+
+.PHONY: notices-rollup
+notices-rollup: ## Regenerate only the root THIRD_PARTY_NOTICES.md from component files.
+	@python3 scripts/generate-notices.py rollup
+
 ##@ Changelog
 
 # CLI code lives under operator/cmd/cli/, so we map the include path accordingly.
