@@ -45,8 +45,11 @@ vet: ## Run go vet against code.
 	$(GO) vet ./...
 
 .PHONY: test
-test: ## Run unit tests.
-	$(GO) test ./...
+test: unit-tests ## Run unit tests.
+
+.PHONY: unit-tests
+unit-tests: ginkgo ## Run Ginkgo/Gomega unit tests.
+	$(GINKGO) run ./...
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint.
