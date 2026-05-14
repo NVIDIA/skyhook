@@ -41,6 +41,12 @@ git push origin operator/v0.9.0 chart/v0.9.0  # Push operator + chart (add agent
 
 **Automated:** Tests → Multi-platform build → Publish to ghcr.io + nvcr.io + NGC
 
+A `chart/v*` tag push also publishes the Helm chart as an OCI artifact to `oci://ghcr.io/nvidia/nodewright/charts/skyhook-operator`. Consumers install with:
+
+```bash
+helm install skyhook-operator oci://ghcr.io/nvidia/nodewright/charts/skyhook-operator --version v0.9.0
+```
+
 ### Patch Release Workflow
 
 ```bash
