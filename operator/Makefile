@@ -354,7 +354,7 @@ merge-coverage:
 	fi
 
 .PHONY: lint
-lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
+lint: golangci-lint ## Run golangci-lint linter & yamllint
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix

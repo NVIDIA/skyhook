@@ -69,16 +69,56 @@ jobs:
           echo "${NOTES}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: operator/go.mod
+          cache: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          # Pinned to match agent-ci.yaml PYTHON_VERSION so notices generation
+          # uses the same interpreter as the agent build.
+          python-version: '3.13'
+
+      - name: Install go-licenses
+        run: make -C operator go-licenses
+
+      - name: Regenerate third-party notices
+        run: make notices
+
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Idempotent: skip create if the release already exists so workflow
+        # re-runs on the same tag can still reach the upload step below.
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --notes "${{ steps.release_notes.outputs.notes }}"
+          if ! gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --notes "${{ steps.release_notes.outputs.notes }}"
+          fi
+
+      - name: Upload third-party notices to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMPONENT="${{ steps.extract.outputs.component }}"
+          case "${COMPONENT}" in
+            operator) NOTICES_FILE="operator/THIRD_PARTY_NOTICES.md" ;;
+            agent)    NOTICES_FILE="agent/THIRD_PARTY_NOTICES.md" ;;
+            chart)    NOTICES_FILE="THIRD_PARTY_NOTICES.md" ;;
+            *)
+              echo "ERROR: unknown component '${COMPONENT}' — no notices file mapping." >&2
+              exit 1
+              ;;
+          esac
+          gh release upload "${{ github.ref_name }}" "${NOTICES_FILE}" --clobber
 
   publish-chart:
     if: startsWith(github.ref_name, 'chart/')
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
