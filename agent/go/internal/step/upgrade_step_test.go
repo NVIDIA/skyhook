@@ -1,0 +1,141 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package step
+
+import (
+	"strings"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var _ = Describe("NewUpgradeStep", func() {
+	It("succeeds when no arguments are supplied", func() {
+		u, err := NewUpgradeStep("upgrade.sh")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(u.Path()).To(Equal("upgrade.sh"))
+	})
+
+	It("rejects WithArguments at construction with the python-parity error", func() {
+		_, err := NewUpgradeStep(
+			"upgrade.sh",
+			WithName("upgrade"),
+			WithArguments([]string{"-x", "foo"}),
+		)
+		Expect(err).To(MatchError(
+			"UpgradeStep upgrade can not have any arguments, but found: [-x foo]",
+		))
+	})
+
+	It("accepts the other options unchanged", func() {
+		u, err := NewUpgradeStep(
+			"upgrade.sh",
+			WithName("custom"),
+			WithReturncodes([]int{0, 2}),
+			WithEnv(map[string]string{"K": "V"}),
+			WithOnHost(false),
+			WithIdempotence(Disabled),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(u.Name()).To(Equal("custom"))
+		Expect(u.Returncodes()).To(Equal([]int{0, 2}))
+		Expect(u.Env()).To(Equal(map[string]string{"K": "V"}))
+		Expect(u.OnHost()).To(BeFalse())
+		Expect(u.Idempotence()).To(Equal(Disabled))
+	})
+})
+
+var _ = Describe("UpgradeStep.Validate", func() {
+	It("passes when arguments are empty", func() {
+		u := UpgradeStep{RegularStep: RegularStep{path: "upgrade.sh"}}
+		Expect(u.Validate()).To(Succeed())
+	})
+
+	It("rejects directly-constructed values with non-empty arguments", func() {
+		u := UpgradeStep{RegularStep: RegularStep{
+			name:      "upgrade",
+			path:      "upgrade.sh",
+			arguments: []string{"x"},
+		}}
+		Expect(u.Validate()).To(MatchError(
+			"UpgradeStep upgrade can not have any arguments, but found: [x]",
+		))
+	})
+})
+
+var _ = Describe("UpgradeStep getters", func() {
+	It("promote field access from the embedded RegularStep", func() {
+		rs := RegularStep{
+			name:        "explicit",
+			path:        "upgrade.sh",
+			returncodes: []int{0},
+			env:         map[string]string{"K": "V"},
+			onHost:      true,
+			idempotence: Disabled,
+		}
+		u := UpgradeStep{RegularStep: rs}
+
+		Expect(u.Name()).To(Equal("explicit"))
+		Expect(u.Path()).To(Equal("upgrade.sh"))
+		Expect(u.Returncodes()).To(Equal([]int{0}))
+		Expect(u.Env()).To(Equal(map[string]string{"K": "V"}))
+		Expect(u.OnHost()).To(BeTrue())
+		Expect(u.Idempotence()).To(Equal(Disabled))
+	})
+})
+
+var _ = Describe("UpgradeStep.Encode", func() {
+	It("emits upgrade_step:true", func() {
+		u, err := NewUpgradeStep("upgrade.sh")
+		Expect(err).NotTo(HaveOccurred())
+
+		dumped, err := u.Encode()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(dumped)).To(ContainSubstring(`"upgrade_step":true`))
+	})
+
+	It("returns the invariant error before marshaling when arguments are set", func() {
+		u := UpgradeStep{RegularStep: RegularStep{
+			name:      "upgrade",
+			path:      "upgrade.sh",
+			arguments: []string{"x"},
+		}}
+		_, err := u.Encode()
+		Expect(err).To(MatchError(
+			"UpgradeStep upgrade can not have any arguments, but found: [x]",
+		))
+	})
+
+	// Pins the override against Go's embedding gotcha. If someone
+	// deletes UpgradeStep.Encode, embedding silently calls
+	// RegularStep.Encode, emitting upgrade_step:false. This test
+	// fails the moment that regression happens.
+	It("produces wire bytes that differ from RegularStep only in upgrade_step", func() {
+		rs := NewRegularStep("shared.sh")
+		u, err := NewUpgradeStep("shared.sh")
+		Expect(err).NotTo(HaveOccurred())
+
+		rsBytes, err := rs.Encode()
+		Expect(err).NotTo(HaveOccurred())
+
+		uBytes, err := u.Encode()
+		Expect(err).NotTo(HaveOccurred())
+
+		expected := strings.Replace(string(rsBytes), `"upgrade_step":false`, `"upgrade_step":true`, 1)
+		Expect(string(uBytes)).To(Equal(expected))
+	})
+})
