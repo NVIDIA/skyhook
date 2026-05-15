@@ -241,10 +241,10 @@ cosign verify-attestation \
 
 Use the same command pattern for each released artifact:
 
-| Artifact | OCI subject |
-|----------|-------------|
-| GHCR operator image | `ghcr.io/nvidia/nodewright/operator` |
-| GHCR agent image | `ghcr.io/nvidia/nodewright/agent` |
+| Artifact | Immutable OCI subject |
+|----------|-----------------------|
+| GHCR operator image | `ghcr.io/nvidia/nodewright/operator@sha256:<digest>` |
+| GHCR agent image | `ghcr.io/nvidia/nodewright/agent@sha256:<digest>` |
 
 ## Common Commands
 
