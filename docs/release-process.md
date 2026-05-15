@@ -171,20 +171,56 @@ Release workflows publish keyless Sigstore signatures, CycloneDX SBOM attestatio
 https://token.actions.githubusercontent.com
 ```
 
-The expected certificate identity must match the release workflow identities on component tag refs:
+The expected certificate identity must match the specific component release workflow identity on that component's tag refs.
+
+For operator images:
 
 ```bash
-^https://github.com/NVIDIA/nodewright/\.github/workflows/(agent-ci\.yaml@refs/tags/agent/|operator-ci\.yaml@refs/tags/operator/).*$
+^https://github.com/NVIDIA/nodewright/\.github/workflows/operator-ci\.yaml@refs/tags/operator/.*$
+```
+
+For agent images:
+
+```bash
+^https://github.com/NVIDIA/nodewright/\.github/workflows/agent-ci\.yaml@refs/tags/agent/.*$
 ```
 
 Resolve the artifact digest first, then verify by immutable digest:
+
+#### Operator image
 
 ```bash
 IMAGE=ghcr.io/nvidia/nodewright/operator
 TAG=v0.15.0
 DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r '.digest')
 SUBJECT="${IMAGE}@${DIGEST}"
-IDENTITY='^https://github.com/NVIDIA/nodewright/\.github/workflows/(agent-ci\.yaml@refs/tags/agent/|operator-ci\.yaml@refs/tags/operator/).*$'
+IDENTITY='^https://github.com/NVIDIA/nodewright/\.github/workflows/operator-ci\.yaml@refs/tags/operator/.*$'
+ISSUER='https://token.actions.githubusercontent.com'
+
+cosign verify \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  "${SUBJECT}"
+cosign verify-attestation \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  --type cyclonedx \
+  "${SUBJECT}"
+cosign verify-attestation \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  --type https://slsa.dev/provenance/v1 \
+  "${SUBJECT}"
+```
+
+#### Agent image
+
+```bash
+IMAGE=ghcr.io/nvidia/nodewright/agent
+TAG=v6.4.0
+DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r '.digest')
+SUBJECT="${IMAGE}@${DIGEST}"
+IDENTITY='^https://github.com/NVIDIA/nodewright/\.github/workflows/agent-ci\.yaml@refs/tags/agent/.*$'
 ISSUER='https://token.actions.githubusercontent.com'
 
 cosign verify \
