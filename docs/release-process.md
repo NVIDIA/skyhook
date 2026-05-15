@@ -171,10 +171,10 @@ Release workflows publish keyless Sigstore signatures, CycloneDX SBOM attestatio
 https://token.actions.githubusercontent.com
 ```
 
-The expected certificate identity is any NodeWright workflow identity under the release repository:
+The expected certificate identity must match the release workflow identities on component tag refs:
 
 ```bash
-^https://github.com/NVIDIA/nodewright/.*$
+^https://github.com/NVIDIA/nodewright/\.github/workflows/(agent-ci\.yaml@refs/tags/agent/|operator-ci\.yaml@refs/tags/operator/).*$
 ```
 
 Resolve the artifact digest first, then verify by immutable digest:
@@ -184,7 +184,7 @@ IMAGE=ghcr.io/nvidia/nodewright/operator
 TAG=v0.15.0
 DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r '.digest')
 SUBJECT="${IMAGE}@${DIGEST}"
-IDENTITY='^https://github.com/NVIDIA/nodewright/.*$'
+IDENTITY='^https://github.com/NVIDIA/nodewright/\.github/workflows/(agent-ci\.yaml@refs/tags/agent/|operator-ci\.yaml@refs/tags/operator/).*$'
 ISSUER='https://token.actions.githubusercontent.com'
 
 cosign verify \

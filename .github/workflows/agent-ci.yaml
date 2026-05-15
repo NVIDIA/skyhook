@@ -293,7 +293,7 @@ jobs:
         with:
           subject-name: ${{ steps.manifest.outputs.subject-name }}
           subject-digest: ${{ steps.digest.outputs.digest }}
-          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/.*$
+          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/\.github/workflows/agent-ci\.yaml@refs/tags/agent/.*$
 
   operator-agent-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

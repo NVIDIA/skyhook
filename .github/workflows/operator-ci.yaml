@@ -429,7 +429,7 @@ jobs:
         with:
           subject-name: ${{ steps.manifest.outputs.subject-name }}
           subject-digest: ${{ steps.digest.outputs.digest }}
-          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/.*$
+          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/\.github/workflows/operator-ci\.yaml@refs/tags/operator/.*$
 
   # Single required check for branch protection. operator-ci, agent-ci,
   # and lint-ci all publish a check named `ci-gate` — GitHub composes
