@@ -165,7 +165,7 @@ Note:
 
 ### Verify release signatures and attestations
 
-Release workflows publish keyless Sigstore signatures, CycloneDX SBOM attestations, and SLSA v1 provenance attestations for release artifacts. The expected OIDC issuer is:
+Release workflows publish keyless Sigstore signatures, CycloneDX SBOM attestations, and SLSA v1 provenance attestations for GHCR image release artifacts. The expected OIDC issuer is:
 
 ```bash
 https://token.actions.githubusercontent.com
@@ -174,7 +174,7 @@ https://token.actions.githubusercontent.com
 The expected certificate identity is any NodeWright workflow identity under the release repository:
 
 ```bash
-https://github.com/NVIDIA/nodewright/.*
+^https://github.com/NVIDIA/nodewright/.*$
 ```
 
 Resolve the artifact digest first, then verify by immutable digest:
@@ -184,7 +184,7 @@ IMAGE=ghcr.io/nvidia/nodewright/operator
 TAG=v0.15.0
 DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${TAG}" --format '{{json .Manifest}}' | jq -r '.digest')
 SUBJECT="${IMAGE}@${DIGEST}"
-IDENTITY='https://github.com/NVIDIA/nodewright/.*'
+IDENTITY='^https://github.com/NVIDIA/nodewright/.*$'
 ISSUER='https://token.actions.githubusercontent.com'
 
 cosign verify \
@@ -209,9 +209,6 @@ Use the same command pattern for each released artifact:
 |----------|-------------|
 | GHCR operator image | `ghcr.io/nvidia/nodewright/operator` |
 | GHCR agent image | `ghcr.io/nvidia/nodewright/agent` |
-| NVCR operator image | `nvcr.io/nvidia/skyhook/operator` |
-| NVCR agent image | `nvcr.io/nvidia/skyhook/agent` |
-| NGC Helm OCI chart | `nvcr.io/nvidia/skyhook/skyhook-operator` |
 
 ## Common Commands
 

@@ -431,57 +431,6 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           certificate-identity-regexp: ^https://github.com/${{ github.repository }}/.*$
 
-  attest-nvcr-operator:
-    if: startsWith(github.ref, 'refs/tags/operator/')
-    runs-on: ubuntu-latest
-    needs: [compute-metadata, create-manifest]
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Log in to NVCR
-        uses: docker/login-action@v4
-        with:
-          registry: nvcr.io
-          username: ${{ secrets.NVCR_REGISTRY_USER }}
-          password: ${{ secrets.NVCR_REGISTRY_PASSWORD }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Resolve public NVCR operator digest
-        id: digest
-        uses: ./.github/actions/resolve-oci-digest
-        with:
-          image: nvcr.io/nvidia/skyhook/operator
-          tag: ${{ needs.compute-metadata.outputs.version }}
-          attempts: "45"
-          retry-delay-seconds: "60"
-
-      - name: Sign public NVCR operator image and attach SBOM
-        uses: ./.github/actions/cosign-sign-sbom
-        with:
-          subject-name: nvcr.io/nvidia/skyhook/operator
-          subject-digest: ${{ steps.digest.outputs.digest }}
-
-      - name: Attest public NVCR operator provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-name: nvcr.io/nvidia/skyhook/operator
-          subject-digest: ${{ steps.digest.outputs.digest }}
-          push-to-registry: true
-
-      - name: Verify public NVCR operator signature and attestations
-        uses: ./.github/actions/cosign-verify-release
-        with:
-          subject-name: nvcr.io/nvidia/skyhook/operator
-          subject-digest: ${{ steps.digest.outputs.digest }}
-          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/.*$
-
   # Single required check for branch protection. operator-ci, agent-ci,
   # and lint-ci all publish a check named `ci-gate` — GitHub composes
   # same-named required checks, so every ci-gate that posts must pass.
