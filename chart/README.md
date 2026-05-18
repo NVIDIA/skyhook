@@ -34,10 +34,10 @@ Settings | Description | Default |
 | controllerManager.manager.env.logLevel | Log level for the operator controller. If you want more or less logs, change this value to "debug" or "error". | "info" |
 | controllerManager.manager.env.reapplyOnReboot | Reapply the packages on reboot. This is useful for systems that are read-only. | "false" |
 | controllerManager.manager.env.runtimeRequiredTaint | This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag. This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete. | skyhook.nvidia.com=runtime-required:NoSchedule | 
-| controllerManager.manager.image.repository | Where to get the image from | "nvcr.io/nvidia/skyhook/operator" |
+| controllerManager.manager.image.repository | Where to get the image from | "ghcr.io/nvidia/nodewright/operator" |
 | controllerManager.manager.image.tag | what version of the operator to run | defaults to appVersion |
 | controllerManager.manager.image.digest | content-addressable pin for the operator image. If set, the digest determines the pulled image. If both tag and digest are provided, the digest takes precedence; the rendered image may include `tag@digest` but the digest controls selection. | "" |
-| controllerManager.manager.agent.repository | Where to get the image from | "nvcr.io/nvidia/skyhook/agent" |
+| controllerManager.manager.agent.repository | Where to get the image from | "ghcr.io/nvidia/skyhook/agent" |
 | controllerManager.manager.agent.tag | what version of the agent to run | defaults to the current latest, but is not latest example v6.1.5 |
 | controllerManager.manager.agent.digest | content-addressable pin for the agent image. Same precedence rules as above: if both tag and digest are provided, the digest controls which image is pulled. | "" |
 | imagePullSecret | the secret used to pull the operator controller image, agent image, and package images. | "" |
@@ -72,7 +72,7 @@ Settings | Description | Default |
 imagePullSecret: "node-init-secret"
 ```
 
-If you use public images (like the default `nvcr.io/nvidia/skyhook/*` images), no action is needed.
+If you use public images (default operator `ghcr.io/nvidia/nodewright/operator` and agent `ghcr.io/nvidia/skyhook/agent` — the agent path migration to `nodewright` is pending), no action is needed.
 
 ### Resource Management
 
@@ -95,7 +95,7 @@ By default, the Helm chart includes a pre-delete hook that automatically cleans 
 
 ```bash
 # Uninstall with automatic cleanup (default)
-helm uninstall skyhook --namespace skyhook
+helm uninstall nodewright --namespace skyhook
 ```
 
 The pre-delete hook will:
@@ -121,7 +121,7 @@ When disabled, you must manually delete resources before uninstalling to avoid i
 # Manual cleanup when automatic cleanup is disabled
 kubectl delete skyhooks --all
 kubectl delete deploymentpolicies --all
-helm uninstall skyhook --namespace skyhook
+helm uninstall nodewright --namespace skyhook
 ```
 
 ### Configuring Timeout Values
