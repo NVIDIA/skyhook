@@ -82,6 +82,32 @@ git tag chart/v0.9.1         # Patch chart to reference new agent
 git push origin agent/v6.4.1 chart/v0.9.1
 ```
 
+### Release Candidates
+
+Cut a release candidate with an `-rc<N>` suffix on the component tag. The workflow detects the suffix and marks the GitHub release as a prerelease so it doesn't become "Latest" on the Releases page.
+
+Only `v<MAJOR>.<MINOR>.<PATCH>` and `v<MAJOR>.<MINOR>.<PATCH>-rc<N>` are accepted — any other suffix (`-beta`, `-alpha`, `-rc.1`, etc.) is rejected by the workflow so the tag format stays predictable.
+
+```bash
+# Operator RC
+git tag operator/v0.16.0-rc1
+git push origin operator/v0.16.0-rc1
+
+# Chart RC — Chart.yaml must match the tag, including the suffix
+# Edit chart/Chart.yaml:
+version: v0.16.0-rc1
+appVersion: v0.16.0-rc1
+
+git commit -am "release: prepare v0.16.0-rc1"
+git tag chart/v0.16.0-rc1
+git push origin chart/v0.16.0-rc1
+```
+
+Notes:
+
+- Helm OCI accepts pre-release versions, so `chart/v0.16.0-rc1` pushes `skyhook-operator-v0.16.0-rc1.tgz` to `oci://ghcr.io/nvidia/nodewright/charts`. Install with `--version v0.16.0-rc1`.
+- `git cliff --latest` scopes release notes to commits since the previous tag of the same component, so each RC's notes only cover commits since the prior RC (or the prior stable, for `-rc1`).
+
 ### Legacy: Individual Component Releases (Deprecated)
 
 *The following workflows are deprecated in favor of the release branch strategy above.*
