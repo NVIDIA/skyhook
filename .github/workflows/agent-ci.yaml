@@ -23,6 +23,7 @@ on:
       - agent/**
       - '!agent/go/**'
       - containers/agent.Dockerfile
+      - .github/actions/**
       - .github/workflows/agent-ci.yaml
   push:
     branches:
@@ -33,6 +34,7 @@ on:
       - agent/**
       - '!agent/go/**'
       - containers/agent.Dockerfile
+      - .github/actions/**
       - .github/workflows/agent-ci.yaml
 env:
   REGISTRY: ghcr.io
@@ -215,18 +217,27 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     needs: [compute-metadata, build-agent]
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+      subject-name: ${{ steps.manifest.outputs.subject-name }}
     permissions:
       contents: read
       packages: write
       attestations: write
       id-token: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Log in to the Container registry
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       
       # Create and push multi-platform manifests, then delete platform-specific tags
       - name: Create manifests and cleanup
@@ -246,27 +257,44 @@ jobs:
             docker manifest push $FULL_TAG
             echo "✅ Pushed $FULL_TAG"
           done
-          
-          # Get digest of the main tag (git sha) for attestation
-          MAIN_TAG="${REGISTRY}/${IMAGE_NAME}/agent:${{ needs.compute-metadata.outputs.git-sha }}"
-          DIGEST=$(docker manifest inspect $MAIN_TAG | jq -r '.manifests[0].digest')
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
           echo "subject-name=${REGISTRY}/${IMAGE_NAME}/agent" >> $GITHUB_OUTPUT
           
           # Note: Platform-specific tags (e.g., v1.0.0-linux-amd64) are left in registry
           # as intermediate artifacts. Users should pull the multi-platform manifest tags.
           # GitHub Container Registry doesn't easily support programmatic tag deletion.
           echo "✅ Multi-platform manifests created successfully"
+
+      - name: Resolve multi-platform manifest digest
+        id: digest
+        uses: ./.github/actions/resolve-oci-digest
+        with:
+          image: ${{ steps.manifest.outputs.subject-name }}
+          tag: ${{ needs.compute-metadata.outputs.git-sha }}
       
-      # Generate supply chain security attestation for the multi-platform manifest
-      - name: Generate artifact attestation
-        if: env.PUSH_TO_REGISTRY == 'true'
-        uses: actions/attest-build-provenance@v4
+      - name: Sign GHCR agent image and attach SBOM
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/agent/')
+        uses: ./.github/actions/cosign-sign-sbom
         with:
           subject-name: ${{ steps.manifest.outputs.subject-name }}
-          subject-digest: ${{ steps.manifest.outputs.digest }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+
+      - name: Attest GHCR agent provenance
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/agent/')
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject-name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
-  
+
+      - name: Verify GHCR agent signature and attestations
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/agent/')
+        uses: ./.github/actions/cosign-verify-release
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject-name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/\.github/workflows/agent-ci\.yaml@refs/tags/agent/.*$
+
   operator-agent-tests:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Operator Agent Integration Tests

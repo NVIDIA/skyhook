@@ -138,6 +138,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -148,13 +150,17 @@ jobs:
           version: v3.16.2
 
       - name: Verify chart version matches tag
+        id: chart-metadata
         run: |
+          CHART_NAME=$(yq '.name' chart/Chart.yaml)
           TAG_VERSION="${GITHUB_REF_NAME#chart/}"
           CHART_VERSION=$(yq '.version' chart/Chart.yaml)
           if [ "${TAG_VERSION}" != "${CHART_VERSION}" ]; then
             echo "Tag version ${TAG_VERSION} does not match chart/Chart.yaml version ${CHART_VERSION}" >&2
             exit 1
           fi
+          echo "name=${CHART_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "version=${CHART_VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Package chart
         run: |
@@ -167,5 +173,43 @@ jobs:
             | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
       - name: Push chart to ghcr.io
+        id: push-chart
+        env:
+          CHART_NAME: ${{ steps.chart-metadata.outputs.name }}
+          CHART_VERSION: ${{ steps.chart-metadata.outputs.version }}
         run: |
-          helm push dist/*.tgz oci://ghcr.io/nvidia/nodewright/charts
+          set -euo pipefail
+
+          chart_repo="ghcr.io/nvidia/nodewright/charts"
+          chart_subject="${chart_repo}/${CHART_NAME}"
+          push_output="$(helm push "dist/${CHART_NAME}-${CHART_VERSION}.tgz" "oci://${chart_repo}")"
+          printf '%s\n' "${push_output}"
+          chart_digest="$(awk '/^Digest:/ {print $2}' <<< "${push_output}")"
+          if ! [[ "${chart_digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::failed to parse Helm chart digest from helm push output"
+            exit 1
+          fi
+
+          echo "subject-name=${chart_subject}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${chart_digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Sign GHCR Helm chart and attach SBOM
+        uses: ./.github/actions/cosign-sign-sbom
+        with:
+          subject-name: ${{ steps.push-chart.outputs.subject-name }}
+          subject-digest: ${{ steps.push-chart.outputs.digest }}
+          sbom-source: chart
+
+      - name: Attest GHCR Helm chart provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ steps.push-chart.outputs.subject-name }}
+          subject-digest: ${{ steps.push-chart.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify GHCR Helm chart signature and attestations
+        uses: ./.github/actions/cosign-verify-release
+        with:
+          subject-name: ${{ steps.push-chart.outputs.subject-name }}
+          subject-digest: ${{ steps.push-chart.outputs.digest }}
+          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/chart/.*$
