@@ -41,6 +41,12 @@ git push origin operator/v0.9.0 chart/v0.9.0  # Push operator + chart (add agent
 
 **Automated:** Tests → Multi-platform build → Publish to ghcr.io + nvcr.io + NGC
 
+A `chart/v*` tag push also publishes the Helm chart as an OCI artifact to `oci://ghcr.io/nvidia/nodewright/charts/skyhook-operator`. Consumers install with:
+
+```bash
+helm install skyhook-operator oci://ghcr.io/nvidia/nodewright/charts/skyhook-operator --version v0.9.0
+```
+
 ### Patch Release Workflow
 
 ```bash
@@ -75,6 +81,32 @@ git tag agent/v6.4.1         # New agent version
 git tag chart/v0.9.1         # Patch chart to reference new agent
 git push origin agent/v6.4.1 chart/v0.9.1
 ```
+
+### Release Candidates
+
+Cut a release candidate with an `-rc<N>` suffix on the component tag. The workflow detects the suffix and marks the GitHub release as a prerelease so it doesn't become "Latest" on the Releases page.
+
+Only `v<MAJOR>.<MINOR>.<PATCH>` and `v<MAJOR>.<MINOR>.<PATCH>-rc<N>` are accepted — any other suffix (`-beta`, `-alpha`, `-rc.1`, etc.) is rejected by the workflow so the tag format stays predictable.
+
+```bash
+# Operator RC
+git tag operator/v0.16.0-rc1
+git push origin operator/v0.16.0-rc1
+
+# Chart RC — Chart.yaml must match the tag, including the suffix
+# Edit chart/Chart.yaml:
+version: v0.16.0-rc1
+appVersion: v0.16.0-rc1
+
+git commit -am "release: prepare v0.16.0-rc1"
+git tag chart/v0.16.0-rc1
+git push origin chart/v0.16.0-rc1
+```
+
+Notes:
+
+- Helm OCI accepts pre-release versions, so `chart/v0.16.0-rc1` pushes `skyhook-operator-v0.16.0-rc1.tgz` to `oci://ghcr.io/nvidia/nodewright/charts`. Install with `--version v0.16.0-rc1`.
+- `git cliff --latest` scopes release notes to commits since the previous tag of the same component, so each RC's notes only cover commits since the prior RC (or the prior stable, for `-rc1`).
 
 ### Legacy: Individual Component Releases (Deprecated)
 
@@ -302,6 +334,50 @@ git log --oneline $(git tag -l 'operator/v*' --sort=-v:refname | head -1)..HEAD
 git tag -d operator/v1.2.3
 git push origin :refs/tags/operator/v1.2.3
 ```
+
+## Third-Party Notices
+
+Skyhook ships `THIRD_PARTY_NOTICES.md` files that list every third-party module shipped in its released artifacts, along with verbatim license text. Three files are maintained:
+
+| File | Covers | Tool |
+| --- | --- | --- |
+| `operator/THIRD_PARTY_NOTICES.md` | Operator + CLI (Go) | `go-licenses` |
+| `agent/THIRD_PARTY_NOTICES.md` | Agent (Python) | `pip-licenses` |
+| `THIRD_PARTY_NOTICES.md` (repo root) | Combined rollup for `chart/` releases | Composed from the two component files |
+
+### Regenerating locally
+
+```bash
+# All three at once:
+make notices
+
+# Or per-component:
+make notices-operator   # operator + CLI Go deps
+make notices-agent      # agent Python deps
+make notices-rollup     # root rollup (run after the two above)
+```
+
+Prerequisites:
+
+- `go-licenses` — installed via `make -C operator go-licenses` (writes `operator/bin/go-licenses`).
+- Python 3 — required for the generator script and the agent pass's pip-licenses venv.
+
+The agent pass caches a Python venv at `agent/.notices-venv`. First run installs `pip-licenses` and the agent's pinned deps (~30s). Subsequent runs reuse the venv (~2s).
+
+### When to regenerate
+
+Run `make notices` and commit the refreshed file(s) whenever you:
+
+- Bump a Go dependency (changes to `operator/go.mod`, `operator/go.sum`, or `operator/vendor/`).
+- Bump a Python dependency (changes to `agent/skyhook-agent/pyproject.toml` or `agent/vendor/`).
+
+### CI behavior
+
+- **Merge gate** (`.github/workflows/merge-gate.yaml`): when Go dependency files change in a PR, the `verify-licenses` job runs `make -C operator license-check` to confirm every dep's license is on the approved list. The job is required and a paired skip job satisfies the check when deps don't change.
+- **Release upload** (`.github/workflows/release.yml`): every operator/agent/chart release regenerates the notices files in CI and attaches the appropriate one as a release asset:
+  - `operator/v*` → `operator/THIRD_PARTY_NOTICES.md`
+  - `agent/v*` → `agent/THIRD_PARTY_NOTICES.md`
+  - `chart/v*` → root `THIRD_PARTY_NOTICES.md` (the combined rollup, since chart packages both images)
 
 ## Rollback
 
