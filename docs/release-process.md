@@ -160,12 +160,20 @@ Note:
 **After tagging:**
 
 - [ ] CI/CD pipeline completes
-- [ ] Images published successfully
+- [ ] Images and chart artifacts published successfully
 - [ ] Test deployment with new version
 
 ### Verify release signatures and attestations
 
-Release workflows publish keyless Sigstore signatures, CycloneDX SBOM attestations, and SLSA v1 provenance attestations for GHCR image release artifacts. The expected OIDC issuer is:
+Release workflows publish keyless Sigstore signatures, CycloneDX SBOM attestations, and SLSA v1 provenance attestations for GHCR image and Helm chart release artifacts.
+
+Prerequisites:
+
+- Docker buildx (`docker buildx version`)
+- cosign (`cosign version`)
+- jq (`jq --version`)
+
+The expected OIDC issuer is:
 
 ```bash
 https://token.actions.githubusercontent.com
@@ -183,6 +191,12 @@ For agent images:
 
 ```bash
 ^https://github.com/NVIDIA/nodewright/\.github/workflows/agent-ci\.yaml@refs/tags/agent/.*$
+```
+
+For Helm chart artifacts:
+
+```bash
+^https://github.com/NVIDIA/nodewright/\.github/workflows/release\.yml@refs/tags/chart/.*$
 ```
 
 Resolve the artifact digest first, then verify by immutable digest:
@@ -239,12 +253,39 @@ cosign verify-attestation \
   "${SUBJECT}"
 ```
 
+#### Helm chart
+
+```bash
+CHART=ghcr.io/nvidia/nodewright/charts/skyhook-operator
+TAG=v0.15.1
+DIGEST=$(docker buildx imagetools inspect "${CHART}:${TAG}" --format '{{json .Manifest}}' | jq -r '.digest')
+SUBJECT="${CHART}@${DIGEST}"
+IDENTITY='^https://github.com/NVIDIA/nodewright/\.github/workflows/release\.yml@refs/tags/chart/.*$'
+ISSUER='https://token.actions.githubusercontent.com'
+
+cosign verify \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  "${SUBJECT}"
+cosign verify-attestation \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  --type cyclonedx \
+  "${SUBJECT}"
+cosign verify-attestation \
+  --certificate-identity-regexp "${IDENTITY}" \
+  --certificate-oidc-issuer "${ISSUER}" \
+  --type https://slsa.dev/provenance/v1 \
+  "${SUBJECT}"
+```
+
 Use the same command pattern for each released artifact:
 
 | Artifact | Immutable OCI subject |
 |----------|-----------------------|
 | GHCR operator image | `ghcr.io/nvidia/nodewright/operator@sha256:<digest>` |
 | GHCR agent image | `ghcr.io/nvidia/nodewright/agent@sha256:<digest>` |
+| GHCR Helm chart | `ghcr.io/nvidia/nodewright/charts/skyhook-operator@sha256:<digest>` |
 
 ## Common Commands
 

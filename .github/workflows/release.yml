@@ -35,6 +35,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
+      attestations: write
+      id-token: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -68,6 +74,84 @@ jobs:
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "${NOTES}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR for chart publishing
+        if: steps.extract.outputs.component == 'chart'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Helm
+        if: steps.extract.outputs.component == 'chart'
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.1.4
+
+      - name: Package and push GHCR Helm chart
+        if: steps.extract.outputs.component == 'chart'
+        id: chart
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          chart_name="$(awk '/^name:/ {print $2; exit}' chart/Chart.yaml | tr -d '"')"
+          chart_version="$(awk '/^version:/ {print $2; exit}' chart/Chart.yaml | tr -d '"')"
+          tag_version="${TAG_NAME#chart/}"
+          if [ "${chart_version}" != "${tag_version}" ]; then
+            echo "::error::chart/Chart.yaml version ${chart_version} does not match tag ${TAG_NAME}"
+            exit 1
+          fi
+
+          registry="$(echo "${REGISTRY}" | tr '[:upper:]' '[:lower:]')"
+          image_name="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          chart_repo="${registry}/${image_name}/charts"
+          chart_subject="${chart_repo}/${chart_name}"
+          echo "${GHCR_TOKEN}" | helm registry login "${registry}" --username "${GITHUB_ACTOR}" --password-stdin
+
+          package_dir="${RUNNER_TEMP}/nodewright-chart"
+          mkdir -p "${package_dir}"
+          helm package chart --destination "${package_dir}"
+          chart_package="${package_dir}/${chart_name}-${chart_version}.tgz"
+          push_output="$(helm push "${chart_package}" "oci://${chart_repo}")"
+          printf '%s\n' "${push_output}"
+          chart_digest="$(awk '/^Digest:/ {print $2}' <<< "${push_output}")"
+          if ! [[ "${chart_digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::failed to parse Helm chart digest from helm push output"
+            exit 1
+          fi
+
+          echo "subject-name=${chart_subject}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${chart_digest}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${chart_version}" >> "${GITHUB_OUTPUT}"
+          echo "package=${chart_package}" >> "${GITHUB_OUTPUT}"
+
+      - name: Sign GHCR Helm chart and attach SBOM
+        if: steps.extract.outputs.component == 'chart'
+        uses: ./.github/actions/cosign-sign-sbom
+        with:
+          subject-name: ${{ steps.chart.outputs.subject-name }}
+          subject-digest: ${{ steps.chart.outputs.digest }}
+          sbom-source: chart
+
+      - name: Attest GHCR Helm chart provenance
+        if: steps.extract.outputs.component == 'chart'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ steps.chart.outputs.subject-name }}
+          subject-digest: ${{ steps.chart.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify GHCR Helm chart signature and attestations
+        if: steps.extract.outputs.component == 'chart'
+        uses: ./.github/actions/cosign-verify-release
+        with:
+          subject-name: ${{ steps.chart.outputs.subject-name }}
+          subject-digest: ${{ steps.chart.outputs.digest }}
+          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/chart/.*$
 
       - name: Create GitHub Release
         env:
