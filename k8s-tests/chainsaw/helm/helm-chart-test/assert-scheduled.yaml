@@ -20,9 +20,9 @@ metadata:
   annotations:
     kubectl.kubernetes.io/default-container: manager
   labels:
-    app: foobar-skyhook-operator-controller-manager
+    app: nodewright-controller-manager
     app.kubernetes.io/instance: foobar
-    app.kubernetes.io/name: skyhook-operator
+    app.kubernetes.io/name: nodewright
     control-plane: controller-manager
   namespace: skyhook
   ownerReferences:
@@ -49,7 +49,7 @@ spec:
   - command:
     - /manager
     ((env[?name == 'RUNTIME_REQUIRED_TAINT'].value)[0] == 'skyhook.nvidia.com=runtime-required:NoSchedule'): true
-    (image == 'ghcr.io/nvidia/skyhook/operator:latest' || contains(image, 'localhost:5005/skyhook-operator:')): true
+    (image == 'ghcr.io/nvidia/nodewright/operator:latest' || contains(image, 'localhost:5005/skyhook-operator:')): true
     livenessProbe:
       failureThreshold: 3
       httpGet:
@@ -125,8 +125,8 @@ spec:
   schedulerName: default-scheduler
   securityContext:
     runAsNonRoot: true
-  serviceAccount: foobar-skyhook-operator-controller-manager
-  serviceAccountName: foobar-skyhook-operator-controller-manager
+  serviceAccount: nodewright-controller-manager
+  serviceAccountName: nodewright-controller-manager
   terminationGracePeriodSeconds: 10
   (tolerations[?key == 'dedicated']):
   - effect: NoSchedule
