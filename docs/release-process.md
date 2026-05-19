@@ -4,109 +4,169 @@ Step-by-step process for releasing Skyhook components using **release branches**
 
 ## Release Branch Strategy
 
-Skyhook uses **release branches** (`release/v{MAJOR.MINOR}.x`) to manage integrated releases and patches.
+At feature-freeze a release branch is cut from `main`. All release candidates and the final release for that minor version are tagged on that branch, and every later patch for the same minor line is cherry-picked back to the same branch and tagged from there. The release branch is the single source of truth for everything that ships under one minor version — once it exists, nothing for that minor goes anywhere else.
 
-**Key Principles:**
+**Flow (one minor line):**
 
-- **Operator-centric**: Most releases are driven by operator features and bug fixes
-- **Agent follows**: Agent changes typically only require chart patch releases 
-- **Chart coordinates**: Chart version tracks the overall release and defines compatibility
+```mermaid
+%%{init: {'gitGraph': {'mainBranchName': 'main', 'showCommitLabel': false}}}%%
+gitGraph
+   commit
+   commit
+   branch release/v0.16.x
+   checkout main
+   commit id: "X"
+   checkout release/v0.16.x
+   cherry-pick id: "X" tag: "v0.16.0-rc1"
+   checkout main
+   commit id: "Y"
+   checkout release/v0.16.x
+   cherry-pick id: "Y" tag: "v0.16.0-rc2"
+   commit tag: "v0.16.0"
+   checkout main
+   commit id: "Z"
+   checkout release/v0.16.x
+   cherry-pick id: "Z" tag: "v0.16.1"
+```
+
+`X`, `Y`, `Z` are fixes that land on `main` first and get cherry-picked to `release/v0.16.x`. Each RC and the final release are tagged on that branch. Patches (`v0.16.1`, …) stay on the same release branch.
+
+**Key principles:**
+
+- **Branch first, then tag.** Always cut the release branch before the first RC. Tags only live on release branches, never on `main`.
+- **Cherry-pick from `main`.** Any fix or feature destined for a release lands on `main` first, then is cherry-picked to the release branch. The release branch is never the place to *develop* — only to *stabilize and ship*.
+  - Rare exception: a change that is genuinely release-branch-only (e.g. a `chart/Chart.yaml` version bump for that line) can be committed directly to the release branch via a feature branch and PR.
+- **RCs are the validation gate.** Cut `-rc1`, `-rc2`, … on the release branch until you're happy. When an RC is approved, make a single `Chart.yaml` bump commit dropping the `-rcN` suffix and tag `vX.Y.0` on that commit — no other code changes between the last good RC and the final release.
+- **Patches stay on the same branch.** `v0.16.1`, `v0.16.2`, … are all cut from `release/v0.16.x` — cherry-pick the fix from `main`, bump `chart/Chart.yaml`, tag.
+- **Component naming:** Operator drives the release; agent often reuses the previous version; chart always gets tagged because `Chart.yaml` (and therefore `appVersion`) moves with every release.
 
 ### Major/Minor Release Workflow
 
 ```bash
-# 1. Complete development on main
+# 1. Cut the release branch from main at feature-freeze.
 git checkout main && git pull origin main
-# Ensure all features/fixes are merged and tested
+git checkout -b release/v0.16.x
+git push origin release/v0.16.x
 
-# 2. Create release branch
-git checkout -b release/v0.9.x
-git push origin release/v0.9.x
+# 2. Cherry-pick anything that has merged to main since the cut but belongs in the release.
+#    Repeat throughout the stabilization period.
+git cherry-pick -x <sha-on-main>
+git push origin release/v0.16.x
 
-# 3. Update chart with final versions
-# Edit chart/Chart.yaml:
-version: v0.9.0        # Chart version
-appVersion: v0.9.0     # Recommended operator version
-
-git add chart/Chart.yaml
-git commit -m "release: prepare v0.9.0"
-git push origin release/v0.9.x
-
-# 4. Tag all components that changed  
-git tag operator/v0.9.0    # Operator drives the release
-git tag agent/v6.4.0       # Only if agent changed (often reuses previous version)
-git tag chart/v0.9.0       # Chart always gets tagged
-git push origin operator/v0.9.0 chart/v0.9.0  # Push operator + chart (add agent tag if needed)
-```
-
-**Automated:** Tests → Multi-platform build → Publish to ghcr.io + nvcr.io + NGC
-
-A `chart/v*` tag push also publishes the Helm chart as an OCI artifact to `oci://ghcr.io/nvidia/nodewright/charts/skyhook-operator`. Consumers install with:
-
-```bash
-helm install skyhook-operator oci://ghcr.io/nvidia/nodewright/charts/skyhook-operator --version v0.9.0
-```
-
-### Patch Release Workflow
-
-```bash
-# 1. Work on release branch
-git checkout release/v0.9.x
-git pull origin release/v0.9.x
-
-# 2. Apply fixes (backport from main or develop directly)
-# ... make changes to operator, agent, or chart
-git add .
-git commit -m "fix: critical security issue"
-
-# 3. Update chart version if needed
-# Edit chart/Chart.yaml:
-version: v0.9.1        # Increment patch version
-appVersion: v0.9.1     # Update if operator changed
-
-# 4. Tag only what changed
-git tag operator/v0.9.1    # If operator changed
-git tag agent/v6.4.1       # Only if agent changed (rare)
-git tag chart/v0.9.1       # Chart always gets tagged for releases
-git push origin operator/v0.9.1 chart/v0.9.1  # Usually just operator + chart
-```
-
-### Agent-Only Changes
-
-```bash
-# Agent changes typically don't require new release branches
-git checkout release/v0.9.x  # Work on existing release branch
-# ... fix agent issue
-git tag agent/v6.4.1         # New agent version
-git tag chart/v0.9.1         # Patch chart to reference new agent
-git push origin agent/v6.4.1 chart/v0.9.1
-```
-
-### Release Candidates
-
-Cut a release candidate with an `-rc<N>` suffix on the component tag. The workflow detects the suffix and marks the GitHub release as a prerelease so it doesn't become "Latest" on the Releases page.
-
-Only `v<MAJOR>.<MINOR>.<PATCH>` and `v<MAJOR>.<MINOR>.<PATCH>-rc<N>` are accepted — any other suffix (`-beta`, `-alpha`, `-rc.1`, etc.) is rejected by the workflow so the tag format stays predictable.
-
-```bash
-# Operator RC
-git tag operator/v0.16.0-rc1
-git push origin operator/v0.16.0-rc1
-
-# Chart RC — Chart.yaml must match the tag, including the suffix
-# Edit chart/Chart.yaml:
-version: v0.16.0-rc1
-appVersion: v0.16.0-rc1
-
+# 3. Prepare the chart for the RC. Edit chart/Chart.yaml:
+#    version: v0.16.0-rc1
+#    appVersion: v0.16.0-rc1
 git commit -am "release: prepare v0.16.0-rc1"
+git push origin release/v0.16.x
+
+# 4. Tag the RC on the release branch.
+git tag operator/v0.16.0-rc1
 git tag chart/v0.16.0-rc1
-git push origin chart/v0.16.0-rc1
+# Tag agent only if it changed since the last released agent version.
+git push origin operator/v0.16.0-rc1 chart/v0.16.0-rc1
+
+# 5. Validate the RC. If issues are found, cherry-pick more fixes from main,
+#    bump Chart.yaml to v0.16.0-rc2, and tag -rc2. Repeat until clean.
+
+# 6. Cut the final release on the same commit as the last good RC.
+#    Bump Chart.yaml to v0.16.0 (drop the -rcN suffix) and commit.
+git commit -am "release: v0.16.0"
+git push origin release/v0.16.x
+git tag operator/v0.16.0
+git tag chart/v0.16.0
+git push origin operator/v0.16.0 chart/v0.16.0
 ```
+
+**Automated:** Tests → Multi-platform build → Publish to `ghcr.io`
+
+A `chart/v*` tag push also publishes the Helm chart as an OCI artifact to `oci://ghcr.io/nvidia/nodewright/charts/nodewright`. Consumers install with:
+
+```bash
+helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright --version v0.16.0
+```
+
+### Distribution: ghcr.io only (for now)
+
+Starting with `v0.16.0`, NodeWright is distributed **exclusively via GitHub Container Registry (`ghcr.io`)**:
+
+| Artifact | Location |
+| --- | --- |
+| Operator image | `ghcr.io/nvidia/nodewright/operator` |
+| Agent image | `ghcr.io/nvidia/skyhook/agent` *(migration to `ghcr.io/nvidia/nodewright/agent` pending)* |
+| Helm chart (OCI) | `oci://ghcr.io/nvidia/nodewright/charts/nodewright` |
+
+`v0.16.0` is the **first release using OCI on `ghcr.io` for the Helm chart** — previously the chart was published to the NGC Helm repository (`https://helm.ngc.nvidia.com/nvidia/skyhook`). The OCI distribution removes the `helm repo add` step entirely; Helm 3.8+ pulls from `oci://` URLs directly.
+
+Distribution through `nvcr.io` / NGC is **paused** and is planned to return in a future release. Until then, the chart's image-pull defaults in `chart/values.yaml` point at `ghcr.io`. When NGC distribution resumes, the defaults and this section will be updated; users who pin to `ghcr.io` paths today won't be forced to migrate.
+
+### Release Candidate Tag Format
+
+Only two tag shapes are accepted by the release workflow per component:
+
+- `<component>/v<MAJOR>.<MINOR>.<PATCH>` — final release
+- `<component>/v<MAJOR>.<MINOR>.<PATCH>-rc<N>` — release candidate, published as a GitHub pre-release
+
+Any other suffix (`-beta`, `-alpha`, `-rc.1`, `-rc1a`, etc.) is rejected by `.github/workflows/release.yml` so the tag format stays predictable.
 
 Notes:
 
-- Helm OCI accepts pre-release versions, so `chart/v0.16.0-rc1` pushes `skyhook-operator-v0.16.0-rc1.tgz` to `oci://ghcr.io/nvidia/nodewright/charts`. Install with `--version v0.16.0-rc1`.
+- Helm OCI accepts pre-release versions, so `chart/v0.16.0-rc1` pushes `nodewright-v0.16.0-rc1.tgz` to `oci://ghcr.io/nvidia/nodewright/charts`. Install with `--version v0.16.0-rc1`.
 - `git cliff --latest` scopes release notes to commits since the previous tag of the same component, so each RC's notes only cover commits since the prior RC (or the prior stable, for `-rc1`).
+
+### Patch Release Workflow
+
+Patches stay on the existing release branch. Fix on `main` first, cherry-pick to the release branch, then tag.
+
+```bash
+# 1. Land the fix on main as a normal PR (so it ships in future minors too).
+#    Note the commit SHA after it merges.
+
+# 2. Cherry-pick to the active release branch.
+git checkout release/v0.16.x
+git pull origin release/v0.16.x
+git cherry-pick -x <sha-on-main>
+
+# 3. Bump chart/Chart.yaml to the new patch version.
+#    version: v0.16.1
+#    appVersion: v0.16.1
+git commit -am "release: v0.16.1"
+git push origin release/v0.16.x
+
+# 4. Tag the components that changed and push *every* tag you created.
+#    The push list MUST include the agent tag if you tagged the agent above —
+#    otherwise the agent tag stays local and CI never sees it.
+git tag operator/v0.16.1    # If operator changed
+git tag agent/v6.4.1        # Only if agent changed (rare)
+git tag chart/v0.16.1       # Chart always gets tagged
+git push origin operator/v0.16.1 agent/v6.4.1 chart/v0.16.1  # drop any tag you didn't create
+```
+
+If the fix is urgent enough to need its own RC cycle, repeat the RC workflow above (e.g. `operator/v0.16.1-rc1`) before tagging `v0.16.1`.
+
+### Agent-Only Changes
+
+Agent-only fixes don't need a new minor; they ride on the active release branch as a chart patch.
+
+```bash
+# Land the agent fix on main, then cherry-pick to the active release branch.
+git checkout release/v0.16.x
+git cherry-pick -x <sha-on-main>
+
+# Bump chart/Chart.yaml to reference the new agent version (e.g. update the
+# agent tag/digest under controllerManager.manager.agent and bump the chart
+# version to v0.16.1).
+git commit -am "release: v0.16.1 (agent v6.4.1)"
+git push origin release/v0.16.x
+
+# Tag and push the components that changed.
+git tag agent/v6.4.1
+git tag chart/v0.16.1
+git push origin agent/v6.4.1 chart/v0.16.1
+```
+
+### Release-Branch-Only Changes (rare)
+
+If a change genuinely doesn't belong on `main` — for example, the `chart/Chart.yaml` version bump for `v0.16.1`, or a backport that doesn't apply cleanly and needs to be re-implemented for the older line — open it as a feature branch off the release branch and PR it back to the release branch. **Default to cherry-picking from `main` first; only diverge when there's a clear reason the change can't exist there.**
 
 ### Legacy: Individual Component Releases (Deprecated)
 
@@ -145,12 +205,23 @@ git push origin chart/v1.2.3
 
 ## Release Checklist
 
-**Before tagging:**
+**Before cutting the release branch (minor / major):**
 
-- [ ] All PRs merged to main
-- [ ] For charts: Chart.yaml updated and merged
-- [ ] Tests passing
-- [ ] Documentation updated
+- [ ] All target features/fixes merged to `main`
+- [ ] Tests passing on `main`
+- [ ] Documentation updated on `main`
+
+**Before each RC tag:**
+
+- [ ] All intended cherry-picks from `main` have landed on the release branch
+- [ ] `chart/Chart.yaml` `version` and `appVersion` match the RC tag (including the `-rcN` suffix)
+- [ ] Tests passing on the release branch
+
+**Before the final release tag:**
+
+- [ ] The last RC validated successfully
+- [ ] `chart/Chart.yaml` bumped to the non-RC version on the same commit
+- [ ] No new commits between the validated RC and the release tag other than the `Chart.yaml` bump
 
 ### Pin multi-arch image digests in the chart
 

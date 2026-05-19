@@ -8,7 +8,7 @@ The canonical file lives at `.claude/CLAUDE.md`. The root-level `AGENTS.md` is a
 
 Skyhook (being renamed to NodeWright) is a Kubernetes-aware package manager for safely modifying host infrastructure at scale. It coordinates the node lifecycle (cordon → drain → apply package → interrupt/reboot → uncordon) as controlled rollouts gated by interruption budgets and deployment policies.
 
-Rename status: the project is transitioning from Skyhook → NodeWright. Public names (CRDs `skyhook.nvidia.com/v1alpha1`, Helm chart `skyhook-operator`, CLI `kubectl skyhook`, namespace `skyhook`) still use `skyhook`. The Go module, however, is already `github.com/NVIDIA/nodewright/operator` — don't "fix" imports back to skyhook.
+Rename status: the project is transitioning from Skyhook → NodeWright. Most public names (CRDs `skyhook.nvidia.com/v1alpha1`, CLI `kubectl skyhook`, namespace `skyhook`) still use `skyhook`. Components already moved to `nodewright`: the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), and the operator image (`ghcr.io/nvidia/nodewright/operator`). The agent image is still at `ghcr.io/nvidia/skyhook/agent` pending its migration. Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
 
 ## Required reading: `docs/` (load every session)
 

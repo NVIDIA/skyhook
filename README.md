@@ -6,7 +6,9 @@
 
 **NodeWright** is a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying host declaratively at scale.
 
-> **Note:** NodeWright is being renamed from Skyhook. Code, CRDs, Helm charts, and CLI commands still use `skyhook` for now. The rename will roll out incrementally to avoid breaking changes.
+> **Note:** NodeWright is being renamed from Skyhook. The Helm chart and operator image are already published under `nodewright` (see the install command below). CRDs (`skyhook.nvidia.com/v1alpha1`), the CLI (`kubectl skyhook`), and the default install namespace (`skyhook`) still use `skyhook` for now to avoid breaking existing users. The rename will roll out incrementally.
+>
+> **Distribution change (v0.16.0+):** NodeWright is now distributed exclusively through GitHub Container Registry (`ghcr.io`) — both the container images and the Helm chart (as an OCI artifact). Publication to `nvcr.io` / the NGC Helm repository (`helm.ngc.nvidia.com`) is paused and is planned to return in a future release. **Existing users installing from NGC need to switch to the OCI install below.** See [Distribution: ghcr.io only (for now)](docs/release-process.md#distribution-ghcrio-only-for-now) for the full story.
 
 ## Why NodeWright?
 
@@ -70,17 +72,17 @@ Install NodeWright quickly using Helm without downloading the repository:
 ### Install NodeWright
 
 ```bash
-# Add the NVIDIA Helm repository
-helm repo add skyhook https://helm.ngc.nvidia.com/nvidia/skyhook
-helm repo update
-helm search repo skyhook ## should show the latest version
-
-# basic install
-helm install skyhook skyhook/skyhook-operator \
-  --version v0.15.0 \
+# The chart is distributed as an OCI artifact on GitHub Container Registry.
+# Helm 3.8+ supports OCI natively — no `helm repo add` needed.
+helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+  --version v0.16.0-rc1 \
   --namespace skyhook \
   --create-namespace
 ```
+
+> **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/skyhook/agent` (agent path migration to `nodewright` is pending). NGC / `nvcr.io` distribution is paused — see [docs/release-process.md#distribution-ghcrio-only-for-now](docs/release-process.md#distribution-ghcrio-only-for-now).
+>
+> **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above. If you also want to keep the existing in-cluster release name (e.g. `skyhook`), substitute it for `nodewright` in the `helm install` command — the chart works either way.
 
 ### Configure Image Pull Secrets (if needed)
 
@@ -152,7 +154,7 @@ kubectl describe skyhook skyhook-sample
 
 ```bash
 # Uninstall the chart (cleanup happens automatically)
-helm uninstall skyhook --namespace skyhook
+helm uninstall nodewright --namespace skyhook
 ```
 
 The pre-delete hook will:
@@ -168,13 +170,13 @@ The pre-delete hook will:
 To disable automatic cleanup and manage resources manually:
 
 ```bash
-helm install skyhook ./chart --namespace skyhook --set cleanup.enabled=false
+helm install nodewright ./chart --namespace skyhook --set cleanup.enabled=false
 ```
 
 To adjust the job timeout:
 
 ```bash
-helm install skyhook ./chart --namespace skyhook \
+helm install nodewright ./chart --namespace skyhook \
   --set cleanup.jobTimeoutSeconds=180
 ```
 
@@ -190,7 +192,7 @@ kubectl delete skyhooks --all
 kubectl delete deploymentpolicies --all
 
 # Then uninstall the chart
-helm uninstall skyhook --namespace skyhook
+helm uninstall nodewright --namespace skyhook
 ```
 
 **Why cleanup matters:** If you uninstall while Skyhook CRs with finalizers still exist, it can leave resources in a broken state that may cause reinstall issues.
