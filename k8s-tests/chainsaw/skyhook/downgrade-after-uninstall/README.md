@@ -20,6 +20,10 @@ the complementary case where no uninstall is required.
 3. Update the spec to v1.2.3. The webhook accepts the downgrade because the
    package is absent from all tracked nodes. The new version installs and
    reaches `stage=config, state=complete`.
+4. Flip `uninstall.apply: true` on v1.2.3 and wait for the package to be
+   absent from node state again. This is purely operational — it leaves the
+   CR with no installed packages so chainsaw's automatic CLEANUP can delete
+   it without waiting on the delete-time uninstall finalizer.
 
 ## Key Features Tested
 
@@ -31,7 +35,8 @@ the complementary case where no uninstall is required.
 
 ## Files
 
-- `chainsaw-test.yaml` — Main test: install v2 → uninstall v2 → downgrade to v1
+- `chainsaw-test.yaml` — Main test: install v2 → uninstall v2 → downgrade to v1 → uninstall v1
 - `skyhook.yaml` — Initial v2.1.4 Skyhook, `uninstall.enabled: true`
-- `update-trigger-uninstall.yaml` — Patch setting `uninstall.apply: true`
+- `update-trigger-uninstall.yaml` — Patch setting `uninstall.apply: true` on v2.1.4
 - `update-downgrade.yaml` — Patch changing version to v1.2.3
+- `update-trigger-uninstall-v1.yaml` — Patch setting `uninstall.apply: true` on v1.2.3 to clear node state before cleanup

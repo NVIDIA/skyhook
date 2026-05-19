@@ -99,3 +99,21 @@ spec:
             name: downgrade-after-uninstall
           status:
             status: complete
+
+  - name: uninstall-v1
+    description: >
+      Uninstall the downgraded v1.2.3 package so the CR has no installed
+      packages at chainsaw cleanup time — keeps the finalizer's delete-time
+      uninstall flow off the cleanup critical path.
+    try:
+    - update:
+        file: update-trigger-uninstall-v1.yaml
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            labels:
+              skyhook.nvidia.com/test-node: skyhooke2e
+            annotations:
+              skyhook.nvidia.com/nodeState_downgrade-after-uninstall: '{}'
