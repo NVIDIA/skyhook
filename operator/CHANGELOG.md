@@ -2,7 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased — Explicit Uninstall
+## [operator/v0.16.1] - 2026-05-22
+
+### Bug Fixes
+
+- **Webhook serving-cert bootstrap deadlock on major upgrade.** During an
+  upgrade from older versions, an old-version leader holding the main
+  reconcile lease could deadlock the new webhook's serving-cert bootstrap
+  and prevent the new controller from coming up. The bootstrap now runs
+  under its own dedicated `ctrl.Manager` with a separate leader-election
+  lease (`nodewright-webhook-bootstrap.nvidia.com`), so it no longer
+  contends with the main reconcile lease and the upgrade proceeds even
+  while the old leader still holds the primary lease (#243).
+
+## [operator/v0.16.0] - 2026-05-19 — Explicit Uninstall
 
 Introduces an opt-in declarative uninstall workflow and reworks how downgrades
 and CR deletion behave. Affects the Operator, Webhook, and CRD.

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [chart/v0.16.1] - 2026-05-22
+
+### Component Versions
+
+- Operator: [`v0.16.1`](https://github.com/NVIDIA/nodewright/releases/tag/operator%2Fv0.16.1) (`ghcr.io/nvidia/nodewright/operator@sha256:e406cf0f51766c873ef6e2c103e0dedd43680ef57d608104edfc6aa378698b3c`)
+- Agent: [`v6.4.2`](https://github.com/NVIDIA/nodewright/releases/tag/agent%2Fv6.4.2) (`ghcr.io/nvidia/nodewright/agent@sha256:7cd80f5ef351266dc08c3979e802f9dc936a1ed9fd02e199233e7968a3a0de3e`)
+
+### Bug Fixes
+
+- Pull in operator v0.16.1, which fixes a webhook serving-cert bootstrap deadlock when upgrading from older operator versions.
+
 ## [chart/v0.16.0] - 2026-05-22
 
 ### Component Versions
