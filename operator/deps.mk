@@ -47,6 +47,7 @@ CHAINSAW_VERSION ?= v0.2.15
 HELM_VERSION ?= v4.1.4
 HELMIFY_VERSION ?= v0.4.12
 GO_LICENSES_VERSION ?= v1.6.0
+GOVULNCHECK_VERSION ?= v1.3.0
 
 ## ctlptl (local cluster + registry management)
 CTLPTL_VERSION ?= v0.9.3
@@ -54,7 +55,7 @@ CTLPTL_VERSION ?= v0.9.3
 
 
 .PHONY: install-deps
-install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-licenses ctlptl ## Install all dependencies
+install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-licenses govulncheck ctlptl ## Install all dependencies
 
 ## Location to install dependencies to
 LOCALBIN ?= $(shell pwd)/bin
@@ -139,3 +140,8 @@ helmify: $(LOCALBIN)  ## Download helmify locally if necessary.
 .PHONY: go-licenses
 go-licenses: $(LOCALBIN)  ## Download  go-licenses locally if necessary.
 	test -s $(LOCALBIN)/go-licenses || GOBIN=$(LOCALBIN) go install github.com/google/go-licenses@$(GO_LICENSES_VERSION)
+
+GOVULNCHECK ?= $(LOCALBIN)/govulncheck
+.PHONY: govulncheck
+govulncheck: $(LOCALBIN) ## Download govulncheck locally if necessary.
+	test -s $(GOVULNCHECK) || GOBIN=$(LOCALBIN) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)

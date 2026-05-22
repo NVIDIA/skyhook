@@ -30,6 +30,8 @@ This directory contains user and operator documentation for Skyhook. Here you'll
 
   - [Operator Status Definitions](operator-status-definitions.md): Definitions of Status, State, Stage, and Condition concepts used throughout the Skyhook operator.
 
+  - [Webhook Bootstrap Lease](designs/webhook-bootstrap-lease.md): Why the admission-webhook cert bootstrap runs on a dedicated leader-election lease, and the runbook for upgrading from v0.7.x (where the new lease does not yet exist).
+
 - **Process**
   - [Releases](releases.md):
       Release notes and upgrade information for Skyhook.
