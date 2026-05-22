@@ -182,7 +182,9 @@ jobs:
 
           chart_repo="ghcr.io/nvidia/nodewright/charts"
           chart_subject="${chart_repo}/${CHART_NAME}"
-          push_output="$(helm push "dist/${CHART_NAME}-${CHART_VERSION}.tgz" "oci://${chart_repo}")"
+          # `helm push` writes "Pushed:" and "Digest:" to stderr (helm 3.16+),
+          # so capture both streams or awk sees an empty string.
+          push_output="$(helm push "dist/${CHART_NAME}-${CHART_VERSION}.tgz" "oci://${chart_repo}" 2>&1)"
           printf '%s\n' "${push_output}"
           chart_digest="$(awk '/^Digest:/ {print $2}' <<< "${push_output}")"
           if ! [[ "${chart_digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
