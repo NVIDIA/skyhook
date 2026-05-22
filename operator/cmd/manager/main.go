@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -32,6 +33,7 @@ import (
 	"github.com/sethvargo/go-envconfig"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/sync/errgroup"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -47,6 +49,18 @@ import (
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	//+kubebuilder:scaffold:imports
+)
+
+const (
+	// reconcileLeaseID gates Skyhook reconciliation. Historical kubebuilder-generated
+	// name; do not rename without an explicit upgrade plan.
+	reconcileLeaseID = "3c22c1ae.nvidia.com"
+
+	// webhookBootstrapLeaseID gates webhook serving-cert creation and caBundle patching.
+	// Held by a SEPARATE manager from reconcileLeaseID so a stuck old leader cannot
+	// deadlock the webhook cert bootstrap during a major upgrade. See
+	// docs/designs/webhook-bootstrap-lease.md.
+	webhookBootstrapLeaseID = "nodewright-webhook-bootstrap.nvidia.com"
 )
 
 var (
@@ -91,12 +105,13 @@ func main() {
 	setupLog.Info("env options", "options", options)
 
 	certDir := filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restConfig := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: options.MetricsPort},
 		HealthProbeBindAddress: options.ProbePort,
 		LeaderElection:         options.LeaderElection,
-		LeaderElectionID:       "3c22c1ae.nvidia.com",
+		LeaderElectionID:       reconcileLeaseID,
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:       9443,
 			CertDir:    certDir,
@@ -135,27 +150,48 @@ func main() {
 		os.Exit(1)
 	}
 
+	// webhookBootstrapMgr owns the webhook cert/caBundle bootstrap on its own lease so
+	// a stuck old-version leader on reconcileLeaseID cannot block a new pod from issuing
+	// the serving cert and patching the webhook configurations.
+	var webhookBootstrapMgr ctrl.Manager
 	if options.EnableWebhooks {
+		webhookBootstrapMgr, err = ctrl.NewManager(restConfig, ctrl.Options{
+			Scheme: scheme,
+			// Disable metrics + health probes on the bootstrap manager; the main manager
+			// already serves both, and binding the same ports twice would fail.
+			Metrics:          metricsserver.Options{BindAddress: "0"},
+			LeaderElection:   options.LeaderElection,
+			LeaderElectionID: webhookBootstrapLeaseID,
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to start webhook bootstrap manager")
+			os.Exit(1)
+		}
+
 		webhookController, err := controller.NewWebhookController(
-			mgr.GetClient(),
-			mgr.GetCache(),
+			webhookBootstrapMgr.GetClient(),
+			webhookBootstrapMgr.GetCache(),
 			options.Namespace,
 			certDir,
 			options.WebhookControllerOptions,
 		)
-
 		if err != nil {
 			setupLog.Error(err, "unable to create webhook controller", "controller", "Webhook")
 			os.Exit(1)
 		}
 
-		// Add webhook controller as a leader runnable
-		if err = mgr.Add(webhookController); err != nil {
+		// WebhookController runs only on the holder of webhookBootstrapLeaseID.
+		if err = webhookBootstrapMgr.Add(webhookController); err != nil {
 			setupLog.Error(err, "unable to add webhook controller as runnable", "controller", "Webhook")
 			os.Exit(1)
 		}
+		if err = webhookController.SetupWithManager(webhookBootstrapMgr); err != nil {
+			setupLog.Error(err, "unable to create webhook controller", "controller", "Webhook")
+			os.Exit(1)
+		}
 
-		// Add secret cert watcher as runnable
+		// SecretCertWatcher runs on every pod (NeedLeaderElection=false) and syncs the
+		// bootstrapped Secret to disk so the webhook server on this pod can serve TLS.
 		if err := mgr.Add(controller.NewSecretCertWatcher(
 			mgr.GetClient(),
 			mgr.GetCache(),
@@ -167,19 +203,11 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Set up the webhook controller with the manager
-		if err = webhookController.SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook controller", "controller", "Webhook")
-			os.Exit(1)
-		}
-
-		// Set up the webhook for Skyhook
+		// Admission webhook handlers serve from the main manager's webhook server.
 		if err = (&v1alpha1.Skyhook{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "Skyhook")
 			os.Exit(1)
 		}
-
-		// Set up the webhook for DeploymentPolicy
 		if err = (&v1alpha1.DeploymentPolicy{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "DeploymentPolicy")
 			os.Exit(1)
@@ -204,7 +232,23 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	ctx := ctrl.SetupSignalHandler()
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		if err := mgr.Start(gctx); err != nil {
+			return fmt.Errorf("reconcile manager: %w", err)
+		}
+		return nil
+	})
+	if webhookBootstrapMgr != nil {
+		g.Go(func() error {
+			if err := webhookBootstrapMgr.Start(gctx); err != nil {
+				return fmt.Errorf("webhook bootstrap manager: %w", err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
