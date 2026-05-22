@@ -1,64 +1,79 @@
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
-//
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package step
 
-// RegularStep is the default Step implementation. It satisfies the
-// Step interface via its getters.
+import (
+	"encoding/json"
+	"fmt"
+)
+
+// RegularStep is the default Step implementation (Python's plain Step).
+// Its fields are exported with JSON tags so stdlib json.Marshal /
+// json.Unmarshal operate on it directly; Idempotence carries its own
+// enum<->bool codec, so no custom marshaler is needed here.
 //
 // Defaults: Name falls back to Path, Arguments to []string{},
 // Returncodes to []int{0}, Env to map[string]string{}, OnHost to true,
 // and Idempotence to Auto. applyDefaults centralizes these.
 type RegularStep struct {
-	name        string
-	path        string
-	arguments   []string
-	onHost      bool
-	returncodes []int
-	env         map[string]string
-	idempotence Idempotence
+	Name        string            `json:"name"`
+	Path        string            `json:"path"`
+	Arguments   []string          `json:"arguments"`
+	Returncodes []int             `json:"returncodes"`
+	OnHost      bool              `json:"on_host"`
+	Idempotence Idempotence       `json:"idempotence"`
+	UpgradeStep bool              `json:"upgrade_step"`
+	Env         map[string]string `json:"env,omitempty"`
 
-	// requiresInterrupt is populated by Decode but intentionally not
-	// emitted by Encode, mirroring Python's Step.dump which also omits
-	// it. Round-tripping a Step with RequiresInterrupt=true returns
-	// false; by design for wire parity.
-	requiresInterrupt bool
+	// RequiresInterrupt round-trips via the wire as
+	// "requires_interrupt", emitted only when true. Python's Step.dump
+	// drops it entirely; here we keep it round-trippable, which stays
+	// schema-valid (the step schema permits extra properties).
+	RequiresInterrupt bool `json:"requires_interrupt,omitempty"`
 }
 
 var _ Step = RegularStep{}
 
-func (s RegularStep) Path() string             { return s.path }
-func (s RegularStep) Name() string             { return s.name }
-func (s RegularStep) Arguments() []string      { return s.arguments }
-func (s RegularStep) Returncodes() []int       { return s.returncodes }
-func (s RegularStep) Env() map[string]string   { return s.env }
-func (s RegularStep) OnHost() bool             { return s.onHost }
-func (s RegularStep) Idempotence() Idempotence { return s.idempotence }
-func (s RegularStep) RequiresInterrupt() bool  { return s.requiresInterrupt }
-
 // Encode writes the JSON wire form with upgrade_step:false. Defaults
 // are applied to a local copy so the caller's value is not mutated;
 // Idempotence is validated after defaulting so a zero-value RegularStep
-// (which defaults to Auto) still encodes successfully.
+// (which defaults to Auto) still encodes successfully. The discriminator
+// is pinned to false here so a caller that set the exported UpgradeStep
+// field cannot coerce a RegularStep into the upgrade-step wire form.
 func (s RegularStep) Encode() ([]byte, error) {
+	s.UpgradeStep = false
+	return s.encode()
+}
+
+// encode is the shared marshal path for RegularStep and UpgradeStep:
+// each public Encode pins its own discriminator on the value copy, then
+// delegates here for defaulting, validation, and marshaling.
+func (s RegularStep) encode() ([]byte, error) {
 	s.applyDefaults()
-	if err := s.idempotence.Validate(); err != nil {
-		return nil, err
+	if err := s.Idempotence.Validate(); err != nil {
+		return nil, fmt.Errorf("validate idempotence: %w", err)
 	}
-	return marshalRegularStep(s, false)
+	out, err := json.Marshal(s)
+	if err != nil {
+		return nil, fmt.Errorf("marshal RegularStep: %w", err)
+	}
+	return out, nil
 }
 
 // RegularStepOption configures a RegularStep during construction. Use
@@ -67,46 +82,46 @@ func (s RegularStep) Encode() ([]byte, error) {
 type RegularStepOption func(*RegularStep)
 
 // WithName overrides the default Name (which otherwise falls back to Path).
-func WithName(name string) RegularStepOption { return func(s *RegularStep) { s.name = name } }
+func WithName(name string) RegularStepOption { return func(s *RegularStep) { s.Name = name } }
 
 // WithArguments sets the step's arguments.
 func WithArguments(args []string) RegularStepOption {
-	return func(s *RegularStep) { s.arguments = args }
+	return func(s *RegularStep) { s.Arguments = args }
 }
 
 // WithReturncodes sets the accepted return codes (default: [0]).
 func WithReturncodes(codes []int) RegularStepOption {
-	return func(s *RegularStep) { s.returncodes = codes }
+	return func(s *RegularStep) { s.Returncodes = codes }
 }
 
 // WithEnv sets the environment map applied to the step process.
 func WithEnv(env map[string]string) RegularStepOption {
-	return func(s *RegularStep) { s.env = env }
+	return func(s *RegularStep) { s.Env = env }
 }
 
 // WithOnHost overrides the default OnHost=true.
 func WithOnHost(onHost bool) RegularStepOption {
-	return func(s *RegularStep) { s.onHost = onHost }
+	return func(s *RegularStep) { s.OnHost = onHost }
 }
 
 // WithIdempotence overrides the default Idempotence=Auto.
 func WithIdempotence(i Idempotence) RegularStepOption {
-	return func(s *RegularStep) { s.idempotence = i }
+	return func(s *RegularStep) { s.Idempotence = i }
 }
 
 // WithRequiresInterrupt sets the requires_interrupt flag.
 func WithRequiresInterrupt(r bool) RegularStepOption {
-	return func(s *RegularStep) { s.requiresInterrupt = r }
+	return func(s *RegularStep) { s.RequiresInterrupt = r }
 }
 
 // NewRegularStep constructs a RegularStep, applying defaults (Name
 // from Path, Arguments=[], Returncodes=[0], Env={}, Idempotence=Auto,
 // OnHost=true) for any fields the caller did not set via With* options.
 func NewRegularStep(path string, opts ...RegularStepOption) RegularStep {
-	// onHost defaults true here because Go's bool has no "absent"
+	// OnHost is seeded true here because Go's bool has no "absent"
 	// state, so applyDefaults can't tell zero apart from "explicit
 	// false"; WithOnHost(false) overrides this initial value.
-	rs := RegularStep{path: path, onHost: true}
+	rs := RegularStep{Path: path, OnHost: true}
 	for _, opt := range opts {
 		opt(&rs)
 	}
@@ -118,23 +133,23 @@ func NewRegularStep(path string, opts ...RegularStepOption) RegularStep {
 // Encode and Decode both call this so callers can construct a
 // RegularStep{} literally and still round-trip cleanly.
 //
-// OnHost is intentionally not defaulted here: Go's bool has no
-// "absent" state, so Decode applies OnHost=true via its *bool overlay
-// and Encode emits whatever the caller set.
+// OnHost is intentionally not defaulted here: Go's bool has no "absent"
+// state, and a schema-valid config always carries on_host, so the
+// constructor seeds it and stdlib decode reads whatever the payload set.
 func (s *RegularStep) applyDefaults() {
-	if s.name == "" {
-		s.name = s.path
+	if s.Name == "" {
+		s.Name = s.Path
 	}
-	if len(s.arguments) == 0 {
-		s.arguments = []string{}
+	if len(s.Arguments) == 0 {
+		s.Arguments = []string{}
 	}
-	if len(s.returncodes) == 0 {
-		s.returncodes = []int{0}
+	if len(s.Returncodes) == 0 {
+		s.Returncodes = []int{0}
 	}
-	if s.env == nil {
-		s.env = map[string]string{}
+	if s.Env == nil {
+		s.Env = map[string]string{}
 	}
-	if s.idempotence == "" {
-		s.idempotence = Auto
+	if s.Idempotence == "" {
+		s.Idempotence = Auto
 	}
 }
