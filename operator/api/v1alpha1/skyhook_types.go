@@ -620,17 +620,9 @@ func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Inte
 
 	ret := make([]string, 0)
 
-	for _, packageStatus := range *ns {
-		_package, found := packages[packageStatus.Name]
-		if found && _package.Version == packageStatus.Version && packageStatus.State == StateComplete {
-			// StagePostInterrupt is terminal regardless of the dynamic
-			// HasInterrupt(config) signal: getting there required the operator
-			// to once decide HasInterrupt was true, even if it's since decayed.
-			if packageStatus.Stage == StagePostInterrupt {
-				ret = append(ret, fmt.Sprintf("%s|%s", packageStatus.Name, packageStatus.Version))
-			} else if packageStatus.Stage == StageConfig && !(*ns).HasInterrupt(_package, interrupt, config) {
-				ret = append(ret, fmt.Sprintf("%s|%s", packageStatus.Name, packageStatus.Version))
-			}
+	for _, _package := range packages {
+		if ns.IsPackageComplete(_package, interrupt, config) {
+			ret = append(ret, _package.GetUniqueName())
 		}
 	}
 
@@ -639,20 +631,30 @@ func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Inte
 	return ret
 }
 
-// IsPackageComplete checks if a package is complete
+// IsPackageComplete reports whether a package has reached a terminal lifecycle
+// state on this node. Two terminal cases:
+//
+//   - StagePostInterrupt: unconditionally terminal. Reaching it required the
+//     operator to once decide HasInterrupt was true; gating the terminal check
+//     on the still-true-now signal is redundant and would trap packages whose
+//     Status.ConfigUpdates decayed (clearing or never persisting due to a 409
+//     on the spec patch) between entering the interrupt cycle and reaching
+//     post-interrupt.
+//   - StageConfig with no interrupt currently in scope: terminal because the
+//     package has no interrupt cycle to enter from here.
 func (ns *NodeState) IsPackageComplete(_package Package, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 
 	packageStatus, found := (*ns)[_package.GetUniqueName()]
-	if found && _package.Version == packageStatus.Version && packageStatus.State == StateComplete {
-		// See GetComplete: StagePostInterrupt is unconditionally terminal.
-		if packageStatus.Stage == StagePostInterrupt {
-			return true
-		}
-		if packageStatus.Stage == StageConfig && !(*ns).HasInterrupt(_package, interrupt, config) {
-			return true
-		}
+	if !found || _package.Version != packageStatus.Version || packageStatus.State != StateComplete {
+		return false
 	}
 
+	if packageStatus.Stage == StagePostInterrupt {
+		return true
+	}
+	if packageStatus.Stage == StageConfig && !(*ns).HasInterrupt(_package, interrupt, config) {
+		return true
+	}
 	return false
 }
 
