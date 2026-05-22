@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -118,7 +118,13 @@ func (r *WebhookController) Start(ctx context.Context) error {
 	return nil
 }
 
-// NeedLeaderElection implements the Runnable interface, runs only on leader
+// NeedLeaderElection implements the Runnable interface; runs only on the leader of
+// whichever manager this controller is registered with. WebhookController is intentionally
+// hosted on a dedicated manager (webhookBootstrapLeaseID, see cmd/manager/main.go) rather
+// than the main reconcile manager, so that an old-version leader holding the reconcile
+// lease cannot block a new pod from bootstrapping the webhook serving cert and patching
+// the (Mutating|Validating)WebhookConfiguration caBundle (see
+// docs/designs/webhook-bootstrap-lease.md).
 func (r *WebhookController) NeedLeaderElection() bool {
 	return true
 }

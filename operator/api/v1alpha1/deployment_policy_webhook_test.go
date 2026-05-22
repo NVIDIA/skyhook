@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -21,7 +21,9 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 )
 
@@ -329,8 +331,14 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(err.Error()).To(ContainSubstring("policy-in-use"))
 			Expect(err.Error()).To(ContainSubstring("test-skyhook-using-policy"))
 
-			// Cleanup
+			// Cleanup. The validating webhook on policy deletion queries Skyhook
+			// references via the client; envtest deletes are async, so the Skyhook
+			// can still be visible to the webhook for a brief window after Delete
+			// returns. Wait for it to actually be gone before deleting the policy.
 			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+			Eventually(func() bool {
+				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: skyhook.Name}, &Skyhook{}))
+			}, "10s", "100ms").Should(BeTrue())
 			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 		})
 
@@ -372,8 +380,13 @@ var _ = Describe("DeploymentPolicy", func() {
 			}
 			Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-			// Delete the Skyhook
+			// Delete the Skyhook and wait for it to actually be gone before
+			// validating the policy delete — envtest deletes are async, see
+			// the cleanup race in the previous It block.
 			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+			Eventually(func() bool {
+				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: skyhook.Name}, &Skyhook{}))
+			}, "10s", "100ms").Should(BeTrue())
 
 			// Now deletion should succeed
 			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)
