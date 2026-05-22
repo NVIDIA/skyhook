@@ -560,10 +560,19 @@ func (ns *NodeState) NextStage(_package *Package, interrupt map[string][]*Interr
 		return nil
 	}
 
+	// StageInterrupt → StagePostInterrupt is unconditional even in the
+	// no-interrupt map: if a package has reached StageInterrupt at any point,
+	// the dynamic HasInterrupt(config) signal may have decayed by now
+	// (Status.ConfigUpdates can be cleared or never persist due to a 409 on the
+	// spec patch), but the package still needs to escape. The with-interrupt
+	// map deliberately omits StageUninstall → StageApply (PR #200) so that
+	// with-interrupt uninstalls route via StageUninstallInterrupt instead — do
+	// not collapse the two maps into one.
 	nextStage := map[Stage]Stage{
 		StageUninstall: StageApply,
 		StageApply:     StageConfig,
 		StageUpgrade:   StageConfig,
+		StageInterrupt: StagePostInterrupt,
 	}
 
 	if hasInterrupt := (*ns).HasInterrupt(*_package, interrupt, config); hasInterrupt {
@@ -611,16 +620,9 @@ func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Inte
 
 	ret := make([]string, 0)
 
-	for _, packageStatus := range *ns {
-		_package, found := packages[packageStatus.Name]
-		if found && _package.Version == packageStatus.Version && packageStatus.State == StateComplete {
-			hasInterrupt := (*ns).HasInterrupt(_package, interrupt, config)
-
-			if hasInterrupt && packageStatus.Stage == StagePostInterrupt {
-				ret = append(ret, fmt.Sprintf("%s|%s", packageStatus.Name, packageStatus.Version))
-			} else if !hasInterrupt && packageStatus.Stage == StageConfig {
-				ret = append(ret, fmt.Sprintf("%s|%s", packageStatus.Name, packageStatus.Version))
-			}
+	for _, _package := range packages {
+		if ns.IsPackageComplete(_package, interrupt, config) {
+			ret = append(ret, _package.GetUniqueName())
 		}
 	}
 
@@ -629,24 +631,39 @@ func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Inte
 	return ret
 }
 
-// IsPackageComplete checks if a package is complete
+// IsPackageComplete reports whether a package has reached a terminal lifecycle
+// state on this node. Two terminal cases:
+//
+//   - StagePostInterrupt: unconditionally terminal. Reaching it required the
+//     operator to once decide HasInterrupt was true; gating the terminal check
+//     on the still-true-now signal is redundant and would trap packages whose
+//     Status.ConfigUpdates decayed (clearing or never persisting due to a 409
+//     on the spec patch) between entering the interrupt cycle and reaching
+//     post-interrupt.
+//   - StageConfig with no interrupt currently in scope: terminal because the
+//     package has no interrupt cycle to enter from here.
 func (ns *NodeState) IsPackageComplete(_package Package, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 
 	packageStatus, found := (*ns)[_package.GetUniqueName()]
-	if found && _package.Version == packageStatus.Version && packageStatus.State == StateComplete {
-		hasInterrupt := (*ns).HasInterrupt(_package, interrupt, config)
-
-		if hasInterrupt && packageStatus.Stage == StagePostInterrupt {
-			return true
-		} else if !hasInterrupt && packageStatus.Stage == StageConfig {
-			return true
-		}
+	if !found || _package.Version != packageStatus.Version || packageStatus.State != StateComplete {
+		return false
 	}
 
+	if packageStatus.Stage == StagePostInterrupt {
+		return true
+	}
+	if packageStatus.Stage == StageConfig && !(*ns).HasInterrupt(_package, interrupt, config) {
+		return true
+	}
 	return false
 }
 
-// ProgressSkipped checks if a package is skipped and should be progressed to complete
+// ProgressSkipped checks if a package is skipped and should be progressed to complete.
+// Promotion is gated on Stage alone: being at StageInterrupt with StateSkipped means
+// the operator already decided this package had an interrupt to schedule (see
+// ProcessInterrupt). The dynamic HasInterrupt(config) signal can decay before this
+// runs — Status.ConfigUpdates can be cleared or never persisted due to a 409 on the
+// spec patch — so gating promotion on it can trap the package permanently.
 func (ns *NodeState) ProgressSkipped(packages Packages, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 	ret := false
 	for _, s := range *ns {
@@ -655,7 +672,7 @@ func (ns *NodeState) ProgressSkipped(packages Packages, interrupt map[string][]*
 			continue
 		}
 
-		if (*ns).HasInterrupt(f, interrupt, config) && s.Stage == StageInterrupt && s.State == StateSkipped {
+		if s.Stage == StageInterrupt && s.State == StateSkipped {
 			s.State = StateComplete
 			(*ns)[f.GetUniqueName()] = s
 			ret = true
