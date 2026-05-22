@@ -88,7 +88,7 @@ controllerManager:
       digest: "sha256:3dfeda5d8fbfe7b6778bb92ad4437caa2e73c1670d54ae29e55ca7d0d5ef5408" # manifest list digest (multi-arch) on ghcr.io/nvidia/nodewright/operator:v0.16.0
     ## agentImage: is the image used for the agent container. This image is the default for this install, but can be overridden in the CR at package level.
     agent:
-      repository: ghcr.io/nvidia/skyhook/agent
+      repository: ghcr.io/nvidia/nodewright/agent
       tag: "v6.4.2"
       digest: "sha256:7cd80f5ef351266dc08c3979e802f9dc936a1ed9fd02e199233e7968a3a0de3e" # manifest list digest (multi-arch) on ghcr.io/nvidia/skyhook/agent:v6.4.2
 
