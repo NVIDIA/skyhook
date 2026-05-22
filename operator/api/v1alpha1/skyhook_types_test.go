@@ -1019,4 +1019,65 @@ var _ = Describe("Skyhook Types", func() {
 		}
 	})
 
+	// Regression: a package using only configInterrupts can get stuck at
+	// StageInterrupt/StateSkipped if Status.ConfigUpdates is cleared (or never
+	// persisted due to a 409 conflict on the spec patch) before ProgressSkipped
+	// promotes it. The state machine relied on the dynamic HasInterrupt(config)
+	// signal in four places — ProgressSkipped, NextStage, GetComplete,
+	// IsPackageComplete — so once the signal decayed, the package could neither
+	// be promoted out of Skipped, nor advance past StageInterrupt, nor be
+	// reported complete. Fix: once a package has reached StageInterrupt or
+	// StagePostInterrupt, progression is determined by Stage alone.
+	Context("StageInterrupt trap when configUpdates signal decays", func() {
+		// baxter has no top-level interrupt — only a configInterrupt that
+		// matched a now-cleared configUpdates entry. HasInterrupt() returns
+		// false in this state.
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "baxter", Version: "3.2.1"},
+			Image:      "ghcr.io/nvidia/skyhook/agentless",
+			ConfigInterrupts: map[string]Interrupt{
+				"game.properties": {Type: SERVICE, Services: []string{"rsyslog"}},
+			},
+		}
+		emptyInterrupt := map[string][]*Interrupt{}
+		emptyConfig := map[string][]string{}
+
+		It("ProgressSkipped promotes Skipped at StageInterrupt regardless of HasInterrupt", func() {
+			ns := NodeState{
+				"baxter|3.2.1": PackageStatus{
+					Name: "baxter", Version: "3.2.1", Image: pkg.Image,
+					Stage: StageInterrupt, State: StateSkipped,
+				},
+			}
+			packages := Packages{"baxter": *pkg}
+			changed := ns.ProgressSkipped(packages, emptyInterrupt, emptyConfig)
+			Expect(changed).To(BeTrue())
+			Expect(ns["baxter|3.2.1"].State).To(Equal(StateComplete))
+		})
+
+		It("NextStage advances from StageInterrupt to StagePostInterrupt regardless of HasInterrupt", func() {
+			ns := NodeState{
+				"baxter|3.2.1": PackageStatus{
+					Name: "baxter", Version: "3.2.1", Image: pkg.Image,
+					Stage: StageInterrupt, State: StateComplete,
+				},
+			}
+			next := ns.NextStage(pkg, emptyInterrupt, emptyConfig)
+			Expect(next).ToNot(BeNil())
+			Expect(*next).To(Equal(StagePostInterrupt))
+		})
+
+		It("IsPackageComplete and GetComplete treat StagePostInterrupt as terminal regardless of HasInterrupt", func() {
+			ns := NodeState{
+				"baxter|3.2.1": PackageStatus{
+					Name: "baxter", Version: "3.2.1", Image: pkg.Image,
+					Stage: StagePostInterrupt, State: StateComplete,
+				},
+			}
+			packages := Packages{"baxter": *pkg}
+			Expect(ns.IsPackageComplete(*pkg, emptyInterrupt, emptyConfig)).To(BeTrue())
+			Expect(ns.GetComplete(packages, emptyInterrupt, emptyConfig)).To(ContainElement("baxter|3.2.1"))
+		})
+	})
+
 })

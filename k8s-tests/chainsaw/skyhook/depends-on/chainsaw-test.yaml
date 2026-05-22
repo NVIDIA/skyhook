@@ -24,6 +24,24 @@ metadata:
 spec:
   timeouts:
     assert: 90s
+    cleanup: 120s ## finalizer needs time to uncordon, remove labels/annotations, and GC pods
+  catch: ## if errors, print the most important info
+    - get:
+        apiVersion: v1
+        kind: Node
+        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        format: yaml
+    - get:
+        apiVersion: skyhook.nvidia.com/v1alpha1
+        kind: Skyhook
+        name: depends-on
+        format: yaml
+    - get:
+        apiVersion: v1
+        kind: Pod
+        namespace: skyhook
+        selector: skyhook.nvidia.com/name=depends-on
+        format: yaml
   steps:
   - name: setup
     description: Reset node state, create skyhook with dependencies, and assert it completes
