@@ -53,7 +53,7 @@ GOFLAGS 	:= -mod=vendor
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
-DOCKER_CMD ?= podman
+DOCKER_CMD ?= docker
 
 ifdef CI
 	DOCKER_CMD = docker
@@ -125,7 +125,15 @@ license-report: go-licenses ## Run run license report
 
 .PHONY: license-check
 license-check: go-licenses ## Run go-licenses check against code.
-	$(LOCALBIN)/go-licenses check --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib ./... 
+	$(LOCALBIN)/go-licenses check --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib ./...
+
+.PHONY: vulncheck
+vulncheck: govulncheck ## Run govulncheck against code; fails on any reachable vulnerability.
+	GOFLAGS="$(GOFLAGS)" $(GOVULNCHECK) -mode source ./...
+
+.PHONY: vulncheck-all
+vulncheck-all: govulncheck ## Run govulncheck in verbose mode, including module-level vulns not reachable from this code.
+	GOFLAGS="$(GOFLAGS)" $(GOVULNCHECK) -mode source -show verbose ./...
 
 .PHONY: license-fmt
 license-fmt: ## Run add license header to code.
@@ -323,7 +331,8 @@ setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook na
 	fi
 
 
-create-kind-cluster: ctlptl ## creates or updates a kind cluster.
+create-kind-cluster: ctlptl ## deletes any existing kind cluster from ctlptl-config.yaml and creates a fresh one.
+	$(CTLPTL) delete -f config/local-dev/ctlptl-config.yaml || true
 	$(CTLPTL) apply -f config/local-dev/ctlptl-config.yaml
 	$(MAKE) setup-kind-cluster
 
@@ -335,6 +344,15 @@ podman-create-machine: ## creates a podman machine
 
 podman-restart:
 	podman machine stop && podman machine start
+
+colima-create-machine:
+	colima delete -f
+	colima start --runtime docker --vm-type vz --cpu 6 --memory 12 --disk 100
+
+	colima ssh -- sudo sysctl -w kernel.keys.maxkeys=20000
+	colima ssh -- sudo sysctl -w kernel.keys.maxbytes=400000                 
+	colima ssh -- sudo sysctl -w fs.inotify.max_user_watches=524288
+	colima ssh -- sudo sysctl -w fs.inotify.max_user_instances=512
 
 sedrp := sed -r -i
 ifeq ($(PLATFORM),Darwin)

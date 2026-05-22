@@ -24,6 +24,7 @@ metadata:
 spec:
   timeouts:
     assert: 240s
+    cleanup: 120s ## finalizer needs time to uncordon, remove labels/annotations, and GC pods
   catch: ## if errors, print the most important info
     - get:
         apiVersion: v1

@@ -25,6 +25,24 @@ spec:
   timeouts:
     assert: 240s
     exec: 90s
+    cleanup: 120s ## finalizer needs time to uncordon, remove labels/annotations, and GC pods
+  catch: ## if errors, print the most important info
+    - get:
+        apiVersion: v1
+        kind: Node
+        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        format: yaml
+    - get:
+        apiVersion: skyhook.nvidia.com/v1alpha1
+        kind: Skyhook
+        name: simple-skyhook
+        format: yaml
+    - get:
+        apiVersion: v1
+        kind: Pod
+        namespace: skyhook
+        selector: skyhook.nvidia.com/name=simple-skyhook
+        format: yaml
   steps:
   - name: deploy
     description: Reset state, apply a skyhook with three packages, and verify all complete with correct metrics
