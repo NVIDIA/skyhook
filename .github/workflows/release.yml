@@ -172,6 +172,16 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" \
             | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
+      # cosign reads ~/.docker/config.json; helm registry login writes its own
+      # config so cosign can't see those creds. Authenticate docker too so the
+      # downstream sign/attest steps can upload the .sig and SBOM layers.
+      - name: Log in to ghcr.io (docker, for cosign)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push chart to ghcr.io
         id: push-chart
         env:
