@@ -95,6 +95,13 @@ existing batch state.`,
 func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string, opts *resetOptions, cliCtx *cliContext.CLIContext) error {
 	nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, "")
 	if err != nil {
+		// nil map signals a list-from-apiserver failure (e.g. RBAC denied,
+		// unreachable apiserver); the helper returns an initialized map
+		// even when only parse failures occurred, so we use map identity
+		// to distinguish hard failures from per-node parse warnings.
+		if nodeStates == nil {
+			return fmt.Errorf("listing nodes: %w", err)
+		}
 		if cliCtx.GlobalFlags.Verbose {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
 		}

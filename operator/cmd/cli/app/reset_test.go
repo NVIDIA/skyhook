@@ -30,7 +30,9 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	ktesting "k8s.io/client-go/testing"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
@@ -335,6 +337,19 @@ var _ = Describe("Reset Command", func() {
 			// Verify nodeState annotation was removed
 			err = verifyAnnotationRemoved(mockKube, "worker-1", annotationKey)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("returns an error when listing nodes fails", func() {
+			fakeKube := fake.NewClientset()
+			fakeKube.PrependReactor("list", "nodes", func(action ktesting.Action) (bool, runtime.Object, error) {
+				return true, nil, fmt.Errorf("apiserver unreachable")
+			})
+			failingClient := client.NewWithClientsAndConfig(fakeKube, nil, nil)
+
+			opts := &resetOptions{confirm: true, skipBatchReset: true}
+			err := runReset(gocontext.Background(), cmd, failingClient, skyhookName, opts, cliCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("apiserver unreachable"))
 		})
 	})
 })
