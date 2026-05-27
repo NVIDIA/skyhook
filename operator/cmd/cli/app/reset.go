@@ -19,14 +19,11 @@
 package app
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
+	"sort"
 
 	"github.com/spf13/cobra"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
@@ -96,34 +93,17 @@ existing batch state.`,
 }
 
 func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string, opts *resetOptions, cliCtx *cliContext.CLIContext) error {
-	// Get all nodes
-	nodeList, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, "")
 	if err != nil {
-		return fmt.Errorf("listing nodes: %w", err)
-	}
-
-	// Find nodes that have the specified Skyhook annotation
-	annotationKey := nodeStateAnnotationPrefix + skyhookName
-	nodesToReset := make([]string, 0)
-	nodeStates := make(map[string]v1alpha1.NodeState)
-
-	for _, node := range nodeList.Items {
-		annotation, ok := node.Annotations[annotationKey]
-		if !ok {
-			continue
+		if cliCtx.GlobalFlags.Verbose {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
 		}
-
-		var nodeState v1alpha1.NodeState
-		if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
-			if cliCtx.GlobalFlags.Verbose {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping node %q - invalid annotation: %v\n", node.Name, err)
-			}
-			continue
-		}
-
-		nodesToReset = append(nodesToReset, node.Name)
-		nodeStates[node.Name] = nodeState
 	}
+	nodesToReset := make([]string, 0, len(nodeStates))
+	for name := range nodeStates {
+		nodesToReset = append(nodesToReset, name)
+	}
+	sort.Strings(nodesToReset)
 
 	if len(nodesToReset) == 0 {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for Skyhook %q\n", skyhookName)
@@ -149,23 +129,17 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 		return nil
 	}
 
-	// Confirmation
 	if !opts.confirm {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for Skyhook %q on %d node(s).\n", skyhookName, len(nodesToReset))
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "All packages will re-run from the beginning.\n")
 		if !opts.skipBatchReset {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state will be reset to start from batch 1.\n")
 		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Continue? [y/N]: ")
-
-		reader := bufio.NewReader(cmd.InOrStdin())
-		response, err := reader.ReadString('\n')
+		ok, err := utils.ConfirmYN(cmd, "Continue? [y/N]: ")
 		if err != nil {
-			return fmt.Errorf("reading confirmation: %w", err)
+			return err
 		}
-
-		response = strings.ToLower(strings.TrimSpace(response))
-		if response != "y" && response != "yes" {
+		if !ok {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Aborted\n")
 			return nil
 		}

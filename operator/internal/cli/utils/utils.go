@@ -19,14 +19,17 @@
 package utils
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,11 +151,23 @@ func RemoveSkyhookAnnotation(ctx context.Context, dynamicClient dynamic.Interfac
 	return nil
 }
 
-// SetNodeAnnotation sets an annotation on a Node using merge patch
+// SetNodeAnnotation sets an annotation on a Node using a merge patch. The
+// value may contain arbitrary characters (including JSON-as-string): the
+// patch is built by JSON-encoding the value rather than fmt %q quoting,
+// which produces Go-style escapes that aren't valid JSON for multi-byte
+// runes.
 func SetNodeAnnotation(ctx context.Context, kubeClient kubernetes.Interface, nodeName, key, value string) error {
-	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, key, value)
+	keyJSON, err := json.Marshal(key)
+	if err != nil {
+		return fmt.Errorf("encoding annotation key for node %q: %w", nodeName, err)
+	}
+	valueJSON, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encoding annotation value for node %q: %w", nodeName, err)
+	}
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%s:%s}}}`, keyJSON, valueJSON)
 
-	_, err := kubeClient.CoreV1().Nodes().Patch(
+	_, err = kubeClient.CoreV1().Nodes().Patch(
 		ctx,
 		nodeName,
 		types.MergePatchType,
@@ -162,7 +177,6 @@ func SetNodeAnnotation(ctx context.Context, kubeClient kubernetes.Interface, nod
 	if err != nil {
 		return fmt.Errorf("patching node %q: %w", nodeName, err)
 	}
-
 	return nil
 }
 
@@ -472,6 +486,58 @@ func PatchSkyhookStatusRaw(ctx context.Context, dynamicClient dynamic.Interface,
 		return fmt.Errorf("patching skyhook %q status: %w", skyhookName, err)
 	}
 	return nil
+}
+
+// ConfirmYN prints prompt to cmd.OutOrStdout and reads a single line from
+// cmd.InOrStdin. Returns true only for "y" or "yes" (case-insensitive).
+// Empty input and unrecognised input both return false (safe default).
+func ConfirmYN(cmd *cobra.Command, prompt string) (bool, error) {
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), prompt)
+	reader := bufio.NewReader(cmd.InOrStdin())
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, fmt.Errorf("reading confirmation: %w", err)
+	}
+	line = strings.ToLower(strings.TrimSpace(line))
+	return line == "y" || line == "yes", nil
+}
+
+// ListNodesWithSkyhookState returns the parsed NodeState for every node that
+// has the skyhook.nvidia.com/nodeState_<skyhookName> annotation. If
+// labelSelector is non-empty it is applied at the apiserver. Nodes with a
+// malformed annotation are excluded from the result and accumulated into the
+// returned error (so callers see partial success rather than a silent skip).
+func ListNodesWithSkyhookState(ctx context.Context, kubeClient kubernetes.Interface, skyhookName, labelSelector string) (map[string]v1alpha1.NodeState, error) {
+	opts := metav1.ListOptions{}
+	if labelSelector != "" {
+		opts.LabelSelector = labelSelector
+	}
+	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("listing nodes: %w", err)
+	}
+
+	key := "skyhook.nvidia.com/nodeState_" + skyhookName
+	result := map[string]v1alpha1.NodeState{}
+	var parseErrs []string
+
+	for _, node := range nodes.Items {
+		raw, ok := node.Annotations[key]
+		if !ok {
+			continue
+		}
+		var state v1alpha1.NodeState
+		if err := json.Unmarshal([]byte(raw), &state); err != nil {
+			parseErrs = append(parseErrs, fmt.Sprintf("%s: %v", node.Name, err))
+			continue
+		}
+		result[node.Name] = state
+	}
+
+	if len(parseErrs) > 0 {
+		return result, fmt.Errorf("malformed nodeState annotation on %d node(s): %s", len(parseErrs), strings.Join(parseErrs, "; "))
+	}
+	return result, nil
 }
 
 // PatchSkyhookStatus patches the status subresource of a Skyhook CR using the dynamic client.
