@@ -507,6 +507,11 @@ func ConfirmYN(cmd *cobra.Command, prompt string) (bool, error) {
 // labelSelector is non-empty it is applied at the apiserver. Nodes with a
 // malformed annotation are excluded from the result and accumulated into the
 // returned error (so callers see partial success rather than a silent skip).
+//
+// On list-from-apiserver failure the returned map is nil; on parse-only
+// failures the map is non-nil (possibly empty) and contains the nodes that
+// did parse. Callers may use map identity (== nil) to distinguish hard
+// failures from soft parse warnings.
 func ListNodesWithSkyhookState(ctx context.Context, kubeClient kubernetes.Interface, skyhookName, labelSelector string) (map[string]v1alpha1.NodeState, error) {
 	opts := metav1.ListOptions{}
 	if labelSelector != "" {
@@ -517,7 +522,7 @@ func ListNodesWithSkyhookState(ctx context.Context, kubeClient kubernetes.Interf
 		return nil, fmt.Errorf("listing nodes: %w", err)
 	}
 
-	key := "skyhook.nvidia.com/nodeState_" + skyhookName
+	key := v1alpha1.METADATA_PREFIX + "/nodeState_" + skyhookName
 	result := map[string]v1alpha1.NodeState{}
 	var parseErrs []string
 
