@@ -308,6 +308,14 @@ func runPackageReset(
 		return err
 	}
 
+	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
+	if err != nil {
+		return fmt.Errorf("fetching Skyhook %q: %w", skyhookName, err)
+	}
+	if err := checkNodeStateOperatorVersion(ctx, cmd, kubeClient, cliCtx, skyhook); err != nil {
+		return err
+	}
+
 	annotationKey := nodeStateAnnotationPrefix + skyhookName
 
 	type target struct {

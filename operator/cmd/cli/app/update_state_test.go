@@ -261,6 +261,30 @@ var _ = Describe("UpdateState Command", func() {
 			Expect(err.Error()).To(ContainSubstring("apiserver unreachable"))
 		})
 
+		It("rejects update-state against an operator older than v0.15.0", func() {
+			sk := &v1alpha1.Skyhook{}
+			sk.Name = "demo"
+			sk.Annotations = map[string]string{"skyhook.nvidia.com/version": "v0.10.0"}
+			sk.Spec.Packages = v1alpha1.Packages{
+				"pkg1": {PackageRef: v1alpha1.PackageRef{Name: "pkg1", Version: "1.0"}, Image: "example.com/pkg1"},
+			}
+			u := &unstructured.Unstructured{}
+			raw, err := json.Marshal(sk)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(json.Unmarshal(raw, &u.Object)).To(Succeed())
+			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "skyhook.nvidia.com", Version: "v1alpha1", Kind: "Skyhook"})
+			mockNSRes := &mockdynamic.NamespaceableResourceInterface{}
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, "demo", mock.Anything, mock.Anything).Return(u, nil)
+
+			opts := &updateStateOptions{confirm: true}
+			err = runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "complete"}, opts, cliCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not support"))
+			Expect(err.Error()).To(ContainSubstring("v0.10.0"))
+			Expect(err.Error()).To(ContainSubstring("v0.15.0"))
+		})
+
 		Describe("--add", func() {
 			It("requires --node or --selector", func() {
 				setupSkyhookCR(map[string]string{"pkg1": "1.0"})

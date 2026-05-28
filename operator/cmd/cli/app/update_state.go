@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 
@@ -169,7 +170,10 @@ func buildUpdateStateTarget(
 	addMode bool,
 ) (updateStateTarget, bool) {
 	uniqueName := pkg.GetUniqueName()
-	ns := nodeStates[name]
+	// why: nodeStates[name] returns a shared map reference; mutating it would
+	// silently mutate the caller's snapshot. Clone before mutation so this
+	// helper stays safe even if it's ever called twice for the same node.
+	ns := maps.Clone(nodeStates[name])
 	if ns == nil {
 		ns = v1alpha1.NodeState{}
 	}
@@ -222,6 +226,11 @@ func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.
 	if err != nil {
 		return fmt.Errorf("fetching Skyhook %q: %w", skyhookName, err)
 	}
+
+	if err := checkNodeStateOperatorVersion(ctx, cmd, kubeClient, cliCtx, skyhook); err != nil {
+		return err
+	}
+
 	pkg, ok := skyhook.Spec.Packages[packageName]
 	if !ok || pkg.Version != packageVersion {
 		return fmt.Errorf("package %q (version %q) not found in spec of Skyhook %q", packageName, packageVersion, skyhookName)
@@ -309,4 +318,33 @@ func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully updated %d node(s)\n", success)
 	return firstErr
+}
+
+// checkNodeStateOperatorVersion rejects the call when the running operator is
+// older than MinNodeStateSupportVersion. The check first reads the version
+// annotation written by the operator onto the Skyhook CR; when that's missing
+// or non-semver (e.g. "dev") it falls back to inspecting the operator
+// Deployment. If neither source yields a valid version we warn but allow the
+// edit to proceed — better than refusing every command in clusters where the
+// CLI can't see the operator's namespace.
+func checkNodeStateOperatorVersion(
+	ctx context.Context,
+	cmd *cobra.Command,
+	kubeClient *client.Client,
+	cliCtx *cliContext.CLIContext,
+	skyhook *v1alpha1.Skyhook,
+) error {
+	opVersion := utils.GetSkyhookVersion(skyhook)
+	if opVersion == "" || !utils.IsValidVersion(opVersion) {
+		deployVersion, derr := utils.DiscoverOperatorVersion(ctx, kubeClient.Kubernetes(), cliCtx.GlobalFlags.Namespace())
+		if derr == nil && utils.IsValidVersion(deployVersion) {
+			opVersion = deployVersion
+		} else {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: unable to determine operator version; cannot verify compatibility (requires %s+)\n", utils.MinNodeStateSupportVersion)
+		}
+	}
+	if utils.IsValidVersion(opVersion) && utils.CompareVersions(opVersion, utils.MinNodeStateSupportVersion) < 0 {
+		return fmt.Errorf("operator version %s does not support this command; minimum supported version is %s", opVersion, utils.MinNodeStateSupportVersion)
+	}
+	return nil
 }

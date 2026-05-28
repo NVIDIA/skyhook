@@ -327,6 +327,11 @@ const (
 	DefaultNamespace = "skyhook"
 	// MinAnnotationSupportVersion is the minimum operator version that supports annotation-based pause/disable
 	MinAnnotationSupportVersion = "v0.8.0"
+	// MinNodeStateSupportVersion is the lowest operator version known to use the
+	// current map[string]PackageStatus shape for the
+	// skyhook.nvidia.com/nodeState_<skyhook> annotation. Commands that edit that
+	// annotation refuse to run against older operators.
+	MinNodeStateSupportVersion = "v0.15.0"
 )
 
 // CompareVersions compares two semver versions.
