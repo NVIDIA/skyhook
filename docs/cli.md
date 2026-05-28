@@ -25,8 +25,8 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `package rerun` | ✅ Full | ✅ Full |
 | `package logs` | ✅ Full | ✅ Full |
 | `reset` | ✅ Full | ✅ Full |
-| `reset --package` | ⚠️ See note | ⚠️ See note |
-| `update-state` | ⚠️ See note | ⚠️ See note |
+| `reset --package` | ✅ Full (v0.7.5+) | ✅ Full |
+| `update-state` | ✅ Full (v0.7.5+) — see note | ✅ Full — see note |
 | `deployment-policy reset` | ❌ Not supported | ✅ Full |
 | `pause` | ❌ Not supported | ✅ Full |
 | `resume` | ❌ Not supported | ✅ Full |
@@ -34,13 +34,15 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `enable` | ❌ Not supported | ✅ Full |
 
 > **Note on `update-state` and `reset --package`:** These commands edit the
-> `skyhook.nvidia.com/nodeState_<skyhook>` annotation in-place and rely on
-> its current `map[string]PackageStatus` shape. They are safe with
-> **operator v0.15.0 and later** (the version this CLI was developed
-> against). Older operators may use a different annotation shape — verify
-> the annotation format on your operator version before running these
-> commands. If the CLI cannot parse the annotation on a node it surfaces
-> a clear per-node error and skips the node.
+> `skyhook.nvidia.com/nodeState_<skyhook>` annotation in-place. The
+> annotation's `map[string]PackageStatus` shape has been stable since
+> **operator v0.7.5**, and the CLI refuses to run against anything older.
+> What *has* evolved across operator releases is the set of recognised
+> stage and state values — for example `uninstall` and `uninstall-interrupt`
+> were added in v0.16.0. Picking a stage/state your operator doesn't
+> recognise will leave the package in a state the operator can't progress
+> from. Confirm the stage/state values are valid for your operator before
+> running these commands.
 
 ### Breaking Change: Pause/Disable Mechanism
 

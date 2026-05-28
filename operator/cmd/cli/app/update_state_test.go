@@ -261,10 +261,10 @@ var _ = Describe("UpdateState Command", func() {
 			Expect(err.Error()).To(ContainSubstring("apiserver unreachable"))
 		})
 
-		It("rejects update-state against an operator older than v0.15.0", func() {
+		It("rejects update-state against an operator older than the supported floor", func() {
 			sk := &v1alpha1.Skyhook{}
 			sk.Name = "demo"
-			sk.Annotations = map[string]string{"skyhook.nvidia.com/version": "v0.10.0"}
+			sk.Annotations = map[string]string{"skyhook.nvidia.com/version": "v0.7.0"}
 			sk.Spec.Packages = v1alpha1.Packages{
 				"pkg1": {PackageRef: v1alpha1.PackageRef{Name: "pkg1", Version: "1.0"}, Image: "example.com/pkg1"},
 			}
@@ -281,8 +281,8 @@ var _ = Describe("UpdateState Command", func() {
 			err = runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "complete"}, opts, cliCtx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("does not support"))
-			Expect(err.Error()).To(ContainSubstring("v0.10.0"))
-			Expect(err.Error()).To(ContainSubstring("v0.15.0"))
+			Expect(err.Error()).To(ContainSubstring("v0.7.0"))
+			Expect(err.Error()).To(ContainSubstring("v0.7.5"))
 		})
 
 		Describe("--add", func() {

@@ -472,8 +472,8 @@ var _ = Describe("Reset Command", func() {
 			Entry("empty version with colon", "pkg1:"),
 		)
 
-		It("rejects --package against an operator older than v0.15.0", func() {
-			setupSkyhookCR("demo", "v0.10.0")
+		It("rejects --package against an operator older than the supported floor", func() {
+			setupSkyhookCR("demo", "v0.7.0")
 			addNode("n1", v1alpha1.NodeState{
 				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
 			})
@@ -481,8 +481,8 @@ var _ = Describe("Reset Command", func() {
 			err := runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("does not support"))
-			Expect(err.Error()).To(ContainSubstring("v0.10.0"))
-			Expect(err.Error()).To(ContainSubstring("v0.15.0"))
+			Expect(err.Error()).To(ContainSubstring("v0.7.0"))
+			Expect(err.Error()).To(ContainSubstring("v0.7.5"))
 		})
 	})
 })
