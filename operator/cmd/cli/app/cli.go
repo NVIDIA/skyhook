@@ -79,6 +79,7 @@ func NewSkyhookCommand(ctx *context.CLIContext) *cobra.Command {
 		NewDisableCmd(ctx),
 		NewEnableCmd(ctx),
 		NewResetCmd(ctx),
+		NewUpdateStateCmd(ctx),
 	)
 
 	return skyhookCmd
