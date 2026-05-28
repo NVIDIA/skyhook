@@ -19,10 +19,24 @@
 package app
 
 import (
+	"bytes"
+	gocontext "context"
+	"encoding/json"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/mock"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	mockdynamic "github.com/NVIDIA/nodewright/operator/internal/mocks/dynamic"
 )
 
 var _ = Describe("UpdateState Command", func() {
@@ -53,6 +67,221 @@ var _ = Describe("UpdateState Command", func() {
 			Expect(err).To(HaveOccurred())
 			// cobra's MarkFlagsMutuallyExclusive emits this exact phrasing
 			Expect(err.Error()).To(MatchRegexp(`(?i)none of the others can be`))
+		})
+	})
+
+	Describe("runUpdateState", func() {
+		var (
+			fakeKube    *fake.Clientset
+			mockDynamic *mockdynamic.Interface
+			kubeClient  *client.Client
+			cliCtx      *context.CLIContext
+			cmd         *cobra.Command
+			out         *bytes.Buffer
+		)
+
+		skyhookGVR := schema.GroupVersionResource{
+			Group:    "skyhook.nvidia.com",
+			Version:  "v1alpha1",
+			Resource: "skyhooks",
+		}
+
+		BeforeEach(func() {
+			fakeKube = fake.NewClientset()
+			mockDynamic = &mockdynamic.Interface{}
+			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)
+			cliCtx = context.NewCLIContext(nil)
+			newUpdateStateClient = func(_ *context.CLIContext) (*client.Client, error) {
+				return kubeClient, nil
+			}
+			cmd = NewUpdateStateCmd(cliCtx)
+			out = &bytes.Buffer{}
+			cmd.SetOut(out)
+			cmd.SetErr(out)
+			cmd.SetIn(bytes.NewBufferString("y\n"))
+		})
+
+		AfterEach(func() {
+			newUpdateStateClient = func(c *context.CLIContext) (*client.Client, error) {
+				return client.NewFactory(c.GlobalFlags.ConfigFlags).Client()
+			}
+		})
+
+		setupSkyhookCR := func(packages map[string]string) {
+			sk := &v1alpha1.Skyhook{}
+			sk.Name = "demo"
+			sk.Spec.Packages = v1alpha1.Packages{}
+			for name, version := range packages {
+				sk.Spec.Packages[name] = v1alpha1.Package{
+					PackageRef: v1alpha1.PackageRef{Name: name, Version: version},
+					Image:      "example.com/" + name,
+				}
+			}
+			u := &unstructured.Unstructured{}
+			raw, err := json.Marshal(sk)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(json.Unmarshal(raw, &u.Object)).To(Succeed())
+			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "skyhook.nvidia.com", Version: "v1alpha1", Kind: "Skyhook"})
+
+			mockNSRes := &mockdynamic.NamespaceableResourceInterface{}
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, "demo", mock.Anything, mock.Anything).Return(u, nil)
+		}
+
+		addNodeWithState := func(name string, state v1alpha1.NodeState) {
+			raw, _ := json.Marshal(state)
+			n := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_demo": string(raw),
+					},
+				},
+			}
+			_, err := fakeKube.CoreV1().Nodes().Create(gocontext.Background(), n, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		It("rejects an invalid stage", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "bogus", "complete", "--confirm"})
+			err := cmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid stage"))
+		})
+
+		It("rejects an invalid state", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "weird", "--confirm"})
+			err := cmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid state"))
+		})
+
+		It("rejects a package not present in the Skyhook spec", func() {
+			setupSkyhookCR(map[string]string{"other": "9.9"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "complete", "--confirm"})
+			err := cmd.Execute()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not found in spec"))
+		})
+
+		It("updates the matching entry on every tracked node by default", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete, Image: "img:1", ContainerSHA: "sha", Restarts: 3}})
+			addNodeWithState("n2", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
+
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "interrupt", "in_progress", "--confirm"})
+			Expect(cmd.Execute()).To(Succeed())
+
+			for _, name := range []string{"n1", "n2"} {
+				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), name, metav1.GetOptions{})
+				var ns v1alpha1.NodeState
+				Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
+				entry, ok := ns["pkg1|1.0"]
+				Expect(ok).To(BeTrue())
+				Expect(string(entry.Stage)).To(Equal("interrupt"))
+				Expect(string(entry.State)).To(Equal("in_progress"))
+			}
+
+			n1, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			var n1ns v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(n1.Annotations["skyhook.nvidia.com/nodeState_demo"]), &n1ns)).To(Succeed())
+			Expect(n1ns["pkg1|1.0"].Image).To(Equal("img:1"))
+			Expect(n1ns["pkg1|1.0"].ContainerSHA).To(Equal("sha"))
+			Expect(n1ns["pkg1|1.0"].Restarts).To(Equal(int32(3)))
+		})
+
+		It("respects --node to narrow the targets", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
+			addNodeWithState("n2", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
+
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "erroring", "--node", "n1", "--confirm"})
+			Expect(cmd.Execute()).To(Succeed())
+
+			n1, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			var ns1 v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(n1.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns1)).To(Succeed())
+			Expect(string(ns1["pkg1|1.0"].State)).To(Equal("erroring"))
+
+			n2, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n2", metav1.GetOptions{})
+			var ns2 v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(n2.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns2)).To(Succeed())
+			Expect(string(ns2["pkg1|1.0"].State)).To(Equal("complete"))
+		})
+
+		It("warns when --node names a node that does not exist", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "complete", "--node", "missing", "--confirm"})
+			Expect(cmd.Execute()).To(Succeed())
+			Expect(out.String()).To(ContainSubstring(`node "missing" not found`))
+		})
+
+		It("warns when a node has the package at a different version", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|9.9": {Name: "pkg1", Version: "9.9"}})
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "complete", "--confirm"})
+			Expect(cmd.Execute()).To(Succeed())
+			Expect(out.String()).To(ContainSubstring(`pkg1 at version "9.9"`))
+		})
+
+		It("dry-run does not modify nodes and short-circuits when targets are empty", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			cliCtx.GlobalFlags.DryRun = true
+			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "erroring", "--confirm"})
+			Expect(cmd.Execute()).To(Succeed())
+			Expect(out.String()).To(ContainSubstring("no matching nodes"))
+			Expect(out.String()).NotTo(ContainSubstring("[dry-run]"))
+		})
+
+		Describe("--add", func() {
+			It("requires --node or --selector", func() {
+				setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+				cmd.SetArgs([]string{"demo", "pkg1", "1.0", "apply", "in_progress", "--add", "--confirm"})
+				err := cmd.Execute()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("--add requires --node or --selector"))
+			})
+
+			It("creates a fresh entry on the targeted node", func() {
+				setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+				_, err := fakeKube.CoreV1().Nodes().Create(gocontext.Background(),
+					&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1"}},
+					metav1.CreateOptions{})
+				Expect(err).NotTo(HaveOccurred())
+
+				cmd.SetArgs([]string{"demo", "pkg1", "1.0", "apply", "in_progress", "--node", "n1", "--add", "--confirm"})
+				Expect(cmd.Execute()).To(Succeed())
+
+				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+				raw, ok := got.Annotations["skyhook.nvidia.com/nodeState_demo"]
+				Expect(ok).To(BeTrue())
+				var ns v1alpha1.NodeState
+				Expect(json.Unmarshal([]byte(raw), &ns)).To(Succeed())
+				entry, ok := ns["pkg1|1.0"]
+				Expect(ok).To(BeTrue())
+				Expect(entry.Image).To(Equal("example.com/pkg1"))
+				Expect(string(entry.Stage)).To(Equal("apply"))
+				Expect(string(entry.State)).To(Equal("in_progress"))
+			})
+
+			It("warns and skips when the entry already exists", func() {
+				setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+				addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
+				cmd.SetArgs([]string{"demo", "pkg1", "1.0", "apply", "in_progress", "--node", "n1", "--add", "--confirm"})
+				Expect(cmd.Execute()).To(Succeed())
+				Expect(out.String()).To(ContainSubstring(`entry already exists`))
+
+				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+				var ns v1alpha1.NodeState
+				Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
+				Expect(string(ns["pkg1|1.0"].State)).To(Equal("complete"))
+			})
 		})
 	})
 })

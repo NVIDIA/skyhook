@@ -20,12 +20,18 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"slices"
+	"sort"
 
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
 type updateStateOptions struct {
@@ -33,6 +39,13 @@ type updateStateOptions struct {
 	selector string
 	confirm  bool
 	add      bool
+}
+
+// why: the production path builds a Kubernetes client from kubeconfig, but
+// unit tests need to inject a fake client. Exposing the factory as a package
+// var keeps the production RunE small while letting tests override.
+var newUpdateStateClient = func(ctx *cliContext.CLIContext) (*client.Client, error) {
+	return client.NewFactory(ctx.GlobalFlags.ConfigFlags).Client()
 }
 
 // NewUpdateStateCmd creates the `update-state` command.
@@ -67,8 +80,7 @@ explicit.`,
   kubectl skyhook update-state gpu-init pkg1 1.0 apply in_progress --selector role=gpu --add --confirm`,
 		Args: cobra.ExactArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
-			kubeClient, err := clientFactory.Client()
+			kubeClient, err := newUpdateStateClient(ctx)
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
@@ -85,6 +97,213 @@ explicit.`,
 	return cmd
 }
 
+type updateStateTarget struct {
+	nodeName string
+	nextRaw  string
+}
+
+func validateUpdateStateArgs(args []string, opts *updateStateOptions) (v1alpha1.Stage, v1alpha1.State, error) {
+	stage := v1alpha1.Stage(args[3])
+	if !slices.Contains(v1alpha1.Stages, stage) {
+		return "", "", fmt.Errorf("invalid stage %q (valid: %v)", args[3], v1alpha1.Stages)
+	}
+	state := v1alpha1.State(args[4])
+	if !slices.Contains(v1alpha1.States, state) {
+		return "", "", fmt.Errorf("invalid state %q (valid: %v)", args[4], v1alpha1.States)
+	}
+	if opts.add && len(opts.nodes) == 0 && opts.selector == "" {
+		return "", "", fmt.Errorf("--add requires --node or --selector so the scope is explicit")
+	}
+	return stage, state, nil
+}
+
+func enumerateAddNodes(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, opts *updateStateOptions) ([]string, error) {
+	listOpts := metav1.ListOptions{}
+	if opts.selector != "" {
+		listOpts.LabelSelector = opts.selector
+	}
+	nodes, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, listOpts)
+	if err != nil {
+		return nil, fmt.Errorf("listing nodes: %w", err)
+	}
+	existing := map[string]struct{}{}
+	for _, n := range nodes.Items {
+		existing[n.Name] = struct{}{}
+	}
+	var ordered []string
+	if len(opts.nodes) > 0 {
+		for _, n := range opts.nodes {
+			if _, ok := existing[n]; !ok {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "node %q not found\n", n)
+				continue
+			}
+			ordered = append(ordered, n)
+		}
+		return ordered, nil
+	}
+	for _, n := range nodes.Items {
+		ordered = append(ordered, n.Name)
+	}
+	return ordered, nil
+}
+
+func enumerateUpdateNodes(cmd *cobra.Command, nodeStates map[string]v1alpha1.NodeState, opts *updateStateOptions, skyhookName string) []string {
+	var ordered []string
+	if len(opts.nodes) > 0 {
+		for _, n := range opts.nodes {
+			if _, ok := nodeStates[n]; !ok {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "node %q not found or has no state for Skyhook %q\n", n, skyhookName)
+				continue
+			}
+			ordered = append(ordered, n)
+		}
+		return ordered
+	}
+	for n := range nodeStates {
+		ordered = append(ordered, n)
+	}
+	return ordered
+}
+
+func buildUpdateStateTarget(
+	cmd *cobra.Command,
+	name string,
+	nodeStates map[string]v1alpha1.NodeState,
+	pkg v1alpha1.Package,
+	stage v1alpha1.Stage,
+	state v1alpha1.State,
+	addMode bool,
+) (updateStateTarget, bool) {
+	uniqueName := pkg.GetUniqueName()
+	ns := nodeStates[name]
+	if ns == nil {
+		ns = v1alpha1.NodeState{}
+	}
+	entry, hasEntry := ns[uniqueName]
+
+	if addMode {
+		if hasEntry {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "node %q: entry already exists for %q; skipping (use without --add to update)\n", name, uniqueName)
+			return updateStateTarget{}, false
+		}
+		ns[uniqueName] = v1alpha1.PackageStatus{
+			Name:    pkg.Name,
+			Version: pkg.Version,
+			Image:   pkg.Image,
+			Stage:   stage,
+			State:   state,
+		}
+	} else {
+		if !hasEntry {
+			for _, ps := range ns {
+				if ps.Name == pkg.Name && ps.Version != pkg.Version {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "node %q: has %s at version %q; skipping (target was %q)\n", name, pkg.Name, ps.Version, pkg.Version)
+					break
+				}
+			}
+			return updateStateTarget{}, false
+		}
+		entry.Stage = stage
+		entry.State = state
+		ns[uniqueName] = entry
+	}
+
+	payload, err := json.Marshal(ns)
+	if err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "node %q: marshaling annotation: %v\n", name, err)
+		return updateStateTarget{}, false
+	}
+	return updateStateTarget{nodeName: name, nextRaw: string(payload)}, true
+}
+
 func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, args []string, opts *updateStateOptions, cliCtx *cliContext.CLIContext) error {
-	return fmt.Errorf("not implemented")
+	skyhookName, packageName, packageVersion := args[0], args[1], args[2]
+
+	stage, state, err := validateUpdateStateArgs(args, opts)
+	if err != nil {
+		return err
+	}
+
+	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
+	if err != nil {
+		return fmt.Errorf("fetching Skyhook %q: %w", skyhookName, err)
+	}
+	pkg, ok := skyhook.Spec.Packages[packageName]
+	if !ok || pkg.Version != packageVersion {
+		return fmt.Errorf("package %q (version %q) not found in spec of Skyhook %q", packageName, packageVersion, skyhookName)
+	}
+
+	nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, opts.selector)
+	if err != nil && cliCtx.GlobalFlags.Verbose {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
+	}
+
+	var orderedNodes []string
+	if opts.add {
+		orderedNodes, err = enumerateAddNodes(ctx, cmd, kubeClient, opts)
+		if err != nil {
+			return err
+		}
+	} else {
+		orderedNodes = enumerateUpdateNodes(cmd, nodeStates, opts, skyhookName)
+	}
+	sort.Strings(orderedNodes)
+
+	var targets []updateStateTarget
+	for _, name := range orderedNodes {
+		t, ok := buildUpdateStateTarget(cmd, name, nodeStates, pkg, stage, state, opts.add)
+		if !ok {
+			continue
+		}
+		targets = append(targets, t)
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package: %s@%s -> stage=%s state=%s", packageName, packageVersion, stage, state)
+	if opts.add {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), " (add)")
+	}
+	_, _ = fmt.Fprintln(cmd.OutOrStdout())
+
+	if len(targets) == 0 {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "no matching nodes\n")
+		return nil
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes to update (%d):\n", len(targets))
+	for _, t := range targets {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", t.nodeName)
+	}
+
+	if cliCtx.GlobalFlags.DryRun {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n[dry-run] No changes applied\n")
+		return nil
+	}
+
+	if !opts.confirm {
+		ok, err := utils.ConfirmYN(cmd, "\nContinue? [y/N]: ")
+		if err != nil {
+			return err
+		}
+		if !ok {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Aborted\n")
+			return nil
+		}
+	}
+
+	annotationKey := nodeStateAnnotationPrefix + skyhookName
+	var firstErr error
+	success := 0
+	for _, t := range targets {
+		if err := utils.SetNodeAnnotation(ctx, kubeClient.Kubernetes(), t.nodeName, annotationKey, t.nextRaw); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  - %s: %v\n", t.nodeName, err)
+			continue
+		}
+		success++
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully updated %d node(s)\n", success)
+	return firstErr
 }
