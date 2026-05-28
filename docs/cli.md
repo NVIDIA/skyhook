@@ -460,7 +460,7 @@ For a single-package reset across all nodes (without disturbing the
 deployment policy batch state), prefer `reset --package`:
 
 ```bash
-kubectl skyhook reset my-skyhook --package my-package:1.0 --confirm --skip-batch-reset
+kubectl skyhook reset my-skyhook --package my-package:1.0 --confirm
 ```
 
 ### Emergency Stop

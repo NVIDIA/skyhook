@@ -312,7 +312,7 @@ func runPackageReset(
 	if err != nil {
 		return fmt.Errorf("fetching Skyhook %q: %w", skyhookName, err)
 	}
-	if err := checkNodeStateOperatorVersion(ctx, cmd, kubeClient, cliCtx, skyhook); err != nil {
+	if err := utils.CheckNodeStateOperatorVersion(ctx, cmd, kubeClient.Kubernetes(), cliCtx.GlobalFlags.Namespace(), skyhook); err != nil {
 		return err
 	}
 

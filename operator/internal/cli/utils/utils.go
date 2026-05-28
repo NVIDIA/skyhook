@@ -390,6 +390,29 @@ func GetSkyhook(ctx context.Context, dynamicClient dynamic.Interface, name strin
 	return UnstructuredToSkyhook(obj)
 }
 
+// CheckNodeStateOperatorVersion rejects the call when the running operator is
+// older than MinNodeStateSupportVersion. The check first reads the version
+// annotation written by the operator onto the Skyhook CR; when that's missing
+// or non-semver (e.g. "dev") it falls back to inspecting the operator
+// Deployment. If neither source yields a valid version we warn but allow the
+// edit to proceed — better than refusing every command in clusters where the
+// CLI can't see the operator's namespace.
+func CheckNodeStateOperatorVersion(ctx context.Context, cmd *cobra.Command, kube kubernetes.Interface, namespace string, skyhook *v1alpha1.Skyhook) error {
+	opVersion := GetSkyhookVersion(skyhook)
+	if opVersion == "" || !IsValidVersion(opVersion) {
+		deployVersion, derr := DiscoverOperatorVersion(ctx, kube, namespace)
+		if derr == nil && IsValidVersion(deployVersion) {
+			opVersion = deployVersion
+		} else {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: unable to determine operator version; cannot verify compatibility (requires %s+)\n", MinNodeStateSupportVersion)
+		}
+	}
+	if IsValidVersion(opVersion) && CompareVersions(opVersion, MinNodeStateSupportVersion) < 0 {
+		return fmt.Errorf("operator version %s does not support this command; minimum supported version is %s", opVersion, MinNodeStateSupportVersion)
+	}
+	return nil
+}
+
 // GetSkyhookVersion extracts the operator version from a Skyhook's annotation.
 // Returns empty string if the annotation is not present.
 func GetSkyhookVersion(skyhook *v1alpha1.Skyhook) string {

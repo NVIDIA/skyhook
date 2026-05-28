@@ -19,6 +19,8 @@ apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
   name: cli-deployment-policy-reset
+  labels:
+    pool: cli
 spec:
   timeouts:
     assert: 150s

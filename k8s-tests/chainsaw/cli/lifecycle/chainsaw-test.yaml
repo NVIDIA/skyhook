@@ -19,6 +19,8 @@ apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
   name: cli-lifecycle
+  labels:
+    pool: cli
 spec:
   timeouts:
     assert: 60s
