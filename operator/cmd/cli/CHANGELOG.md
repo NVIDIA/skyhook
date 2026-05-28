@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file.
 - *(deployment-policy)* Add batch state reset with auto-reset, CLI, and config
 - AutoTaintNewNodes
 - Add SKYHOOK_NODE_ORDER env var for monotonic node ordering
+- *(cli)* Add `update-state <skyhook> <package> <version> <stage> <state>` for surgical per-node nodeState edits, with an `--add` mode for creating fresh entries (#257)
+- *(cli/reset)* Add `--package <name>[:<version>]` flag to reset a single package's state across all tracked nodes (#257)
+
+### Bug Fixes
+
+- *(cli/utils)* `SetNodeAnnotation` now JSON-marshals the patch correctly, preserving non-ASCII characters
 
 ## [cli/v0.1.1] - 2026-01-13
 
