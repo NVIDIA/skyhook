@@ -352,4 +352,93 @@ var _ = Describe("Reset Command", func() {
 			Expect(err.Error()).To(ContainSubstring("apiserver unreachable"))
 		})
 	})
+
+	Describe("--package", func() {
+		var (
+			fakeKube   *fake.Clientset
+			kubeClient *client.Client
+			cliCtx     *context.CLIContext
+			cmd        *cobra.Command
+			out        *bytes.Buffer
+		)
+
+		BeforeEach(func() {
+			fakeKube = fake.NewClientset()
+			kubeClient = client.NewWithClientsAndConfig(fakeKube, nil, nil)
+			cliCtx = context.NewCLIContext(nil)
+			cmd = NewResetCmd(cliCtx)
+			out = &bytes.Buffer{}
+			cmd.SetOut(out)
+			cmd.SetErr(out)
+			cmd.SetIn(bytes.NewBufferString("y\n"))
+		})
+
+		addNode := func(name string, ns v1alpha1.NodeState) {
+			raw, _ := json.Marshal(ns)
+			n := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_demo": string(raw),
+					},
+				},
+			}
+			_, err := fakeKube.CoreV1().Nodes().Create(gocontext.Background(), n, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		It("removes only the named package entry from each node", func() {
+			addNode("n1", v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+				"pkg2|2.0": {Name: "pkg2", Version: "2.0", Stage: v1alpha1.StageConfig, State: v1alpha1.StateComplete},
+			})
+			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1"}
+			Expect(runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)).To(Succeed())
+
+			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			var after v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
+			_, hasPkg1 := after["pkg1|1.0"]
+			_, hasPkg2 := after["pkg2|2.0"]
+			Expect(hasPkg1).To(BeFalse())
+			Expect(hasPkg2).To(BeTrue())
+		})
+
+		It("with name:version only removes if version matches", func() {
+			addNode("n1", v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			})
+			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1:9.9"}
+			Expect(runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)).To(Succeed())
+
+			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			var after v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
+			_, hasPkg1 := after["pkg1|1.0"]
+			Expect(hasPkg1).To(BeTrue())
+			Expect(out.String()).To(ContainSubstring("no matching package"))
+		})
+
+		It("removes the entire annotation when the last entry is removed", func() {
+			addNode("n1", v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			})
+			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1"}
+			Expect(runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)).To(Succeed())
+			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			_, exists := got.Annotations["skyhook.nvidia.com/nodeState_demo"]
+			Expect(exists).To(BeFalse())
+		})
+
+		DescribeTable("rejects malformed --package",
+			func(value string) {
+				addNode("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
+				opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: value}
+				err := runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)
+				Expect(err).To(HaveOccurred())
+			},
+			Entry("empty name with version", ":1.0"),
+			Entry("empty version with colon", "pkg1:"),
+		)
+	})
 })

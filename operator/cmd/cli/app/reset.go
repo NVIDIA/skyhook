@@ -20,8 +20,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -44,6 +46,7 @@ const (
 type resetOptions struct {
 	confirm        bool
 	skipBatchReset bool
+	pkg            string // --package <name>[:<version>]
 }
 
 // NewResetCmd creates the reset command
@@ -88,6 +91,7 @@ existing batch state.`,
 
 	cmd.Flags().BoolVarP(&opts.confirm, "confirm", "y", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&opts.skipBatchReset, "skip-batch-reset", false, "Skip resetting deployment policy batch state")
+	cmd.Flags().StringVar(&opts.pkg, "package", "", "Reset only this package (format: <name> or <name>:<version>)")
 
 	return cmd
 }
@@ -115,6 +119,10 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	if len(nodesToReset) == 0 {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for Skyhook %q\n", skyhookName)
 		return nil
+	}
+
+	if opts.pkg != "" {
+		return runPackageReset(ctx, cmd, kubeClient, skyhookName, nodeStates, opts, cliCtx)
 	}
 
 	// Print summary
@@ -264,4 +272,139 @@ func resetBatchStateForReset(ctx context.Context, cmd *cobra.Command, kubeClient
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to reset node ordering: %v\n", err)
 	}
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state reset for Skyhook %q\n", skyhookName)
+}
+
+func splitPackageRef(s string) (name, version string, hasVersion bool, err error) {
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		name, version = s[:i], s[i+1:]
+		hasVersion = true
+	} else {
+		name = s
+	}
+	if name == "" {
+		return "", "", false, fmt.Errorf("--package: name must not be empty")
+	}
+	if hasVersion && version == "" {
+		return "", "", false, fmt.Errorf("--package: version must not be empty after %q", ":")
+	}
+	return name, version, hasVersion, nil
+}
+
+// why: --package reset removes a single package's state. Resetting batch
+// state (which restarts the entire rollout from batch 1) would be wildly
+// disproportionate to a one-package recovery, so this path deliberately
+// skips it regardless of --skip-batch-reset.
+func runPackageReset(
+	ctx context.Context,
+	cmd *cobra.Command,
+	kubeClient *client.Client,
+	skyhookName string,
+	nodeStates map[string]v1alpha1.NodeState,
+	opts *resetOptions,
+	cliCtx *cliContext.CLIContext,
+) error {
+	name, version, hasVersion, err := splitPackageRef(opts.pkg)
+	if err != nil {
+		return err
+	}
+
+	annotationKey := nodeStateAnnotationPrefix + skyhookName
+
+	type target struct {
+		nodeName  string
+		remaining v1alpha1.NodeState
+		emptied   bool
+	}
+	var targets []target
+	nodeNames := make([]string, 0, len(nodeStates))
+	for n := range nodeStates {
+		nodeNames = append(nodeNames, n)
+	}
+	sort.Strings(nodeNames)
+
+	for _, nodeName := range nodeNames {
+		ns := nodeStates[nodeName]
+		next := v1alpha1.NodeState{}
+		matched := false
+		for key, status := range ns {
+			if status.Name != name {
+				next[key] = status
+				continue
+			}
+			if hasVersion && status.Version != version {
+				next[key] = status
+				continue
+			}
+			matched = true
+		}
+		if !matched {
+			continue
+		}
+		targets = append(targets, target{
+			nodeName:  nodeName,
+			remaining: next,
+			emptied:   len(next) == 0,
+		})
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package filter: %s\n", opts.pkg)
+
+	if len(targets) == 0 {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "no matching package on any node\n")
+		return nil
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes with a matching package (%d):\n", len(targets))
+	for _, t := range targets {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", t.nodeName)
+	}
+
+	if cliCtx.GlobalFlags.DryRun {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n[dry-run] No changes applied\n")
+		return nil
+	}
+
+	if !opts.confirm {
+		ok, err := utils.ConfirmYN(cmd, fmt.Sprintf("\nThis will remove the %q entry from %d node(s).\nContinue? [y/N]: ", opts.pkg, len(targets)))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Aborted\n")
+			return nil
+		}
+	}
+
+	var firstErr error
+	success := 0
+	for _, t := range targets {
+		if t.emptied {
+			if err := utils.RemoveNodeAnnotation(ctx, kubeClient.Kubernetes(), t.nodeName, annotationKey); err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			success++
+			continue
+		}
+		payload, err := json.Marshal(t.remaining)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("marshaling node state for %q: %w", t.nodeName, err)
+			}
+			continue
+		}
+		if err := utils.SetNodeAnnotation(ctx, kubeClient.Kubernetes(), t.nodeName, annotationKey, string(payload)); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		success++
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully updated %d node(s)\n", success)
+	return firstErr
 }
