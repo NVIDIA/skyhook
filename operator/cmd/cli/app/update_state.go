@@ -41,13 +41,6 @@ type updateStateOptions struct {
 	add      bool
 }
 
-// why: the production path builds a Kubernetes client from kubeconfig, but
-// unit tests need to inject a fake client. Exposing the factory as a package
-// var keeps the production RunE small while letting tests override.
-var newUpdateStateClient = func(ctx *cliContext.CLIContext) (*client.Client, error) {
-	return client.NewFactory(ctx.GlobalFlags.ConfigFlags).Client()
-}
-
 // NewUpdateStateCmd creates the `update-state` command.
 func NewUpdateStateCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &updateStateOptions{}
@@ -80,7 +73,8 @@ explicit.`,
   kubectl skyhook update-state gpu-init pkg1 1.0 apply in_progress --selector role=gpu --add --confirm`,
 		Args: cobra.ExactArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kubeClient, err := newUpdateStateClient(ctx)
+			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
+			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
@@ -234,8 +228,17 @@ func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.
 	}
 
 	nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, opts.selector)
-	if err != nil && cliCtx.GlobalFlags.Verbose {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
+	if err != nil {
+		// nil map signals a list-from-apiserver failure (e.g. RBAC denied,
+		// unreachable apiserver); the helper returns an initialized map
+		// even when only parse failures occurred, so we use map identity
+		// to distinguish hard failures from per-node parse warnings.
+		if nodeStates == nil {
+			return fmt.Errorf("listing nodes: %w", err)
+		}
+		if cliCtx.GlobalFlags.Verbose {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
+		}
 	}
 
 	var orderedNodes []string

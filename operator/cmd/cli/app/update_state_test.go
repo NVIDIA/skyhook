@@ -22,6 +22,7 @@ import (
 	"bytes"
 	gocontext "context"
 	"encoding/json"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -30,8 +31,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	ktesting "k8s.io/client-go/testing"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
@@ -91,20 +94,11 @@ var _ = Describe("UpdateState Command", func() {
 			mockDynamic = &mockdynamic.Interface{}
 			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)
 			cliCtx = context.NewCLIContext(nil)
-			newUpdateStateClient = func(_ *context.CLIContext) (*client.Client, error) {
-				return kubeClient, nil
-			}
-			cmd = NewUpdateStateCmd(cliCtx)
 			out = &bytes.Buffer{}
+			cmd = &cobra.Command{}
 			cmd.SetOut(out)
 			cmd.SetErr(out)
 			cmd.SetIn(bytes.NewBufferString("y\n"))
-		})
-
-		AfterEach(func() {
-			newUpdateStateClient = func(c *context.CLIContext) (*client.Client, error) {
-				return client.NewFactory(c.GlobalFlags.ConfigFlags).Client()
-			}
 		})
 
 		setupSkyhookCR := func(packages map[string]string) {
@@ -145,8 +139,8 @@ var _ = Describe("UpdateState Command", func() {
 		It("rejects an invalid stage", func() {
 			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "bogus", "complete", "--confirm"})
-			err := cmd.Execute()
+			opts := &updateStateOptions{confirm: true}
+			err := runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "bogus", "complete"}, opts, cliCtx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid stage"))
 		})
@@ -154,8 +148,8 @@ var _ = Describe("UpdateState Command", func() {
 		It("rejects an invalid state", func() {
 			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "weird", "--confirm"})
-			err := cmd.Execute()
+			opts := &updateStateOptions{confirm: true}
+			err := runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "weird"}, opts, cliCtx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid state"))
 		})
@@ -163,8 +157,8 @@ var _ = Describe("UpdateState Command", func() {
 		It("rejects a package not present in the Skyhook spec", func() {
 			setupSkyhookCR(map[string]string{"other": "9.9"})
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "complete", "--confirm"})
-			err := cmd.Execute()
+			opts := &updateStateOptions{confirm: true}
+			err := runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "complete"}, opts, cliCtx)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not found in spec"))
 		})
@@ -174,8 +168,8 @@ var _ = Describe("UpdateState Command", func() {
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete, Image: "img:1", ContainerSHA: "sha", Restarts: 3}})
 			addNodeWithState("n2", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
 
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "interrupt", "in_progress", "--confirm"})
-			Expect(cmd.Execute()).To(Succeed())
+			opts := &updateStateOptions{confirm: true}
+			Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "interrupt", "in_progress"}, opts, cliCtx)).To(Succeed())
 
 			for _, name := range []string{"n1", "n2"} {
 				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), name, metav1.GetOptions{})
@@ -200,8 +194,8 @@ var _ = Describe("UpdateState Command", func() {
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
 			addNodeWithState("n2", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
 
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "erroring", "--node", "n1", "--confirm"})
-			Expect(cmd.Execute()).To(Succeed())
+			opts := &updateStateOptions{confirm: true, nodes: []string{"n1"}}
+			Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "erroring"}, opts, cliCtx)).To(Succeed())
 
 			n1, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 			var ns1 v1alpha1.NodeState
@@ -217,33 +211,61 @@ var _ = Describe("UpdateState Command", func() {
 		It("warns when --node names a node that does not exist", func() {
 			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "complete", "--node", "missing", "--confirm"})
-			Expect(cmd.Execute()).To(Succeed())
+			opts := &updateStateOptions{confirm: true, nodes: []string{"missing"}}
+			Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "complete"}, opts, cliCtx)).To(Succeed())
 			Expect(out.String()).To(ContainSubstring(`node "missing" not found`))
 		})
 
 		It("warns when a node has the package at a different version", func() {
 			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|9.9": {Name: "pkg1", Version: "9.9"}})
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "complete", "--confirm"})
-			Expect(cmd.Execute()).To(Succeed())
+			opts := &updateStateOptions{confirm: true}
+			Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "complete"}, opts, cliCtx)).To(Succeed())
 			Expect(out.String()).To(ContainSubstring(`pkg1 at version "9.9"`))
 		})
 
-		It("dry-run does not modify nodes and short-circuits when targets are empty", func() {
+		It("dry-run short-circuits when zero targets", func() {
 			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
 			cliCtx.GlobalFlags.DryRun = true
-			cmd.SetArgs([]string{"demo", "pkg1", "1.0", "config", "erroring", "--confirm"})
-			Expect(cmd.Execute()).To(Succeed())
+			opts := &updateStateOptions{confirm: true}
+			Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "erroring"}, opts, cliCtx)).To(Succeed())
 			Expect(out.String()).To(ContainSubstring("no matching nodes"))
 			Expect(out.String()).NotTo(ContainSubstring("[dry-run]"))
+		})
+
+		It("dry-run with targets does not modify nodes", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
+			cliCtx.GlobalFlags.DryRun = true
+
+			opts := &updateStateOptions{confirm: true}
+			Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "erroring"}, opts, cliCtx)).To(Succeed())
+			Expect(out.String()).To(ContainSubstring("[dry-run]"))
+
+			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			var ns v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
+			Expect(string(ns["pkg1|1.0"].Stage)).To(Equal("apply"))
+			Expect(string(ns["pkg1|1.0"].State)).To(Equal("complete"))
+		})
+
+		It("returns an error when listing nodes fails", func() {
+			setupSkyhookCR(map[string]string{"pkg1": "1.0"})
+			fakeKube.PrependReactor("list", "nodes", func(action ktesting.Action) (bool, runtime.Object, error) {
+				return true, nil, fmt.Errorf("apiserver unreachable")
+			})
+
+			opts := &updateStateOptions{confirm: true}
+			err := runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "config", "complete"}, opts, cliCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("apiserver unreachable"))
 		})
 
 		Describe("--add", func() {
 			It("requires --node or --selector", func() {
 				setupSkyhookCR(map[string]string{"pkg1": "1.0"})
-				cmd.SetArgs([]string{"demo", "pkg1", "1.0", "apply", "in_progress", "--add", "--confirm"})
-				err := cmd.Execute()
+				opts := &updateStateOptions{confirm: true, add: true}
+				err := runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "apply", "in_progress"}, opts, cliCtx)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("--add requires --node or --selector"))
 			})
@@ -255,8 +277,8 @@ var _ = Describe("UpdateState Command", func() {
 					metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				cmd.SetArgs([]string{"demo", "pkg1", "1.0", "apply", "in_progress", "--node", "n1", "--add", "--confirm"})
-				Expect(cmd.Execute()).To(Succeed())
+				opts := &updateStateOptions{confirm: true, add: true, nodes: []string{"n1"}}
+				Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "apply", "in_progress"}, opts, cliCtx)).To(Succeed())
 
 				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 				raw, ok := got.Annotations["skyhook.nvidia.com/nodeState_demo"]
@@ -265,6 +287,8 @@ var _ = Describe("UpdateState Command", func() {
 				Expect(json.Unmarshal([]byte(raw), &ns)).To(Succeed())
 				entry, ok := ns["pkg1|1.0"]
 				Expect(ok).To(BeTrue())
+				Expect(entry.Name).To(Equal("pkg1"))
+				Expect(entry.Version).To(Equal("1.0"))
 				Expect(entry.Image).To(Equal("example.com/pkg1"))
 				Expect(string(entry.Stage)).To(Equal("apply"))
 				Expect(string(entry.State)).To(Equal("in_progress"))
@@ -273,8 +297,8 @@ var _ = Describe("UpdateState Command", func() {
 			It("warns and skips when the entry already exists", func() {
 				setupSkyhookCR(map[string]string{"pkg1": "1.0"})
 				addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete}})
-				cmd.SetArgs([]string{"demo", "pkg1", "1.0", "apply", "in_progress", "--node", "n1", "--add", "--confirm"})
-				Expect(cmd.Execute()).To(Succeed())
+				opts := &updateStateOptions{confirm: true, add: true, nodes: []string{"n1"}}
+				Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "apply", "in_progress"}, opts, cliCtx)).To(Succeed())
 				Expect(out.String()).To(ContainSubstring(`entry already exists`))
 
 				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
