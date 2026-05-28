@@ -70,7 +70,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          set -euo pipefail
+          set -eu
           nodes=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}')
           if [ -z "$nodes" ]; then
             echo "no test nodes found"
