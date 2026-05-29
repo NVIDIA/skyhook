@@ -676,17 +676,26 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 					r.recorder.Eventf(skyhook.GetSkyhook().Skyhook, nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node [%s] to be reapplied", node.GetNode().Name)
 					r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node for [%s] to be reapplied", node.GetSkyhook().Name)
 					node.Reset()
+
+					// Persist the reset before recording the new boot id. We Patch rather than
+					// Update because a busy node's resourceVersion churns constantly under other
+					// controllers, and a full Update would lose that optimistic-concurrency race; a
+					// strategic merge of only our annotation/label changes does not. And we advance
+					// NodeBootIds only after the write is durable: if the reset never lands, leaving
+					// the boot id unchanged keeps the reboot pending so it is re-detected and retried
+					// next reconcile, instead of being silently consumed while the node's stale
+					// "complete" state remains and the package is never reapplied.
+					if node.Changed() {
+						updates = true
+						patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()))
+						if err := r.Patch(ctx, node.GetNode(), patch); err != nil {
+							errs = append(errs, fmt.Errorf("error patching node after reboot [%s]: %w", node.GetNode().Name, err))
+							continue
+						}
+					}
 				}
 				skyhook.GetSkyhook().Status.NodeBootIds[node.GetNode().Name] = node.GetNode().Status.NodeInfo.BootID
 				skyhook.GetSkyhook().Updated = true
-			}
-
-			if node.Changed() { // update
-				updates = true
-				err := r.Update(ctx, node.GetNode())
-				if err != nil {
-					errs = append(errs, fmt.Errorf("error updating node after reboot [%s]: %w", node.GetNode().Name, err))
-				}
 			}
 		}
 		if skyhook.GetSkyhook().Updated { // update
