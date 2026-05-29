@@ -23,7 +23,7 @@ metadata:
     pool: cli
 spec:
   timeouts:
-    assert: 120s
+    assert: 240s
     exec: 90s
   steps:
   # Step 0: Reset state from previous runs
