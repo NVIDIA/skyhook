@@ -51,6 +51,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/taints"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -84,6 +85,20 @@ const (
 	// Environment variable names propagated into package containers.
 	envSkyhookResourceID = "SKYHOOK_RESOURCE_ID"
 	envSkyhookNodeOrder  = "SKYHOOK_NODE_ORDER"
+
+	// globalReconcileName is both the controller's registered name (driving the
+	// reconcile metric and log labels) and the .Name of the sentinel request the
+	// heavy reconcile path collapses Skyhook and Node events onto. The sentinel
+	// value is arbitrary and ignored by Reconcile (which grabs the whole world);
+	// it only has to be constant and must not collide with the "pod---" dispatch
+	// prefix.
+	globalReconcileName = "nodewright"
+
+	// globalReconcileDelay is how long Skyhook and Node events wait before the
+	// global key becomes ready. It is the window the priority queue uses to
+	// coalesce a burst (e.g. the write storm one pass produces across Nodes)
+	// into a single follow-up reconcile.
+	globalReconcileDelay = 500 * time.Millisecond
 )
 
 type SkyhookOperatorOptions struct {
@@ -218,20 +233,35 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	ehandler := &eventHandler{
+	globalHandler := &globalDelayHandler{
 		logger: mgr.GetLogger(),
 		dal:    dal.New(r.Client),
+		delay:  globalReconcileDelay,
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.Skyhook{}).
+		Named(globalReconcileName).
+		WithOptions(controller.Options{
+			// Only one heavy "grab the world" pass may run at a time: it is a
+			// centralized scheduler reading across every SCR, Node and Pod, so
+			// concurrent passes would race each other's writes. This makes the
+			// global key the single in-flight reconcile.
+			MaxConcurrentReconciles: 1,
+		}).
+		// Heavy path: Skyhook and Node events collapse onto the global key.
 		Watches(
-			&corev1.Pod{},
-			handler.EnqueueRequestsFromMapFunc(podHandlerFunc),
+			&v1alpha1.Skyhook{},
+			globalHandler,
 		).
 		Watches(
 			&corev1.Node{},
-			ehandler,
+			globalHandler,
+		).
+		// Cheap path: Pod events keep their targeted "pod---<name>" routing,
+		// dispatched to PodReconcile in Reconcile below.
+		Watches(
+			&corev1.Pod{},
+			handler.EnqueueRequestsFromMapFunc(podHandlerFunc),
 		).
 		Complete(r)
 }
