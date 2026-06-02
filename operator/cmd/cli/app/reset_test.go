@@ -166,6 +166,7 @@ var _ = Describe("Reset Command", func() {
 			annotationKey := nodeStateAnnotationPrefix + skyhookName
 			statusAnnotationKey := statusAnnotationPrefix + skyhookName
 			cordonAnnotationKey := cordonAnnotationPrefix + skyhookName
+			drainStartAnnotationKey := drainStartAnnotationPrefix + skyhookName
 			versionAnnotationKey := versionAnnotationPrefix + skyhookName
 			statusLabelKey := statusLabelPrefix + skyhookName
 
@@ -173,10 +174,11 @@ var _ = Describe("Reset Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "worker-1",
 					Annotations: map[string]string{
-						annotationKey:        string(nodeStateJSON),
-						statusAnnotationKey:  "complete",
-						cordonAnnotationKey:  "true",
-						versionAnnotationKey: "1.0.0",
+						annotationKey:           string(nodeStateJSON),
+						statusAnnotationKey:     "complete",
+						cordonAnnotationKey:     "true",
+						drainStartAnnotationKey: "2026-06-02T12:00:00Z",
+						versionAnnotationKey:    "1.0.0",
 					},
 					Labels: map[string]string{
 						statusLabelKey: "complete",
@@ -210,6 +212,8 @@ var _ = Describe("Reset Command", func() {
 			Expect(exists).To(BeFalse())
 			_, exists = updatedNode1.Annotations[cordonAnnotationKey]
 			Expect(exists).To(BeFalse())
+			_, exists = updatedNode1.Annotations[drainStartAnnotationKey]
+			Expect(exists).To(BeFalse())
 			_, exists = updatedNode1.Annotations[versionAnnotationKey]
 			Expect(exists).To(BeFalse())
 			_, exists = updatedNode1.Labels[statusLabelKey]
@@ -219,6 +223,60 @@ var _ = Describe("Reset Command", func() {
 			updatedNode2, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-2", metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			_, exists = updatedNode2.Annotations[annotationKey]
+			Expect(exists).To(BeFalse())
+		})
+
+		It("should reset nodes with drain metadata before node state exists", func() {
+			drainStartAnnotationKey := drainStartAnnotationPrefix + skyhookName
+			statusAnnotationKey := statusAnnotationPrefix + skyhookName
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker-1",
+					Annotations: map[string]string{
+						drainStartAnnotationKey: "2026-06-02T12:00:00Z",
+						statusAnnotationKey:     "erroring",
+					},
+				},
+			}
+			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			opts := &resetOptions{confirm: true}
+			err = runReset(gocontext.Background(), cmd, kubeClient, skyhookName, opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("Successfully reset 1 node"))
+
+			updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			_, exists := updatedNode.Annotations[drainStartAnnotationKey]
+			Expect(exists).To(BeFalse())
+			_, exists = updatedNode.Annotations[statusAnnotationKey]
+			Expect(exists).To(BeFalse())
+		})
+
+		It("should reset nodes with only a status label", func() {
+			statusLabelKey := statusLabelPrefix + skyhookName
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker-1",
+					Labels: map[string]string{
+						statusLabelKey: "erroring",
+					},
+				},
+			}
+			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			opts := &resetOptions{confirm: true}
+			err = runReset(gocontext.Background(), cmd, kubeClient, skyhookName, opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.String()).To(ContainSubstring("Successfully reset 1 node"))
+
+			updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			_, exists := updatedNode.Labels[statusLabelKey]
 			Expect(exists).To(BeFalse())
 		})
 
@@ -319,7 +377,12 @@ var _ = Describe("Reset Command", func() {
 			opts := &resetOptions{confirm: true}
 			err = runReset(gocontext.Background(), cmd, kubeClient, skyhookName, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output.String()).To(ContainSubstring("No nodes have state"))
+			Expect(output.String()).To(ContainSubstring("Successfully reset 1 node"))
+
+			updatedNode, err := mockKube.CoreV1().Nodes().Get(gocontext.Background(), "worker-1", metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			_, exists := updatedNode.Annotations[annotationKey]
+			Expect(exists).To(BeFalse())
 		})
 
 		It("should continue even if some annotations/labels don't exist", func() {

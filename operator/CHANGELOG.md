@@ -22,6 +22,7 @@ and CR deletion behave. Affects the Operator, Webhook, and CRD.
 
 ### New Features
 
+- Add `spec.drainConfig` so interrupt drains can tune eviction, direct deletion, emptyDir handling, unmanaged-pod handling, DaemonSet skipping, timeout, and grace-period behavior.
 - Add a standard `Ready` condition to Skyhook status for native Kubernetes wait and GitOps health tooling.
 
 ### New behavior

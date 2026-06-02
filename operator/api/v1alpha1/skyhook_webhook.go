@@ -235,6 +235,10 @@ func (r *Skyhook) Validate() error {
 		return err
 	}
 
+	if err := r.Spec.DrainConfig.Validate(); err != nil {
+		return err
+	}
+
 	// DeploymentPolicy and InterruptionBudget are mutually exclusive
 	if r.Spec.DeploymentPolicy != "" && (r.Spec.InterruptionBudget.Percent != nil || r.Spec.InterruptionBudget.Count != nil) {
 		return fmt.Errorf("deploymentPolicy and interruptionBudget are mutually exclusive")

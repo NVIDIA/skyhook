@@ -35,18 +35,50 @@ import (
 )
 
 const (
-	nodeStateAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/nodeState_"
-	statusAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/status_"
-	cordonAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/cordon_"
-	versionAnnotationPrefix   = v1alpha1.METADATA_PREFIX + "/version_"
-	autoTaintAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/autoTaint_"
-	statusLabelPrefix         = v1alpha1.METADATA_PREFIX + "/status_"
+	nodeStateAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/nodeState_"
+	statusAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/status_"
+	cordonAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/cordon_"
+	drainStartAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/drainStart_"
+	versionAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/version_"
+	autoTaintAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/autoTaint_"
+	statusLabelPrefix          = v1alpha1.METADATA_PREFIX + "/status_"
 )
 
 // resetOptions holds the options for the reset command
 type resetOptions struct {
 	confirm        bool
 	skipBatchReset bool
+}
+
+func resetAnnotationKeys(skyhookName string) []string {
+	return []string{
+		nodeStateAnnotationPrefix + skyhookName,
+		statusAnnotationPrefix + skyhookName,
+		cordonAnnotationPrefix + skyhookName,
+		drainStartAnnotationPrefix + skyhookName,
+		versionAnnotationPrefix + skyhookName,
+		autoTaintAnnotationPrefix + skyhookName,
+	}
+}
+
+func resetLabelKeys(skyhookName string) []string {
+	return []string{
+		statusLabelPrefix + skyhookName,
+	}
+}
+
+func hasResettableMetadata(annotations, labels map[string]string, annotationKeys, labelKeys []string) bool {
+	for _, annotationKey := range annotationKeys {
+		if _, ok := annotations[annotationKey]; ok {
+			return true
+		}
+	}
+	for _, labelKey := range labelKeys {
+		if _, ok := labels[labelKey]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // NewResetCmd creates the reset command
@@ -104,21 +136,23 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 
 	// Find nodes that have the specified Skyhook annotation
 	annotationKey := nodeStateAnnotationPrefix + skyhookName
+	annotationKeys := resetAnnotationKeys(skyhookName)
+	labelKeys := resetLabelKeys(skyhookName)
 	nodesToReset := make([]string, 0)
 	nodeStates := make(map[string]v1alpha1.NodeState)
 
 	for _, node := range nodeList.Items {
-		annotation, ok := node.Annotations[annotationKey]
-		if !ok {
+		if !hasResettableMetadata(node.Annotations, node.Labels, annotationKeys, labelKeys) {
 			continue
 		}
 
-		var nodeState v1alpha1.NodeState
-		if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
-			if cliCtx.GlobalFlags.Verbose {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping node %q - invalid annotation: %v\n", node.Name, err)
+		nodeState := v1alpha1.NodeState{}
+		if annotation, ok := node.Annotations[annotationKey]; ok {
+			if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+				if cliCtx.GlobalFlags.Verbose {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: node %q has invalid node state annotation; resetting metadata with empty package state: %v\n", node.Name, err)
+				}
 			}
-			continue
 		}
 
 		nodesToReset = append(nodesToReset, node.Name)
@@ -200,16 +234,8 @@ func resetNodeAnnotations(ctx context.Context, cmd *cobra.Command, kubeClient *c
 	successCount := 0
 
 	for _, nodeName := range nodesToReset {
-		annotationsToRemove := []string{
-			nodeStateAnnotationPrefix + skyhookName,
-			statusAnnotationPrefix + skyhookName,
-			cordonAnnotationPrefix + skyhookName,
-			versionAnnotationPrefix + skyhookName,
-			autoTaintAnnotationPrefix + skyhookName,
-		}
-		labelsToRemove := []string{
-			statusLabelPrefix + skyhookName,
-		}
+		annotationsToRemove := resetAnnotationKeys(skyhookName)
+		labelsToRemove := resetLabelKeys(skyhookName)
 
 		// Try to remove the main nodeState annotation first - this is the critical one
 		mainAnnotationKey := nodeStateAnnotationPrefix + skyhookName

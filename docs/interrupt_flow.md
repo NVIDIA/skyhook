@@ -81,6 +81,42 @@ The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyFo
 - Ensure the node is ready before proceeding with package operations
 - Handle the timing and sequencing of all stages
 
+## Drain Configuration
+
+Interrupt-enabled Skyhooks can tune drain behavior with `spec.drainConfig`.
+Unset fields preserve the operator's existing behavior:
+
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: gpu-mode-switch
+spec:
+  drainConfig:
+    disableEviction: false
+    deleteEmptyDirData: true
+    force: true
+    ignoreDaemonSets: true
+    timeout: 10m
+    gracePeriod: 30s
+```
+
+The fields map to Kubernetes drain behavior:
+
+- `disableEviction`: when `true`, pods are deleted directly instead of evicted. This bypasses PodDisruptionBudgets. The default is `false`, so the eviction API is used.
+- `deleteEmptyDirData`: when `false`, pods with `emptyDir` volumes block drain. The default is `true`.
+- `force`: when `false`, pods without a managing controller block drain. The default is `true`.
+- `ignoreDaemonSets`: when `true`, DaemonSet-managed pods are skipped during drain. The default is `true`.
+- `timeout`: bounds how long a node may spend draining. Unset or zero means no timeout. When the timeout expires, the node is marked `erroring` and package stages do not proceed on that node.
+- `gracePeriod`: overrides the grace period used for eviction or direct deletion. Unset uses each pod's own `terminationGracePeriodSeconds`.
+
+The operator also skips pods that are already terminating, pods that tolerate
+the `node.kubernetes.io/unschedulable` taint, mirror/static pods, and pods in
+`kube-system`. These exclusions are not user-configurable.
+
+`podNonInterruptLabels` remains a pre-drain barrier. Matching pods must finish
+or move away before the operator starts the configurable drain step.
+
 ## Best Practices
 
 - Always test interrupt-enabled packages in non-production environments first

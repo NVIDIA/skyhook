@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -38,6 +38,37 @@ import (
 type nodeResetOptions struct {
 	skyhookName string
 	confirm     bool
+}
+
+func resetAnnotationKeys(skyhookName string) []string {
+	return []string{
+		nodeStateAnnotationPrefix + skyhookName,
+		statusAnnotationPrefix + skyhookName,
+		cordonAnnotationPrefix + skyhookName,
+		drainStartAnnotationPrefix + skyhookName,
+		versionAnnotationPrefix + skyhookName,
+		autoTaintAnnotationPrefix + skyhookName,
+	}
+}
+
+func resetLabelKeys(skyhookName string) []string {
+	return []string{
+		statusLabelPrefix + skyhookName,
+	}
+}
+
+func hasResettableMetadata(annotations, labels map[string]string, annotationKeys, labelKeys []string) bool {
+	for _, annotationKey := range annotationKeys {
+		if _, ok := annotations[annotationKey]; ok {
+			return true
+		}
+	}
+	for _, labelKey := range labelKeys {
+		if _, ok := labels[labelKey]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // BindToCmd binds the options to the command flags
@@ -124,6 +155,8 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 
 	// Find nodes that have the specified Skyhook annotation
 	annotationKey := nodeStateAnnotationPrefix + opts.skyhookName
+	annotationKeys := resetAnnotationKeys(opts.skyhookName)
+	labelKeys := resetLabelKeys(opts.skyhookName)
 	nodesToReset := make([]string, 0, len(matchedNodes))
 	nodeStates := make(map[string]v1alpha1.NodeState)
 
@@ -131,17 +164,17 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 		idx := nodeMap[nodeName]
 		node := &nodeList.Items[idx]
 
-		annotation, ok := node.Annotations[annotationKey]
-		if !ok {
+		if !hasResettableMetadata(node.Annotations, node.Labels, annotationKeys, labelKeys) {
 			continue
 		}
 
-		var nodeState v1alpha1.NodeState
-		if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
-			if cliCtx.GlobalFlags.Verbose {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping node %q - invalid annotation: %v\n", nodeName, err)
+		nodeState := v1alpha1.NodeState{}
+		if annotation, ok := node.Annotations[annotationKey]; ok {
+			if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+				if cliCtx.GlobalFlags.Verbose {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: node %q has invalid node state annotation; resetting metadata with empty package state: %v\n", nodeName, err)
+				}
 			}
-			continue
 		}
 
 		nodesToReset = append(nodesToReset, nodeName)
@@ -191,9 +224,21 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	successCount := 0
 
 	for _, nodeName := range nodesToReset {
-		if err := utils.RemoveNodeAnnotation(ctx, kubeClient.Kubernetes(), nodeName, annotationKey); err != nil {
-			updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
+		nodeHasError := false
+		for _, annotationKey := range annotationKeys {
+			if err := utils.RemoveNodeAnnotation(ctx, kubeClient.Kubernetes(), nodeName, annotationKey); err != nil {
+				updateErrors = append(updateErrors, fmt.Sprintf("%s: %v", nodeName, err))
+				nodeHasError = true
+				break
+			}
+		}
+		if nodeHasError {
 			continue
+		}
+		for _, labelKey := range labelKeys {
+			if err := utils.RemoveNodeLabel(ctx, kubeClient.Kubernetes(), nodeName, labelKey); err != nil && cliCtx.GlobalFlags.Verbose {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to remove label %q from node %q: %v\n", labelKey, nodeName, err)
+			}
 		}
 		successCount++
 	}

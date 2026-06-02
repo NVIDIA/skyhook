@@ -62,6 +62,11 @@ type SkyhookSpec struct {
 	// InterruptionBudget configures how many nodes that match node selectors that allowed to be interrupted at once.
 	InterruptionBudget InterruptionBudget `json:"interruptionBudget,omitempty"`
 
+	// DrainConfig tunes how nodes are drained before running interrupt packages.
+	// If unset, the operator preserves its existing drain behavior.
+	// +optional
+	DrainConfig *DrainConfig `json:"drainConfig,omitempty"`
+
 	// Packages are the DAG of packages to be applied to nodes.
 	Packages Packages `json:"packages,omitempty"`
 
@@ -191,6 +196,63 @@ func (i *InterruptionBudget) Validate() error {
 	if i.Count != nil && i.Percent != nil {
 		return errors.New("error InterruptionBudget is not valid, both percent and count can not be set at the same time")
 	}
+	return nil
+}
+
+type DrainConfig struct {
+	// DisableEviction bypasses the eviction API and deletes pods directly.
+	// This bypasses PodDisruptionBudgets.
+	// +optional
+	//+kubebuilder:default=false
+	DisableEviction bool `json:"disableEviction,omitempty"`
+
+	// DeleteEmptyDirData allows draining pods that use emptyDir volumes.
+	// Defaults to true to preserve the operator's existing behavior.
+	// +optional
+	//+kubebuilder:default=true
+	//+nullable
+	DeleteEmptyDirData *bool `json:"deleteEmptyDirData,omitempty"`
+
+	// Force allows draining pods not managed by a controller.
+	// Defaults to true to preserve the operator's existing behavior.
+	// +optional
+	//+kubebuilder:default=true
+	//+nullable
+	Force *bool `json:"force,omitempty"`
+
+	// IgnoreDaemonSets skips DaemonSet-managed pods during drain.
+	// Defaults to true to preserve the operator's existing behavior.
+	// +optional
+	//+kubebuilder:default=true
+	//+nullable
+	IgnoreDaemonSets *bool `json:"ignoreDaemonSets,omitempty"`
+
+	// Timeout bounds how long the operator waits for a node to drain.
+	// Zero or unset means no timeout.
+	// +optional
+	//+nullable
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+
+	// GracePeriod overrides the grace period used on pod eviction/delete.
+	// Unset uses each pod's own terminationGracePeriodSeconds.
+	// +optional
+	//+nullable
+	GracePeriod *metav1.Duration `json:"gracePeriod,omitempty"`
+}
+
+func (d *DrainConfig) Validate() error {
+	if d == nil {
+		return nil
+	}
+
+	if d.Timeout != nil && d.Timeout.Duration < 0 {
+		return errors.New("drainConfig.timeout must be greater than or equal to 0")
+	}
+
+	if d.GracePeriod != nil && d.GracePeriod.Duration < 0 {
+		return errors.New("drainConfig.gracePeriod must be greater than or equal to 0")
+	}
+
 	return nil
 }
 

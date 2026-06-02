@@ -35,7 +35,15 @@ import (
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
-const nodeStateAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/nodeState_"
+const (
+	nodeStateAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/nodeState_"
+	statusAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/status_"
+	cordonAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/cordon_"
+	drainStartAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/drainStart_"
+	versionAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/version_"
+	autoTaintAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/autoTaint_"
+	statusLabelPrefix          = v1alpha1.METADATA_PREFIX + "/status_"
+)
 
 // nodeStatusOptions holds the options for the node status command
 type nodeStatusOptions struct {
