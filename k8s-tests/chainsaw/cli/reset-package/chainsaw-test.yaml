@@ -23,7 +23,7 @@ metadata:
     pool: cli
 spec:
   timeouts:
-    assert: 240s
+    assert: 360s ## two shellscript packages serialize on the kind worker; ~150s + reconcile overhead
     exec: 90s
   steps:
   # Step 0: Reset state from previous runs
