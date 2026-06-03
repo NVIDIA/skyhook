@@ -20,6 +20,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
@@ -111,7 +112,7 @@ func (h *globalDelayHandler) relevant(ctx context.Context, object client.Object)
 	case *corev1.Node:
 		list, err := h.dal.GetSkyhooks(ctx)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("listing skyhooks for node relevance check: %w", err)
 		}
 		if list == nil {
 			return false, nil
