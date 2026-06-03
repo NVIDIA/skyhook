@@ -29,6 +29,3 @@ spec:
       env:
         - name: SLEEP_LEN
           value: "1"
-      uninstall:
-        enabled: false
-        apply: false

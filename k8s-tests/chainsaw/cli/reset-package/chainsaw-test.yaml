@@ -26,6 +26,22 @@ spec:
   timeouts:
     assert: 180s
     exec: 90s
+  catch:
+    - get:
+        apiVersion: v1
+        kind: Node
+        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        format: yaml
+    - get:
+        apiVersion: skyhook.nvidia.com/v1alpha1
+        kind: Skyhook
+        name: cli-reset-package-test
+        format: yaml
+    - get:
+        apiVersion: v1
+        kind: Pod
+        namespace: skyhook
+        format: yaml
   steps:
   # Step 0: Reset state from previous runs
   - name: reset-state
