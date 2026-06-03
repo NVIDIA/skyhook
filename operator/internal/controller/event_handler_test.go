@@ -35,7 +35,7 @@ import (
 
 var _ = Describe("Global delay handler", func() {
 
-	const delay = 500 * time.Millisecond
+	const delay = 50 * time.Millisecond
 
 	matchingLabels := map[string]string{"foo": "bar"}
 

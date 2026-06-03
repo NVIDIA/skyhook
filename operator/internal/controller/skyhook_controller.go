@@ -95,10 +95,14 @@ const (
 	globalReconcileName = "nodewright"
 
 	// globalReconcileDelay is how long Skyhook and Node events wait before the
-	// global key becomes ready. It is the window the priority queue uses to
-	// coalesce a burst (e.g. the write storm one pass produces across Nodes)
-	// into a single follow-up reconcile.
-	globalReconcileDelay = 500 * time.Millisecond
+	// global key becomes ready. The bulk of coalescing is already free: a burst
+	// arriving while a pass is in flight dedups onto one follow-up via the
+	// priority queue's locked-key handling. This short window only lets a pass's
+	// own writes propagate to the cache and near-simultaneous events land before
+	// the follow-up runs. It is kept small on purpose: the interrupt flow
+	// advances one stage per Node event, so a larger delay (we started at 500ms)
+	// adds up across stages and blows the interrupt e2e timing budget.
+	globalReconcileDelay = 50 * time.Millisecond
 )
 
 type SkyhookOperatorOptions struct {
