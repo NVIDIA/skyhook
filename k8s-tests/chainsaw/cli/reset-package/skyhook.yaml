@@ -29,9 +29,15 @@ spec:
       env:
         - name: SLEEP_LEN
           value: "1"
+      uninstall:
+        enabled: false
+        apply: false
     pkg-two:
       version: "2.0.0"
       image: ghcr.io/nvidia/skyhook/agentless
       env:
         - name: SLEEP_LEN
           value: "1"
+      uninstall:
+        enabled: false
+        apply: false

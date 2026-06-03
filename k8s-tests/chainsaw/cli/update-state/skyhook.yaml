@@ -25,9 +25,10 @@ spec:
   packages:
     test-package:
       version: "1.0.0"
-      image: ghcr.io/nvidia/skyhook-packages/shellscript
-      configMap:
-        apply.sh: |
-          #!/bin/bash
-          echo "update-state test apply"
-          sleep 2
+      image: ghcr.io/nvidia/skyhook/agentless
+      env:
+        - name: SLEEP_LEN
+          value: "1"
+      uninstall:
+        enabled: false
+        apply: false
