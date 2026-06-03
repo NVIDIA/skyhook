@@ -25,17 +25,13 @@ spec:
   packages:
     pkg-one:
       version: "1.0.0"
-      image: ghcr.io/nvidia/skyhook-packages/shellscript
-      configMap:
-        apply.sh: |
-          #!/bin/bash
-          echo "reset-package test pkg-one apply"
-          sleep 2
+      image: ghcr.io/nvidia/skyhook/agentless
+      env:
+        - name: SLEEP_LEN
+          value: "1"
     pkg-two:
       version: "2.0.0"
-      image: ghcr.io/nvidia/skyhook-packages/shellscript
-      configMap:
-        apply.sh: |
-          #!/bin/bash
-          echo "reset-package test pkg-two apply"
-          sleep 2
+      image: ghcr.io/nvidia/skyhook/agentless
+      env:
+        - name: SLEEP_LEN
+          value: "1"

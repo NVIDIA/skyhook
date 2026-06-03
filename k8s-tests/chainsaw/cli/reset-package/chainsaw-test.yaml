@@ -22,8 +22,9 @@ metadata:
   labels:
     pool: cli
 spec:
+  concurrent: false ## two-package lifecycle is sensitive to interleaved cluster mutation from other CLI tests
   timeouts:
-    assert: 360s ## two shellscript packages serialize on the kind worker; ~150s + reconcile overhead
+    assert: 180s
     exec: 90s
   steps:
   # Step 0: Reset state from previous runs
