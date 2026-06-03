@@ -328,6 +328,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	errs := make([]error, 0)
 	var result *ctrl.Result
+	configSyncPending := false
 
 	for _, skyhook := range clusterState.skyhooks {
 		if err := r.refreshSkyhookConditions(ctx, clusterState, skyhook); err != nil {
@@ -349,8 +350,10 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			continue
 		}
 
-		if yes, result, err := r.validateAndUpsertSkyhookData(ctx, skyhook, clusterState); yes {
+		if yes, pendingSync, result, err := r.validateAndUpsertSkyhookData(ctx, skyhook, clusterState); yes {
 			return result, err
+		} else if pendingSync {
+			configSyncPending = true
 		}
 
 		changed := IntrospectSkyhook(skyhook, clusterState.skyhooks, logger)
@@ -386,12 +389,23 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if result != nil {
-		return *result, nil
-	}
+	return reconcileResult(result, configSyncPending, r.opts.MaxInterval), nil
+}
 
-	// default happy retry after max
-	return ctrl.Result{RequeueAfter: r.opts.MaxInterval}, nil
+// reconcileResult picks the requeue for a completed reconcile pass. Active work
+// supplies its own (shorter) result, which is returned untouched. When the pass is
+// otherwise idle but an owned ConfigMap write was deferred because the completedNodes
+// gate was closed (configSyncPending), retry after configSyncRetryInterval instead of
+// the much longer maxInterval so the CM converges promptly rather than appearing stuck
+// while status reads complete (issue #245). Otherwise fall back to maxInterval.
+func reconcileResult(result *ctrl.Result, configSyncPending bool, maxInterval time.Duration) ctrl.Result {
+	if result != nil {
+		return *result
+	}
+	if configSyncPending {
+		return ctrl.Result{RequeueAfter: configSyncRetryInterval}
+	}
+	return ctrl.Result{RequeueAfter: maxInterval}
 }
 
 // refreshSkyhookConditions updates and persists the per-Skyhook conditions
@@ -1180,9 +1194,21 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotationsPackages(ctx context.Cont
 	return nil
 }
 
+// configSyncRetryInterval is the requeue delay used when HandleConfigUpdates
+// observes a ConfigMap diff it cannot yet apply because the completedNodes gate
+// is closed. Without it the only fallback is the 10m MaxInterval requeue, which
+// can leave an owned ConfigMap diverged from spec for minutes while status reads
+// complete (issue #245). Short enough to heal quickly, long enough not to spin
+// the grab-the-world reconcile while a node works through an interrupt cycle.
+const configSyncRetryInterval = 30 * time.Second
+
 // HandleConfigUpdates checks whether the configMap on a package was updated and if it was the configmap will
-// be updated and the package will be put into config mode if the package is complete or erroring
-func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes, _package v1alpha1.Package, oldConfigMap, newConfigMap *corev1.ConfigMap) (bool, error) {
+// be updated and the package will be put into config mode if the package is complete or erroring.
+//
+// The second return value (pendingSync) reports that a ConfigMap diff was observed
+// but could not be applied this reconcile because the completedNodes gate was
+// closed; the caller should requeue so the write is retried once the gate opens.
+func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes, _package v1alpha1.Package, oldConfigMap, newConfigMap *corev1.ConfigMap) (bool, bool, error) {
 	completedNodes, nodeCount := 0, len(skyhook.GetNodes())
 	erroringNode := false
 
@@ -1191,7 +1217,7 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 		for _, node := range skyhook.GetNodes() {
 			exists, err := r.PodExists(ctx, node.GetNode().Name, skyhook.GetSkyhook().Name, &_package)
 			if err != nil {
-				return false, err
+				return false, false, err
 			}
 
 			if !exists && node.IsPackageComplete(_package) {
@@ -1218,14 +1244,14 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 							},
 						)
 						if err != nil {
-							return false, err
+							return false, false, err
 						}
 
 						if pods != nil {
 							for _, pod := range pods.Items {
 								err := r.Delete(ctx, &pod)
 								if err != nil {
-									return false, err
+									return false, false, err
 								}
 							}
 						}
@@ -1256,7 +1282,7 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 			for _, node := range skyhook.GetNodes() {
 				err := node.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, v1alpha1.StageConfig, 0, _package.ContainerSHA)
 				if err != nil {
-					return false, fmt.Errorf("error upserting node status [%s]: %w", node.GetNode().Name, err)
+					return false, false, fmt.Errorf("error upserting node status [%s]: %w", node.GetNode().Name, err)
 				}
 
 				node.SetStatus(v1alpha1.StatusInProgress)
@@ -1264,29 +1290,35 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 
 			_, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
 			if len(errs) > 0 {
-				return false, utilerrors.NewAggregate(errs)
+				return false, false, utilerrors.NewAggregate(errs)
 			}
 
 			// update config map
 			err := r.Update(ctx, newConfigMap)
 			if err != nil {
-				return false, fmt.Errorf("error updating config map [%s]: %w", newConfigMap.Name, err)
+				return false, false, fmt.Errorf("error updating config map [%s]: %w", newConfigMap.Name, err)
 			}
 
-			return true, nil
+			return true, false, nil
 		}
+
+		// Diff observed but the gate is closed (no node has completed the package
+		// and none is erroring). Defer the CM write and ask the caller to requeue
+		// so we retry once the gate opens, rather than relying on the 10m fallback.
+		return false, true, nil
 	}
 
-	return false, nil
+	return false, false, nil
 }
 
-func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, error) {
+func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, bool, error) {
 	updated := false
+	pendingSync := false
 
 	var list corev1.ConfigMapList
 	err := r.List(ctx, &list, client.InNamespace(r.opts.Namespace), client.MatchingLabels{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.GetSkyhook().Name})
 	if err != nil {
-		return false, fmt.Errorf("error listing config maps while upserting: %w", err)
+		return false, false, fmt.Errorf("error listing config maps while upserting: %w", err)
 	}
 
 	existingCMs := make(map[string]corev1.ConfigMap)
@@ -1305,7 +1337,7 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook Skyhoo
 			// delete
 			err := r.Delete(ctx, &v)
 			if err != nil {
-				return false, fmt.Errorf("error deleting existing config map [%s] while upserting: %w", v.Name, err)
+				return false, false, fmt.Errorf("error deleting existing config map [%s] while upserting: %w", v.Name, err)
 			}
 		}
 	}
@@ -1321,7 +1353,7 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook Skyhoo
 	for _, node := range skyhook.GetNodes() {
 		ns, err := node.State()
 		if err != nil {
-			return false, fmt.Errorf("node %s: reading state while upserting configmaps: %w",
+			return false, false, fmt.Errorf("node %s: reading state while upserting configmaps: %w",
 				node.GetNode().Name, err)
 		}
 		for _, _package := range skyhook.GetSkyhook().Spec.Packages {
@@ -1354,28 +1386,31 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook Skyhoo
 			}
 			// set owner of CM to the SCR, which will clean up the CM in delete of the SCR
 			if err := ctrl.SetControllerReference(skyhook.GetSkyhook().Skyhook, newCM, r.scheme); err != nil {
-				return false, fmt.Errorf("error setting ownership of cm: %w", err)
+				return false, false, fmt.Errorf("error setting ownership of cm: %w", err)
 			}
 
 			if existingCM, ok := existingCMs[strings.ToLower(fmt.Sprintf("%s-%s-%s", skyhook.GetSkyhook().Name, _package.Name, _package.Version))]; ok {
-				updatedConfigMap, err := r.HandleConfigUpdates(ctx, clusterState, skyhook, _package, &existingCM, newCM)
+				updatedConfigMap, pendingConfigSync, err := r.HandleConfigUpdates(ctx, clusterState, skyhook, _package, &existingCM, newCM)
 				if err != nil {
-					return false, fmt.Errorf("error updating config map [%s]: %s", newCM.Name, err)
+					return false, false, fmt.Errorf("error updating config map [%s]: %w", newCM.Name, err)
 				}
 				if updatedConfigMap {
 					updated = true
+				}
+				if pendingConfigSync {
+					pendingSync = true
 				}
 			} else {
 				// create
 				err := r.Create(ctx, newCM)
 				if err != nil {
-					return false, fmt.Errorf("error creating config map [%s]: %w", newCM.Name, err)
+					return false, false, fmt.Errorf("error creating config map [%s]: %w", newCM.Name, err)
 				}
 			}
 		}
 	}
 
-	return updated, nil
+	return updated, pendingSync, nil
 }
 
 func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.SkyhookNode) (bool, error) {
@@ -2896,19 +2931,30 @@ func partitionNodesIntoCompartments(clusterState *clusterState) error {
 	return nil
 }
 
-// validateAndUpsertSkyhookData performs validation and configmap operations for a skyhook
-func (r *SkyhookReconciler) validateAndUpsertSkyhookData(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, ctrl.Result, error) {
+// validateAndUpsertSkyhookData performs validation and configmap operations for a skyhook.
+//
+// The second return value (pendingSync) reports that an owned ConfigMap diverged from
+// spec but the write was deferred because the completedNodes gate was closed. It is
+// deliberately decoupled from the first (shouldReturn): a deferred sync must NOT
+// short-circuit the reconcile, because progression toward the gate opening happens in
+// processSkyhooksPerNode. The caller uses pendingSync only to shorten the otherwise
+// MaxInterval idle requeue so the deferred write is retried promptly (issue #245).
+func (r *SkyhookReconciler) validateAndUpsertSkyhookData(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, bool, ctrl.Result, error) {
 	if yes, result, err := shouldReturn(r.ValidateRunningPackages(ctx, skyhook)); yes {
-		return yes, result, err
+		return yes, false, result, err
 	}
 
 	if yes, result, err := shouldReturn(r.ValidateNodeConfigmaps(ctx, skyhook.GetSkyhook().Name, skyhook.GetNodes())); yes {
-		return yes, result, err
+		return yes, false, result, err
 	}
 
-	if yes, result, err := shouldReturn(r.UpsertConfigmaps(ctx, skyhook, clusterState)); yes {
-		return yes, result, err
+	updated, pendingSync, err := r.UpsertConfigmaps(ctx, skyhook, clusterState)
+	if err != nil {
+		return true, false, ctrl.Result{}, err
+	}
+	if updated {
+		return true, false, ctrl.Result{RequeueAfter: time.Second * 2}, nil
 	}
 
-	return false, ctrl.Result{}, nil
+	return false, pendingSync, ctrl.Result{}, nil
 }

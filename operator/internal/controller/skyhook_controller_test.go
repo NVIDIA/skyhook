@@ -1356,6 +1356,109 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(meta.AgentVersion).To(Equal(opts.AgentVersion()))
 		Expect(meta.Packages).To(HaveKey("pkg1"))
 	})
+
+	Context("HandleConfigUpdates config sync gate", func() {
+
+		buildSingleNodeState := func() (*clusterState, SkyhookNodes, v1alpha1.Package) {
+			pkg := v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"},
+				Image:      "ghcr.io/org/pkg1",
+				ConfigMap:  map[string]string{"a.properties": "old"},
+			}
+			skyhooks := &v1alpha1.SkyhookList{
+				Items: []v1alpha1.Skyhook{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "config-sync"},
+						Spec: v1alpha1.SkyhookSpec{
+							Packages: v1alpha1.Packages{"pkg1": pkg},
+						},
+					},
+				},
+			}
+			nodes := &corev1.NodeList{Items: []corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}}}
+			deploymentPolicies := &v1alpha1.DeploymentPolicyList{Items: []v1alpha1.DeploymentPolicy{}}
+			clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(clusterState.skyhooks).To(HaveLen(1))
+			return clusterState, clusterState.skyhooks[0], pkg
+		}
+
+		// When the ConfigMap diverges from spec but no node has completed the
+		// package (the completedNodes == nodeCount gate is closed), the operator
+		// must not silently drop the pending sync. It signals a near-term requeue
+		// so the CM write is retried once the gate opens, instead of waiting out
+		// the 10m MaxInterval fallback (see issue #245).
+		It("signals a pending sync when the CM diverges but the gate is closed", func() {
+			clusterState, skyhook, pkg := buildSingleNodeState()
+
+			// node-a has no node state for pkg1, so IsPackageComplete is false and
+			// the completedNodes gate cannot open.
+			oldCM := &corev1.ConfigMap{Data: map[string]string{"a.properties": "old"}}
+			newCM := &corev1.ConfigMap{Data: map[string]string{"a.properties": "new"}}
+
+			updated, pendingSync, err := operator.HandleConfigUpdates(ctx, clusterState, skyhook, pkg, oldCM, newCM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated).To(BeFalse(), "CM write stays gated until a node completes")
+			Expect(pendingSync).To(BeTrue(), "a deferred CM diff must request a requeue")
+		})
+
+		// No divergence means no pending work, so the operator must not request a
+		// requeue and spin the reconcile loop.
+		It("does not signal a pending sync when the CM already matches spec", func() {
+			clusterState, skyhook, pkg := buildSingleNodeState()
+
+			cm := &corev1.ConfigMap{Data: map[string]string{"a.properties": "same"}}
+
+			updated, pendingSync, err := operator.HandleConfigUpdates(ctx, clusterState, skyhook, pkg, cm, cm.DeepCopy())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated).To(BeFalse())
+			Expect(pendingSync).To(BeFalse())
+		})
+
+		// A deferred sync must not short-circuit the reconcile: package progression
+		// toward the gate opening happens in processSkyhooksPerNode, which runs only
+		// if validateAndUpsertSkyhookData does NOT signal an early return. Returning
+		// early here would deadlock — the gate would never open, so the diff would
+		// stay pending forever (the regression this guards against).
+		It("does not short-circuit the reconcile when a config sync is only pending", func() {
+			clusterState, skyhook, pkg := buildSingleNodeState()
+
+			// An owned CM exists in the cluster but diverges from spec, and node-a has
+			// not completed pkg1, so UpsertConfigmaps must defer the write.
+			existingCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%s-%s-%s", skyhook.GetSkyhook().Name, pkg.Name, pkg.Version),
+					Namespace: opts.Namespace,
+					Labels:    map[string]string{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.GetSkyhook().Name},
+				},
+				Data: map[string]string{"a.properties": "cluster-stale"},
+			}
+			Expect(k8sClient.Create(ctx, existingCM)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, existingCM)).To(Succeed())
+			})
+
+			shouldReturn, pendingSync, _, err := operator.validateAndUpsertSkyhookData(ctx, skyhook, clusterState)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(shouldReturn).To(BeFalse(), "a deferred sync must not skip processSkyhooksPerNode")
+			Expect(pendingSync).To(BeTrue())
+		})
+
+		It("clamps the idle requeue to the config sync interval only when otherwise idle", func() {
+			maxInterval := 10 * time.Minute
+
+			// Active work supplies its own (shorter) result: leave it untouched even
+			// when a sync is pending.
+			active := &reconcile.Result{RequeueAfter: 2 * time.Second}
+			Expect(reconcileResult(active, true, maxInterval)).To(Equal(*active))
+
+			// Idle with a pending sync: retry soon instead of waiting MaxInterval.
+			Expect(reconcileResult(nil, true, maxInterval)).To(Equal(reconcile.Result{RequeueAfter: configSyncRetryInterval}))
+
+			// Idle with nothing pending: fall back to MaxInterval.
+			Expect(reconcileResult(nil, false, maxInterval)).To(Equal(reconcile.Result{RequeueAfter: maxInterval}))
+		})
+	})
 })
 
 var _ = Describe("Resource Comparison", func() {
