@@ -23,19 +23,19 @@ spec:
     matchLabels:
       skyhook.nvidia.com/test-node: skyhooke2e
   packages:
-    pkg1:
+    pkg-one:
       version: "1.0.0"
       image: ghcr.io/nvidia/skyhook-packages/shellscript
       configMap:
         apply.sh: |
           #!/bin/bash
-          echo "reset-package test pkg1 apply"
+          echo "reset-package test pkg-one apply"
           sleep 2
-    pkg2:
+    pkg-two:
       version: "2.0.0"
       image: ghcr.io/nvidia/skyhook-packages/shellscript
       configMap:
         apply.sh: |
           #!/bin/bash
-          echo "reset-package test pkg2 apply"
+          echo "reset-package test pkg-two apply"
           sleep 2

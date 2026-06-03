@@ -43,7 +43,7 @@ spec:
     - assert:
         file: assert-skyhook-complete.yaml
 
-  # Step 2: Disable the Skyhook so the operator won't immediately re-apply pkg1
+  # Step 2: Disable the Skyhook so the operator won't immediately re-apply pkg-one
   # after we remove its state.
   - name: disable-skyhook
     try:
@@ -54,7 +54,7 @@ spec:
     - assert:
         file: assert-skyhook-disabled.yaml
 
-  # Step 3: Selectively reset only pkg1. --skip-batch-reset matches the
+  # Step 3: Selectively reset only pkg-one. --skip-batch-reset matches the
   # implementation contract for --package (batch state is not reset for a
   # one-package recovery).
   - name: test-reset-package
@@ -62,12 +62,12 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-reset-package-test --package pkg1 --confirm --skip-batch-reset
+          ../skyhook-cli reset cli-reset-package-test --package pkg-one --confirm --skip-batch-reset
 
-  # Step 4: Assert the per-node annotation no longer contains pkg1|1.0.0 but
-  # still contains pkg2|2.0.0. The nodeState annotation is JSON-as-string, so
+  # Step 4: Assert the per-node annotation no longer contains pkg-one|1.0.0 but
+  # still contains pkg-two|2.0.0. The nodeState annotation is JSON-as-string, so
   # we use jq rather than a native chainsaw assert.
-  - name: assert-only-pkg1-removed
+  - name: assert-only-pkg-one-removed
     try:
     - script:
         timeout: 30s
@@ -82,24 +82,24 @@ spec:
           for node in $nodes; do
             raw=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/nodeState_cli-reset-package-test}')
             if [ -z "$raw" ]; then
-              echo "node $node: nodeState annotation missing (expected pkg2 to remain)"
+              echo "node $node: nodeState annotation missing (expected pkg-two to remain)"
               fail=1
               continue
             fi
-            has_pkg1=$(printf '%s' "$raw" | jq 'has("pkg1|1.0.0")')
-            has_pkg2=$(printf '%s' "$raw" | jq 'has("pkg2|2.0.0")')
-            if [ "$has_pkg1" != "false" ]; then
-              echo "node $node: expected pkg1|1.0.0 to be removed, but it is still present"
+            has_one=$(printf '%s' "$raw" | jq 'has("pkg-one|1.0.0")')
+            has_two=$(printf '%s' "$raw" | jq 'has("pkg-two|2.0.0")')
+            if [ "$has_one" != "false" ]; then
+              echo "node $node: expected pkg-one|1.0.0 to be removed, but it is still present"
               echo "annotation: $raw"
               fail=1
               continue
             fi
-            if [ "$has_pkg2" != "true" ]; then
-              echo "node $node: expected pkg2|2.0.0 to remain, but it is missing"
+            if [ "$has_two" != "true" ]; then
+              echo "node $node: expected pkg-two|2.0.0 to remain, but it is missing"
               echo "annotation: $raw"
               fail=1
               continue
             fi
-            echo "node $node: pkg1 removed, pkg2 retained OK"
+            echo "node $node: pkg-one removed, pkg-two retained OK"
           done
           exit $fail
