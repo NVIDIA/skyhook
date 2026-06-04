@@ -24,13 +24,13 @@ spec:
       skyhook.nvidia.com/test-node: skyhooke2e
   packages:
     pkg-one:
-      version: "1.0.0"
+      version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
       env:
         - name: SLEEP_LEN
           value: "1"
     pkg-two:
-      version: "2.0.0"
+      version: "2.1.4"
       image: ghcr.io/nvidia/skyhook/agentless
       env:
         - name: SLEEP_LEN

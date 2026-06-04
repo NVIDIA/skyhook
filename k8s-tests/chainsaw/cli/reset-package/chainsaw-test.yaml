@@ -81,8 +81,8 @@ spec:
         content: |
           ../skyhook-cli reset cli-reset-package-test --package pkg-one --confirm --skip-batch-reset
 
-  # Step 4: Assert the per-node annotation no longer contains pkg-one|1.0.0 but
-  # still contains pkg-two|2.0.0. The nodeState annotation is JSON-as-string, so
+  # Step 4: Assert the per-node annotation no longer contains pkg-one|1.2.3 but
+  # still contains pkg-two|2.1.4. The nodeState annotation is JSON-as-string, so
   # we use jq rather than a native chainsaw assert.
   - name: assert-only-pkg-one-removed
     try:
@@ -103,16 +103,16 @@ spec:
               fail=1
               continue
             fi
-            has_one=$(printf '%s' "$raw" | jq 'has("pkg-one|1.0.0")')
-            has_two=$(printf '%s' "$raw" | jq 'has("pkg-two|2.0.0")')
+            has_one=$(printf '%s' "$raw" | jq 'has("pkg-one|1.2.3")')
+            has_two=$(printf '%s' "$raw" | jq 'has("pkg-two|2.1.4")')
             if [ "$has_one" != "false" ]; then
-              echo "node $node: expected pkg-one|1.0.0 to be removed, but it is still present"
+              echo "node $node: expected pkg-one|1.2.3 to be removed, but it is still present"
               echo "annotation: $raw"
               fail=1
               continue
             fi
             if [ "$has_two" != "true" ]; then
-              echo "node $node: expected pkg-two|2.0.0 to remain, but it is missing"
+              echo "node $node: expected pkg-two|2.1.4 to remain, but it is missing"
               echo "annotation: $raw"
               fail=1
               continue

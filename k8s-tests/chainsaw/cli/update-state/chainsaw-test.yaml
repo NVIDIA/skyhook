@@ -77,11 +77,11 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli update-state cli-update-state-test test-package 1.0.0 apply erroring --confirm
+          ../skyhook-cli update-state cli-update-state-test test-package 1.2.3 apply erroring --confirm
 
   # Step 4: Assert the per-node annotation reflects the manual edit. The
   # nodeState annotation is JSON-as-string, so we use jq rather than a native
-  # chainsaw assert to inspect the entry for `test-package|1.0.0`.
+  # chainsaw assert to inspect the entry for `test-package|1.2.3`.
   - name: assert-node-state
     try:
     - script:
@@ -101,9 +101,9 @@ spec:
               fail=1
               continue
             fi
-            entry=$(printf '%s' "$raw" | jq -r '.["test-package|1.0.0"] // empty')
+            entry=$(printf '%s' "$raw" | jq -r '.["test-package|1.2.3"] // empty')
             if [ -z "$entry" ]; then
-              echo "node $node: no entry for test-package|1.0.0"
+              echo "node $node: no entry for test-package|1.2.3"
               echo "annotation: $raw"
               fail=1
               continue

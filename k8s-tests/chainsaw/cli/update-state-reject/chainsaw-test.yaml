@@ -67,7 +67,7 @@ spec:
         timeout: 30s
         content: |
           set -e
-          out=$(../skyhook-cli update-state cli-update-state-reject-test nonexistent-pkg 1.0.0 apply complete --confirm 2>&1) && {
+          out=$(../skyhook-cli update-state cli-update-state-reject-test nonexistent-pkg 1.2.3 apply complete --confirm 2>&1) && {
             echo "expected non-zero exit, got success: $out"
             exit 1
           }
@@ -84,7 +84,7 @@ spec:
         timeout: 30s
         content: |
           set -e
-          out=$(../skyhook-cli update-state cli-update-state-reject-test test-package 1.0.0 bogus-stage complete --confirm 2>&1) && {
+          out=$(../skyhook-cli update-state cli-update-state-reject-test test-package 1.2.3 bogus-stage complete --confirm 2>&1) && {
             echo "expected non-zero exit, got success: $out"
             exit 1
           }
@@ -101,7 +101,7 @@ spec:
         timeout: 30s
         content: |
           set -e
-          out=$(../skyhook-cli update-state cli-update-state-reject-test test-package 1.0.0 apply weird-state --confirm 2>&1) && {
+          out=$(../skyhook-cli update-state cli-update-state-reject-test test-package 1.2.3 apply weird-state --confirm 2>&1) && {
             echo "expected non-zero exit, got success: $out"
             exit 1
           }
