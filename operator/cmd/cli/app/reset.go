@@ -116,13 +116,17 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	}
 	sort.Strings(nodesToReset)
 
+	// why: branch on --package BEFORE the empty-nodes early-return so the
+	// per-package path can version-gate on the operator. Otherwise a `reset
+	// --package` against an unsupported old operator that happens to have
+	// zero stateful nodes would silently succeed instead of erroring.
+	if opts.pkg != "" {
+		return runPackageReset(ctx, cmd, kubeClient, skyhookName, nodeStates, opts, cliCtx)
+	}
+
 	if len(nodesToReset) == 0 {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for Skyhook %q\n", skyhookName)
 		return nil
-	}
-
-	if opts.pkg != "" {
-		return runPackageReset(ctx, cmd, kubeClient, skyhookName, nodeStates, opts, cliCtx)
 	}
 
 	// Print summary

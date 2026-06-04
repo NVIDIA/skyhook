@@ -203,12 +203,20 @@ kubectl skyhook update-state <skyhook-name> <package> <version> <stage> <state>
 > **⚠️ Pause the Skyhook before running `update-state`.**
 >
 > `update-state` performs a read-modify-write on the node-state annotation and
-> uses a merge patch with no resource-version check. If the operator
-> reconciles the node between the CLI's read and write, the operator can
-> immediately overwrite the manual edit — at best wasting the operation, at
-> worst racing the operator into an inconsistent state. Always pause the
-> Skyhook (`kubectl skyhook pause <name> --confirm`) before running this
-> command, and resume only when finished.
+> uses a merge patch with no resource-version check. The patch rewrites the
+> **entire** annotation value, not just the targeted package's entry — so a
+> concurrent operator (or CLI) edit to any *other* package's entry in the
+> same annotation will also be clobbered. If the operator reconciles the
+> node between the CLI's read and write, the operator can immediately
+> overwrite the manual edit — at best wasting the operation, at worst racing
+> the operator into an inconsistent state. Always pause the Skyhook
+> (`kubectl skyhook pause <name> --confirm`) before running this command,
+> and resume only when finished.
+>
+> `update-state` also requires the package + version to still be present in
+> `skyhook.Spec.Packages`. It cannot edit an *orphaned* node-state entry
+> left behind after the package was removed from the spec — use `reset
+> --package <name>[:<version>]` for that.
 
 ```bash
 # Mark pkg1@1.0 as complete on every node that already tracks this Skyhook
