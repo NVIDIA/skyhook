@@ -12,11 +12,6 @@ Every test under `k8s-tests/chainsaw/skyhook/*/chainsaw-test.yaml` has a top-lev
 - `uninstall` — uninstall, upgrade, downgrade lifecycle.
 - `lifecycle` — pause/disable/delete/finalizer/state.
 
-Tests under `k8s-tests/chainsaw/cli/` are a separate suite driven by the
-`cli-e2e-tests` target (not `e2e-tests`). They are labelled
-`pool: cli` for classification consistency but the `cli-e2e-tests` target
-currently runs them all regardless of pool selector.
-
 ## Running locally
 
 ```bash
