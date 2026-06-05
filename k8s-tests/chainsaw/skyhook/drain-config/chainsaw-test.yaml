@@ -70,6 +70,8 @@ spec:
           kubectl -n skyhook wait --for=condition=Ready "pod/${pod}" --timeout=30s
           kubectl -n skyhook create configmap drain-config-original-pod --from-literal=name="${pod}" --dry-run=client -o yaml | kubectl apply -f -
           kubectl -n skyhook wait --for=jsonpath='{.status.disruptionsAllowed}'=0 pdb/drain-config-pdb --timeout=60s
+    - apply:
+        file: disable-eviction-skyhook.yaml
     - script:
         content: |
           kubectl -n skyhook wait --for=condition=Ready skyhook/drain-config-disable-eviction --timeout=180s

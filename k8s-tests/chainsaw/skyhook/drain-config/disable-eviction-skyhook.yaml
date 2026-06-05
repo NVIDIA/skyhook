@@ -1,0 +1,27 @@
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: drain-config-disable-eviction
+  namespace: skyhook
+spec:
+  drainConfig:
+    disableEviction: true
+    gracePeriod: 0s
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  interruptionBudget:
+    count: 1
+  packages:
+    drain-pdb:
+      version: "1.2.3"
+      image: ghcr.io/nvidia/skyhook/agentless
+      uninstall:
+        enabled: false
+        apply: false
+      interrupt:
+        type: service
+        services: [rsyslog]
+      env:
+      - name: SLEEP_LEN
+        value: "1"

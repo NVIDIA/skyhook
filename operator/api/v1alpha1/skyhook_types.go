@@ -204,7 +204,8 @@ type DrainConfig struct {
 	// This bypasses PodDisruptionBudgets.
 	// +optional
 	//+kubebuilder:default=false
-	DisableEviction bool `json:"disableEviction,omitempty"`
+	//+nullable
+	DisableEviction *bool `json:"disableEviction,omitempty"`
 
 	// DeleteEmptyDirData allows draining pods that use emptyDir volumes.
 	// Defaults to true to preserve the operator's existing behavior.

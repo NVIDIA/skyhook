@@ -581,7 +581,7 @@ var _ = Describe("skyhook controller tests", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "drain-delete"},
 				Spec: v1alpha1.SkyhookSpec{
 					DrainConfig: &v1alpha1.DrainConfig{
-						DisableEviction: true,
+						DisableEviction: ptr(true),
 						GracePeriod:     &metav1.Duration{Duration: 7 * time.Second},
 					},
 					Packages: v1alpha1.Packages{},
@@ -722,7 +722,7 @@ var _ = Describe("skyhook controller tests", func() {
 						},
 					},
 					DrainConfig: &v1alpha1.DrainConfig{
-						DisableEviction: true,
+						DisableEviction: ptr(true),
 					},
 					Packages: v1alpha1.Packages{},
 				},

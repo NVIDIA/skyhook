@@ -150,6 +150,7 @@ spec:
                     description: |-
                       DisableEviction bypasses the eviction API and deletes pods directly.
                       This bypasses PodDisruptionBudgets.
+                    nullable: true
                     type: boolean
                   force:
                     default: true

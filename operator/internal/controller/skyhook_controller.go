@@ -1252,7 +1252,8 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 		for _, node := range skyhook.GetNodes() {
 			exists, err := r.PodExists(ctx, node.GetNode().Name, skyhook.GetSkyhook().Name, &_package)
 			if err != nil {
-				return false, false, err
+				return false, false, fmt.Errorf("checking package pod existence on node %s for package %s: %w",
+					node.GetNode().Name, _package.GetUniqueName(), err)
 			}
 
 			if !exists && node.IsPackageComplete(_package) {
@@ -1279,14 +1280,16 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 							},
 						)
 						if err != nil {
-							return false, false, err
+							return false, false, fmt.Errorf("listing package pods on node %s for package %s: %w",
+								node.GetNode().Name, _package.GetUniqueName(), err)
 						}
 
 						if pods != nil {
 							for _, pod := range pods.Items {
 								err := r.Delete(ctx, &pod)
 								if err != nil {
-									return false, false, err
+									return false, false, fmt.Errorf("deleting erroring pod %s/%s on node %s: %w",
+										pod.Namespace, pod.Name, node.GetNode().Name, err)
 								}
 							}
 						}
@@ -1477,7 +1480,9 @@ func resolvedDrainOptions(config *v1alpha1.DrainConfig) drain.Options {
 		return options
 	}
 
-	options.DisableEviction = config.DisableEviction
+	if config.DisableEviction != nil {
+		options.DisableEviction = *config.DisableEviction
+	}
 	if config.DeleteEmptyDirData != nil {
 		options.DeleteEmptyDirData = *config.DeleteEmptyDirData
 	}
