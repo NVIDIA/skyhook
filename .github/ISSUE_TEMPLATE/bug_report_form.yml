@@ -17,7 +17,8 @@
 name: Bug Report
 description: File a bug report for Skyhook
 title: "[BUG]: "
-labels: ["bug"]
+type: Bug
+labels: ["needs-triage"]
 
 body:
   - type: markdown
@@ -52,6 +53,24 @@ body:
       label: Kubernetes Version
       description: Output of `kubectl version --short` or your cluster version.
       placeholder: "example: v1.30.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part(s) of the project are affected? Select all that apply; this helps us route the issue.
+      multiple: true
+      options:
+        - Operator (controller-manager)
+        - Agent (package executor)
+        - Helm chart
+        - CLI (kubectl-skyhook)
+        - CI / tooling
+        - Tests (e2e / chainsaw)
+        - Docs / examples
+        - Other / Unknown
     validations:
       required: true
 
@@ -94,9 +113,9 @@ body:
     id: terms
     attributes:
       label: Code of Conduct
-      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/NVIDIA/skyhook/blob/main/CODE_OF_CONDUCT.md).
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/NVIDIA/nodewright/blob/main/CODE_OF_CONDUCT.md).
       options:
         - label: I agree to follow Skyhook's Code of Conduct
           required: true
-        - label: I have searched the [open bugs](https://github.com/NVIDIA/skyhook/issues?q=is%3Aopen+is%3Aissue+label%3Abug) and have found no duplicates for this bug report
+        - label: I have searched the [open bugs](https://github.com/NVIDIA/nodewright/issues?q=is%3Aopen+is%3Aissue+type%3ABug) and have found no duplicates for this bug report
           required: true

@@ -1,0 +1,242 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Serialize per issue so a rapid open->label sequence doesn't race on the
+# needs-triage label. Don't cancel: every event must finish its labeling.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+
+  triage:
+    name: Auto-Triage Issues
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 5
+    steps:
+      - name: Add needs-triage on new issue
+        if: github.event.action == 'opened'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs-triage'],
+            });
+
+      - name: Infer component label on new issue
+        if: github.event.action == 'opened'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const title = context.payload.issue.title || '';
+            const body = context.payload.issue.body || '';
+            const existingLabels = new Set((context.payload.issue.labels || []).map(label => label.name));
+
+            // Match against the normalized value chosen in the issue-template
+            // Component dropdown (see .github/ISSUE_TEMPLATE/*).
+            const componentPatterns = [
+              { pattern: /\boperator\b|controller-manager/, label: 'component/operator' },
+              { pattern: /\bagent\b/, label: 'component/agent' },
+              { pattern: /\bhelm\b|\bchart\b/, label: 'component/chart' },
+              { pattern: /\bcli\b|kubectl/, label: 'component/cli' },
+              { pattern: /\bci\b|tooling/, label: 'component/ci' },
+              { pattern: /\btests?\b|chainsaw|e2e/, label: 'component/tests' },
+              { pattern: /\bdocs?\b|examples/, label: 'doc' },
+            ];
+
+            // Conventional-commit scope tokens, e.g. "fix(chart): ...".
+            const tokenMap = new Map([
+              ['operator', 'component/operator'],
+              ['controller', 'component/operator'],
+              ['reconcile', 'component/operator'],
+              ['agent', 'component/agent'],
+              ['chart', 'component/chart'],
+              ['helm', 'component/chart'],
+              ['cli', 'component/cli'],
+              ['kubectl', 'component/cli'],
+              ['ci', 'component/ci'],
+              ['actions', 'component/ci'],
+              ['workflow', 'component/ci'],
+              ['workflows', 'component/ci'],
+              ['test', 'component/tests'],
+              ['tests', 'component/tests'],
+              ['e2e', 'component/tests'],
+              ['chainsaw', 'component/tests'],
+              ['doc', 'doc'],
+              ['docs', 'doc'],
+              ['readme', 'doc'],
+            ]);
+
+            function normalize(value) {
+              return value.trim().toLowerCase();
+            }
+
+            // Sentinel values from the Component dropdown that don't map to a
+            // single component. When chosen, ignore the field and fall back to
+            // title/body inference.
+            const AMBIGUOUS_COMPONENTS = [
+              'multiple components',
+              'other / unknown',
+              'other',
+              'unknown',
+            ];
+
+            // The Component dropdown is multi-select, so its rendered value is a
+            // comma-separated list. Return every matching label, not just the first.
+            function inferFromComponent() {
+              const match = body.match(/^#{2,3}\s+Component\s*$[\r\n]+(?:[\r\n]*)([^\r\n]+)/im);
+              if (!match) {
+                return [];
+              }
+              const labels = [];
+              for (const raw of match[1].split(',')) {
+                const component = normalize(raw);
+                if (!component || AMBIGUOUS_COMPONENTS.includes(component)) {
+                  continue;
+                }
+                for (const { pattern, label } of componentPatterns) {
+                  if (pattern.test(component)) {
+                    labels.push(label);
+                    break;
+                  }
+                }
+              }
+              return labels;
+            }
+
+            function inferFromScope() {
+              const scopeMatch = title.toLowerCase().match(/^[a-z]+\(([^)]+)\):/);
+              if (!scopeMatch) {
+                return null;
+              }
+              for (const token of scopeMatch[1].split(/[^a-z0-9]+/)) {
+                const label = tokenMap.get(token);
+                if (label) {
+                  return label;
+                }
+              }
+              return null;
+            }
+
+            function inferFromText(text) {
+              const normalized = text.toLowerCase();
+              const orderedPatterns = [
+                { pattern: /\b(controller-manager|reconcile|the operator)\b/, label: 'component/operator' },
+                { pattern: /\b(skyhook-agent|package executor|agent)\b/, label: 'component/agent' },
+                { pattern: /\b(helm chart|helm|chart)\b/, label: 'component/chart' },
+                { pattern: /\b(kubectl[- ]skyhook|kubectl skyhook|cli plugin|cli)\b/, label: 'component/cli' },
+                { pattern: /\b(docs?|documentation|readme|examples)\b/, label: 'doc' },
+                { pattern: /\b(chainsaw|e2e|k8s-tests|tests?)\b/, label: 'component/tests' },
+                { pattern: /(?:\.github\/|github actions|\bworkflows?\b|\bci\b|tooling)/, label: 'component/ci' },
+              ];
+
+              for (const { pattern, label } of orderedPatterns) {
+                if (pattern.test(normalized)) {
+                  return label;
+                }
+              }
+              return null;
+            }
+
+            const componentLabels = new Set(
+              [...existingLabels].filter(label => label.startsWith('component/') || label === 'doc'),
+            );
+
+            // An explicit Component selection wins; only fall back to scope/text
+            // inference when the reporter gave us nothing to go on.
+            for (const label of inferFromComponent()) {
+              componentLabels.add(label);
+            }
+            if (componentLabels.size === 0) {
+              const inferred = inferFromScope() || inferFromText(title) || inferFromText(body);
+              if (inferred) {
+                componentLabels.add(inferred);
+              }
+            }
+
+            if (componentLabels.size === 0) {
+              core.info('No component label inferred for this issue');
+              return;
+            }
+
+            const toAdd = [...componentLabels].filter(label => !existingLabels.has(label));
+            if (toAdd.length > 0) {
+              core.info(`Adding component labels: ${toAdd.join(', ')}`);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: toAdd,
+              });
+            } else {
+              core.info(`Issue already has all inferred component labels`);
+            }
+
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'needs-triage',
+              });
+              core.info('Removed needs-triage after component assignment');
+            } catch (error) {
+              if (error.status === 404) {
+                core.info('needs-triage label not present');
+                return;
+              }
+              throw error;
+            }
+
+      # Only a routing decision (a component/* or doc label) counts as triaged.
+      # Automated labels like lifecycle/stale must NOT clear needs-triage.
+      - name: Remove needs-triage when triaged
+        if: >-
+          github.event.action == 'labeled' &&
+          (startsWith(github.event.label.name, 'component/') ||
+           github.event.label.name == 'doc')
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            if (labels.some(l => l.name === 'needs-triage')) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'needs-triage',
+              });
+            }
