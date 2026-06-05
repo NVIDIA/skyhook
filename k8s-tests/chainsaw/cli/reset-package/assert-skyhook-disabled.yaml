@@ -14,12 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-blank_issues_enabled: true
-
-contact_links:
-  - name: Ask a Question
-    url: https://github.com/NVIDIA/nodewright/discussions
-    about: Please ask any questions here.
-  - name: Report a Security Vulnerability
-    url: https://www.nvidia.com/object/submit-security-vulnerability.html
-    about: Please report security vulnerabilities through NVIDIA's web form, not GitHub issues.
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: cli-reset-package-test
+  annotations:
+    skyhook.nvidia.com/disable: "true"

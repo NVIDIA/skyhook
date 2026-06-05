@@ -19,11 +19,17 @@
 package utils
 
 import (
+	"bytes"
+	"context"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 )
@@ -314,6 +320,108 @@ var _ = Describe("CLI Utility Functions", func() {
 			compartment := skyhook.Status.CompartmentStatuses["default"]
 			Expect(compartment.BatchState).NotTo(BeNil())
 			Expect(compartment.BatchState.CurrentBatch).To(Equal(1))
+		})
+	})
+
+	Describe("SetNodeAnnotation", func() {
+		It("preserves arbitrary JSON characters in the value", func() {
+			kube := fake.NewClientset()
+			_, err := kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1"}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			value := `{"a":"b\"c","x":"yz","unicode":"café"}`
+			Expect(SetNodeAnnotation(context.Background(), kube, "n1", "skyhook.nvidia.com/nodeState_demo", value)).To(Succeed())
+
+			got, err := kube.CoreV1().Nodes().Get(context.Background(), "n1", metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Annotations["skyhook.nvidia.com/nodeState_demo"]).To(Equal(value))
+		})
+	})
+
+	Describe("ConfirmYN", func() {
+		DescribeTable("recognises y/n responses",
+			func(input string, expected bool) {
+				cmd := &cobra.Command{}
+				out := &bytes.Buffer{}
+				cmd.SetOut(out)
+				cmd.SetIn(bytes.NewBufferString(input))
+				ok, err := ConfirmYN(cmd, "Continue?")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ok).To(Equal(expected))
+				Expect(out.String()).To(ContainSubstring("Continue?"))
+			},
+			Entry("yes lowercase", "y\n", true),
+			Entry("yes word", "yes\n", true),
+			Entry("YES uppercase", "YES\n", true),
+			Entry("no lowercase", "n\n", false),
+			Entry("empty defaults to no", "\n", false),
+			Entry("garbage defaults to no", "potato\n", false),
+		)
+	})
+
+	Describe("ListNodesWithSkyhookState", func() {
+		var kube *fake.Clientset
+		BeforeEach(func() {
+			kube = fake.NewClientset()
+		})
+
+		addNode := func(name, skyhook, annotationJSON string) {
+			ann := map[string]string{}
+			if skyhook != "" {
+				ann["skyhook.nvidia.com/nodeState_"+skyhook] = annotationJSON
+			}
+			_, err := kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Annotations: ann}},
+				metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		It("returns a map keyed by node name with parsed NodeState", func() {
+			addNode("n1", "demo", `{"pkg1|1.0":{"name":"pkg1","version":"1.0","stage":"apply","state":"complete"}}`)
+			addNode("n2", "demo", `{}`)
+			addNode("n3", "", "")
+			addNode("n4", "other", `{"x|1":{"name":"x","version":"1"}}`)
+
+			got, err := ListNodesWithSkyhookState(context.Background(), kube, "demo", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(HaveLen(2))
+			Expect(got).To(HaveKey("n1"))
+			Expect(got).To(HaveKey("n2"))
+			Expect(got["n1"]).To(HaveKey("pkg1|1.0"))
+			Expect(got["n2"]).To(BeEmpty())
+		})
+
+		It("skips nodes with malformed annotations and surfaces an error", func() {
+			addNode("n1", "demo", `not json`)
+			addNode("n2", "demo", `{"pkg1|1.0":{"name":"pkg1","version":"1.0"}}`)
+
+			got, err := ListNodesWithSkyhookState(context.Background(), kube, "demo", "")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("n1"))
+			Expect(got).To(HaveKey("n2"))
+			Expect(got).NotTo(HaveKey("n1"))
+		})
+
+		It("honours a label selector", func() {
+			_, err := kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name:        "n1",
+					Labels:      map[string]string{"role": "gpu"},
+					Annotations: map[string]string{"skyhook.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
+				}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name:        "n2",
+					Annotations: map[string]string{"skyhook.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
+				}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			got, err := ListNodesWithSkyhookState(context.Background(), kube, "demo", "role=gpu")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(HaveLen(1))
+			Expect(got).To(HaveKey("n1"))
 		})
 	})
 })

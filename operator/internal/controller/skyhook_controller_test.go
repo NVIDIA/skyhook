@@ -3826,3 +3826,135 @@ func TestHandleVersionChange_DowngradeIsNoOp(t *testing.T) {
 		g.Expect(err).To(BeNil())
 	})
 }
+
+// Reproduction for the "reapply-on-reboot loses the reboot on busy nodes" bug.
+//
+// On a node with high churn (many controllers writing labels/annotations/status), the
+// node-state reset that TrackReboots performs on reboot detection is persisted with a full,
+// optimistic-concurrency r.Update(node). That Update loses the resourceVersion race and is
+// rejected, but TrackReboots advances Status.NodeBootIds BEFORE (and independent of) that
+// write, so the reboot is "consumed" and never retried. The node keeps its stale "complete"
+// node-state annotation, and on the next reconcile derives complete -> no reapply pod.
+//
+// This spec drives the real envtest apiserver so the 409 is genuine (not injected). It
+// asserts on the in-memory clusterState object so the running manager (which reconciles real
+// CRs asynchronously) cannot race the assertion — the manager cannot touch our Go object.
+var _ = Describe("TrackReboots reapply-on-reboot on a busy node", func() {
+
+	It("must not consume the reboot when the node-state reset write loses an optimistic-concurrency race", func() {
+		const (
+			skyhookName = "reboot-conflict-sh"
+			nodeName    = "reboot-conflict-node"
+			oldBootID   = "boot-A"
+			newBootID   = "boot-B"
+		)
+		nodeLabel := map[string]string{"reboot-conflict-test": "yes"}
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		completeState := v1alpha1.NodeState{}
+		completeState.Upsert(pkgRef, "ghcr.io/org/pkg1", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")
+		stateJSON, err := json.Marshal(completeState)
+		Expect(err).ToNot(HaveOccurred())
+		nodeStateKey := fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, skyhookName)
+		cordonKey := fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, skyhookName)
+
+		// Real Node in the apiserver carrying the old "complete" node-state annotation plus a
+		// held cordon annotation. BootID lives on the status subresource (not persisted by
+		// Create); we only need it on the in-memory snapshot below for reboot detection.
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nodeName,
+				Labels: nodeLabel,
+				Annotations: map[string]string{
+					nodeStateKey: string(stateJSON),
+					cordonKey:    "true",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, node)
+		})
+
+		// Persist the post-reboot BootID to the Node status (as the kubelet would). This makes
+		// TrackReboots see a reboot, and lets the reset Patch round-trip preserve the BootID so
+		// the new boot id is recorded correctly.
+		node.Status.NodeInfo.BootID = newBootID
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+
+		// The operator's in-memory snapshot, taken at this resourceVersion; the busy-node churn
+		// below advances the live Node past it.
+		snapshotNode := node.DeepCopy()
+
+		// Skyhook is kept in memory only: creating it would let the running manager reconcile
+		// it asynchronously. We assert on the in-memory clusterState, which the manager cannot
+		// reach, so the test stays deterministic.
+		skyhook := v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
+			Spec: v1alpha1.SkyhookSpec{
+				NodeSelector: metav1.LabelSelector{MatchLabels: nodeLabel},
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+			Status: v1alpha1.SkyhookStatus{
+				NodeBootIds: map[string]string{nodeName: oldBootID},
+			},
+		}
+
+		clusterState, err := BuildState(
+			&v1alpha1.SkyhookList{Items: []v1alpha1.Skyhook{skyhook}},
+			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+		Expect(clusterState.skyhooks[0].GetNodes()).To(HaveLen(1), "node must be paired to the skyhook")
+
+		// NOISE: simulate a busy node — a concurrent controller mutates the live Node, bumping
+		// its resourceVersion. A single out-of-band write is enough: TrackReboots persists the
+		// node with a full Update, which conflicts if the live object moved at all. The 409 is
+		// the real apiserver's response, not an injected error, and is deterministic with no
+		// sleeps or polling.
+		churn := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, churn)).To(Succeed())
+		churn.Labels["busy-controller"] = "wrote-here"
+		Expect(k8sClient.Update(ctx, churn)).To(Succeed())
+
+		r := &SkyhookReconciler{
+			Client:   k8sClient,
+			recorder: operator.recorder,
+			opts:     SkyhookOperatorOptions{ReapplyOnReboot: true},
+		}
+
+		_, err = r.TrackReboots(ctx, clusterState)
+
+		// The node-state reset must NOT fail because the live Node moved under concurrent churn.
+		// A merge Patch is not resourceVersion-gated, so it lands where the old full Update lost
+		// a 409. (The skyhook-status write is expected to fail here only because this test keeps
+		// the Skyhook in memory; that is unrelated to the node write under test.)
+		if err != nil {
+			Expect(err.Error()).ToNot(ContainSubstring("node after reboot"),
+				"the node-state reset write must not fail on a busy node")
+		}
+
+		// PRIMARY: the stale "complete" node-state annotation must be cleared on the apiserver,
+		// so the package will be reapplied. On the buggy full-Update path the write is rejected
+		// and this annotation survives, so this assertion fails.
+		live := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
+		Expect(live.Annotations).ToNot(HaveKey(nodeStateKey),
+			"node still carries stale complete state after a reboot on a busy node; reapply will never happen")
+
+		// The held cordon annotation must also be cleared. The old Reset() built this key without
+		// the Skyhook name, so it never matched what Cordon() writes and a cordon survived reset.
+		Expect(live.Annotations).ToNot(HaveKey(cordonKey),
+			"cordon annotation survived reset; the node stays cordoned and is never reapplied")
+
+		// Documents the post-fix invariant, not the red-on-old discriminator: the buggy path
+		// advances NodeBootIds *before* the failed write, so it also reaches newBootID here. The
+		// stale-annotation assertions above are what fail on old code and pass on the fix.
+		sh := clusterState.skyhooks[0].GetSkyhook()
+		Expect(sh.Status.NodeBootIds[nodeName]).To(Equal(newBootID))
+	})
+})

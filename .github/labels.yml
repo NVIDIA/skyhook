@@ -14,88 +14,62 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#
 # GitHub label definitions for Skyhook (NodeWright).
 # Sync to GitHub with: make labels
 #
 # Label categories:
-#   Issue types  — applied automatically by issue templates
-#   Component    — which part of the project is affected
-#   Planning     — applied by engineering/product during triage (per DGXC OSS Policy)
-#   Priority     — P0/P1/P2 per DGXC OSS Policy, applied by engineering
-#   Lifecycle    — stale automation and freeze exemptions
-#   Standard     — common GitHub labels
+#   Type:      issue Type (Bug/Enhancement/Documentation/Task/Epic/Initiative) is
+#              a native GitHub Issue Type set by the org, not a label
+#   Triage:    needs-triage, cleared once a maintainer triages
+#   Component: which part of the project is affected
+#   Lifecycle: stale automation and freeze exemptions
+#   Standard:  common GitHub labels
 
-# ── Issue Types ───────────────────────────────────────────────────────────────
-# Applied automatically by issue templates
-
-- name: "bug"
-  color: "d73a4a"
-  description: "Something isn't working"
-
-- name: "feature request"
-  color: "a2eeef"
-  description: "New feature or improvement to existing functionality"
+# ── Type ──────────────────────────────────────────────────────────────────────
+# Bug / Enhancement / Documentation / Task / Epic / Initiative are native GitHub
+# Issue Types (org-level), assigned by the issue forms via their `type:` key, not
+# labels. `doc` stays as a label because the PR path labeler applies it to
+# docs-only PRs (issues use the Documentation type instead).
 
 - name: "doc"
   color: "0075ca"
-  description: "Documentation addition, correction, or improvement"
+  description: "Documentation change (PR path label; doc issues use the Documentation type)"
+
+# ── Triage ───────────────────────────────────────────────────────────────────
+# Applied automatically to new issues; removed once a maintainer triages.
+
+- name: "needs-triage"
+  color: "fbca04"
+  description: "Awaiting initial triage by a maintainer"
 
 # ── Component ────────────────────────────────────────────────────────────────
-# Which part of the project is affected
+# Which part of the project is affected. Applied automatically by issue triage
+# and PR path labeling. Each component gets a distinct hue so they pop apart at
+# a glance; the "component/" prefix keeps them grouped in label lists.
 
 - name: "component/operator"
-  color: "1d76db"
+  color: "0969da"
   description: "Skyhook operator (controller-manager)"
 
 - name: "component/agent"
-  color: "1d76db"
+  color: "1a7f37"
   description: "Skyhook agent (package executor)"
 
 - name: "component/chart"
-  color: "1d76db"
+  color: "8250df"
   description: "Helm chart"
 
 - name: "component/cli"
-  color: "1d76db"
+  color: "bc4c00"
   description: "kubectl-skyhook CLI plugin"
 
-# ── Planning Types ────────────────────────────────────────────────────────────
-# Applied by engineering/product during triage (DGXC OSS Policy issue types)
+- name: "component/ci"
+  color: "bf3989"
+  description: "CI workflows, GitHub Actions, and repo tooling"
 
-- name: "epic"
-  color: "7057ff"
-  description: "Roadmap feature — large body of work spanning multiple issues"
-
-- name: "feature"
-  color: "a2eeef"
-  description: "Goal of a feature request or enhancement (planning label)"
-
-- name: "task"
-  color: "e4e669"
-  description: "Sub-task of a feature or epic"
-
-- name: "initiative"
-  color: "f9d0c4"
-  description: "Container for a group of related features (optional)"
-
-# ── Priority ─────────────────────────────────────────────────────────────────
-# Set by engineering only. SLAs per DGXC OSS Policy:
-#   P0: major functionality broken, no workaround — 30 day fix SLA
-#   P1: product works but not as expected, workaround exists — 6 month SLA
-#   P2: minor defect, minor impact — no fix commitment
-
-- name: "P0"
-  color: "b60205"
-  description: "Critical: major functionality broken, no workaround. 30-day SLA."
-
-- name: "P1"
-  color: "e11d48"
-  description: "High: product works but not as expected. Workaround exists. 6-month SLA."
-
-- name: "P2"
-  color: "f97316"
-  description: "Medium: minor defect or minor impact. No fix commitment."
+- name: "component/tests"
+  color: "9a6700"
+  description: "End-to-end / chainsaw test suites (k8s-tests)"
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 # Used by stale automation

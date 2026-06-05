@@ -553,13 +553,17 @@ func (node *skyhookNode) Reset() {
 	node.skyhook.Status.Status = v1alpha1.StatusUnknown
 	node.skyhook.Updated = true
 
-	delete(node.Annotations, fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
-	delete(node.Annotations, fmt.Sprintf("%s/drainStart_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
-	delete(node.Annotations, fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
-	delete(node.Annotations, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
-	delete(node.Annotations, fmt.Sprintf("%s/version_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
+	delete(node.Annotations, fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/drainStart_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/version_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 
-	delete(node.Labels, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
+	delete(node.Labels, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+
+	// We just wiped the nodeState annotation; invalidate the in-memory cache so a later
+	// State() read in this reconcile doesn't serve the stale (pre-reset) map.
+	node.nodeState = nil
 	node.updated = true
 }
 

@@ -25,11 +25,24 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `package rerun` | ✅ Full | ✅ Full |
 | `package logs` | ✅ Full | ✅ Full |
 | `reset` | ✅ Full | ✅ Full |
+| `reset --package` | ✅ Full (v0.7.5+) | ✅ Full |
+| `update-state` | ✅ Full (v0.7.5+) — see note | ✅ Full — see note |
 | `deployment-policy reset` | ❌ Not supported | ✅ Full |
 | `pause` | ❌ Not supported | ✅ Full |
 | `resume` | ❌ Not supported | ✅ Full |
 | `disable` | ❌ Not supported | ✅ Full |
 | `enable` | ❌ Not supported | ✅ Full |
+
+> **Note on `update-state` and `reset --package`:** These commands edit the
+> `skyhook.nvidia.com/nodeState_<skyhook>` annotation in-place. The
+> annotation's `map[string]PackageStatus` shape has been stable since
+> **operator v0.7.5**, and the CLI refuses to run against anything older.
+> What *has* evolved across operator releases is the set of recognised
+> stage and state values — for example `uninstall` and `uninstall-interrupt`
+> were added in v0.16.0. Picking a stage/state your operator doesn't
+> recognise will leave the package in a state the operator can't progress
+> from. Confirm the stage/state values are valid for your operator before
+> running these commands.
 
 ### Breaking Change: Pause/Disable Mechanism
 
@@ -142,14 +155,114 @@ kubectl skyhook reset gpu-init --dry-run
 
 # Reset nodes only, preserve deployment policy batch state
 kubectl skyhook reset gpu-init --skip-batch-reset --confirm
+
+# Reset only a single package across all tracked nodes
+kubectl skyhook reset gpu-init --package pkg1:1.0 --confirm --skip-batch-reset
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--confirm, -y` | Skip confirmation prompt |
 | `--skip-batch-reset` | Skip resetting deployment policy batch state |
+| `--package <name>[:<version>]` | Reset only this package's state on each node |
 
 > **Note:** By default, `reset` also resets the deployment policy batch state so the next rollout starts from batch 1, and clears node ordering state (`NodeOrderOffset` and `NodePriority`) so `SKYHOOK_NODE_ORDER` restarts from `0`. Use `--skip-batch-reset` to preserve the existing batch and ordering state.
+
+#### `--package <name>[:<version>]`
+
+When `--package` is set, `reset` removes only the named package's entry from
+each node's `nodeState` annotation instead of removing the whole annotation:
+
+- If `<version>` is supplied (e.g. `pkg1:1.0`), only entries whose recorded
+  version matches are removed; nodes with the package at a different version
+  are left untouched and reported in the command output.
+- If the package was the last entry in the annotation, the entire annotation
+  is removed (matching the behavior of a full reset).
+- Batch state is **deliberately not reset** on this path regardless of
+  `--skip-batch-reset`: restarting the full rollout from batch 1 to recover a
+  single package would be disproportionate. Pair with
+  `kubectl skyhook deployment-policy reset` explicitly if you also want to
+  restart batches.
+
+### Update-State Command
+
+Edit the recorded state of a single package on Skyhook-managed nodes.
+`update-state` performs a surgical edit to the per-node
+`skyhook.nvidia.com/nodeState_<skyhook>` annotation — replacing (or, with
+`--add`, inserting) one entry in the `map[string]PackageStatus` value. It is
+an **administrator escape hatch** for recovering from stuck rollouts and
+deliberately does *not* validate that the requested `(stage, state)`
+combination is one the operator could legally produce, nor does it gate
+destructive stages (`uninstall`, `uninstall-interrupt`) behind extra
+prompts.
+
+```bash
+kubectl skyhook update-state <skyhook-name> <package> <version> <stage> <state>
+```
+
+> **⚠️ Pause the Skyhook before running `update-state`.**
+>
+> `update-state` performs a read-modify-write on the node-state annotation and
+> uses a merge patch with no resource-version check. The patch rewrites the
+> **entire** annotation value, not just the targeted package's entry — so a
+> concurrent operator (or CLI) edit to any *other* package's entry in the
+> same annotation will also be clobbered. If the operator reconciles the
+> node between the CLI's read and write, the operator can immediately
+> overwrite the manual edit — at best wasting the operation, at worst racing
+> the operator into an inconsistent state. Always pause the Skyhook
+> (`kubectl skyhook pause <name> --confirm`) before running this command,
+> and resume only when finished.
+>
+> `update-state` also requires the package + version to still be present in
+> `skyhook.Spec.Packages`. It cannot edit an *orphaned* node-state entry
+> left behind after the package was removed from the spec — use `reset
+> --package <name>[:<version>]` for that.
+
+```bash
+# Mark pkg1@1.0 as complete on every node that already tracks this Skyhook
+kubectl skyhook update-state gpu-init pkg1 1.0 config complete --confirm
+
+# Same, but only on one node
+kubectl skyhook update-state gpu-init pkg1 1.0 config complete --node worker-1 --confirm
+
+# Narrow to a label-selected set of nodes
+kubectl skyhook update-state gpu-init pkg1 1.0 interrupt in_progress -l role=gpu --confirm
+
+# Preview the changes without writing them
+kubectl skyhook update-state gpu-init pkg1 1.0 config erroring --dry-run
+```
+
+| Flag | Description |
+|------|-------------|
+| `--node` | Limit the update to specific node(s); repeat for multiple |
+| `--selector, -l` | Limit the update to nodes matching a label selector |
+| `--confirm, -y` | Skip confirmation prompt |
+| `--add` | Create a fresh `nodeState` entry on nodes that do not yet have one for this package; requires `--node` or `--selector` |
+
+The global `--dry-run` flag is honored: the command prints the set of nodes
+it would patch and exits without writing.
+
+By default `update-state` targets only nodes that already have a `nodeState`
+entry for the named Skyhook. If `--node` names a node that does not exist
+or has no state for the Skyhook, the command warns and skips that node
+rather than failing.
+
+#### `--add`
+
+`--add` creates a fresh `nodeState` entry on nodes that do not yet have one
+for the given `<package>@<version>` — useful for bootstrapping state on a
+node the operator has not visited yet, or for re-creating an entry that was
+manually deleted.
+
+`--add` **requires** either `--node` or `--selector` so the scope of the
+creation is explicit. Without one of these flags, `--add` would apply to
+every node in the cluster that matches the Skyhook's selector, which is
+far too broad for a creation operation — the CLI rejects this combination
+with an error.
+
+If a targeted node already has an entry for `<package>@<version>`, `--add`
+warns and skips that node (use `update-state` without `--add` if you intend
+to overwrite the existing entry).
 
 ### Deployment Policy Commands
 
@@ -330,6 +443,32 @@ kubectl skyhook deployment-policy reset my-skyhook --confirm
 
 # 3. Or reset only nodes (keep batch progression)
 kubectl skyhook reset my-skyhook --skip-batch-reset --confirm
+```
+
+### Surgical Recovery
+
+When a single package on a single node is wedged and a full reset is too
+disruptive, pause the Skyhook, edit the recorded state directly, then
+resume:
+
+```bash
+# 1. Pause so the operator doesn't clobber the manual edit
+kubectl skyhook pause my-skyhook --confirm
+
+# 2. Mark the wedged package as complete (or set whatever stage/state
+#    you need to unblock the rollout)
+kubectl skyhook update-state my-skyhook my-package 1.0 config complete \
+    --node worker-1 --confirm
+
+# 3. Resume processing
+kubectl skyhook resume my-skyhook --confirm
+```
+
+For a single-package reset across all nodes (without disturbing the
+deployment policy batch state), prefer `reset --package`:
+
+```bash
+kubectl skyhook reset my-skyhook --package my-package:1.0 --confirm
 ```
 
 ### Emergency Stop
