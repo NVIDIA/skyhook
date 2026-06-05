@@ -28,13 +28,19 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/mock"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	ktesting "k8s.io/client-go/testing"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	mockdynamic "github.com/NVIDIA/nodewright/operator/internal/mocks/dynamic"
 )
 
 // Helper function to create a test node with nodeState annotation
@@ -335,6 +341,148 @@ var _ = Describe("Reset Command", func() {
 			// Verify nodeState annotation was removed
 			err = verifyAnnotationRemoved(mockKube, "worker-1", annotationKey)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("returns an error when listing nodes fails", func() {
+			fakeKube := fake.NewClientset()
+			fakeKube.PrependReactor("list", "nodes", func(action ktesting.Action) (bool, runtime.Object, error) {
+				return true, nil, fmt.Errorf("apiserver unreachable")
+			})
+			failingClient := client.NewWithClientsAndConfig(fakeKube, nil, nil)
+
+			opts := &resetOptions{confirm: true, skipBatchReset: true}
+			err := runReset(gocontext.Background(), cmd, failingClient, skyhookName, opts, cliCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("apiserver unreachable"))
+		})
+	})
+
+	Describe("--package", func() {
+		var (
+			fakeKube    *fake.Clientset
+			mockDynamic *mockdynamic.Interface
+			kubeClient  *client.Client
+			cliCtx      *context.CLIContext
+			cmd         *cobra.Command
+			out         *bytes.Buffer
+		)
+
+		skyhookGVR := schema.GroupVersionResource{
+			Group:    "skyhook.nvidia.com",
+			Version:  "v1alpha1",
+			Resource: "skyhooks",
+		}
+
+		BeforeEach(func() {
+			fakeKube = fake.NewClientset()
+			mockDynamic = &mockdynamic.Interface{}
+			kubeClient = client.NewWithClientsAndConfig(fakeKube, mockDynamic, nil)
+			cliCtx = context.NewCLIContext(nil)
+			cmd = NewResetCmd(cliCtx)
+			out = &bytes.Buffer{}
+			cmd.SetOut(out)
+			cmd.SetErr(out)
+			cmd.SetIn(bytes.NewBufferString("y\n"))
+		})
+
+		setupSkyhookCR := func(name, version string) {
+			sk := &v1alpha1.Skyhook{}
+			sk.Name = name
+			sk.Annotations = map[string]string{
+				"skyhook.nvidia.com/version": version,
+			}
+			u := &unstructured.Unstructured{}
+			raw, err := json.Marshal(sk)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(json.Unmarshal(raw, &u.Object)).To(Succeed())
+			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "skyhook.nvidia.com", Version: "v1alpha1", Kind: "Skyhook"})
+			mockNSRes := &mockdynamic.NamespaceableResourceInterface{}
+			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
+			mockNSRes.On("Get", mock.Anything, name, mock.Anything, mock.Anything).Return(u, nil)
+		}
+
+		addNode := func(name string, ns v1alpha1.NodeState) {
+			raw, _ := json.Marshal(ns)
+			n := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: name,
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/nodeState_demo": string(raw),
+					},
+				},
+			}
+			_, err := fakeKube.CoreV1().Nodes().Create(gocontext.Background(), n, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		It("removes only the named package entry from each node", func() {
+			setupSkyhookCR("demo", "v0.15.0")
+			addNode("n1", v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+				"pkg2|2.0": {Name: "pkg2", Version: "2.0", Stage: v1alpha1.StageConfig, State: v1alpha1.StateComplete},
+			})
+			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1"}
+			Expect(runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)).To(Succeed())
+
+			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			var after v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
+			_, hasPkg1 := after["pkg1|1.0"]
+			_, hasPkg2 := after["pkg2|2.0"]
+			Expect(hasPkg1).To(BeFalse())
+			Expect(hasPkg2).To(BeTrue())
+		})
+
+		It("with name:version only removes if version matches", func() {
+			setupSkyhookCR("demo", "v0.15.0")
+			addNode("n1", v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			})
+			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1:9.9"}
+			Expect(runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)).To(Succeed())
+
+			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			var after v1alpha1.NodeState
+			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
+			_, hasPkg1 := after["pkg1|1.0"]
+			Expect(hasPkg1).To(BeTrue())
+			Expect(out.String()).To(ContainSubstring("no matching package"))
+		})
+
+		It("removes the entire annotation when the last entry is removed", func() {
+			setupSkyhookCR("demo", "v0.15.0")
+			addNode("n1", v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			})
+			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1"}
+			Expect(runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)).To(Succeed())
+			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
+			_, exists := got.Annotations["skyhook.nvidia.com/nodeState_demo"]
+			Expect(exists).To(BeFalse())
+		})
+
+		DescribeTable("rejects malformed --package",
+			func(value string) {
+				addNode("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
+				opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: value}
+				err := runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)
+				Expect(err).To(HaveOccurred())
+			},
+			Entry("empty name with version", ":1.0"),
+			Entry("empty version with colon", "pkg1:"),
+		)
+
+		It("rejects --package against an operator older than the supported floor", func() {
+			setupSkyhookCR("demo", "v0.7.0")
+			addNode("n1", v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			})
+			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1"}
+			err := runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not support"))
+			Expect(err.Error()).To(ContainSubstring("v0.7.0"))
+			Expect(err.Error()).To(ContainSubstring("v0.7.5"))
 		})
 	})
 })
