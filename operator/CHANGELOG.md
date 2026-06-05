@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **Reapply-on-reboot dropped on busy nodes.** With `REAPPLY_ON_REBOOT=true`, a
+  reboot of a node under heavy controller churn (frequent pod/label/annotation
+  updates) could be detected and then silently lost: the per-node state reset
+  was persisted with a full `Update` that lost an optimistic-concurrency race,
+  yet the node's boot id was advanced anyway, marking the reboot handled. The
+  node kept its stale `complete` state and the package was never reapplied
+  (`unknown -> complete`, no pod). The reset now persists via a strategic-merge
+  `Patch` (not resourceVersion-gated, like the rest of the reconcile), and the
+  boot id is advanced only after that write succeeds, so a failed reset leaves
+  the reboot pending to be retried. Also fixes `Reset()` deleting the cordon
+  annotation with a key missing the Skyhook name.
+
 ## [operator/v0.16.1] - 2026-05-22
 
 ### Bug Fixes
