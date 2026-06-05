@@ -810,6 +810,71 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(deleteCalled).To(BeFalse())
 			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
 		})
+
+		It("should emit drain timeout events when the node is already erroring", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "workload",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind:       "ReplicaSet",
+							Name:       "workload-rs",
+							Controller: ptr(true),
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			baseClient := fakeDrainClient(pod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				SubResourceCreate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+					Fail("drain timeout should not evict pods")
+					return nil
+				},
+			})
+
+			recorder := events.NewFakeRecorder(10)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, recorder, opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-a",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/drainStart_drain-timeout": time.Now().Add(-2 * time.Minute).Format(time.RFC3339Nano),
+						"skyhook.nvidia.com/status_drain-timeout":     string(v1alpha1.StatusErroring),
+					},
+				},
+			}
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-timeout"},
+				Spec: v1alpha1.SkyhookSpec{
+					DrainConfig: &v1alpha1.DrainConfig{
+						Timeout: &metav1.Duration{Duration: time.Second},
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			drained, err := r.DrainNode(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [skyhook:drain-timeout]")))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0]")))
+		})
 	})
 
 	It("should set monotonic SKYHOOK_NODE_ORDER across nodes and batches", func() {

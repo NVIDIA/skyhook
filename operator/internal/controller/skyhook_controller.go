@@ -1747,23 +1747,21 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 		skyhookNode.StartDrain(now)
 		skyhookNode.SetStatus(v1alpha1.StatusInProgress)
 	} else if drainConfig != nil && drain.TimedOut(drainStartedAt, drainConfig.Timeout, now.Time) {
-		if skyhookNode.Status() != v1alpha1.StatusErroring {
-			r.recorder.Eventf(skyhookNode.GetNode(), nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
-				"drain timed out after [%s] for node [%s] package [%s:%s] from [skyhook:%s]",
-				drainConfig.Timeout.Duration,
-				skyhookNode.GetNode().Name,
-				_package.Name,
-				_package.Version,
-				skyhookNode.GetSkyhook().Name,
-			)
-			r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
-				"drain timed out after [%s] for node [%s] package [%s:%s]",
-				drainConfig.Timeout.Duration,
-				skyhookNode.GetNode().Name,
-				_package.Name,
-				_package.Version,
-			)
-		}
+		r.recorder.Eventf(skyhookNode.GetNode(), nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
+			"drain timed out after [%s] for node [%s] package [%s:%s] from [skyhook:%s]",
+			drainConfig.Timeout.Duration,
+			skyhookNode.GetNode().Name,
+			_package.Name,
+			_package.Version,
+			skyhookNode.GetSkyhook().Name,
+		)
+		r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
+			"drain timed out after [%s] for node [%s] package [%s:%s]",
+			drainConfig.Timeout.Duration,
+			skyhookNode.GetNode().Name,
+			_package.Name,
+			_package.Version,
+		)
 		skyhookNode.SetStatus(v1alpha1.StatusErroring)
 		return false, nil
 	}
