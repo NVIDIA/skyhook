@@ -21,11 +21,25 @@ package drain
 import (
 	"time"
 
+	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
+func durationPtr(value time.Duration) *metav1.Duration {
+	return &metav1.Duration{Duration: value}
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
+}
 
 var _ = Describe("DecidePod", func() {
 	controller := true
@@ -228,5 +242,87 @@ var _ = Describe("DecidePod", func() {
 		Expect(decision).To(Equal(Decision{Action: ActionBlock, Reason: ReasonEmptyDir}))
 		Expect(decision.BlocksDrain()).To(BeTrue())
 		Expect(decision.RequiresAction()).To(BeFalse())
+	})
+})
+
+var _ = Describe("OptionsFromConfig", func() {
+	It("should return defaults for nil config", func() {
+		options := OptionsFromConfig(nil)
+
+		Expect(options).To(Equal(DefaultOptions()))
+	})
+
+	It("should apply configured field overrides", func() {
+		options := OptionsFromConfig(&v1alpha1.DrainConfig{
+			DisableEviction:    boolPtr(true),
+			DeleteEmptyDirData: boolPtr(false),
+			Force:              boolPtr(false),
+			IgnoreDaemonSets:   boolPtr(false),
+			GracePeriod:        durationPtr(2 * time.Second),
+		})
+
+		Expect(options.DisableEviction).To(BeTrue())
+		Expect(options.DeleteEmptyDirData).To(BeFalse())
+		Expect(options.Force).To(BeFalse())
+		Expect(options.IgnoreDaemonSets).To(BeFalse())
+		Expect(options.GracePeriodSeconds).To(Equal(int64Ptr(2)))
+	})
+
+	DescribeTable("should round grace period up to whole seconds",
+		func(gracePeriod time.Duration, expectedSeconds int64) {
+			options := OptionsFromConfig(&v1alpha1.DrainConfig{
+				GracePeriod: durationPtr(gracePeriod),
+			})
+
+			Expect(options.GracePeriodSeconds).To(Equal(int64Ptr(expectedSeconds)))
+		},
+		Entry("zero seconds", 0*time.Second, int64(0)),
+		Entry("sub-second", 500*time.Millisecond, int64(1)),
+		Entry("whole second", 1*time.Second, int64(1)),
+		Entry("partial second", 1500*time.Millisecond, int64(2)),
+	)
+})
+
+var _ = Describe("TimedOut", func() {
+	start := metav1.NewTime(time.Date(2026, time.June, 5, 12, 0, 0, 0, time.UTC))
+	timeout := metav1.Duration{Duration: 5 * time.Second}
+	zeroTimeout := metav1.Duration{}
+
+	DescribeTable("should evaluate timeout boundaries",
+		func(startedAt *metav1.Time, timeout *metav1.Duration, now time.Time, expected bool) {
+			Expect(TimedOut(startedAt, timeout, now)).To(Equal(expected))
+		},
+		Entry("nil start", nil, &timeout, start.Add(6*time.Second), false),
+		Entry("nil timeout", &start, nil, start.Add(6*time.Second), false),
+		Entry("zero timeout", &start, &zeroTimeout, start.Add(6*time.Second), false),
+		Entry("just before deadline", &start, &timeout, start.Add(5*time.Second-time.Nanosecond), false),
+		Entry("exactly at deadline", &start, &timeout, start.Add(5*time.Second), true),
+		Entry("after deadline", &start, &timeout, start.Add(6*time.Second), true),
+	)
+})
+
+var _ = Describe("delete options", func() {
+	It("should omit delete options when grace period is unset", func() {
+		options := DefaultOptions()
+
+		Expect(options.DeleteOptions()).To(BeNil())
+		Expect(options.EvictionDeleteOptions()).To(BeNil())
+	})
+
+	It("should carry configured grace period into delete options", func() {
+		options := Options{GracePeriodSeconds: int64Ptr(7)}
+
+		deleteOptions := options.DeleteOptions()
+		Expect(deleteOptions).To(HaveLen(1))
+
+		applied := &client.DeleteOptions{}
+		for _, option := range deleteOptions {
+			option.ApplyToDelete(applied)
+		}
+		Expect(applied.GracePeriodSeconds).To(Equal(int64Ptr(7)))
+
+		evictionDeleteOptions := options.EvictionDeleteOptions()
+		Expect(evictionDeleteOptions).NotTo(BeNil())
+		Expect(evictionDeleteOptions.GracePeriodSeconds).To(Equal(int64Ptr(7)))
 	})
 })

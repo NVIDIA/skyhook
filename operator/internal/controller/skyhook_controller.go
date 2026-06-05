@@ -1464,7 +1464,7 @@ func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.S
 		return true, nil
 	}
 
-	options := resolvedDrainOptions(skyhookNode.GetSkyhook().Spec.DrainConfig)
+	options := drain.OptionsFromConfig(skyhookNode.GetSkyhook().Spec.DrainConfig)
 	for _, pod := range pods.Items {
 		if drain.DecidePod(&pod, options).BlocksDrain() {
 			return false, nil
@@ -1472,56 +1472,6 @@ func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.S
 	}
 
 	return true, nil
-}
-
-func resolvedDrainOptions(config *v1alpha1.DrainConfig) drain.Options {
-	options := drain.DefaultOptions()
-	if config == nil {
-		return options
-	}
-
-	if config.DisableEviction != nil {
-		options.DisableEviction = *config.DisableEviction
-	}
-	if config.DeleteEmptyDirData != nil {
-		options.DeleteEmptyDirData = *config.DeleteEmptyDirData
-	}
-	if config.Force != nil {
-		options.Force = *config.Force
-	}
-	if config.IgnoreDaemonSets != nil {
-		options.IgnoreDaemonSets = *config.IgnoreDaemonSets
-	}
-	if config.GracePeriod != nil {
-		seconds := int64(config.GracePeriod.Duration / time.Second)
-		if config.GracePeriod.Duration%time.Second != 0 {
-			seconds++
-		}
-		options.GracePeriodSeconds = &seconds
-	}
-
-	return options
-}
-
-func drainDeleteOptions(options drain.Options) []client.DeleteOption {
-	if options.GracePeriodSeconds == nil {
-		return nil
-	}
-	return []client.DeleteOption{client.GracePeriodSeconds(*options.GracePeriodSeconds)}
-}
-
-func drainEvictionDeleteOptions(options drain.Options) *metav1.DeleteOptions {
-	if options.GracePeriodSeconds == nil {
-		return nil
-	}
-	return &metav1.DeleteOptions{GracePeriodSeconds: options.GracePeriodSeconds}
-}
-
-func drainTimedOut(startedAt *metav1.Time, timeout *metav1.Duration, now time.Time) bool {
-	if startedAt == nil || timeout == nil || timeout.Duration == 0 {
-		return false
-	}
-	return !now.Before(startedAt.Add(timeout.Duration))
 }
 
 // HandleFinalizer returns true only if we container is deleted and we handled it completely, else false.
@@ -1787,7 +1737,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 	if drainStartedAt == nil {
 		skyhookNode.StartDrain(now)
 		skyhookNode.SetStatus(v1alpha1.StatusInProgress)
-	} else if drainConfig != nil && drainTimedOut(drainStartedAt, drainConfig.Timeout, now.Time) {
+	} else if drainConfig != nil && drain.TimedOut(drainStartedAt, drainConfig.Timeout, now.Time) {
 		if skyhookNode.Status() != v1alpha1.StatusErroring {
 			r.recorder.Eventf(skyhookNode.GetNode(), nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
 				"drain timed out after [%s] for node [%s] package [%s:%s] from [skyhook:%s]",
@@ -1828,7 +1778,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 		skyhookNode.GetSkyhook().Name,
 	)
 
-	options := resolvedDrainOptions(skyhookNode.GetSkyhook().Spec.DrainConfig)
+	options := drain.OptionsFromConfig(skyhookNode.GetSkyhook().Spec.DrainConfig)
 	errs := make([]error, 0)
 	waitingForPods := false
 	for _, pod := range pods.Items {
@@ -1838,14 +1788,14 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 			waitingForPods = true
 		case drain.ActionEvict:
 			waitingForPods = true
-			eviction := policyv1.Eviction{DeleteOptions: drainEvictionDeleteOptions(options)}
+			eviction := policyv1.Eviction{DeleteOptions: options.EvictionDeleteOptions()}
 			err := r.Client.SubResource("eviction").Create(ctx, &pod, &eviction)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error evicting pod [%s:%s]: %w", pod.Namespace, pod.Name, err))
 			}
 		case drain.ActionDelete:
 			waitingForPods = true
-			err := r.Delete(ctx, &pod, drainDeleteOptions(options)...)
+			err := r.Delete(ctx, &pod, options.DeleteOptions()...)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error deleting pod [%s:%s]: %w", pod.Namespace, pod.Name, err))
 			}

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### New Features
+
+- Add `spec.drainConfig` so interrupt drains can tune eviction, direct deletion, emptyDir handling, unmanaged-pod handling, DaemonSet skipping, timeout, and grace-period behavior.
+
+### Changed
+
+- Align the default interrupt drain pod filter with Kubernetes drain semantics:
+  already-terminating pods and mirror/static pods are skipped, unschedulable
+  tolerations use Kubernetes `ToleratesTaint` matching, and DaemonSet pods are
+  identified from the controller owner reference instead of the previous owner
+  reference count heuristic.
+
 ## [operator/v0.16.1] - 2026-05-22
 
 ### Bug Fixes
@@ -22,7 +36,6 @@ and CR deletion behave. Affects the Operator, Webhook, and CRD.
 
 ### New Features
 
-- Add `spec.drainConfig` so interrupt drains can tune eviction, direct deletion, emptyDir handling, unmanaged-pod handling, DaemonSet skipping, timeout, and grace-period behavior.
 - Add a standard `Ready` condition to Skyhook status for native Kubernetes wait and GitOps health tooling.
 
 ### New behavior

@@ -10,6 +10,13 @@ All notable changes to this project will be documented in this file.
 - AutoTaintNewNodes
 - Add SKYHOOK_NODE_ORDER env var for monotonic node ordering
 
+### Changed
+
+- `reset` and `node reset` now select nodes with any resettable Skyhook
+  metadata, including status, cordon, and drain-start metadata. Nodes with a
+  malformed `nodeState` annotation are reset with an empty package state instead
+  of being skipped.
+
 ## [cli/v0.1.1] - 2026-01-13
 
 ### Bug Fixes

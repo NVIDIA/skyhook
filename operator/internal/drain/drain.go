@@ -19,9 +19,13 @@
 package drain
 
 import (
+	"time"
+
+	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -62,6 +66,56 @@ func DefaultOptions() Options {
 		Force:              true,
 		IgnoreDaemonSets:   true,
 	}
+}
+
+func OptionsFromConfig(config *v1alpha1.DrainConfig) Options {
+	options := DefaultOptions()
+	if config == nil {
+		return options
+	}
+
+	if config.DisableEviction != nil {
+		options.DisableEviction = *config.DisableEviction
+	}
+	if config.DeleteEmptyDirData != nil {
+		options.DeleteEmptyDirData = *config.DeleteEmptyDirData
+	}
+	if config.Force != nil {
+		options.Force = *config.Force
+	}
+	if config.IgnoreDaemonSets != nil {
+		options.IgnoreDaemonSets = *config.IgnoreDaemonSets
+	}
+	if config.GracePeriod != nil {
+		seconds := int64(config.GracePeriod.Duration / time.Second)
+		if config.GracePeriod.Duration%time.Second != 0 {
+			seconds++
+		}
+		options.GracePeriodSeconds = &seconds
+	}
+
+	return options
+}
+
+func TimedOut(startedAt *metav1.Time, timeout *metav1.Duration, now time.Time) bool {
+	if startedAt == nil || timeout == nil || timeout.Duration == 0 {
+		return false
+	}
+	return !now.Before(startedAt.Add(timeout.Duration))
+}
+
+func (o Options) DeleteOptions() []client.DeleteOption {
+	if o.GracePeriodSeconds == nil {
+		return nil
+	}
+	return []client.DeleteOption{client.GracePeriodSeconds(*o.GracePeriodSeconds)}
+}
+
+func (o Options) EvictionDeleteOptions() *metav1.DeleteOptions {
+	if o.GracePeriodSeconds == nil {
+		return nil
+	}
+	return &metav1.DeleteOptions{GracePeriodSeconds: o.GracePeriodSeconds}
 }
 
 type Decision struct {

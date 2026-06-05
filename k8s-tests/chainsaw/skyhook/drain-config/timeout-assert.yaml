@@ -22,7 +22,7 @@ metadata:
     skyhook.nvidia.com/status_drain-config-timeout: erroring
   annotations:
     skyhook.nvidia.com/status_drain-config-timeout: erroring
-    (contains(@, 'skyhook.nvidia.com/drainStart_drain-config-timeout')): true
+    (contains(keys(@), 'skyhook.nvidia.com/drainStart_drain-config-timeout')): true
 spec:
   taints:
   - effect: NoSchedule
@@ -32,7 +32,6 @@ apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
 metadata:
   name: drain-config-timeout
-  namespace: skyhook
 status:
   status: erroring
   nodeStatus:
