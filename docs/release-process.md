@@ -17,11 +17,11 @@ gitGraph
    checkout main
    commit id: "X"
    checkout release/v0.16.x
-   cherry-pick id: "X" tag: "v0.16.0-rc1"
+   cherry-pick id: "X" tag: "v0.16.0-rc.1"
    checkout main
    commit id: "Y"
    checkout release/v0.16.x
-   cherry-pick id: "Y" tag: "v0.16.0-rc2"
+   cherry-pick id: "Y" tag: "v0.16.0-rc.2"
    commit tag: "v0.16.0"
    checkout main
    commit id: "Z"
@@ -36,7 +36,7 @@ gitGraph
 - **Branch first, then tag.** Always cut the release branch before the first RC. Tags only live on release branches, never on `main`.
 - **Cherry-pick from `main`.** Any fix or feature destined for a release lands on `main` first, then is cherry-picked to the release branch. The release branch is never the place to *develop* — only to *stabilize and ship*.
   - Rare exception: a change that is genuinely release-branch-only (e.g. a `chart/Chart.yaml` version bump for that line) can be committed directly to the release branch via a feature branch and PR.
-- **RCs are the validation gate.** Cut `-rc1`, `-rc2`, … on the release branch until you're happy. When an RC is approved, make a single `Chart.yaml` bump commit dropping the `-rcN` suffix and tag `vX.Y.0` on that commit — no other code changes between the last good RC and the final release.
+- **RCs are the validation gate.** Cut `-rc.1`, `-rc.2`, … on the release branch until you're happy. When an RC is approved, make a single `Chart.yaml` bump commit dropping the `-rc.N` suffix and tag `vX.Y.0` on that commit — no other code changes between the last good RC and the final release.
 - **Patches stay on the same branch.** `v0.16.1`, `v0.16.2`, … are all cut from `release/v0.16.x` — cherry-pick the fix from `main`, bump `chart/Chart.yaml`, tag.
 - **Component naming:** Operator drives the release; agent often reuses the previous version; chart always gets tagged because `Chart.yaml` (and therefore `appVersion`) moves with every release.
 
@@ -54,22 +54,22 @@ git cherry-pick -x <sha-on-main>
 git push origin release/v0.16.x
 
 # 3. Prepare the chart for the RC. Edit chart/Chart.yaml:
-#    version: v0.16.0-rc1
-#    appVersion: v0.16.0-rc1
-git commit -am "release: prepare v0.16.0-rc1"
+#    version: v0.16.0-rc.1
+#    appVersion: v0.16.0-rc.1
+git commit -am "release: prepare v0.16.0-rc.1"
 git push origin release/v0.16.x
 
 # 4. Tag the RC on the release branch.
-git tag operator/v0.16.0-rc1
-git tag chart/v0.16.0-rc1
+git tag operator/v0.16.0-rc.1
+git tag chart/v0.16.0-rc.1
 # Tag agent only if it changed since the last released agent version.
-git push origin operator/v0.16.0-rc1 chart/v0.16.0-rc1
+git push origin operator/v0.16.0-rc.1 chart/v0.16.0-rc.1
 
 # 5. Validate the RC. If issues are found, cherry-pick more fixes from main,
-#    bump Chart.yaml to v0.16.0-rc2, and tag -rc2. Repeat until clean.
+#    bump Chart.yaml to v0.16.0-rc.2, and tag -rc.2. Repeat until clean.
 
 # 6. Cut the final release on the same commit as the last good RC.
-#    Bump Chart.yaml to v0.16.0 (drop the -rcN suffix) and commit.
+#    Bump Chart.yaml to v0.16.0 (drop the -rc.N suffix) and commit.
 git commit -am "release: v0.16.0"
 git push origin release/v0.16.x
 git tag operator/v0.16.0
@@ -104,14 +104,14 @@ Distribution through `nvcr.io` / NGC is **paused** and is planned to return in a
 Only two tag shapes are accepted by the release workflow per component:
 
 - `<component>/v<MAJOR>.<MINOR>.<PATCH>` — final release
-- `<component>/v<MAJOR>.<MINOR>.<PATCH>-rc<N>` — release candidate, published as a GitHub pre-release
+- `<component>/v<MAJOR>.<MINOR>.<PATCH>-rc.<N>` — release candidate, published as a GitHub pre-release
 
-Any other suffix (`-beta`, `-alpha`, `-rc.1`, `-rc1a`, etc.) is rejected by `.github/workflows/release.yml` so the tag format stays predictable.
+The dot in `-rc.<N>` is required: it makes `git tag --sort=v:refname` order pre-releases correctly and matches the SemVer pre-release convention. Any other suffix (`-beta`, `-alpha`, `-rc<N>` without the dot, `-rc.1a`, etc.) is rejected by `.github/workflows/release.yml` so the tag format stays predictable.
 
 Notes:
 
-- Helm OCI accepts pre-release versions, so `chart/v0.16.0-rc1` pushes `nodewright-v0.16.0-rc1.tgz` to `oci://ghcr.io/nvidia/nodewright/charts`. Install with `--version v0.16.0-rc1`.
-- `git cliff --latest` scopes release notes to commits since the previous tag of the same component, so each RC's notes only cover commits since the prior RC (or the prior stable, for `-rc1`).
+- Helm OCI accepts pre-release versions, so `chart/v0.16.0-rc.1` pushes `nodewright-v0.16.0-rc.1.tgz` to `oci://ghcr.io/nvidia/nodewright/charts`. Install with `--version v0.16.0-rc.1`.
+- Release-notes scoping is asymmetric (see #246). A **stable** release's notes cover everything since the previous **stable** tag (rc tags are excluded as boundaries), so the stable release page is complete even after several RCs. An **RC**'s notes cover only the delta since the prior tag, which is what you want while iterating.
 
 ### Patch Release Workflow
 
@@ -141,7 +141,7 @@ git tag chart/v0.16.1       # Chart always gets tagged
 git push origin operator/v0.16.1 agent/v6.4.1 chart/v0.16.1  # drop any tag you didn't create
 ```
 
-If the fix is urgent enough to need its own RC cycle, repeat the RC workflow above (e.g. `operator/v0.16.1-rc1`) before tagging `v0.16.1`.
+If the fix is urgent enough to need its own RC cycle, repeat the RC workflow above (e.g. `operator/v0.16.1-rc.1`) before tagging `v0.16.1`.
 
 ### Agent-Only Changes
 
@@ -203,6 +203,55 @@ git push origin chart/v1.2.3
 
 </details>
 
+## Changelogs and Release Notes
+
+Each component keeps two files side by side:
+
+| File | Owner | Contents |
+| --- | --- | --- |
+| `CHANGELOG.md` | machine-generated | every release and commit, derived from git history |
+| `RELEASE_NOTES.md` | human-authored | behavior changes, breaking changes, upgrade steps, highlights |
+
+`CHANGELOG.md` carries a `DO NOT EDIT` banner and is regenerated by `scripts/gen-changelog.sh`. **Never hand-edit it**; put curated prose in the sibling `RELEASE_NOTES.md` instead (organized by `## <component>/<version>` headings that match the changelog). Files: `operator/{CHANGELOG,RELEASE_NOTES}.md`, `chart/…`, `agent/…`, `operator/cmd/cli/…`.
+
+### Why a script instead of plain `git-cliff`
+
+A single `git-cliff --include-path <c>/** --tag-pattern <c>/.*` call silently drops most release sections in this monorepo: git-cliff path-filters commits first, then looks for tags only among survivors, so a tag whose commit touches no files under the component path (a chart bump, a CI fix, a ride-along agent release) is orphaned, and release-branch-only tags are invisible from `main`. `gen-changelog.sh` takes the release boundaries from `git tag` and renders each section over an explicit `prevTag..curTag` range, which avoids all of that. (Background: orhun/git-cliff#1122, #208.)
+
+### Commands
+
+```bash
+# Regenerate a CHANGELOG.md (interactive: prompts for component + action).
+make changelog
+
+# Non-interactive forms (used by CI and release-tag.sh):
+scripts/gen-changelog.sh <operator|agent|chart|cli>            # regenerate ([Unreleased])
+scripts/gen-changelog.sh <operator|agent|chart|cli> v0.2.0     # cut a release section
+for c in operator agent chart cli; do scripts/gen-changelog.sh "$c"; done   # bulk refresh
+
+# Interactively cut a release TAG (see below).
+make release-tag
+```
+
+### Cutting a release tag (`make release-tag`)
+
+`scripts/gen-changelog.sh` writes changelogs; `scripts/release-tag.sh` (via `make release-tag`) creates the git tag. They are separate steps. The tag helper:
+
+1. Prompts for a component and a bump (major/minor/patch).
+2. Offers a release candidate; if chosen, it computes the next `-rc.N` for that version automatically.
+3. Shows the resulting `<component>/<version>` tag and the commit it will sit on, and creates it only after a `y/N` confirm.
+4. Offers, as a **separate** `y/N`, to `git push` the tag. Pushing is what triggers the CI release, so it is always a distinct, opt-in step; the default is no.
+
+The tag is created on the current `HEAD`. It does **not** edit `CHANGELOG.md` or bump `chart/Chart.yaml` for you: do the release commit first (bump `Chart.yaml`, regenerate the CHANGELOG, write any `RELEASE_NOTES.md` entry, commit), then run `make release-tag` so the tag points at that commit. The two y/N confirms (create, then push) are the safety gate; there is no separate dry-run.
+
+### How the GitHub release body is assembled
+
+On a `<component>/v*` tag push, the release workflow builds the release body from the commit-level range for that version (see the asymmetric RC scoping above) and **prepends the matching `## <component>/<version>` entry from `RELEASE_NOTES.md`** if one exists. So write the human-facing notes under the version heading in `RELEASE_NOTES.md` before tagging.
+
+### Tag placement
+
+Where possible, place a release tag on a commit that touches the component's own path (the `release:` changelog-bump commit does). The generator no longer *requires* it (it anchors on `git tag`, not the commit), but it keeps history tidy.
+
 ## Release Checklist
 
 **Before cutting the release branch (minor / major):**
@@ -214,7 +263,7 @@ git push origin chart/v1.2.3
 **Before each RC tag:**
 
 - [ ] All intended cherry-picks from `main` have landed on the release branch
-- [ ] `chart/Chart.yaml` `version` and `appVersion` match the RC tag (including the `-rcN` suffix)
+- [ ] `chart/Chart.yaml` `version` and `appVersion` match the RC tag (including the `-rc.N` suffix)
 - [ ] Tests passing on the release branch
 
 **Before the final release tag:**

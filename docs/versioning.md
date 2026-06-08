@@ -108,6 +108,10 @@ helm install skyhook ./chart --set controllerManager.manager.image.tag="0.8.0"
 git branch -r | grep release/
 ```
 
+## Changelogs
+
+Each component has a machine-generated `CHANGELOG.md` (regenerated from git history by `scripts/gen-changelog.sh`; do not hand-edit) and a human-authored `RELEASE_NOTES.md` for behavior changes and upgrade steps. See the "Changelogs and Release Notes" section of [release-process.md](release-process.md) for the tooling and the generate-vs-curate split.
+
 ## Release Process
 
 For step-by-step instructions on how to release components, see [release-process.md](release-process.md).

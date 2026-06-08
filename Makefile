@@ -73,47 +73,18 @@ notices-rollup: ## Regenerate only the root THIRD_PARTY_NOTICES.md from componen
 
 ##@ Changelog
 
-# CLI code lives under operator/cmd/cli/, so we map the include path accordingly.
-define changelog_include_path
-$(if $(filter cli,$(1)),operator/cmd/cli,$(1))
-endef
-
-define changelog_output
-$(if $(filter cli,$(1)),operator/cmd/cli/CHANGELOG.md,$(1)/CHANGELOG.md)
-endef
+# Changelogs are generated from git history by scripts/gen-changelog.sh, which
+# takes release boundaries from `git tag` (a single `git-cliff --include-path`
+# call drops most release sections in this monorepo). CHANGELOG.md is machine-
+# owned; hand-authored notes live in the sibling RELEASE_NOTES.md.
 
 .PHONY: changelog
-changelog: ## Generate/update CHANGELOG.md for a component. Usage: make changelog COMPONENT=operator
-	@if [ -z "$(COMPONENT)" ]; then \
-		echo "ERROR: COMPONENT is required. Usage: make changelog COMPONENT=operator|chart|cli"; \
-		exit 1; \
-	fi
-	git-cliff \
-		--include-path "$(call changelog_include_path,$(COMPONENT))/**" \
-		--tag-pattern "$(COMPONENT)/.*" \
-		-o $(call changelog_output,$(COMPONENT))
-	@echo "Updated $(call changelog_output,$(COMPONENT))"
+changelog: ## Regenerate a CHANGELOG.md from git history. Interactive: prompts for component + action (regenerate or cut a release). Machine-owned; do not hand-edit.
+	@bash scripts/gen-changelog.sh
 
-.PHONY: changelog-preview
-changelog-preview: ## Preview unreleased changes for a component. Usage: make changelog-preview COMPONENT=operator
-	@if [ -z "$(COMPONENT)" ]; then \
-		echo "ERROR: COMPONENT is required. Usage: make changelog-preview COMPONENT=operator|chart|cli"; \
-		exit 1; \
-	fi
-	git-cliff \
-		--include-path "$(call changelog_include_path,$(COMPONENT))/**" \
-		--tag-pattern "$(COMPONENT)/.*" \
-		--unreleased \
-		--strip header
-
-COMPONENTS := operator agent chart cli
-
-.PHONY: changelog-all
-changelog-all: $(COMPONENTS:%=changelog-%) ## Generate CHANGELOGs for all components.
-
-.PHONY: $(COMPONENTS:%=changelog-%)
-$(COMPONENTS:%=changelog-%):
-	$(MAKE) changelog COMPONENT=$(@:changelog-%=%)
+.PHONY: release-tag
+release-tag: ## Interactively cut a release tag: prompts for component + bump (+ optional RC), creates the tag, and optionally pushes it (push triggers the CI release).
+	@bash scripts/release-tag.sh
 
 ##@ Clean
 
