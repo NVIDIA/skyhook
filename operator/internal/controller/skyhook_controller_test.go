@@ -1262,6 +1262,77 @@ var _ = Describe("skyhook controller tests", func() {
 		}
 	})
 
+	It("should mount each configMap key as a subPath so image defaults are not clobbered", func() {
+		testPackage := &v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "foo",
+				Version: "1.1.2",
+			},
+			Image: "foo/bar",
+			ConfigMap: map[string]string{
+				"b.sh": "echo b",
+				"a.sh": "echo a",
+				"c.sh": "echo c",
+			},
+		}
+		testSkyhook := &wrapper.Skyhook{
+			Skyhook: &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			},
+		}
+
+		pod := createPodFromPackage(operator.opts, testPackage, testSkyhook, "node1", v1alpha1.StageApply)
+
+		container := pod.Spec.InitContainers[0]
+
+		// The configMap must never be mounted as a bare directory: that hides
+		// any files the package image baked in at /skyhook-package/configmaps.
+		for _, vm := range container.VolumeMounts {
+			if vm.MountPath == "/skyhook-package/configmaps" {
+				Fail("configMap must not be mounted as a directory; expected per-key subPath mounts")
+			}
+		}
+
+		// Collect the configMap mounts (those backed by the package volume).
+		configMapMounts := make([]corev1.VolumeMount, 0)
+		for _, vm := range container.VolumeMounts {
+			if vm.Name == testPackage.Name {
+				configMapMounts = append(configMapMounts, vm)
+			}
+		}
+
+		Expect(configMapMounts).To(HaveLen(3))
+		// Sorted-key order for a deterministic pod spec.
+		Expect(configMapMounts[0]).To(Equal(corev1.VolumeMount{
+			Name:      testPackage.Name,
+			MountPath: "/skyhook-package/configmaps/a.sh",
+			SubPath:   "a.sh",
+			ReadOnly:  true,
+		}))
+		Expect(configMapMounts[1]).To(Equal(corev1.VolumeMount{
+			Name:      testPackage.Name,
+			MountPath: "/skyhook-package/configmaps/b.sh",
+			SubPath:   "b.sh",
+			ReadOnly:  true,
+		}))
+		Expect(configMapMounts[2]).To(Equal(corev1.VolumeMount{
+			Name:      testPackage.Name,
+			MountPath: "/skyhook-package/configmaps/c.sh",
+			SubPath:   "c.sh",
+			ReadOnly:  true,
+		}))
+
+		// The underlying configMap volume is still mounted exactly once.
+		configMapVolumes := 0
+		for _, v := range pod.Spec.Volumes {
+			if v.Name == testPackage.Name {
+				configMapVolumes++
+				Expect(v.ConfigMap).NotTo(BeNil())
+			}
+		}
+		Expect(configMapVolumes).To(Equal(1))
+	})
+
 	It("should generate valid configmap names", func() {
 		tests := []struct {
 			name        string

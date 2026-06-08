@@ -82,6 +82,9 @@ const (
 	volumeNameRootMount = "root-mount"
 	mountPathRoot       = "/root"
 
+	// Directory inside package containers where the SCR's configMap is projected.
+	mountPathConfigMaps = "/skyhook-package/configmaps"
+
 	// Environment variable names propagated into package containers.
 	envSkyhookResourceID = "SKYHOOK_RESOURCE_ID"
 	envSkyhookNodeOrder  = "SKYHOOK_NODE_ORDER"
@@ -2231,11 +2234,6 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 	}
 
 	if len(_package.ConfigMap) > 0 {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      _package.Name,
-			MountPath: "/skyhook-package/configmaps",
-		})
-
 		volumes = append(volumes, corev1.Volume{
 			Name: _package.Name,
 			VolumeSource: corev1.VolumeSource{
@@ -2246,6 +2244,29 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 				},
 			},
 		})
+
+		// Mount each configMap key as its own subPath rather than mounting the
+		// whole configMap as a directory. A directory mount replaces the entire
+		// path, hiding any files the package image baked in under
+		// mountPathConfigMaps; per-key subPath mounts overlay individual files
+		// on top of the image content instead. Trade-off: subPath mounts do not
+		// receive live configMap updates, which is fine here because package
+		// pods are recreated per stage / version bump. Keys are iterated in
+		// sorted order so the generated pod spec is deterministic.
+		configMapKeys := make([]string, 0, len(_package.ConfigMap))
+		for key := range _package.ConfigMap {
+			configMapKeys = append(configMapKeys, key)
+		}
+		sort.Strings(configMapKeys)
+
+		for _, key := range configMapKeys {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      _package.Name,
+				MountPath: fmt.Sprintf("%s/%s", mountPathConfigMaps, key),
+				SubPath:   key,
+				ReadOnly:  true,
+			})
+		}
 	}
 
 	copyDir := fmt.Sprintf("%s/%s/%s-%s-%s-%d",
