@@ -23,7 +23,7 @@ on:
       - cli/*
 
 env:
-  GO_VERSION: 1.26.3
+  GO_VERSION: 1.26.4
   # Opt all JS actions into Node 24 ahead of GitHub's Node 20 phase-out.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 

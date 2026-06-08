@@ -41,7 +41,7 @@ If a doc above is silent on a question you need to answer, say so explicitly rat
 
 ## Three components, three toolchains
 
-- **`operator/`** — Go controller-manager (controller-runtime, Kubebuilder v4). Go 1.26.3, vendored (`GOFLAGS=-mod=vendor`). Also hosts the CLI (`cmd/cli`) built as a kubectl plugin.
+- **`operator/`** — Go controller-manager (controller-runtime, Kubebuilder v4). Go 1.26.4, vendored (`GOFLAGS=-mod=vendor`). Also hosts the CLI (`cmd/cli`) built as a kubectl plugin.
 - **`agent/skyhook-agent/`** — Python 3.10+ package (hatch-managed). Runs inside every package container; reads `/skyhook-package/config.json` and executes lifecycle steps (apply / config / interrupt / post-interrupt / upgrade / uninstall). Tests via pytest, vendored deps under `agent/vendor/`.
 - **`chart/`** — Helm chart. Generated from `operator/config/` via `helmify` (`make generate-helm`) but hand-edited after; don't regenerate blindly.
 
