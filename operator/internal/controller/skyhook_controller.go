@@ -1003,7 +1003,7 @@ func HandleCancelledUninstalls(skyhook SkyhookNodes) error {
 				continue // finalizer-driven uninstall — do not cancel
 			}
 			// Package is at StageUninstall but apply is false → cancelled
-			if status.State == v1alpha1.StateInProgress || status.State == v1alpha1.StateErroring {
+			if status.IsActive() {
 				// Reset to re-enter install pipeline
 				err := node.Upsert(pkg.PackageRef, pkg.Image,
 					v1alpha1.StateInProgress, v1alpha1.StageApply, 0, pkg.ContainerSHA)
@@ -2613,14 +2613,28 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 
 	// wait tell this is done if its happening
 	status, found := skyhookNode.PackageStatus(_package.GetUniqueName())
-	if found && status.State == v1alpha1.StateSkipped {
+	if found && status.IsSkipped() {
+		// Level-triggered backstop. This package was skipped because a higher-priority
+		// interrupt won the node's single interrupt slot (e.g. a reboot that also satisfies
+		// it). The pod controller promotes skipped packages when that interrupt pod completes,
+		// but a skipped package has no pod of its own, so if that edge is missed (the pod is
+		// already GC'd, or the skip was written after it completed) nothing else ever promotes
+		// it and the node never finishes. runInterrupt is true only once this is the highest-
+		// priority interrupt left to run, meaning the preempting interrupt has completed and
+		// left the runnable set: promote then, so the reconcile converges on its own rather
+		// than depending on a pod event that may never arrive. While a higher-priority
+		// interrupt is still pending (runInterrupt false) the package keeps waiting.
+		if runInterrupt {
+			if err := skyhookNode.ProgressSkipped(); err != nil {
+				return false, fmt.Errorf("error progressing skipped package [%s]: %w", _package.GetUniqueName(), err)
+			}
+		}
 		return false, nil
 	}
 
 	// Theres is a race condition when a node reboots and api cleans up the interrupt pod
 	// so we need to check if the pod exists and if it does, we need to recreate it
-	if status != nil && (status.State == v1alpha1.StateInProgress || status.State == v1alpha1.StateErroring) &&
-		(status.Stage == v1alpha1.StageInterrupt || status.Stage == v1alpha1.StageUninstallInterrupt) {
+	if status != nil && status.IsActive() && status.IsInterruptStage() {
 		// call interrupt to recreate the pod if missing
 		err := r.Interrupt(ctx, skyhookNode, _package, interrupt, status.Stage)
 		if err != nil {
@@ -2671,9 +2685,7 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 	}
 
 	// wait tell this is done if its happening
-	if status != nil &&
-		(status.Stage == v1alpha1.StageInterrupt || status.Stage == v1alpha1.StageUninstallInterrupt) &&
-		status.State != v1alpha1.StateComplete {
+	if status != nil && status.IsInterruptStage() && status.State != v1alpha1.StateComplete {
 		return false, nil
 	}
 
@@ -2757,7 +2769,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 	// wait tell this is done if its happening
 	status, found := skyhookNode.PackageStatus(_package.GetUniqueName())
 
-	if found && status.State == v1alpha1.StateSkipped { // skipped, so nothing to do
+	if found && status.IsSkipped() { // skipped, so nothing to do
 		return nil
 	}
 

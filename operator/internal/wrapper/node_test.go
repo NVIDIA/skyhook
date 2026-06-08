@@ -280,4 +280,41 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(node.Status.Conditions).To(BeEmpty())
 		})
 	})
+
+	Context("ProgressSkipped", func() {
+		It("persists the skipped->complete promotion to the nodeState annotation", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+			}
+			skyhook := v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Spec: v1alpha1.SkyhookSpec{
+					Packages: map[string]v1alpha1.Package{
+						"baxter": {
+							PackageRef: v1alpha1.PackageRef{Name: "baxter", Version: "3.2.1"},
+							Image:      "baxter-image",
+						},
+					},
+				},
+			}
+
+			sn, err := NewSkyhookNode(node, &skyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Park baxter at interrupt/skipped. Upsert persists this to the annotation.
+			Expect(sn.Upsert(v1alpha1.PackageRef{Name: "baxter", Version: "3.2.1"}, "baxter-image",
+				v1alpha1.StateSkipped, v1alpha1.StageInterrupt, 0, "")).To(Succeed())
+
+			Expect(sn.ProgressSkipped()).To(Succeed())
+
+			// The promotion must be persisted to the nodeState annotation, not just the
+			// in-memory map: the reconcile is level-triggered and reloads state from the
+			// annotation each pass. A fresh wrapper over the same Node models that reload.
+			reloaded, err := NewSkyhookNode(node, &skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			status, found := reloaded.PackageStatus("baxter|3.2.1")
+			Expect(found).To(BeTrue())
+			Expect(status.State).To(Equal(v1alpha1.StateComplete))
+		})
+	})
 })
