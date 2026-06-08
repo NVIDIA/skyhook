@@ -30,7 +30,7 @@ on:
       - .github/workflows/agent-go-ci.yaml
 
 env:
-  GO_VERSION: 1.26.3
+  GO_VERSION: 1.26.4
 
 jobs:
   test:

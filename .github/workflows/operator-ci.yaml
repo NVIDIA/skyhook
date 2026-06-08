@@ -52,7 +52,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: 1.26.3
+  GO_VERSION: 1.26.4
   DEBIAN_VERSION: trixie
   # Opt all JS actions into Node 24. Node 20 is being phased out by GitHub
   # Actions starting June 2026; this avoids the deprecation warnings without
