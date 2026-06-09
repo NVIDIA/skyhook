@@ -103,14 +103,18 @@ spec:
             ((volumes[?name == 'mypkg'].configMap.name)[0] == 'explicit-uninstall-mypkg-2.1.4'): true
             initContainers:
               - name: mypkg-init
-                ## init container mounts the configmap so scripts land in /root at copy time
-                ((volumeMounts[?name == 'mypkg'].mountPath)[0] == '/skyhook-package/configmaps'): true
+                ## init container mounts each configMap key as its own subPath so scripts
+                ## land in /root at copy time and image-baked files under
+                ## /skyhook-package/configmaps are not clobbered (issue #208)
+                ((volumeMounts[?name == 'mypkg' && subPath == 'install.sh'].mountPath)[0] == '/skyhook-package/configmaps/install.sh'): true
+                ((volumeMounts[?name == 'mypkg' && subPath == 'uninstall.sh'].mountPath)[0] == '/skyhook-package/configmaps/uninstall.sh'): true
               - name: mypkg-uninstall
                 args:
                   ([0]): uninstall
                 ## user-supplied env var from skyhook.yaml is propagated to the uninstall container
                 ((env[?name == 'MY_VAR'].value)[0] == 'hello'): true
-                ((volumeMounts[?name == 'mypkg'].mountPath)[0] == '/skyhook-package/configmaps'): true
+                ((volumeMounts[?name == 'mypkg' && subPath == 'install.sh'].mountPath)[0] == '/skyhook-package/configmaps/install.sh'): true
+                ((volumeMounts[?name == 'mypkg' && subPath == 'uninstall.sh'].mountPath)[0] == '/skyhook-package/configmaps/uninstall.sh'): true
               - name: mypkg-uninstallcheck
                 args:
                   ([0]): uninstall-check
