@@ -593,6 +593,59 @@ func (_c *MockSkyhookNodes_GetSkyhook_Call) RunAndReturn(run func() *wrapper.Sky
 	return _c
 }
 
+// HasUninstallWork provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) HasUninstallWork() (bool, error) {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasUninstallWork")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func() (bool, error)); ok {
+		return returnFunc()
+	}
+	if returnFunc, ok := ret.Get(0).(func() bool); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func() error); ok {
+		r1 = returnFunc()
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockSkyhookNodes_HasUninstallWork_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasUninstallWork'
+type MockSkyhookNodes_HasUninstallWork_Call struct {
+	*mock.Call
+}
+
+// HasUninstallWork is a helper method to define mock.On call
+func (_e *MockSkyhookNodes_Expecter) HasUninstallWork() *MockSkyhookNodes_HasUninstallWork_Call {
+	return &MockSkyhookNodes_HasUninstallWork_Call{Call: _e.mock.On("HasUninstallWork")}
+}
+
+func (_c *MockSkyhookNodes_HasUninstallWork_Call) Run(run func()) *MockSkyhookNodes_HasUninstallWork_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_HasUninstallWork_Call) Return(b bool, err error) *MockSkyhookNodes_HasUninstallWork_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *MockSkyhookNodes_HasUninstallWork_Call) RunAndReturn(run func() (bool, error)) *MockSkyhookNodes_HasUninstallWork_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // IsComplete provides a mock function for the type MockSkyhookNodes
 func (_mock *MockSkyhookNodes) IsComplete() bool {
 	ret := _mock.Called()
@@ -937,6 +990,50 @@ func (_c *MockSkyhookNodes_Status_Call) RunAndReturn(run func() v1alpha1.Status)
 	return _c
 }
 
+// UpdateBlockedCondition provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) UpdateBlockedCondition() error {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateBlockedCondition")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func() error); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockSkyhookNodes_UpdateBlockedCondition_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateBlockedCondition'
+type MockSkyhookNodes_UpdateBlockedCondition_Call struct {
+	*mock.Call
+}
+
+// UpdateBlockedCondition is a helper method to define mock.On call
+func (_e *MockSkyhookNodes_Expecter) UpdateBlockedCondition() *MockSkyhookNodes_UpdateBlockedCondition_Call {
+	return &MockSkyhookNodes_UpdateBlockedCondition_Call{Call: _e.mock.On("UpdateBlockedCondition")}
+}
+
+func (_c *MockSkyhookNodes_UpdateBlockedCondition_Call) Run(run func()) *MockSkyhookNodes_UpdateBlockedCondition_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodes_UpdateBlockedCondition_Call) Return(err error) *MockSkyhookNodes_UpdateBlockedCondition_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockSkyhookNodes_UpdateBlockedCondition_Call) RunAndReturn(run func() error) *MockSkyhookNodes_UpdateBlockedCondition_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // UpdateCondition provides a mock function for the type MockSkyhookNodes
 func (_mock *MockSkyhookNodes) UpdateCondition(logger logr.Logger) bool {
 	ret := _mock.Called(logger)
@@ -988,100 +1085,36 @@ func (_c *MockSkyhookNodes_UpdateCondition_Call) RunAndReturn(run func(logger lo
 	return _c
 }
 
-// HasUninstallWork provides a mock function for the type MockSkyhookNodes
-func (_mock *MockSkyhookNodes) HasUninstallWork() (bool, error) {
-	ret := _mock.Called()
-
-	if len(ret) == 0 {
-		panic("no return value specified for HasUninstallWork")
-	}
-
-	var r0 bool
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func() (bool, error)); ok {
-		return returnFunc()
-	}
-	if returnFunc, ok := ret.Get(0).(func() bool); ok {
-		r0 = returnFunc()
-	} else {
-		r0 = ret.Get(0).(bool)
-	}
-	if returnFunc, ok := ret.Get(1).(func() error); ok {
-		r1 = returnFunc()
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
+// UpdateNodeStateMalformedCondition provides a mock function for the type MockSkyhookNodes
+func (_mock *MockSkyhookNodes) UpdateNodeStateMalformedCondition() {
+	_mock.Called()
+	return
 }
 
-// MockSkyhookNodes_HasUninstallWork_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasUninstallWork'
-type MockSkyhookNodes_HasUninstallWork_Call struct {
+// MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateNodeStateMalformedCondition'
+type MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call struct {
 	*mock.Call
 }
 
-// HasUninstallWork is a helper method to define mock.On call
-func (_e *MockSkyhookNodes_Expecter) HasUninstallWork() *MockSkyhookNodes_HasUninstallWork_Call {
-	return &MockSkyhookNodes_HasUninstallWork_Call{Call: _e.mock.On("HasUninstallWork")}
+// UpdateNodeStateMalformedCondition is a helper method to define mock.On call
+func (_e *MockSkyhookNodes_Expecter) UpdateNodeStateMalformedCondition() *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
+	return &MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call{Call: _e.mock.On("UpdateNodeStateMalformedCondition")}
 }
 
-func (_c *MockSkyhookNodes_HasUninstallWork_Call) Run(run func()) *MockSkyhookNodes_HasUninstallWork_Call {
+func (_c *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call) Run(run func()) *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run()
 	})
 	return _c
 }
 
-func (_c *MockSkyhookNodes_HasUninstallWork_Call) Return(b bool, err error) *MockSkyhookNodes_HasUninstallWork_Call {
-	_c.Call.Return(b, err)
+func (_c *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call) Return() *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
+	_c.Call.Return()
 	return _c
 }
 
-func (_c *MockSkyhookNodes_HasUninstallWork_Call) RunAndReturn(run func() (bool, error)) *MockSkyhookNodes_HasUninstallWork_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// UpdateBlockedCondition provides a mock function for the type MockSkyhookNodes
-func (_mock *MockSkyhookNodes) UpdateBlockedCondition() error {
-	ret := _mock.Called()
-
-	if len(ret) == 0 {
-		panic("no return value specified for UpdateBlockedCondition")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func() error); ok {
-		r0 = returnFunc()
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// MockSkyhookNodes_UpdateBlockedCondition_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateBlockedCondition'
-type MockSkyhookNodes_UpdateBlockedCondition_Call struct {
-	*mock.Call
-}
-
-// UpdateBlockedCondition is a helper method to define mock.On call
-func (_e *MockSkyhookNodes_Expecter) UpdateBlockedCondition() *MockSkyhookNodes_UpdateBlockedCondition_Call {
-	return &MockSkyhookNodes_UpdateBlockedCondition_Call{Call: _e.mock.On("UpdateBlockedCondition")}
-}
-
-func (_c *MockSkyhookNodes_UpdateBlockedCondition_Call) Run(run func()) *MockSkyhookNodes_UpdateBlockedCondition_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run()
-	})
-	return _c
-}
-
-func (_c *MockSkyhookNodes_UpdateBlockedCondition_Call) Return(err error) *MockSkyhookNodes_UpdateBlockedCondition_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *MockSkyhookNodes_UpdateBlockedCondition_Call) RunAndReturn(run func() error) *MockSkyhookNodes_UpdateBlockedCondition_Call {
-	_c.Call.Return(run)
+func (_c *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call) RunAndReturn(run func()) *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
+	_c.Run(run)
 	return _c
 }
 
@@ -1126,38 +1159,5 @@ func (_c *MockSkyhookNodes_UpdateUninstallConditions_Call) Return(err error) *Mo
 
 func (_c *MockSkyhookNodes_UpdateUninstallConditions_Call) RunAndReturn(run func() error) *MockSkyhookNodes_UpdateUninstallConditions_Call {
 	_c.Call.Return(run)
-	return _c
-}
-
-// UpdateNodeStateMalformedCondition provides a mock function for the type MockSkyhookNodes
-func (_mock *MockSkyhookNodes) UpdateNodeStateMalformedCondition() {
-	_mock.Called()
-	return
-}
-
-// MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateNodeStateMalformedCondition'
-type MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call struct {
-	*mock.Call
-}
-
-// UpdateNodeStateMalformedCondition is a helper method to define mock.On call
-func (_e *MockSkyhookNodes_Expecter) UpdateNodeStateMalformedCondition() *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
-	return &MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call{Call: _e.mock.On("UpdateNodeStateMalformedCondition")}
-}
-
-func (_c *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call) Run(run func()) *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run()
-	})
-	return _c
-}
-
-func (_c *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call) Return() *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
-	_c.Call.Return()
-	return _c
-}
-
-func (_c *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call) RunAndReturn(run func()) *MockSkyhookNodes_UpdateNodeStateMalformedCondition_Call {
-	_c.Run(run)
 	return _c
 }

@@ -206,7 +206,9 @@ func (r *SkyhookReconciler) HandleCompletePod(ctx context.Context, skyhookNode w
 		}
 
 		// progress forward any skipped packages that this interrupt completed
-		upgraded.ProgressSkipped()
+		if err := upgraded.ProgressSkipped(); err != nil {
+			return false, fmt.Errorf("error progressing skipped packages: %w", err)
+		}
 	} else if packagePtr.Stage == v1alpha1.StageUpgrade {
 		nodeState, err := skyhookNode.State()
 		if err != nil {

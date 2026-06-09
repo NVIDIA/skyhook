@@ -528,8 +528,7 @@ func (ns *NodeState) IsComplete(packages Packages, interrupt map[string][]*Inter
 	if len(activePackages) <= len(ns.GetComplete(activePackages, interrupt, config)) {
 		// If a current spec package is still in the uninstall cycle the node isn't complete.
 		for _, pkg := range activePackages {
-			if status, ok := (*ns)[pkg.GetUniqueName()]; ok &&
-				(status.Stage == StageUninstall || status.Stage == StageUninstallInterrupt) {
+			if ns.IsUninstallCycleInProgress(pkg.GetUniqueName()) {
 				return false
 			}
 		}
@@ -722,6 +721,34 @@ func (left *PackageStatus) Equal(right *PackageStatus) bool {
 		left.Stage == right.Stage &&
 		left.State == right.State &&
 		left.Restarts == right.Restarts
+}
+
+// IsInterruptStage reports whether the package is in one of the two interrupt-phase
+// Stages (interrupt or uninstall-interrupt). Nil-safe so it preserves the existing
+// `status != nil &&` guards at call sites: a nil/absent status is in no Stage.
+func (s *PackageStatus) IsInterruptStage() bool {
+	if s == nil {
+		return false
+	}
+	return s.Stage == StageInterrupt || s.Stage == StageUninstallInterrupt
+}
+
+// IsActive reports whether the package's execution State is still live (in-progress or
+// erroring), i.e. started but not yet terminal. Nil-safe.
+func (s *PackageStatus) IsActive() bool {
+	if s == nil {
+		return false
+	}
+	return s.State == StateInProgress || s.State == StateErroring
+}
+
+// IsSkipped reports whether the package's execution State is skipped (a higher-priority
+// interrupt won the node's single interrupt slot). Nil-safe.
+func (s *PackageStatus) IsSkipped() bool {
+	if s == nil {
+		return false
+	}
+	return s.State == StateSkipped
 }
 
 type Stage string
