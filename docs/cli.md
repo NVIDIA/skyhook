@@ -68,10 +68,11 @@ The CLI's `pause`, `resume`, `disable`, and `enable` commands set these annotati
 
 ```bash
 # Build from source
+cd operator
 make build-cli
 
 # Install as kubectl plugin
-cp bin/kubectl-skyhook /usr/local/bin/
+cp bin/skyhook /usr/local/bin/kubectl-skyhook # other another directory in $PATH with write access
 
 # Verify installation
 kubectl skyhook version

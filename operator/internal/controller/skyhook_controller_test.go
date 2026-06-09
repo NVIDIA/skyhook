@@ -3737,3 +3737,61 @@ var _ = Describe("TrackReboots reapply-on-reboot on a busy node", func() {
 		Expect(sh.Status.NodeBootIds[nodeName]).To(Equal(newBootID))
 	})
 })
+
+// ProcessInterrupt skipped-package promotion guards the level-triggered backstop for packages
+// parked at (interrupt, skipped). Such a package lost the node's single interrupt slot to a
+// higher-priority interrupt (e.g. a reboot). The pod controller promotes it when that interrupt
+// pod completes, but a skipped package has no pod of its own, so if that edge is missed the main
+// reconcile must still converge. Once the preempting interrupt has finished and left the runnable
+// set, the skipped package becomes the chosen interrupt winner (runInterrupt=true), which is the
+// signal that it is safe to promote it to complete from the reconcile loop itself.
+var _ = Describe("ProcessInterrupt skipped-package promotion", func() {
+
+	newSkippedNode := func() wrapper.SkyhookNode {
+		pkg := v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{Name: "baxter", Version: "3.2.1"},
+			Image:      "baxter-image",
+			Interrupt:  &v1alpha1.Interrupt{Type: v1alpha1.SERVICE, Services: []string{"cron"}},
+		}
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "config-skyhook"},
+			Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{"baxter": pkg}},
+		}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "kind-worker"}}
+		sn, err := wrapper.NewSkyhookNode(node, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+		// Park baxter at interrupt/skipped (Upsert persists it to the annotation).
+		Expect(sn.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateSkipped, v1alpha1.StageInterrupt, 0, "")).To(Succeed())
+		return sn
+	}
+
+	It("promotes a skipped package once it is the interrupt winner (runInterrupt=true)", func() {
+		sn := newSkippedNode()
+		pkg := sn.GetSkyhook().Spec.Packages["baxter"]
+
+		r := &SkyhookReconciler{}
+		proceed, err := r.ProcessInterrupt(context.Background(), sn, &pkg, pkg.Interrupt, true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(proceed).To(BeFalse())
+
+		status, found := sn.PackageStatus("baxter|3.2.1")
+		Expect(found).To(BeTrue())
+		Expect(status.State).To(Equal(v1alpha1.StateComplete),
+			"a skipped package that is now the interrupt winner must be promoted by the reconcile, not left for a pod event that never comes")
+	})
+
+	It("does NOT promote a skipped package while a higher-priority interrupt is still pending (runInterrupt=false)", func() {
+		sn := newSkippedNode()
+		pkg := sn.GetSkyhook().Spec.Packages["baxter"]
+
+		r := &SkyhookReconciler{}
+		proceed, err := r.ProcessInterrupt(context.Background(), sn, &pkg, pkg.Interrupt, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(proceed).To(BeFalse())
+
+		status, found := sn.PackageStatus("baxter|3.2.1")
+		Expect(found).To(BeTrue())
+		Expect(status.State).To(Equal(v1alpha1.StateSkipped),
+			"a skipped package must keep waiting while the preempting interrupt is still pending")
+	})
+})
