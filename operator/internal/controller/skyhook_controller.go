@@ -680,6 +680,19 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 					r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node for [%s] to be reapplied", node.GetSkyhook().Name)
 					node.Reset()
 
+					// Re-apply the runtime-required taint so workloads cannot schedule on the
+					// rebooted node until Skyhook finishes re-applying. The original auto-taint
+					// annotation survives Reset() and remains the record that this taint is
+					// operator-managed; no annotation update is needed.
+					if skyhook.GetSkyhook().Spec.RuntimeRequired && skyhook.GetSkyhook().Spec.AutoTaintNewNodes {
+						taintToAdd := r.opts.GetRuntimeRequiredTaint()
+						newNode, updated, _ := taints.AddOrUpdateTaint(node.GetNode(), &taintToAdd)
+						if updated {
+							node.GetNode().Spec.Taints = newNode.Spec.Taints
+							log.FromContext(ctx).Info("re-applying runtime-required taint after reboot", "node", node.GetNode().Name, "taint", taintToAdd.Key)
+						}
+					}
+
 					// Persist the reset before recording the new boot id. We Patch rather than
 					// Update because a busy node's resourceVersion churns constantly under other
 					// controllers, and a full Update would lose that optimistic-concurrency race; a
