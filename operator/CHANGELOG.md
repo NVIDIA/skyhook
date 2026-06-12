@@ -5,7 +5,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [operator/v0.17.0] - 2026-06-12
 
 ### Bug Fixes
 
@@ -13,10 +13,14 @@ All notable changes to this project will be documented in this file.
 - Close StageInterrupt trap + harden core e2e pool 
 - *(operator)* Requeue when an owned ConfigMap sync is deferred 
 - *(operator)* Persist reapply-on-reboot reset before advancing boot id
+- *(operator)* Mount configMap keys as subPaths to preserve image defaults 
+- *(operator)* Promote skipped interrupt packages from the reconcile loop  
 
 ### New Features
 
 - *(cli)* Update-state + targeted reset --package  
+- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release-tag helper 
+- *(controller)* Re-apply runtime-required taint on reboot when autoTaintNewNodes=true 
 
 ### Other Tasks
 
@@ -27,6 +31,7 @@ chore(chart): bump to v0.16.1 with operator webhook cert deadlock fix
 - Merge pull request #261 from NVIDIA/worktree-investigate-reapply-reboot
 
 fix(operator): persist reapply-on-reboot reset before advancing boot id
+- Update go to latest 
 
 
 ## [operator/v0.16.1] - 2026-05-22
