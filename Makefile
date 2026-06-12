@@ -15,8 +15,6 @@
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-.PHONY: all
-all: build ## Build all components.
 
 .PHONY: help
 help: ## Display this help.
@@ -29,6 +27,9 @@ labels: ## Sync GitHub labels from .github/labels.yml (requires gh CLI with repo
 	python3 scripts/sync_labels.py
 
 ##@ Build
+
+.PHONY: all
+all: build ## Build all components.
 
 .PHONY: build
 build: ## Build operator and agent.
