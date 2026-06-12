@@ -81,6 +81,20 @@ The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyFo
 - Ensure the node is ready before proceeding with package operations
 - Handle the timing and sequencing of all stages
 
+### Shared Cordon Ownership
+
+Each Skyhook that cordons a node records ownership with a `skyhook.nvidia.com/cordon_<skyhook-name>` annotation. When that Skyhook completes, it removes only its own cordon annotation. The node is marked schedulable only after no `skyhook.nvidia.com/cordon_*` annotations remain, so one Skyhook cannot uncordon a node that another Skyhook is still preparing for interrupt work.
+
+Other Skyhook annotations, such as `status_*`, `nodeState_*`, and `version_*`, do not keep a node cordoned. Only the `cordon_*` annotation family participates in shared cordon ownership.
+
+### Orphaned Cordon Recovery
+
+If a Skyhook is force-deleted in a way that bypasses finalizer cleanup, or cleanup fails after the node was cordoned, its `cordon_<skyhook-name>` annotation can be left behind. That stale annotation will keep the node unschedulable from the operator's point of view until it is removed.
+
+Use `kubectl skyhook reset <skyhook-name> --confirm` to clear Skyhook metadata for affected nodes that still have `nodeState_<skyhook-name>` annotations, or `kubectl skyhook node reset <node-name> --skyhook <skyhook-name> --confirm` for a specific node. These reset commands remove the matching `cordon_<skyhook-name>` annotation, but they do not clear `spec.unschedulable`. After the stale cordon annotation is removed, if no other `skyhook.nvidia.com/cordon_*` annotations remain and no live Skyhook is expected to uncordon the node, run `kubectl uncordon <node-name>` to make it schedulable again.
+
+If the node only has a stale `cordon_<skyhook-name>` annotation and its `nodeState_<skyhook-name>` annotation has already been removed, `kubectl skyhook reset` will not discover the node. In that case, remove the orphaned annotation manually, then uncordon the node as above if no other Skyhook still owns a cordon.
+
 ## Drain Configuration
 
 Interrupt-enabled Skyhooks can tune drain behavior with `spec.drainConfig`.
