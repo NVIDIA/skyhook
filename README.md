@@ -75,7 +75,7 @@ Install NodeWright quickly using Helm without downloading the repository:
 # The chart is distributed as an OCI artifact on GitHub Container Registry.
 # Helm 3.8+ supports OCI natively — no `helm repo add` needed.
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.16.1 \
+  --version v0.17.0 \
   --namespace skyhook \
   --create-namespace
 ```

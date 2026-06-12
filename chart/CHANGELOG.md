@@ -5,11 +5,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [chart/v0.17.0] - 2026-06-12
 
 ### Bug Fixes
 
 - *(chart)* Agent container path pointing to skyhook not nodewright
+
+### New Features
+
+- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release-tag helper 
 
 ### Other Tasks
 
