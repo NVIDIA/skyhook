@@ -58,6 +58,16 @@ jobs:
           VERSION="${GITHUB_REF_NAME#cli/}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building CLI version: ${VERSION}"
+          # Release candidate tags (e.g. cli/v0.2.0-rc.1) → mark the GitHub
+          # release as a prerelease so they don't become "Latest" on the
+          # Releases page, matching release.yml. The strict tag-format check
+          # lives in the release-notes step below; here we only need the
+          # rc/stable split to set the prerelease flag.
+          if [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build CLI binaries
         working-directory: operator
@@ -122,6 +132,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: "Skyhook CLI ${{ steps.version.outputs.version }}"
+          prerelease: ${{ steps.version.outputs.prerelease }}
           files: |
             operator/dist/*.tar.gz
             operator/dist/*.zip
