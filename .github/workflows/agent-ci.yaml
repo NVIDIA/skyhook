@@ -24,6 +24,7 @@ on:
       - '!agent/go/**'
       - containers/agent.Dockerfile
       - .github/actions/**
+      - operator/k8s-test-versions.mk
       - .github/workflows/agent-ci.yaml
   push:
     branches:
@@ -35,6 +36,7 @@ on:
       - '!agent/go/**'
       - containers/agent.Dockerfile
       - .github/actions/**
+      - operator/k8s-test-versions.mk
       - .github/workflows/agent-ci.yaml
 env:
   REGISTRY: ghcr.io
@@ -322,12 +324,23 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load Kubernetes test versions
+        id: k8s-versions
+        run: |
+          cd operator
+          make print-k8s-test-versions-github-output >> "$GITHUB_OUTPUT"
+
+      - name: Validate KinD node image
+        run: |
+          cd operator
+          make validate-kind-node-image KIND_NODE_IMAGE_VERSION=${{ steps.k8s-versions.outputs.kind-node-image-version }}
       
       - name: Create Kubernetes KinD Cluster
         uses: helm/kind-action@v1.14.0
         with:
-          version: v0.31.0
-          node_image: kindest/node:v1.35.0
+          version: ${{ steps.k8s-versions.outputs.kind-binary-version }}
+          node_image: kindest/node:v${{ steps.k8s-versions.outputs.kind-node-image-version }}
           config: operator/config/local-dev/kind-config.yaml
           cluster_name: kind
       
@@ -335,7 +348,7 @@ jobs:
         id: cached-binaries
         uses: actions/cache/restore@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/k8s-test-versions.mk') }}
           restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
@@ -351,7 +364,7 @@ jobs:
         if: steps.cached-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/k8s-test-versions.mk') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build

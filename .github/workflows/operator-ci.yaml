@@ -25,6 +25,7 @@ on:
       - operator/go.mod
       - operator/go.sum
       - operator/deps.mk
+      - operator/k8s-test-versions.mk
       - operator/config/**
       - containers/operator.Dockerfile
       - .github/actions/**
@@ -41,6 +42,7 @@ on:
       - operator/go.mod
       - operator/go.sum
       - operator/deps.mk
+      - operator/k8s-test-versions.mk
       - operator/config/**
       - containers/operator.Dockerfile
       - .github/actions/**
@@ -59,11 +61,30 @@ env:
   # waiting for each action (checkout/setup-go/cache/upload-artifact) to
   # publish a Node 24 release.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  KIND_BINARY_VERSION: v0.31.0
   PLATFORMS: linux/amd64,linux/arm64
   PUSH_TO_REGISTRY: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
 jobs:
+  k8s-test-versions:
+    name: Load Kubernetes Test Versions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      envtest-k8s-version: ${{ steps.versions.outputs.envtest-k8s-version }}
+      kind-version: ${{ steps.versions.outputs.kind-version }}
+      kind-node-image-version: ${{ steps.versions.outputs.kind-node-image-version }}
+      kind-binary-version: ${{ steps.versions.outputs.kind-binary-version }}
+      ci-kind-node-image-versions-json: ${{ steps.versions.outputs.ci-kind-node-image-versions-json }}
+      ci-primary-kind-node-image-version: ${{ steps.versions.outputs.ci-primary-kind-node-image-version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Load versions
+        id: versions
+        run: |
+          cd operator
+          make print-k8s-test-versions-github-output >> "$GITHUB_OUTPUT"
+
   fetch-distroless-versions:
     name: Fetch Latest Distroless Versions
     runs-on: ubuntu-latest
@@ -85,27 +106,28 @@ jobs:
   # Test operator across supported Kubernetes versions and test suites
   tests:
     runs-on: ubuntu-latest
+    needs: [k8s-test-versions]
     strategy:
       matrix:
         # Standard E2E tests on all supported K8s versions
-        k8s-version: ["1.32.11", "1.33.7", "1.34.3", "1.35.0"]
+        k8s-version: ${{ fromJson(needs.k8s-test-versions.outputs.ci-kind-node-image-versions-json) }}
         test-suite: ["e2e"]
         pool: ["core", "interrupt", "uninstall", "lifecycle"]
         make-targets: ["setup-kind-cluster e2e-tests"]
         include:
-          # Deployment policy tests on 15-node cluster (K8s 1.35 only)
-          - k8s-version: "1.35.0"
+          # Deployment policy tests on 15-node cluster use the primary Kind node image.
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: deployment-policy
             kind-config: k8s-tests/chainsaw/deployment-policy/kind-config.yaml
             make-targets: "setup-kind-cluster deployment-policy-tests"
-          # CLI e2e tests on K8s 1.34 only
-          - k8s-version: "1.35.0"
+          # Focus the heavier suites on the primary Kind node image.
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: cli-e2e
             make-targets: "setup-kind-cluster cli-e2e-tests"
-          - k8s-version: "1.35.0"
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: unit-tests
             make-targets: "vet lint unit-tests"
-          - k8s-version: "1.35.0"
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: helm-tests
             make-targets: "helm-tests"
       fail-fast: false  # Continue testing other versions if one fails
@@ -132,7 +154,7 @@ jobs:
         id: cached-binaries
         uses: actions/cache/restore@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/k8s-test-versions.mk') }}
           restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
@@ -147,21 +169,28 @@ jobs:
         if: steps.cached-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/k8s-test-versions.mk') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
+      - name: Validate KinD node image v${{ matrix.k8s-version }}
+        if: matrix.test-suite != 'unit-tests' # unit tests don't need a cluster
+        run: |
+          cd operator
+          make validate-kind-node-image KIND_NODE_IMAGE_VERSION=${{ matrix.k8s-version }}
       - name: Create Kubernetes KinD Cluster v${{ matrix.k8s-version }}
         if: matrix.test-suite != 'unit-tests' && matrix.test-suite != 'helm-tests' # unit tests don't need a cluster; helm-tests uses ctlptl
         id: kind
         uses: helm/kind-action@v1.14.0
         with:
-          version: ${{ env.KIND_BINARY_VERSION }}
+          version: ${{ needs.k8s-test-versions.outputs.kind-binary-version }}
           node_image: kindest/node:v${{ matrix.k8s-version }}
           config: ${{ matrix.kind-config || 'operator/config/local-dev/kind-config.yaml' }}
           cluster_name: kind
       - name: Install kind
         if: matrix.test-suite == 'helm-tests'
+        env:
+          KIND_BINARY_VERSION: ${{ needs.k8s-test-versions.outputs.kind-binary-version }}
         run: |
           curl -fsSL -o /tmp/kind-linux-amd64 https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64
           curl -fsSL -o /tmp/kind-linux-amd64.sha256sum https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64.sha256sum
@@ -169,12 +198,9 @@ jobs:
           sudo install /tmp/kind-linux-amd64 /usr/local/bin/kind
       - name: Create ctlptl KinD Cluster
         if: matrix.test-suite == 'helm-tests'
-        run: ./operator/bin/ctlptl apply -f operator/config/local-dev/ctlptl-config.yaml
-      - name: Set up ctlptl KinD Cluster
-        if: matrix.test-suite == 'helm-tests'
         run: |
           cd operator
-          make setup-kind-cluster
+          make create-kind-cluster KIND_NODE_IMAGE_VERSION=${{ matrix.k8s-version }}
       # Run test suite
       - name: Run ${{ matrix.test-suite }} tests
         env:

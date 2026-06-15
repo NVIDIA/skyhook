@@ -27,9 +27,6 @@ IMG ?= $(IMG_REPO)/operator
 LOCAL_REGISTRY ?= localhost:5005
 LOCAL_OPERATOR_IMG ?= $(LOCAL_REGISTRY)/skyhook-operator:testing
 
-## default Kubernetes version for kind-based development clusters
-KIND_VERSION ?= 1.36.0
-
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook
 
@@ -154,6 +151,44 @@ reporting: $(REPORTING)
 $(REPORTING):
 	mkdir -p $@
 
+CTLPTL_CONFIG_TEMPLATE ?= config/local-dev/ctlptl-config.yaml
+CTLPTL_CONFIG_RENDERED ?= $(REPORTING)/ctlptl-config.yaml
+
+.PHONY: print-k8s-test-versions-github-output
+print-k8s-test-versions-github-output: ## Print Kubernetes test versions in GitHub Actions output format.
+	@printf 'envtest-k8s-version=%s\n' '$(ENVTEST_K8S_VERSION)'
+	@printf 'kind-version=%s\n' '$(KIND_VERSION)'
+	@printf 'kind-node-image-version=%s\n' '$(KIND_NODE_IMAGE_VERSION)'
+	@printf 'kind-binary-version=%s\n' '$(KIND_BINARY_VERSION)'
+	@printf 'ci-kind-node-image-versions-json=%s\n' '$(CI_KIND_NODE_IMAGE_VERSIONS_JSON)'
+	@printf 'ci-primary-kind-node-image-version=%s\n' '$(CI_PRIMARY_KIND_NODE_IMAGE_VERSION)'
+
+.PHONY: validate-kind-node-image
+validate-kind-node-image: ## Check that the configured kindest/node image tag exists before creating a cluster.
+	@echo "Validating kindest/node:v$(KIND_NODE_IMAGE_VERSION)"
+	@if command -v $(DOCKER_CMD) >/dev/null 2>&1; then \
+		if [ "$(DOCKER_CMD)" = "podman" ]; then \
+			$(DOCKER_CMD) manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+		else \
+			$(DOCKER_CMD) manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+		fi; \
+	elif command -v docker >/dev/null 2>&1; then \
+		docker manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+	elif command -v podman >/dev/null 2>&1; then \
+		podman manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+	else \
+		curl -fsSL https://hub.docker.com/v2/repositories/kindest/node/tags/v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+	fi || { \
+		echo "kindest/node:v$(KIND_NODE_IMAGE_VERSION) is not published or cannot be inspected."; \
+		echo "Update KIND_NODE_IMAGE_VERSION in k8s-test-versions.mk, or override it with a published kindest/node tag."; \
+		exit 1; \
+	}
+
+.PHONY: render-ctlptl-config
+render-ctlptl-config: reporting ## Render local ctlptl config using KIND_NODE_IMAGE_VERSION.
+	sed 's|@@KIND_NODE_IMAGE_VERSION@@|$(KIND_NODE_IMAGE_VERSION)|g' $(CTLPTL_CONFIG_TEMPLATE) > $(CTLPTL_CONFIG_RENDERED)
+	@echo "$(CTLPTL_CONFIG_RENDERED)"
+
 .PHONY: test
 test:: reporting manifests generate fmt vet lint build-cli unit-tests e2e-tests cli-e2e-tests helm-tests operator-agent-tests ## Run all tests.
 
@@ -267,8 +302,8 @@ rollout-local: push-local-image ## push locally-built operator and restart the d
 
 
 .PHONY: delete-kind-cluster
-delete-kind-cluster: ctlptl ## delete the local ctlptl kind cluster and registry
-	$(CTLPTL) delete -f config/local-dev/ctlptl-config.yaml
+delete-kind-cluster: ctlptl render-ctlptl-config ## delete the local ctlptl kind cluster and registry
+	$(CTLPTL) delete -f $(CTLPTL_CONFIG_RENDERED)
 
 operator-agent-tests: chainsaw install ## Run operator agent tests.
 	@if [ -z "$(AGENT_IMAGE)" ]; then \
@@ -292,7 +327,7 @@ deployment-policy-tests: chainsaw install run ensure-test-symlinks ## Run all de
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
 .PHONY: create-deployment-policy-cluster
-create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deployment policy tests.
+create-deployment-policy-cluster: validate-kind-node-image ## Create a 15-node Kind cluster for deployment policy tests.
 	@echo "🔧 Creating 15-node Kind cluster for deployment policy tests..."
 	@# Fix for Podman: increase kernel keyring quota
 	@if command -v podman >/dev/null 2>&1; then \
@@ -306,7 +341,7 @@ create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deploymen
 		fi; \
 	fi
 	kind delete cluster --name skyhook-dp-test 2>/dev/null || true
-	kind create cluster --name skyhook-dp-test --config ../k8s-tests/chainsaw/deployment-policy/kind-config.yaml --image=kindest/node:v$(KIND_VERSION)
+	kind create cluster --name skyhook-dp-test --config ../k8s-tests/chainsaw/deployment-policy/kind-config.yaml --image=kindest/node:v$(KIND_NODE_IMAGE_VERSION)
 
 .PHONY: delete-deployment-policy-cluster
 delete-deployment-policy-cluster: ## Delete the 15-node Kind cluster for deployment policy tests.
@@ -331,9 +366,9 @@ setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook na
 	fi
 
 
-create-kind-cluster: ctlptl ## deletes any existing kind cluster from ctlptl-config.yaml and creates a fresh one.
-	$(CTLPTL) delete -f config/local-dev/ctlptl-config.yaml || true
-	$(CTLPTL) apply -f config/local-dev/ctlptl-config.yaml
+create-kind-cluster: ctlptl validate-kind-node-image render-ctlptl-config ## creates or updates a kind cluster.
+	$(CTLPTL) delete -f $(CTLPTL_CONFIG_RENDERED) || true
+	$(CTLPTL) apply -f $(CTLPTL_CONFIG_RENDERED)
 	$(MAKE) setup-kind-cluster
 
 podman-create-machine: ## creates a podman machine

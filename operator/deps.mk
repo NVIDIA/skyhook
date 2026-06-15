@@ -16,6 +16,8 @@
 ## its included in the main makefile, but its a lot to look at these
 ## plus ci can wait this file to know to build a new build image
 
+include k8s-test-versions.mk
+
 UNAMEO 	?=$(shell uname -o | tr A-Z a-z)
 ifndef OS
 	ifeq ($(findstring linux,$(UNAMEO)),linux)
@@ -39,7 +41,6 @@ endif
 GOLANGCI_LINT_VERSION ?= v2.12.2
 KUSTOMIZE_VERSION ?= v5.4.1
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
-ENVTEST_K8S_VERSION ?= 1.36.0
 GOCOVER_VERSION ?= v1.4.0
 GINKGO_VERSION ?= v2.28.1
 MOCKERY_VERSION ?= v3.7.0
@@ -101,9 +102,9 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 
 .PHONY: $(LOCALBIN) envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+	$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN)
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.22
-	$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN)
 
 .PHONY: $(LOCALBIN) gocover-cobertura
 gocover-cobertura: ## Download gocover-cobertura locally if necessary.
