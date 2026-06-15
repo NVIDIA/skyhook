@@ -49,8 +49,8 @@ type SkyhookNode interface {
 	SetStatus(status v1alpha1.Status)
 	// IsComplete reports whether all packages for this Skyhook are complete on this node.
 	IsComplete() bool
-	// ProgressSkipped marks progress as skipped for sequencing (e.g. when dependencies are not run).
-	ProgressSkipped()
+	// ProgressSkipped promotes any package skipped during interrupt sequencing to complete and persists it.
+	ProgressSkipped() error
 	// IsPackageComplete reports whether the given package is complete on this node (considering interrupts and updates).
 	IsPackageComplete(_package v1alpha1.Package) bool
 	// RunNext returns the next package(s) that should run according to the dependency graph and current completion.
@@ -374,12 +374,18 @@ func (node *skyhookNode) GetComplete() []string {
 	return node.nodeState.GetComplete(node.skyhook.Spec.Packages, node.skyhook.GetConfigInterrupts(), node.skyhook.GetConfigUpdates())
 }
 
-// ProgressSkipped marks progress as skipped for sequencing (e.g. when dependencies are not run).
-func (node *skyhookNode) ProgressSkipped() {
+// ProgressSkipped promotes any package that was skipped during interrupt sequencing
+// to complete and persists the result.
+func (node *skyhookNode) ProgressSkipped() error {
 	if node.nodeState.ProgressSkipped(node.skyhook.Spec.Packages, node.skyhook.GetConfigInterrupts(), node.skyhook.GetConfigUpdates()) {
 		node.skyhook.Updated = true
-		node.updated = true
+		// Persist the promotion to the nodeState annotation, exactly as Upsert/RemoveState do.
+		// Without SetState the promoted state lives only in node.nodeState; it never reaches
+		// the annotation the Node patch diffs against, so the promotion is silently dropped
+		// unless another package's Upsert happens to re-serialize the whole map.
+		return node.SetState(node.nodeState)
 	}
+	return nil
 }
 
 // RunNext returns the next package(s) that should run according to the dependency graph and current completion.

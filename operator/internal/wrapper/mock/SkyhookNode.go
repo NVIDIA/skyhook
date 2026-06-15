@@ -795,9 +795,20 @@ func (_c *MockSkyhookNode_PackageStatus_Call) RunAndReturn(run func(name string)
 }
 
 // ProgressSkipped provides a mock function for the type MockSkyhookNode
-func (_mock *MockSkyhookNode) ProgressSkipped() {
-	_mock.Called()
-	return
+func (_mock *MockSkyhookNode) ProgressSkipped() error {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for ProgressSkipped")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func() error); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
 }
 
 // MockSkyhookNode_ProgressSkipped_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ProgressSkipped'
@@ -817,13 +828,13 @@ func (_c *MockSkyhookNode_ProgressSkipped_Call) Run(run func()) *MockSkyhookNode
 	return _c
 }
 
-func (_c *MockSkyhookNode_ProgressSkipped_Call) Return() *MockSkyhookNode_ProgressSkipped_Call {
-	_c.Call.Return()
+func (_c *MockSkyhookNode_ProgressSkipped_Call) Return(err error) *MockSkyhookNode_ProgressSkipped_Call {
+	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *MockSkyhookNode_ProgressSkipped_Call) RunAndReturn(run func()) *MockSkyhookNode_ProgressSkipped_Call {
-	_c.Run(run)
+func (_c *MockSkyhookNode_ProgressSkipped_Call) RunAndReturn(run func() error) *MockSkyhookNode_ProgressSkipped_Call {
+	_c.Call.Return(run)
 	return _c
 }
 

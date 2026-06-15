@@ -1619,6 +1619,77 @@ var _ = Describe("skyhook controller tests", func() {
 		}
 	})
 
+	It("should mount each configMap key as a subPath so image defaults are not clobbered", func() {
+		testPackage := &v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "foo",
+				Version: "1.1.2",
+			},
+			Image: "foo/bar",
+			ConfigMap: map[string]string{
+				"b.sh": "echo b",
+				"a.sh": "echo a",
+				"c.sh": "echo c",
+			},
+		}
+		testSkyhook := &wrapper.Skyhook{
+			Skyhook: &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+			},
+		}
+
+		pod := createPodFromPackage(operator.opts, testPackage, testSkyhook, "node1", v1alpha1.StageApply)
+
+		container := pod.Spec.InitContainers[0]
+
+		// The configMap must never be mounted as a bare directory: that hides
+		// any files the package image baked in at /skyhook-package/configmaps.
+		for _, vm := range container.VolumeMounts {
+			if vm.MountPath == "/skyhook-package/configmaps" {
+				Fail("configMap must not be mounted as a directory; expected per-key subPath mounts")
+			}
+		}
+
+		// Collect the configMap mounts (those backed by the package volume).
+		configMapMounts := make([]corev1.VolumeMount, 0)
+		for _, vm := range container.VolumeMounts {
+			if vm.Name == testPackage.Name {
+				configMapMounts = append(configMapMounts, vm)
+			}
+		}
+
+		Expect(configMapMounts).To(HaveLen(3))
+		// Sorted-key order for a deterministic pod spec.
+		Expect(configMapMounts[0]).To(Equal(corev1.VolumeMount{
+			Name:      testPackage.Name,
+			MountPath: "/skyhook-package/configmaps/a.sh",
+			SubPath:   "a.sh",
+			ReadOnly:  true,
+		}))
+		Expect(configMapMounts[1]).To(Equal(corev1.VolumeMount{
+			Name:      testPackage.Name,
+			MountPath: "/skyhook-package/configmaps/b.sh",
+			SubPath:   "b.sh",
+			ReadOnly:  true,
+		}))
+		Expect(configMapMounts[2]).To(Equal(corev1.VolumeMount{
+			Name:      testPackage.Name,
+			MountPath: "/skyhook-package/configmaps/c.sh",
+			SubPath:   "c.sh",
+			ReadOnly:  true,
+		}))
+
+		// The underlying configMap volume is still mounted exactly once.
+		configMapVolumes := 0
+		for _, v := range pod.Spec.Volumes {
+			if v.Name == testPackage.Name {
+				configMapVolumes++
+				Expect(v.ConfigMap).NotTo(BeNil())
+			}
+		}
+		Expect(configMapVolumes).To(Equal(1))
+	})
+
 	It("should generate valid configmap names", func() {
 		tests := []struct {
 			name        string
@@ -4021,5 +4092,209 @@ var _ = Describe("TrackReboots reapply-on-reboot on a busy node", func() {
 		// stale-annotation assertions above are what fail on old code and pass on the fix.
 		sh := clusterState.skyhooks[0].GetSkyhook()
 		Expect(sh.Status.NodeBootIds[nodeName]).To(Equal(newBootID))
+	})
+})
+
+// ProcessInterrupt skipped-package promotion guards the level-triggered backstop for packages
+// parked at (interrupt, skipped). Such a package lost the node's single interrupt slot to a
+// higher-priority interrupt (e.g. a reboot). The pod controller promotes it when that interrupt
+// pod completes, but a skipped package has no pod of its own, so if that edge is missed the main
+// reconcile must still converge. Once the preempting interrupt has finished and left the runnable
+// set, the skipped package becomes the chosen interrupt winner (runInterrupt=true), which is the
+// signal that it is safe to promote it to complete from the reconcile loop itself.
+var _ = Describe("ProcessInterrupt skipped-package promotion", func() {
+
+	newSkippedNode := func() wrapper.SkyhookNode {
+		pkg := v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{Name: "baxter", Version: "3.2.1"},
+			Image:      "baxter-image",
+			Interrupt:  &v1alpha1.Interrupt{Type: v1alpha1.SERVICE, Services: []string{"cron"}},
+		}
+		skyhook := &v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "config-skyhook"},
+			Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{"baxter": pkg}},
+		}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "kind-worker"}}
+		sn, err := wrapper.NewSkyhookNode(node, skyhook)
+		Expect(err).NotTo(HaveOccurred())
+		// Park baxter at interrupt/skipped (Upsert persists it to the annotation).
+		Expect(sn.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateSkipped, v1alpha1.StageInterrupt, 0, "")).To(Succeed())
+		return sn
+	}
+
+	It("promotes a skipped package once it is the interrupt winner (runInterrupt=true)", func() {
+		sn := newSkippedNode()
+		pkg := sn.GetSkyhook().Spec.Packages["baxter"]
+
+		r := &SkyhookReconciler{}
+		proceed, err := r.ProcessInterrupt(context.Background(), sn, &pkg, pkg.Interrupt, true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(proceed).To(BeFalse())
+
+		status, found := sn.PackageStatus("baxter|3.2.1")
+		Expect(found).To(BeTrue())
+		Expect(status.State).To(Equal(v1alpha1.StateComplete),
+			"a skipped package that is now the interrupt winner must be promoted by the reconcile, not left for a pod event that never comes")
+	})
+
+	It("does NOT promote a skipped package while a higher-priority interrupt is still pending (runInterrupt=false)", func() {
+		sn := newSkippedNode()
+		pkg := sn.GetSkyhook().Spec.Packages["baxter"]
+
+		r := &SkyhookReconciler{}
+		proceed, err := r.ProcessInterrupt(context.Background(), sn, &pkg, pkg.Interrupt, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(proceed).To(BeFalse())
+
+		status, found := sn.PackageStatus("baxter|3.2.1")
+		Expect(found).To(BeTrue())
+		Expect(status.State).To(Equal(v1alpha1.StateSkipped),
+			"a skipped package must keep waiting while the preempting interrupt is still pending")
+	})
+})
+
+var _ = Describe("TrackReboots auto-taint on reboot", func() {
+	const (
+		defaultRuntimeRequiredTaint = "skyhook.nvidia.com=runtime-required:NoSchedule"
+		oldBootID                   = "boot-A"
+		newBootID                   = "boot-B"
+	)
+
+	It("should re-apply the runtime-required taint when all three conditions are met", func() {
+		const (
+			skyhookName = "auto-taint-reboot-sh"
+			nodeName    = "auto-taint-reboot-node"
+		)
+		nodeLabel := map[string]string{"auto-taint-reboot-test": "yes"}
+		autoTaintAnnotationKey := fmt.Sprintf("%s/autoTaint_skyhook.nvidia.com", v1alpha1.METADATA_PREFIX)
+
+		// Node arrives without the taint (it was removed after previous completion)
+		// but retains the autoTaint annotation from the original auto-taint.
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nodeName,
+				Labels: nodeLabel,
+				Annotations: map[string]string{
+					autoTaintAnnotationKey: "true",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+		node.Status.NodeInfo.BootID = newBootID
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+		snapshotNode := node.DeepCopy()
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		skyhook := v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
+			Spec: v1alpha1.SkyhookSpec{
+				NodeSelector:      metav1.LabelSelector{MatchLabels: nodeLabel},
+				RuntimeRequired:   true,
+				AutoTaintNewNodes: true,
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+			Status: v1alpha1.SkyhookStatus{
+				NodeBootIds: map[string]string{nodeName: oldBootID},
+			},
+		}
+
+		clusterState, err := BuildState(
+			&v1alpha1.SkyhookList{Items: []v1alpha1.Skyhook{skyhook}},
+			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks[0].GetNodes()).To(HaveLen(1))
+
+		r := &SkyhookReconciler{
+			Client:   k8sClient,
+			recorder: operator.recorder,
+			opts: SkyhookOperatorOptions{
+				ReapplyOnReboot:      true,
+				RuntimeRequiredTaint: defaultRuntimeRequiredTaint,
+			},
+		}
+
+		_, err = r.TrackReboots(ctx, clusterState)
+		// Status().Update fails because the Skyhook is in-memory only; the node patch is what matters.
+		if err != nil {
+			Expect(err.Error()).ToNot(ContainSubstring("node after reboot"),
+				"the node-state reset/taint write must not fail")
+		}
+
+		live := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
+		Expect(live.Spec.Taints).To(ContainElement(
+			Equal(corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}),
+		), "runtime-required taint must be re-applied after reboot when all three conditions are met")
+	})
+
+	It("should NOT re-apply the taint when AutoTaintNewNodes is false", func() {
+		const (
+			skyhookName = "no-auto-taint-reboot-sh"
+			nodeName    = "no-auto-taint-reboot-node"
+		)
+		nodeLabel := map[string]string{"no-auto-taint-reboot-test": "yes"}
+
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nodeName,
+				Labels: nodeLabel,
+			},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+		node.Status.NodeInfo.BootID = newBootID
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+		snapshotNode := node.DeepCopy()
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		skyhook := v1alpha1.Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
+			Spec: v1alpha1.SkyhookSpec{
+				NodeSelector:      metav1.LabelSelector{MatchLabels: nodeLabel},
+				RuntimeRequired:   true,
+				AutoTaintNewNodes: false, // guard: disabled
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+			Status: v1alpha1.SkyhookStatus{
+				NodeBootIds: map[string]string{nodeName: oldBootID},
+			},
+		}
+
+		clusterState, err := BuildState(
+			&v1alpha1.SkyhookList{Items: []v1alpha1.Skyhook{skyhook}},
+			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		r := &SkyhookReconciler{
+			Client:   k8sClient,
+			recorder: operator.recorder,
+			opts: SkyhookOperatorOptions{
+				ReapplyOnReboot:      true,
+				RuntimeRequiredTaint: defaultRuntimeRequiredTaint,
+			},
+		}
+
+		_, err = r.TrackReboots(ctx, clusterState)
+		if err != nil {
+			Expect(err.Error()).ToNot(ContainSubstring("node after reboot"),
+				"the node-state reset write must not fail")
+		}
+
+		live := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
+		Expect(live.Spec.Taints).ToNot(ContainElement(
+			HaveField("Key", "skyhook.nvidia.com"),
+		), "taint must NOT be re-applied when AutoTaintNewNodes is false")
 	})
 })

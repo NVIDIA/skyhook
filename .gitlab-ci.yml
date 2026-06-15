@@ -24,7 +24,7 @@ variables:
   KUBERNETES_CPU_REQUEST: "2"
   KUBERNETES_MEMORY_LIMIT: "6Gi"
   KUBERNETES_MEMORY_REQUEST: "3Gi"
-  GO_VERSION: 1.26.3
+  GO_VERSION: 1.26.4
   ARCH_LIST: "linux/amd64,linux/arm64"
 
 workflow:

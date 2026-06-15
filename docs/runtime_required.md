@@ -37,6 +37,8 @@ When enabled, the operator automatically applies the runtime-required taint to n
 
 A node is considered "new" if it has no Skyhook annotations. This works for both initial cluster setup (day 0) and nodes joining an existing cluster (day 2+). Nodes that have already been processed by Skyhook (and had their taint removed after completion) will not be re-tainted because they retain their Skyhook annotations.
 
+**Exception: reboot with `REAPPLY_ON_REBOOT=true`.** When the operator is configured with `REAPPLY_ON_REBOOT=true` and a Skyhook has both `runtimeRequired: true` and `autoTaintNewNodes: true`, a node whose boot ID changes is treated as new for taint purposes. The runtime-required taint is re-applied alongside the state reset in the same atomic operation, ensuring no workloads can schedule on the rebooted node before Skyhook finishes re-applying. The taint is removed again by the normal completion path once all runtime-required Skyhooks finish on that node.
+
 ## What runtimeRequired: true will NOT do
 
 1. Without `autoTaintNewNodes: true`, it will NOT add the taint to any nodes targeted by a SCR with `runtimeRequired: true`

@@ -656,6 +656,36 @@ var _ = Describe("Skyhook Types", func() {
 		Expect(nilState.IsUninstallCycleInProgress("pkg|1.0.0")).To(BeFalse())
 	})
 
+	It("Should detect IsInterruptStage from the package's stage", func() {
+		Expect((&PackageStatus{Stage: StageInterrupt}).IsInterruptStage()).To(BeTrue())
+		Expect((&PackageStatus{Stage: StageUninstallInterrupt}).IsInterruptStage()).To(BeTrue())
+		Expect((&PackageStatus{Stage: StageConfig}).IsInterruptStage()).To(BeFalse())
+		Expect((&PackageStatus{Stage: StagePostInterrupt}).IsInterruptStage()).To(BeFalse())
+
+		var nilStatus *PackageStatus
+		Expect(nilStatus.IsInterruptStage()).To(BeFalse())
+	})
+
+	It("Should detect IsActive when the package state is in-progress or erroring", func() {
+		Expect((&PackageStatus{State: StateInProgress}).IsActive()).To(BeTrue())
+		Expect((&PackageStatus{State: StateErroring}).IsActive()).To(BeTrue())
+		Expect((&PackageStatus{State: StateComplete}).IsActive()).To(BeFalse())
+		Expect((&PackageStatus{State: StateSkipped}).IsActive()).To(BeFalse())
+		Expect((&PackageStatus{State: StateUnknown}).IsActive()).To(BeFalse())
+
+		var nilStatus *PackageStatus
+		Expect(nilStatus.IsActive()).To(BeFalse())
+	})
+
+	It("Should detect IsSkipped when the package state is skipped", func() {
+		Expect((&PackageStatus{State: StateSkipped}).IsSkipped()).To(BeTrue())
+		Expect((&PackageStatus{State: StateComplete}).IsSkipped()).To(BeFalse())
+		Expect((&PackageStatus{State: StateInProgress}).IsSkipped()).To(BeFalse())
+
+		var nilStatus *PackageStatus
+		Expect(nilStatus.IsSkipped()).To(BeFalse())
+	})
+
 	It("Should detect IsUninstalled from node state", func() {
 		ns := NodeState{
 			"pkg|1.0.0": PackageStatus{

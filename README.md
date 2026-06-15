@@ -75,7 +75,7 @@ Install NodeWright quickly using Helm without downloading the repository:
 # The chart is distributed as an OCI artifact on GitHub Container Registry.
 # Helm 3.8+ supports OCI natively — no `helm repo add` needed.
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.16.1 \
+  --version v0.17.0 \
   --namespace skyhook \
   --create-namespace
 ```
@@ -274,6 +274,8 @@ Part of how the operator works is the [NodeWright agent](agent/README.md). Packa
 └── config.json
 ```
 
+When a Skyhook's `configMap` is set, the operator projects each key as an individual file at `/skyhook-package/configmaps/<key>`. These files overlay any files the package image baked in under that directory rather than replacing the whole directory: a package can ship default files there and a user's `configMap` overrides only the keys it supplies. (Because the files are mounted via `subPath`, live ConfigMap edits are not propagated into a running pod, but package pods are recreated per stage and on version bumps.)
+
 ## Examples
 
 See the [examples/](examples/) directory for sample manifests, usage patterns, and demo configurations to help you get started with NodeWright.
@@ -298,10 +300,11 @@ A kubectl plugin for managing NodeWright deployments, packages, and nodes. Provi
 
 ```bash
 # Build from source
+cd operator
 make build-cli
 
 # Install as kubectl plugin
-cp bin/kubectl-skyhook /usr/local/bin/
+cp bin/skyhook /usr/local/bin/kubectl-skyhook # other another directory in $PATH with write access
 
 # Verify installation
 kubectl skyhook version

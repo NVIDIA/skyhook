@@ -83,6 +83,9 @@ const (
 	volumeNameRootMount = "root-mount"
 	mountPathRoot       = "/root"
 
+	// Directory inside package containers where the SCR's configMap is projected.
+	mountPathConfigMaps = "/skyhook-package/configmaps"
+
 	// Environment variable names propagated into package containers.
 	envSkyhookResourceID = "SKYHOOK_RESOURCE_ID"
 	envSkyhookNodeOrder  = "SKYHOOK_NODE_ORDER"
@@ -678,6 +681,19 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 					r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node for [%s] to be reapplied", node.GetSkyhook().Name)
 					node.Reset()
 
+					// Re-apply the runtime-required taint so workloads cannot schedule on the
+					// rebooted node until Skyhook finishes re-applying. The original auto-taint
+					// annotation survives Reset() and remains the record that this taint is
+					// operator-managed; no annotation update is needed.
+					if skyhook.GetSkyhook().Spec.RuntimeRequired && skyhook.GetSkyhook().Spec.AutoTaintNewNodes {
+						taintToAdd := r.opts.GetRuntimeRequiredTaint()
+						newNode, updated, _ := taints.AddOrUpdateTaint(node.GetNode(), &taintToAdd)
+						if updated {
+							node.GetNode().Spec.Taints = newNode.Spec.Taints
+							log.FromContext(ctx).Info("re-applying runtime-required taint after reboot", "node", node.GetNode().Name, "taint", taintToAdd.Key)
+						}
+					}
+
 					// Persist the reset before recording the new boot id. We Patch rather than
 					// Update because a busy node's resourceVersion churns constantly under other
 					// controllers, and a full Update would lose that optimistic-concurrency race; a
@@ -1004,7 +1020,7 @@ func HandleCancelledUninstalls(skyhook SkyhookNodes) error {
 				continue // finalizer-driven uninstall — do not cancel
 			}
 			// Package is at StageUninstall but apply is false → cancelled
-			if status.State == v1alpha1.StateInProgress || status.State == v1alpha1.StateErroring {
+			if status.IsActive() {
 				// Reset to re-enter install pipeline
 				err := node.Upsert(pkg.PackageRef, pkg.Image,
 					v1alpha1.StateInProgress, v1alpha1.StageApply, 0, pkg.ContainerSHA)
@@ -2251,11 +2267,6 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 	}
 
 	if len(_package.ConfigMap) > 0 {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      _package.Name,
-			MountPath: "/skyhook-package/configmaps",
-		})
-
 		volumes = append(volumes, corev1.Volume{
 			Name: _package.Name,
 			VolumeSource: corev1.VolumeSource{
@@ -2266,6 +2277,29 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 				},
 			},
 		})
+
+		// Mount each configMap key as its own subPath rather than mounting the
+		// whole configMap as a directory. A directory mount replaces the entire
+		// path, hiding any files the package image baked in under
+		// mountPathConfigMaps; per-key subPath mounts overlay individual files
+		// on top of the image content instead. Trade-off: subPath mounts do not
+		// receive live configMap updates, which is fine here because package
+		// pods are recreated per stage / version bump. Keys are iterated in
+		// sorted order so the generated pod spec is deterministic.
+		configMapKeys := make([]string, 0, len(_package.ConfigMap))
+		for key := range _package.ConfigMap {
+			configMapKeys = append(configMapKeys, key)
+		}
+		sort.Strings(configMapKeys)
+
+		for _, key := range configMapKeys {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      _package.Name,
+				MountPath: fmt.Sprintf("%s/%s", mountPathConfigMaps, key),
+				SubPath:   key,
+				ReadOnly:  true,
+			})
+		}
 	}
 
 	copyDir := fmt.Sprintf("%s/%s/%s-%s-%s-%d",
@@ -2633,14 +2667,28 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 
 	// wait tell this is done if its happening
 	status, found := skyhookNode.PackageStatus(_package.GetUniqueName())
-	if found && status.State == v1alpha1.StateSkipped {
+	if found && status.IsSkipped() {
+		// Level-triggered backstop. This package was skipped because a higher-priority
+		// interrupt won the node's single interrupt slot (e.g. a reboot that also satisfies
+		// it). The pod controller promotes skipped packages when that interrupt pod completes,
+		// but a skipped package has no pod of its own, so if that edge is missed (the pod is
+		// already GC'd, or the skip was written after it completed) nothing else ever promotes
+		// it and the node never finishes. runInterrupt is true only once this is the highest-
+		// priority interrupt left to run, meaning the preempting interrupt has completed and
+		// left the runnable set: promote then, so the reconcile converges on its own rather
+		// than depending on a pod event that may never arrive. While a higher-priority
+		// interrupt is still pending (runInterrupt false) the package keeps waiting.
+		if runInterrupt {
+			if err := skyhookNode.ProgressSkipped(); err != nil {
+				return false, fmt.Errorf("error progressing skipped package [%s]: %w", _package.GetUniqueName(), err)
+			}
+		}
 		return false, nil
 	}
 
 	// Theres is a race condition when a node reboots and api cleans up the interrupt pod
 	// so we need to check if the pod exists and if it does, we need to recreate it
-	if status != nil && (status.State == v1alpha1.StateInProgress || status.State == v1alpha1.StateErroring) &&
-		(status.Stage == v1alpha1.StageInterrupt || status.Stage == v1alpha1.StageUninstallInterrupt) {
+	if status != nil && status.IsActive() && status.IsInterruptStage() {
 		// call interrupt to recreate the pod if missing
 		err := r.Interrupt(ctx, skyhookNode, _package, interrupt, status.Stage)
 		if err != nil {
@@ -2691,9 +2739,7 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 	}
 
 	// wait tell this is done if its happening
-	if status != nil &&
-		(status.Stage == v1alpha1.StageInterrupt || status.Stage == v1alpha1.StageUninstallInterrupt) &&
-		status.State != v1alpha1.StateComplete {
+	if status != nil && status.IsInterruptStage() && status.State != v1alpha1.StateComplete {
 		return false, nil
 	}
 
@@ -2777,7 +2823,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 	// wait tell this is done if its happening
 	status, found := skyhookNode.PackageStatus(_package.GetUniqueName())
 
-	if found && status.State == v1alpha1.StateSkipped { // skipped, so nothing to do
+	if found && status.IsSkipped() { // skipped, so nothing to do
 		return nil
 	}
 

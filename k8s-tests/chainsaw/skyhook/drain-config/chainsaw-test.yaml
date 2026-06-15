@@ -120,16 +120,13 @@ spec:
     - script:
         content: |
           for _ in $(seq 1 30); do
-            events="$(kubectl -n skyhook get events --field-selector regarding.kind=Skyhook,regarding.name=drain-config-timeout,reason=Drain -o jsonpath='{range .items[*]}{.action}{"\t"}{.message}{"\t"}{.note}{"\n"}{end}' 2>/dev/null || true)"
-            if printf "%s\n" "${events}" | grep -F "DrainTimeout"; then
-              exit 0
-            fi
-            events="$(kubectl -n skyhook get events --field-selector involvedObject.kind=Skyhook,involvedObject.name=drain-config-timeout,reason=Drain -o jsonpath='{range .items[*]}{.action}{"\t"}{.message}{"\t"}{.note}{"\n"}{end}' 2>/dev/null || true)"
-            if printf "%s\n" "${events}" | grep -F "DrainTimeout"; then
+            events="$(kubectl get events -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.reason}{"\t"}{.action}{"\t"}{.involvedObject.kind}{"\t"}{.involvedObject.name}{"\t"}{.regarding.kind}{"\t"}{.regarding.name}{"\t"}{.message}{"\t"}{.note}{"\n"}{end}' 2>/dev/null || true)"
+            if printf "%s\n" "${events}" | grep -F "Drain" | grep -F "drain-config-timeout" | grep -F "drain timed out"; then
               exit 0
             fi
             sleep 2
           done
+          printf "%s\n" "${events}"
           echo "expected drain timeout event for drain-config-timeout"
           exit 1
     finally:

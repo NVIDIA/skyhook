@@ -1,29 +1,41 @@
 # Changelog
 
+<!-- DO NOT EDIT. Generated from git commit history by scripts/gen-changelog.sh.
+     Hand-authored behavior/upgrade notes live in RELEASE_NOTES.md (same directory). -->
+
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [cli/v0.2.0] - 2026-06-05
+
+### Bug Fixes
+
+- Change skyhook/operator to nodewright/operator for coverage
+
+### New Features
+
+- Add SKYHOOK_NODE_ORDER env var for monotonic node ordering
+- *(cli)* Update-state + targeted reset --package  
+
+### Other Tasks
+
+- Update project to follow the OSS template
+- Update go and libs to latest 
+
+
+## [cli/v0.1.2] - 2026-03-03
 
 ### New Features
 
 - *(deployment-policy)* Add batch state reset with auto-reset, CLI, and config
 - AutoTaintNewNodes
-- Add SKYHOOK_NODE_ORDER env var for monotonic node ordering
-- *(cli)* Add `update-state <skyhook> <package> <version> <stage> <state>` for surgical per-node nodeState edits, with an `--add` mode for creating fresh entries (#257)
-- *(cli/reset)* Add `--package <name>[:<version>]` flag to reset a single package's state across all tracked nodes (#257)
-
-### Bug Fixes
-
-- *(cli/utils)* `SetNodeAnnotation` now JSON-marshals the patch correctly, preserving non-ASCII characters
-
-### Changed
-
-- `reset` and `node reset` now select nodes with any resettable Skyhook
-  metadata, including status, cordon, and drain-start metadata. Nodes with a
-  malformed `nodeState` annotation are reset with an empty package state instead
-  of being skipped.
 
 ## [cli/v0.1.1] - 2026-01-13
+
+### New Features
+
+- Add cli doc for backwards compatibly and warnings
+
+## [cli/v0.1.0] - 2026-01-13
 
 ### Bug Fixes
 
@@ -34,7 +46,6 @@ All notable changes to this project will be documented in this file.
 ### New Features
 
 - *(plugin)* Setup basic structure 
-- Add cli doc for backwards compatibly and warnings
 
 ### Other Tasks
 
