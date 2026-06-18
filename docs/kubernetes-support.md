@@ -120,6 +120,7 @@ Waiting 4+ weeks lets the ecosystem stabilize and gives us confidence in support
 ### How do you test compatibility?
 
 For each Skyhook release, we test against all supported Kubernetes versions using:
+
 - GitHub Actions matrix builds with multiple K8s versions. The exact tested patch versions are owned by `CI_KIND_NODE_IMAGE_VERSIONS_JSON` in `operator/k8s-test-versions.mk`.
 - Local testing with [kind](https://kind.sigs.k8s.io/)
 - Basic functionality and integration tests
