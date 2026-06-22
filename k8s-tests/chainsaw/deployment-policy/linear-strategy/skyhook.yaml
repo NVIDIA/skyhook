@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
 metadata:
@@ -31,7 +28,7 @@ spec:
   packages:
     test-package:
       version: "6.2.0"
-      image: ghcr.io/nvidia/skyhook/agentless:6.2.0
+      image: ghcr.io/nvidia/skyhook/agentless
       env:
         - name: SLEEP_LEN
           value: "2"
