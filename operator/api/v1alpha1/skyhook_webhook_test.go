@@ -196,6 +196,59 @@ var _ = Describe("Skyhook Webhook", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
+		It("Should allow registry ports in package images", func() {
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{
+								Name:    "foo",
+								Version: "1.0.0",
+							},
+							Image: "localhost:5000/org/pkg",
+						},
+					},
+				},
+			}
+
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).To(BeNil())
+		})
+
+		It("Should validate image tags after registry ports", func() {
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{
+								Name:    "foo",
+								Version: "1.0.0",
+							},
+							Image: "localhost:5000/org/pkg:1.0.0",
+						},
+					},
+				},
+			}
+
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).To(BeNil())
+
+			skyhook.Spec.Packages["foo"] = Package{
+				PackageRef: PackageRef{
+					Name:    "foo",
+					Version: "1.0.0",
+				},
+				Image: "localhost:5000/org/pkg:2.0.0",
+			}
+
+			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).ToNot(BeNil())
+			Expect(err.Error()).To(ContainSubstring("2.0.0"))
+			Expect(err.Error()).To(ContainSubstring("localhost:5000/org/pkg"))
+		})
+
 		It("should validate that the configInterrupts are for valid configMaps", func() {
 			skyhook := &Skyhook{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
@@ -544,6 +597,28 @@ var _ = Describe("Skyhook Webhook", func() {
 
 		Expect(ret["foo"].Name).To(Equal("foo"))
 		Expect(ret["foo"].Image).To(Equal("bar"))
+	})
+
+	It("packages should preserve registry ports when stripping image tags", func() {
+		digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		js := `{
+				"foo": {"version":"1.2.2", "image":"localhost:5000/org/pkg:1.2.2"},
+				"bar": {"version":"1.2.2", "image":"localhost:5000/org/pkg"},
+				"baz": {"version":"1.2.2", "image":"localhost:5000/org/pkg@` + digest + `"},
+				"qux": {"version":"1.2.2", "image":"localhost:5000/org/pkg:1.2.2@` + digest + `"}
+			}`
+
+		var ret Packages
+		Expect(json.Unmarshal([]byte(js), &ret)).Should(Succeed())
+
+		Expect(ret["foo"].Name).To(Equal("foo"))
+		Expect(ret["foo"].Image).To(Equal("localhost:5000/org/pkg"))
+		Expect(ret["bar"].Name).To(Equal("bar"))
+		Expect(ret["bar"].Image).To(Equal("localhost:5000/org/pkg"))
+		Expect(ret["baz"].Name).To(Equal("baz"))
+		Expect(ret["baz"].Image).To(Equal("localhost:5000/org/pkg@" + digest))
+		Expect(ret["qux"].Name).To(Equal("qux"))
+		Expect(ret["qux"].Image).To(Equal("localhost:5000/org/pkg"))
 	})
 
 	It("should validate the package name is a valid RFC 1123 name", func() {

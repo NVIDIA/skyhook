@@ -154,13 +154,28 @@ func (f Packages) Names() {
 func (f Packages) Images() {
 	for k := range f {
 		m := f[k]
-		image, _, found := strings.Cut(m.Image, ":")
+		image, _, found := splitImageTag(m.Image)
 		if found {
 			m.Image = image
 		}
 
 		f[k] = m
 	}
+}
+
+func splitImageTag(image string) (string, string, bool) {
+	imageWithoutDigest := image
+	if index := strings.Index(imageWithoutDigest, "@"); index >= 0 {
+		imageWithoutDigest = imageWithoutDigest[:index]
+	}
+
+	lastSlash := strings.LastIndex(imageWithoutDigest, "/")
+	lastColon := strings.LastIndex(imageWithoutDigest, ":")
+	if lastColon == -1 || lastColon < lastSlash {
+		return image, "", false
+	}
+
+	return imageWithoutDigest[:lastColon], imageWithoutDigest[lastColon+1:], true
 }
 
 func (f *Packages) UnmarshalJSON(data []byte) error {

@@ -293,7 +293,7 @@ func (r *Skyhook) Validate() error {
 			return fmt.Errorf("error config interrupt for key that doesn't exist: %s doesn't exist as a configmap", pattern)
 		}
 
-		image, version, found := strings.Cut(v.Image, ":")
+		image, version, found := splitImageTag(v.Image)
 		if found && version != v.Version {
 			return fmt.Errorf(
 				"error package %s's image tag was set to '%s' for '%s' and doesn't match the pacakge's version '%s'. Do not explicitly set the image's tag in the package's definition (The package version will be set as the tag)",
