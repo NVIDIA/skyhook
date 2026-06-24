@@ -27,6 +27,8 @@ Keep manual installs in sync with `CTLPTL_VERSION` in `operator/deps.mk`.
 - `KIND_BINARY_VERSION` controls the Kind CLI/action version and is intentionally separate from Kubernetes node image versions.
 - `CI_KIND_NODE_IMAGE_VERSIONS_JSON` and `CI_PRIMARY_KIND_NODE_IMAGE_VERSION` feed the GitHub Actions matrix.
 
+`make unit-tests` installs the configured envtest assets and exports `KUBEBUILDER_ASSETS` for the Go test process. If you run `go test` or `ginkgo` directly, set `KUBEBUILDER_ASSETS` yourself or controller-runtime will use its default `/usr/local/kubebuilder` lookup path.
+
 These versions often match, but they are allowed to diverge. Kind does not publish every Kubernetes patch version as a `kindest/node` image, so validate a new node image before using it:
 
 ```bash

@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
-	"github.com/NVIDIA/nodewright/operator/internal/testenv"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sethvargo/go-envconfig"
@@ -70,19 +69,9 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	var err error
-	binaryAssetsDirectory, err := testenv.BinaryAssetsDirectory()
-	Expect(err).NotTo(HaveOccurred())
-
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
-
-		// The BinaryAssetsDirectory is only required if you want to run the tests directly
-		// without call the makefile target test. If not informed it will look for the
-		// default path defined in controller-runtime which is /usr/local/kubebuilder/.
-		// Note that you must have the required binaries setup under the bin directory to perform
-		// the tests directly. When we run make test it will be setup and used automatically.
-		BinaryAssetsDirectory: binaryAssetsDirectory,
 		// AttachControlPlaneOutput: true,
 		// UseExistingCluster:       ptr[bool](true),
 	}
