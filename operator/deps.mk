@@ -16,7 +16,20 @@
 ## its included in the main makefile, but its a lot to look at these
 ## plus ci can wait this file to know to build a new build image
 
-include k8s-test-versions.mk
+## Location to install dependencies to
+LOCALBIN ?= $(CURDIR)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+YQ ?= $(LOCALBIN)/yq
+VERSIONS ?= $(CURDIR)/versions.sh
+
+ENVTEST_K8S_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get envtestK8s)
+KIND_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get kindVersion)
+KIND_NODE_IMAGE_VERSION ?= $(KIND_VERSION)
+KIND_BINARY_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get kindBinary)
+CI_KIND_NODE_IMAGE_VERSIONS_JSON ?= $(shell YQ="$(YQ)" $(VERSIONS) --get ciKindNodeImagesJson)
+CI_PRIMARY_KIND_NODE_IMAGE_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get ciPrimaryKindNodeImage)
 
 UNAMEO 	?=$(shell uname -o | tr A-Z a-z)
 ifndef OS
@@ -49,6 +62,7 @@ HELM_VERSION ?= v4.1.4
 HELMIFY_VERSION ?= v0.4.12
 GO_LICENSES_VERSION ?= v1.6.0
 GOVULNCHECK_VERSION ?= v1.3.0
+YQ_VERSION ?= v4.44.3
 
 ## ctlptl (local cluster + registry management)
 CTLPTL_VERSION ?= v0.9.3
@@ -56,12 +70,7 @@ CTLPTL_VERSION ?= v0.9.3
 
 
 .PHONY: install-deps
-install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-licenses govulncheck ctlptl ## Install all dependencies
-
-## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
-$(LOCALBIN):
-	mkdir -p $(LOCALBIN)
+install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-licenses govulncheck ctlptl yq ## Install all dependencies
 
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 golangci-lint: ## Download golangci locally if necessary. 
@@ -101,7 +110,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
 .PHONY: $(LOCALBIN) envtest
-envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+envtest: $(ENVTEST) yq ## Download envtest-setup locally if necessary.
 	$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN)
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.22
@@ -146,3 +155,8 @@ GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 .PHONY: govulncheck
 govulncheck: $(LOCALBIN) ## Download govulncheck locally if necessary.
 	test -s $(GOVULNCHECK) || GOBIN=$(LOCALBIN) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+
+.PHONY: yq
+yq: $(YQ) ## Download yq locally if necessary.
+$(YQ): $(LOCALBIN)
+	test -s $(YQ) || GOBIN=$(LOCALBIN) go install github.com/mikefarah/yq/v4@$(YQ_VERSION)

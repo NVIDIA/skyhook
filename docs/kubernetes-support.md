@@ -41,7 +41,7 @@ This document outlines Skyhook's approach to supporting different Kubernetes ver
 **For new Kubernetes releases:**
 
 1. Wait **4+ weeks** after K8s release for ecosystem stability
-2. Add to the CI testing matrix in `operator/k8s-test-versions.mk`
+2. Add to the CI testing matrix in `operator/versions.yaml`
 3. Include in next Skyhook release
 
 **For EOL Kubernetes versions:**
@@ -121,7 +121,7 @@ Waiting 4+ weeks lets the ecosystem stabilize and gives us confidence in support
 
 For each Skyhook release, we test against all supported Kubernetes versions using:
 
-- GitHub Actions matrix builds with multiple K8s versions. The exact tested patch versions are owned by `CI_KIND_NODE_IMAGE_VERSIONS_JSON` in `operator/k8s-test-versions.mk`.
+- GitHub Actions matrix builds with multiple K8s versions. The exact tested patch versions are owned by `ci.kindNodeImages` in `operator/versions.yaml`.
 - Local testing with [kind](https://kind.sigs.k8s.io/)
 - Basic functionality and integration tests
 

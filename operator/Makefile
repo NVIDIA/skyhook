@@ -156,15 +156,11 @@ CTLPTL_CONFIG_RENDERED ?= $(REPORTING)/ctlptl-config.yaml
 
 .PHONY: print-k8s-test-versions-github-output
 print-k8s-test-versions-github-output: ## Print Kubernetes test versions in GitHub Actions output format.
-	@printf 'envtest-k8s-version=%s\n' '$(ENVTEST_K8S_VERSION)'
-	@printf 'kind-version=%s\n' '$(KIND_VERSION)'
-	@printf 'kind-node-image-version=%s\n' '$(KIND_NODE_IMAGE_VERSION)'
-	@printf 'kind-binary-version=%s\n' '$(KIND_BINARY_VERSION)'
-	@printf 'ci-kind-node-image-versions-json=%s\n' '$(CI_KIND_NODE_IMAGE_VERSIONS_JSON)'
-	@printf 'ci-primary-kind-node-image-version=%s\n' '$(CI_PRIMARY_KIND_NODE_IMAGE_VERSION)'
+	@$(MAKE) --no-print-directory yq >/dev/null
+	@YQ="$(YQ)" $(VERSIONS) --print
 
 .PHONY: validate-kind-node-image
-validate-kind-node-image: ## Check that the configured kindest/node image tag exists before creating a cluster.
+validate-kind-node-image: yq ## Check that the configured kindest/node image tag exists before creating a cluster.
 	@echo "Validating kindest/node:v$(KIND_NODE_IMAGE_VERSION)"
 	@if command -v $(DOCKER_CMD) >/dev/null 2>&1; then \
 		if [ "$(DOCKER_CMD)" = "podman" ]; then \
@@ -180,12 +176,12 @@ validate-kind-node-image: ## Check that the configured kindest/node image tag ex
 		curl -fsSL https://hub.docker.com/v2/repositories/kindest/node/tags/v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
 	fi || { \
 		echo "kindest/node:v$(KIND_NODE_IMAGE_VERSION) is not published or cannot be inspected."; \
-		echo "Update KIND_NODE_IMAGE_VERSION in k8s-test-versions.mk, or override it with a published kindest/node tag."; \
+		echo "Update kind.nodeImage in versions.yaml, or override KIND_NODE_IMAGE_VERSION with a published kindest/node tag."; \
 		exit 1; \
 	}
 
 .PHONY: render-ctlptl-config
-render-ctlptl-config: reporting ## Render local ctlptl config using KIND_NODE_IMAGE_VERSION.
+render-ctlptl-config: reporting yq ## Render local ctlptl config using KIND_NODE_IMAGE_VERSION.
 	sed 's|@@KIND_NODE_IMAGE_VERSION@@|$(KIND_NODE_IMAGE_VERSION)|g' $(CTLPTL_CONFIG_TEMPLATE) > $(CTLPTL_CONFIG_RENDERED)
 	@echo "$(CTLPTL_CONFIG_RENDERED)"
 

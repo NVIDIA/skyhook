@@ -20,12 +20,26 @@ Keep manual installs in sync with `CTLPTL_VERSION` in `operator/deps.mk`.
 
 ## Kubernetes Test Versions
 
-`operator/k8s-test-versions.mk` is the source of truth for Kubernetes versions used by envtest, local kind clusters, and GitHub Actions test matrices.
+`operator/versions.yaml` is the source of truth for Kubernetes versions used by envtest, local kind clusters, and GitHub Actions test matrices. `operator/versions.sh` is the only reader for that file; it uses `yq` and exports the Make and CI values.
 
-- `ENVTEST_K8S_VERSION` controls `setup-envtest` binary assets under `operator/bin/k8s/`.
-- `KIND_NODE_IMAGE_VERSION` controls the default `kindest/node` image for local kind clusters. `KIND_VERSION` remains as a backward-compatible alias for local overrides.
-- `KIND_BINARY_VERSION` controls the Kind CLI/action version and is intentionally separate from Kubernetes node image versions.
-- `CI_KIND_NODE_IMAGE_VERSIONS_JSON` and `CI_PRIMARY_KIND_NODE_IMAGE_VERSION` feed the GitHub Actions matrix.
+- `envtest.kubernetes` controls `setup-envtest` binary assets under `operator/bin/k8s/`.
+- `kind.nodeImage` controls the default `kindest/node` image for local kind clusters. Make also exposes this as `KIND_VERSION` and `KIND_NODE_IMAGE_VERSION` for local overrides.
+- `kind.binary` controls the Kind CLI/action version and is intentionally separate from Kubernetes node image versions.
+- `ci.kindNodeImages` and `ci.primaryKindNodeImage` feed the GitHub Actions matrix.
+
+For a development shell, install the local reader dependency and source the reader:
+
+```bash
+make -C operator yq
+source operator/versions.sh
+```
+
+For scripts, read one key or print the GitHub Actions output shape:
+
+```bash
+operator/versions.sh --get envtestK8s
+operator/versions.sh --print
+```
 
 `make unit-tests` installs the configured envtest assets and exports `KUBEBUILDER_ASSETS` for the Go test process. If you run `go test` or `ginkgo` directly, set `KUBEBUILDER_ASSETS` yourself or controller-runtime will use its default `/usr/local/kubebuilder` lookup path.
 
@@ -36,7 +50,7 @@ cd operator
 make validate-kind-node-image KIND_NODE_IMAGE_VERSION=1.35.0
 ```
 
-When updating supported test versions, edit `operator/k8s-test-versions.mk` first, then run the validation target and the relevant tests.
+When updating supported test versions, edit `operator/versions.yaml` first, then run the validation target and the relevant tests.
 
 ## Local Cluster
 

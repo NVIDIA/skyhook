@@ -25,7 +25,8 @@ on:
       - operator/go.mod
       - operator/go.sum
       - operator/deps.mk
-      - operator/k8s-test-versions.mk
+      - operator/versions.yaml
+      - operator/versions.sh
       - operator/config/**
       - containers/operator.Dockerfile
       - .github/actions/**
@@ -42,7 +43,8 @@ on:
       - operator/go.mod
       - operator/go.sum
       - operator/deps.mk
-      - operator/k8s-test-versions.mk
+      - operator/versions.yaml
+      - operator/versions.sh
       - operator/config/**
       - containers/operator.Dockerfile
       - .github/actions/**
@@ -83,7 +85,8 @@ jobs:
         id: versions
         run: |
           cd operator
-          make print-k8s-test-versions-github-output >> "$GITHUB_OUTPUT"
+          make yq
+          YQ="$PWD/bin/yq" ./versions.sh --print >> "$GITHUB_OUTPUT"
 
   fetch-distroless-versions:
     name: Fetch Latest Distroless Versions
@@ -154,7 +157,7 @@ jobs:
         id: cached-binaries
         uses: actions/cache/restore@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/k8s-test-versions.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
@@ -169,7 +172,7 @@ jobs:
         if: steps.cached-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/k8s-test-versions.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
