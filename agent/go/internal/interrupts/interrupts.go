@@ -23,9 +23,10 @@ import (
 	"fmt"
 )
 
-// invalidSerializedInterruptError mirrors the Python ValueError message so
-// callers comparing error text across language boundaries stay compatible.
-const invalidSerializedInterruptError = "serialized interrupt must be base64 encoded {'type': str, **kwargs: dict[str, any]}"
+// errInvalidSerializedInterrupt is returned when a serialized interrupt is not
+// a base64-encoded JSON object of the expected shape. It is a sentinel so
+// callers can branch on it with errors.Is.
+var errInvalidSerializedInterrupt = errors.New(`serialized interrupt must be base64-encoded JSON with a "type" field`)
 
 // Interrupt is the pure data contract for an interrupt type.
 type Interrupt interface {
@@ -51,25 +52,25 @@ func Encode(i Interrupt) (string, error) {
 
 // Decode parses a base64+JSON serialized interrupt produced by Encode
 // (or its Python counterpart skyhook_agent.interrupts.inflate).
-// Wire-shape errors return invalidSerializedInterruptError; unknown
-// type names return a descriptive error listing the supported types.
+// Wire-shape errors return errInvalidSerializedInterrupt; unknown type
+// names return a descriptive error listing the supported types.
 func Decode(serializedValue string) (Interrupt, error) {
 	data, err := base64.StdEncoding.DecodeString(serializedValue)
 	if err != nil {
-		return nil, errors.New(invalidSerializedInterruptError)
+		return nil, fmt.Errorf("%w: %v", errInvalidSerializedInterrupt, err)
 	}
 
-	// *string distinguishes "type field absent" (Python KeyError →
-	// wire-shape error) from "type field present but empty" (Python
-	// dispatch miss → unknown-type error).
+	// type is probed as *string to distinguish an absent field (a wire-shape
+	// error) from a present-but-empty value (an unknown-type error); the two
+	// take different branches below.
 	var head struct {
 		Type *string `json:"type"`
 	}
 	if err := json.Unmarshal(data, &head); err != nil {
-		return nil, errors.New(invalidSerializedInterruptError)
+		return nil, fmt.Errorf("%w: %v", errInvalidSerializedInterrupt, err)
 	}
 	if head.Type == nil {
-		return nil, errors.New(invalidSerializedInterruptError)
+		return nil, errInvalidSerializedInterrupt
 	}
 
 	switch *head.Type {
@@ -80,7 +81,7 @@ func Decode(serializedValue string) (Interrupt, error) {
 			Services []string `json:"services"`
 		}
 		if err := json.Unmarshal(data, &wire); err != nil {
-			return nil, errors.New(invalidSerializedInterruptError)
+			return nil, fmt.Errorf("%w: %v", errInvalidSerializedInterrupt, err)
 		}
 		return ServiceRestart{Services: wire.Services}, nil
 	case RestartAllServices{}.Type():
