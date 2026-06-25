@@ -45,7 +45,7 @@ This cutover must complete before GA. Shipping v1 on the Python agent and swappi
 
 ### 3. Production Hardening
 
-**Replace unmaintained and unversioned dependencies.** Move operator metrics off kube-rbac-proxy to controller-runtime's built-in auth ([#206](https://github.com/NVIDIA/skyhook/issues/206)), which also resolves the TLS-handshake noise reports, and migrate the cleanup-job image off `bitnami/kubectl` to a maintained, versioned alternative ([#207](https://github.com/NVIDIA/skyhook/issues/207)).
+**Replace unmaintained and unversioned dependencies.** Move operator metrics off kube-rbac-proxy to controller-runtime's built-in auth ([#206](https://github.com/NVIDIA/skyhook/issues/206)), which also resolves the TLS-handshake noise reports.
 
 **Correctness under partial failure.** Stop the ConfigMap volume from clobbering files baked into the package image ([#208](https://github.com/NVIDIA/skyhook/issues/208)); fix the ConfigMap desync where a stale `Status.ConfigUpdates` entry drives a spurious interrupt ([#245](https://github.com/NVIDIA/skyhook/issues/245)); fix the taint-on-reboot case when `applyOnReboot`, `runtimeRequired`, and `autoTaintNewNodes` combine ([#180](https://github.com/NVIDIA/skyhook/issues/180)); and surface ImagePullBackOff / ErrImagePull as an explicit error state instead of a silent hang.
 
