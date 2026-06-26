@@ -278,36 +278,31 @@ Starting with digest pinning, the chart references images using tag@digest (or d
 
 Prerequisites:
 
-- Docker buildx (`docker-buildx version`)
+- skopeo (`skopeo --version`)
+- jq (`jq --version`)
 
-Fetch a multi-arch digest (example for bitnami/kubectl used by the webhook cleanup job):
+Fetch the multi-arch (manifest list) digest (example for alpine/kubectl, used by the cleanup pre-delete jobs and the selector-migration pre-upgrade hook). The digest to pin is the sha256 of the raw manifest list:
 
 ```bash
-docker-buildx imagetools inspect bitnami/kubectl:1.33.1
+skopeo inspect --raw docker://docker.io/alpine/kubectl:1.36.2 | skopeo manifest-digest /dev/stdin
+# sha256:01d138ce994b684abc62d9cfdff44de42a4c8996dcc12626dd0193afc3fb5a95
+# pin that value (including the sha256: prefix) in chart/values.yaml
 ```
 
-Example output (look for the top-level Digest):
+Confirm it is a manifest list covering the platforms we ship (at least amd64 + arm64):
 
-```
-Name:      docker.io/bitnami/kubectl:1.33.1
-MediaType: application/vnd.docker.distribution.manifest.list.v2+json
-Digest:    sha256:9081a6f83f4febf47369fc46b6f0f7683c7db243df5b43fc9defe51b0471a950
-
-Manifests:
-  Name:      docker.io/bitnami/kubectl:1.33.1@sha256:c8efec87588c7a2d84c760d54446b2e081e607a709f16f19283774d5612191b7
-  MediaType: application/vnd.docker.distribution.manifest.v2+json
-  Platform:  linux/amd64
-
-  Name:      docker.io/bitnami/kubectl:1.33.1@sha256:2af8ed9feaeada845f4d60f1fe4db951df2e5334ea01bec4b5ef4f191ad20d65
-  MediaType: application/vnd.docker.distribution.manifest.v2+json
-  Platform:  linux/arm64
+```bash
+skopeo inspect --raw docker://docker.io/alpine/kubectl:1.36.2 \
+  | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"'
 ```
 
-Update the digest in `chart/values.yaml` for kube-rbac-proxy, operator, and agent images:
+`alpine/kubectl` is a maintained, versioned, multi-arch image. These short-lived maintenance jobs only run `kubectl get`/`delete` on stable core/apps resources, where kubectl's version skew is a cosmetic warning rather than a functional break, so the tag tracks a recent maintained release for current base-image fixes. Bump it as the image is maintained.
+
+Update the digest in `chart/values.yaml` for the kube-rbac-proxy, operator, agent, and maintenance-job kubectl (`webhook.removalImage`/`removalTag`/`removalDigest`) images:
 
 Note:
 
-- Always use the multi-arch manifest digest (top-level Digest from imagetools), not a single-arch child manifest digest.
+- Always pin the manifest-list digest (`skopeo inspect --raw` returns the list itself, so `manifest-digest` of that output is the list digest), not a single-arch child manifest digest.
 
 **After tagging:**
 
