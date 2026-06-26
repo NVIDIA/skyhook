@@ -179,6 +179,42 @@ released_section() {
 # commit is path-filtered out).
 ROOT="$(git rev-list --max-parents=0 HEAD | tail -1)"
 
+# Decide where the version-being-cut section is sourced from.
+#
+# A PATCH ships only the commits cherry-picked onto its release branch -- NOT
+# everything on main since the last tag, because main interleaves fixes bound for
+# this line with features bound for the next minor (e.g. main carries a breaking
+# api change that must not appear in a 0.17 patch). So for a patch we source the
+# new section from release/v<major>.<minor>.x rather than HEAD. That lets you run
+# this from any branch (main included) and still get exactly what the patch ships.
+#
+# A minor/major has no backport branch to read from, so it falls through to the
+# normal "commits after the latest tag, walked from HEAD" behaviour.
+CUT_RANGE=""
+CUT_REF=""
+if [[ -n "$NEXT_VERSION" ]]; then
+    next_mm="${NEXT_VERSION%.*}" # v0.17.1 -> v0.17
+    prev_same_line=$(printf '%s\n' "${TAGS[@]}" |
+        grep -E "^${COMPONENT}/${next_mm//./\\.}\." | tail -1 || true)
+    if [[ -n "$prev_same_line" ]]; then
+        for _cand in "release/${next_mm}.x" "origin/release/${next_mm}.x"; do
+            if git rev-parse --verify --quiet "${_cand}^{commit}" >/dev/null; then
+                CUT_REF="$_cand"
+                break
+            fi
+        done
+        if [[ -z "$CUT_REF" ]]; then
+            echo "ERROR: cutting patch ${COMPONENT}/${NEXT_VERSION}, but no release branch" >&2
+            echo "       release/${next_mm}.x (or origin/release/${next_mm}.x) exists." >&2
+            echo "       Create it and cherry-pick the fix(es) onto it first." >&2
+            echo "       See docs/release-process.md (Patch Release Workflow)." >&2
+            exit 1
+        fi
+        CUT_RANGE="${prev_same_line}..${CUT_REF}"
+        echo "${C_DIM}Patch cut: sourcing ${COMPONENT}/${NEXT_VERSION} from ${CUT_REF} (${CUT_RANGE})${C_RESET}" >&2
+    fi
+fi
+
 {
     printf '# Changelog\n\n'
     printf '<!-- DO NOT EDIT. Generated from git commit history by scripts/gen-changelog.sh.\n'
@@ -186,8 +222,22 @@ ROOT="$(git rev-list --max-parents=0 HEAD | tail -1)"
     printf 'All notable changes to this project will be documented in this file.\n\n'
 
     # Unreleased (= commits after the latest tag), or the version being cut.
-    if [[ -n "$NEXT_VERSION" ]]; then
-        # A fresh release: --tag labels the unreleased commits; today's date is correct.
+    if [[ -n "$NEXT_VERSION" && -n "$CUT_RANGE" ]]; then
+        # Patch: source only what's on the release branch since this line's last
+        # tag (set above). Explicit range, not --unreleased, so the source is the
+        # release branch rather than HEAD. No tag exists yet, so stamp the heading
+        # with the release branch tip's date.
+        # shellcheck disable=SC2086
+        cut_body=$(git-cliff "${CLIFF_COMMON[@]}" --tag "${COMPONENT}/${NEXT_VERSION}" $CUT_RANGE 2>/dev/null) || true
+        if [[ -z "${cut_body//[[:space:]]/}" ]]; then
+            echo "WARNING: no ${COMPONENT} commits for ${NEXT_VERSION} in ${CUT_RANGE} -- cherry-picked onto ${CUT_REF} yet?" >&2
+        else
+            cut_date=$(git log -1 --format=%cs "${CUT_REF}^{commit}")
+            printf '%s\n' "$cut_body" | sed "1s|^## \[.*|## [${COMPONENT}/${NEXT_VERSION}] - ${cut_date}|"
+            printf '\n'
+        fi
+    elif [[ -n "$NEXT_VERSION" ]]; then
+        # A fresh minor/major: --tag labels the unreleased commits; today's date is correct.
         git-cliff "${CLIFF_COMMON[@]}" --unreleased --tag "${COMPONENT}/${NEXT_VERSION}" 2>/dev/null
         printf '\n'
     else
