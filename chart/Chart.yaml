@@ -2,10 +2,12 @@ apiVersion: v2
 name: nodewright
 description: A Helm chart for NodeWright (formerly Skyhook).
 type: application
-# This is the chart version. This version number must be incremented each time you make changes to the helm chart. OR
-# it the agent version is updated, or operator version is updated.
+# This is the chart version. This version number must be incremented each time you make changes any of the following:
+# - chart
+# - agent container
+# - operator container
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: v0.17.0
+version: v0.17.1
 # This is the version number operator container being deployed.
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
 appVersion: v0.17.0

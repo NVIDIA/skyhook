@@ -5,6 +5,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [chart/v0.17.1] - 2026-06-26
+
+### Bug Fixes
+
+- *(chart)* Repair immutable Deployment selector on skyhook->nodewright upgrade  
+
 ## [chart/v0.17.0] - 2026-06-12
 
 ### Bug Fixes
@@ -28,7 +34,7 @@ fix(chart): agent container path pointing to skyhook not nodewright
 - Merge pull request #255 from NVIDIA/chore/chart-bump-v0.16.1
 
 chore(chart): bump to v0.16.1 with operator webhook cert deadlock fix
-
+- Bump chart versions  
 
 ## [chart/v0.16.1] - 2026-05-26
 
