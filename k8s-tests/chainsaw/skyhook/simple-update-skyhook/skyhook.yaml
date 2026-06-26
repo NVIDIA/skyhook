@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -46,7 +46,7 @@ spec:
         dexter: "1.2.3"
     dexter:
       version: "1.2.3"
-      image: ghcr.io/nvidia/skyhook/agentless:bogus ## testing that the image tag is cut off
+      image: ghcr.io/nvidia/skyhook/agentless
       configMap:
         game.properties: |
           enemies=aliens
