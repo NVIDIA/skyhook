@@ -7,6 +7,28 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Bug Fixes
 
+- **Package `image` must be a bare registry/repository reference; inline tags
+  and digests are now rejected.** `image` carries neither a tag nor a digest:
+  `version` supplies the tag (and is the operator's ordering key for
+  upgrade/downgrade detection) and `containerSHA` pins the exact bytes the
+  kubelet pulls.
+  - An inline digest (`image: repo@sha256:...`) was previously accepted but
+    never deployable: with `containerSHA` unset the operator appended the
+    version tag to an image that already had a digest, producing an unpullable
+    reference like `repo@sha256:...:1.2.2`. It is now rejected with a message
+    pointing at `containerSHA`.
+  - **Behavior change:** an inline *tag* (`image: repo:1.2.2`) was previously
+    absorbed silently as a leftover migration off the pre-semver scheme. That
+    migration is complete and has been removed, so an inline tag is now rejected
+    the same way a digest is, even when it matches `version`. If your manifests
+    still embed a tag in `image`, drop it (the package `version` becomes the
+    tag). Existing stored CRs are unaffected: their tags were already stripped
+    on write by the old migration, so only re-applying a manifest that still
+    carries an inline tag will be rejected.
+  - `image` is also validated by the CRD schema (apiserver-enforced) to be
+    non-empty with no whitespace, and `containerSHA`, when set, must be a
+    well-formed digest (`sha256:` followed by 64 lowercase hex characters).
+
 - **Reapply-on-reboot dropped on busy nodes.** With `REAPPLY_ON_REBOOT=true`, a
   reboot of a node under heavy controller churn (frequent pod/label/annotation
   updates) could be detected and then silently lost: the per-node state reset
