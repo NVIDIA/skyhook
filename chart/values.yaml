@@ -156,10 +156,13 @@ webhook:
   ## Default is "true" and is required for production.
   enable: true
 
-  ## uninstall image for cleaning up webhook resources
-  removalImage: bitnami/kubectl
-  removalTag: latest
-  removalDigest: "sha256:1bc359beb3ae3982591349df11db50b0917b0596e8bed8ab9cf0c8a84a3502d1"
+  ## kubectl image used by the maintenance jobs (webhook + skyhook cleanup
+  ## pre-delete hooks and the selector-migration pre-upgrade hook). Pinned to a
+  ## maintained, versioned, multi-arch alpine/kubectl release; keep the tag in
+  ## skew with the supported Kubernetes range and bump per docs/release-process.md.
+  removalImage: alpine/kubectl
+  removalTag: 1.36.2
+  removalDigest: "sha256:01d138ce994b684abc62d9cfdff44de42a4c8996dcc12626dd0193afc3fb5a95"
 
 ## cleanup: Configuration for pre-delete cleanup jobs
 cleanup:
@@ -168,6 +171,18 @@ cleanup:
   enabled: true
   ## jobTimeoutSeconds: Hard deadline for the entire cleanup job.
   ## The job will be killed if it exceeds this time.
+  jobTimeoutSeconds: 120
+
+## selectorMigration: pre-upgrade hook that repairs an immutable Deployment
+## selector left over from an older chart (e.g. the skyhook-operator ->
+## nodewright rename). It deletes the controller-manager Deployment ONLY when
+## its live selector does not match the chart's desired selector, so helm can
+## recreate it. It is a no-op on normal upgrades.
+selectorMigration:
+  ## enabled: When true, run the selector-migration pre-upgrade hook. Safe to
+  ## leave on; disable if your GitOps tooling manages the Deployment directly.
+  enabled: true
+  ## jobTimeoutSeconds: Hard deadline for the migration job.
   jobTimeoutSeconds: 120
 
 metrics:
