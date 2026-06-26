@@ -178,9 +178,11 @@ jobs:
             ~/.cache/go-build
       - name: Validate KinD node image v${{ matrix.k8s-version }}
         if: matrix.test-suite != 'unit-tests' # unit tests don't need a cluster
+        env:
+          K8S_VERSION: ${{ matrix.k8s-version }}
         run: |
           cd operator
-          make validate-kind-node-image KIND_NODE_IMAGE_VERSION=${{ matrix.k8s-version }}
+          make validate-kind-node-image KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
       - name: Create Kubernetes KinD Cluster v${{ matrix.k8s-version }}
         if: matrix.test-suite != 'unit-tests' && matrix.test-suite != 'helm-tests' # unit tests don't need a cluster; helm-tests uses ctlptl
         id: kind
@@ -195,22 +197,26 @@ jobs:
         env:
           KIND_BINARY_VERSION: ${{ needs.k8s-test-versions.outputs.kind-binary-version }}
         run: |
-          curl -fsSL -o /tmp/kind-linux-amd64 https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64
-          curl -fsSL -o /tmp/kind-linux-amd64.sha256sum https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64.sha256sum
+          curl -fsSL -o /tmp/kind-linux-amd64 "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64"
+          curl -fsSL -o /tmp/kind-linux-amd64.sha256sum "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64.sha256sum"
           cd /tmp && sha256sum -c kind-linux-amd64.sha256sum
           sudo install /tmp/kind-linux-amd64 /usr/local/bin/kind
       - name: Create ctlptl KinD Cluster
         if: matrix.test-suite == 'helm-tests'
+        env:
+          K8S_VERSION: ${{ matrix.k8s-version }}
         run: |
           cd operator
-          make create-kind-cluster KIND_NODE_IMAGE_VERSION=${{ matrix.k8s-version }}
+          make create-kind-cluster KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
       # Run test suite
       - name: Run ${{ matrix.test-suite }} tests
         env:
+          MAKE_TARGETS: ${{ matrix.make-targets }}
           POOL: ${{ matrix.pool }}
         run: |
           cd operator
-          make ${{ matrix.make-targets }} merge-coverage
+          read -r -a MAKE_TARGETS_ARRAY <<< "$MAKE_TARGETS"
+          make "${MAKE_TARGETS_ARRAY[@]}" merge-coverage
       # Save coverage artifacts from any test suite that generates them
       - name: Upload coverage artifact
         if: hashFiles('operator/reporting/cover.out') != ''
@@ -338,9 +344,10 @@ jobs:
         env:
           GIT_SHA: ${{ needs.compute-metadata.outputs.git-sha }}
           VERSION: ${{ needs.compute-metadata.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           cd operator
-          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          PLATFORM_TAG=$(echo "$PLATFORM" | tr '/' '-')
           
           # Lowercase for Docker compliance
           IMAGE_NAME=$(echo "${{env.IMAGE_NAME}}" | tr '[:upper:]' '[:lower:]')
@@ -367,7 +374,7 @@ jobs:
             --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
             --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.go-version }} \
             ${PUSH_OR_LOAD} \
-            --platform ${{ matrix.platform }} \
+            --platform "$PLATFORM" \
             --provenance=false \
             ${TAGS@L} \
             --metadata-file=metadata.json \

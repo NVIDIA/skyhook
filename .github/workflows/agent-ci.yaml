@@ -179,9 +179,10 @@ jobs:
         env:
           GIT_SHA: ${{ needs.compute-metadata.outputs.git-sha }}
           AGENT_VERSION: ${{ needs.compute-metadata.outputs.agent-version }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           cd agent
-          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          PLATFORM_TAG=$(echo "$PLATFORM" | tr '/' '-')
           
           # Lowercase for Docker compliance
           IMAGE_NAME=$(echo "${{env.IMAGE_NAME}}" | tr '[:upper:]' '[:lower:]')
@@ -208,7 +209,7 @@ jobs:
             --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
             --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }} \
             ${PUSH_OR_LOAD} \
-            --platform ${{ matrix.platform }} \
+            --platform "$PLATFORM" \
             --provenance=false \
             ${TAGS@L} \
             --metadata-file=metadata.json \
@@ -335,9 +336,11 @@ jobs:
           YQ="$PWD/bin/yq" ./versions.sh --print >> "$GITHUB_OUTPUT"
 
       - name: Validate KinD node image
+        env:
+          K8S_VERSION: ${{ steps.k8s-versions.outputs.kind-node-image-version }}
         run: |
           cd operator
-          make validate-kind-node-image KIND_NODE_IMAGE_VERSION=${{ steps.k8s-versions.outputs.kind-node-image-version }}
+          make validate-kind-node-image KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
       
       - name: Create Kubernetes KinD Cluster
         uses: helm/kind-action@v1.14.0
