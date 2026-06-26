@@ -289,14 +289,29 @@ func (r *Skyhook) Validate() error {
 			return fmt.Errorf("error config interrupt for key that doesn't exist: %s doesn't exist as a configmap", pattern)
 		}
 
-		image, version, found := splitImageTag(v.Image)
-		if found && version != v.Version {
+		// image must be a bare registry/repository reference. version is the operator's
+		// ordering key (it drives upgrade/downgrade detection) and containerSHA pins the
+		// exact bytes the kubelet pulls, so neither a tag nor a digest may be embedded in
+		// image. Both are rejected rather than silently stripped: an inline tag was once
+		// absorbed as a migration off the pre-semver scheme, but that migration is done,
+		// so tags and digests now behave identically. tag/digest are non-nil whenever
+		// their separator is present, so an empty separator ("repo@", "repo:") is
+		// rejected too rather than slipping through to an invalid pull reference.
+		// (Emptiness and whitespace are enforced declaratively by the CRD's Pattern.)
+		_, tag, digest := splitImageReference(v.Image)
+		if digest != nil {
 			return fmt.Errorf(
-				"error package %s's image tag was set to '%s' for '%s' and doesn't match the pacakge's version '%s'. Do not explicitly set the image's tag in the package's definition (The package version will be set as the tag)",
+				"error package %s's image '%s' contains an inline digest. Do not embed a digest in the image; pin the image bytes using the package's containerSHA field instead",
 				name,
-				version,
-				image,
-				v.Version,
+				v.Image,
+			)
+		}
+		if tag != nil {
+			return fmt.Errorf(
+				"error package %s's image '%s' contains an inline tag '%s'. Do not embed a tag in the image; the package version supplies the tag",
+				name,
+				v.Image,
+				*tag,
 			)
 		}
 
