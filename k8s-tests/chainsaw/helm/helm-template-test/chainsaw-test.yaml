@@ -116,6 +116,252 @@ spec:
                       memory: 256Mi
           EXPECTED
 
+  - name: deployment-selector-pinned-labels
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## The controller-manager Deployment selector must carry the full,
+          ## specific managerSelectorLabels set (not a single vague label), so
+          ## it stays stable and the selector-migration hook can match it.
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/deployment.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: apps/v1
+          kind: Deployment
+          spec:
+            selector:
+              matchLabels:
+                control-plane: controller-manager
+                app.kubernetes.io/name: nodewright
+                app.kubernetes.io/instance: test-release
+          EXPECTED
+
+  - name: override-keeps-name-and-aligns-hook
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## The bug only triggers when fullnameOverride preserves the
+          ## controller-manager Deployment NAME across the rename while the
+          ## selector (from chart name) is what changes. Under an override, the
+          ## immutable selector still renders the current chart identity
+          ## (name=nodewright), not the overridden name. (Asserted by kind, since
+          ## deployment.yaml also renders the PDB; the preserved Deployment name
+          ## is covered by the Role/hook assertions below.)
+          helm template skyhook-operator ${CHART} -n skyhook \
+            --set fullnameOverride=skyhook-operator \
+            -s templates/deployment.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: apps/v1
+          kind: Deployment
+          spec:
+            selector:
+              matchLabels:
+                control-plane: controller-manager
+                app.kubernetes.io/name: nodewright
+                app.kubernetes.io/instance: skyhook-operator
+          EXPECTED
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## The hook's RBAC must follow the overridden name so it can delete the
+          ## right Deployment.
+          helm template skyhook-operator ${CHART} -n skyhook \
+            --set fullnameOverride=skyhook-operator \
+            -s templates/selector-migration-role.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: skyhook-operator-selector-migration
+          rules:
+          - resourceNames:
+            - skyhook-operator-controller-manager
+          EXPECTED
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## The hook command targets the overridden Deployment name.
+          helm template skyhook-operator ${CHART} -n skyhook \
+            --set fullnameOverride=skyhook-operator \
+            -s templates/selector-migration-job.yaml
+        check:
+          "(contains($stdout, 'DEPLOY=\"skyhook-operator-controller-manager\"'))": true
+
+  - name: selector-migration-job-renders
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## The pre-upgrade hook Job is wired as a pre-upgrade hook, runs under
+          ## its dedicated ServiceAccount, and has a single migration container.
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/selector-migration-job.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: nodewright-selector-migration
+            annotations:
+              helm.sh/hook: pre-upgrade
+              helm.sh/hook-weight: "-5"
+          spec:
+            template:
+              spec:
+                restartPolicy: Never
+                serviceAccountName: nodewright-selector-migration
+                containers:
+                - name: selector-migration
+                  ## writable kubectl cache, required under readOnlyRootFilesystem
+                  env:
+                  - name: KUBECACHEDIR
+                    value: /tmp/kubecache
+          EXPECTED
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## Image is the maintained kubectl image, not bitnami. (Checked as a
+          ## substring because the value carries a pinned, version-specific digest.)
+          ## Also assert the hook compares the FULL managerSelectorLabels set, not
+          ## just control-plane: a regression to a single label would reintroduce
+          ## the upgrade failure for rename/fullnameOverride installs.
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/selector-migration-job.yaml
+        check:
+          "(contains($stdout, 'image: alpine/kubectl'))": true
+          ## must stay digest-pinned, not a floating tag
+          "(contains($stdout, '@sha256:'))": true
+          "(contains($stdout, 'bitnami'))": false
+          ## the migration must reason over all three desired selector labels
+          "(contains($stdout, 'selector label control-plane differs'))": true
+          "(contains($stdout, 'selector label app.kubernetes.io/name differs'))": true
+          "(contains($stdout, 'selector label app.kubernetes.io/instance differs'))": true
+          ## writable kubectl cache volume + mount (env asserted structurally above)
+          "(contains($stdout, 'name: kube-cache'))": true
+          "(contains($stdout, 'mountPath: /tmp/kubecache'))": true
+
+  - name: selector-migration-serviceaccount-renders
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/selector-migration-serviceaccount.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: nodewright-selector-migration
+            annotations:
+              helm.sh/hook: pre-upgrade
+              helm.sh/hook-weight: "-10"
+          EXPECTED
+
+  - name: selector-migration-role-renders
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## Least-privilege: get/delete on the controller-manager deployment only.
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/selector-migration-role.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: nodewright-selector-migration
+          rules:
+          - apiGroups:
+            - apps
+            resources:
+            - deployments
+            resourceNames:
+            - nodewright-controller-manager
+            verbs:
+            - get
+            - delete
+          EXPECTED
+
+  - name: selector-migration-rolebinding-renders
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n skyhook \
+            -s templates/selector-migration-rolebinding.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: nodewright-selector-migration
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: nodewright-selector-migration
+          subjects:
+          - kind: ServiceAccount
+            name: nodewright-selector-migration
+          EXPECTED
+
+  - name: selector-migration-disabled-no-hook
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## With the hook disabled, none of the selector-migration templates
+          ## should render (-s exits non-zero when a gated template is empty).
+          for f in serviceaccount role rolebinding job; do
+            if helm template test-release ${CHART} -n skyhook \
+                 --set 'selectorMigration.enabled=false' \
+                 -s templates/selector-migration-$f.yaml 2>/dev/null; then
+              echo "ERROR: selector-migration-$f.yaml rendered while disabled"
+              exit 1
+            fi
+          done
+          echo "all selector-migration templates omitted when disabled"
+
   - name: limitrange-disabled-null-fallback-resources
     try:
     - script:

@@ -1,0 +1,21 @@
+{{- if .Values.selectorMigration.enabled }}
+{{/* Binds the selector-migration hook ServiceAccount to its Role.
+     See selector-migration-job.yaml for the hook rationale. */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "{{ include "chart.fullname" . }}-selector-migration"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-10"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: "{{ include "chart.fullname" . }}-selector-migration"
+subjects:
+- kind: ServiceAccount
+  name: "{{ include "chart.fullname" . }}-selector-migration"
+  namespace: "{{ .Release.Namespace }}"
+{{- end }}

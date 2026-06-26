@@ -1,0 +1,24 @@
+{{- if .Values.selectorMigration.enabled }}
+{{/* Least-privilege RBAC for the selector-migration pre-upgrade hook: it only
+     needs to read and delete the one controller-manager Deployment by name, so
+     get/delete are scoped via resourceNames and list is not granted. */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "{{ include "chart.fullname" . }}-selector-migration"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-10"
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  resourceNames:
+  - "{{ include "chart.fullname" . }}-controller-manager"
+  verbs:
+  - get
+  - delete
+{{- end }}
