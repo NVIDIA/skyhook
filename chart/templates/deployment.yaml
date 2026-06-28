@@ -15,15 +15,22 @@ metadata:
 spec:
   replicas: {{ .Values.controllerManager.replicas }}
   selector:
+    # Deployment.spec.selector is immutable. These labels are sourced from the
+    # shared chart.managerSelectorLabels helper so the selector-migration
+    # pre-upgrade hook compares against the exact same set; if the chart name or
+    # release name ever changes the selector, that hook deletes the stale
+    # Deployment so `helm upgrade` can recreate it.
     matchLabels:
-      control-plane: controller-manager
-    {{- include "chart.selectorLabels" . | nindent 6 }}
+      {{- include "chart.managerSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
         app: {{ include "chart.fullname" . }}-controller-manager
-        control-plane: controller-manager
-      {{- include "chart.selectorLabels" . | nindent 8 }}
+      {{- /* Sourced from the same helper as spec.selector above so the pod
+             labels always stay a superset of the immutable selector; if they
+             were built separately they could drift and the Deployment would
+             stop matching its own pods. */}}
+      {{- include "chart.managerSelectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
     spec:

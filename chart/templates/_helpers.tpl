@@ -52,6 +52,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Selector for the controller-manager Deployment.
+
+Shared by the Deployment's spec.selector and the selector-migration pre-upgrade
+hook so both reason about the identical label set. spec.selector is immutable,
+so when the chart name or release name changes these labels (e.g. the
+skyhook-operator -> nodewright rename), the hook deletes the stale Deployment
+and lets helm recreate it rather than failing the upgrade.
+*/}}
+{{- define "chart.managerSelectorLabels" -}}
+control-plane: controller-manager
+{{ include "chart.selectorLabels" . }}
+{{- end }}
+
+{{/*
 Create the name of the service account to use
 */}}
 {{- define "chart.serviceAccountName" -}}
