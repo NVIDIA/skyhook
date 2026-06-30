@@ -21,7 +21,7 @@ package step
 import "fmt"
 
 // UpgradeStep is a Step that runs only during the Upgrade and
-// UpgradeCheck modes. It mirrors Python's UpgradeStep subclass.
+// UpgradeCheck modes.
 //
 // Invariant: UpgradeSteps may not declare arguments. Construct via
 // NewUpgradeStep or call Validate() before encoding.
@@ -33,10 +33,8 @@ var _ Step = UpgradeStep{}
 
 // NewUpgradeStep constructs an UpgradeStep using the same option set
 // as NewRegularStep, sets the upgrade_step discriminator on the
-// embedded value, then checks the no-arguments invariant. The shared
-// option set keeps construction symmetric; if a caller passes
-// WithArguments, the Python-parity error is returned at runtime
-// (matching Python's UpgradeStep.__init__ which raises StepError).
+// embedded value, then checks the no-arguments invariant. Passing
+// WithArguments returns the invariant error at construction.
 func NewUpgradeStep(path string, opts ...RegularStepOption) (UpgradeStep, error) {
 	rs := NewRegularStep(path, opts...)
 	rs.UpgradeStep = true
@@ -48,8 +46,7 @@ func NewUpgradeStep(path string, opts ...RegularStepOption) (UpgradeStep, error)
 }
 
 // Validate reports whether u satisfies the UpgradeStep invariant:
-// arguments must be empty. Mirrors Python's StepError raised in
-// UpgradeStep.__init__.
+// arguments must be empty.
 func (u UpgradeStep) Validate() error {
 	if len(u.Arguments) != 0 {
 		return fmt.Errorf(

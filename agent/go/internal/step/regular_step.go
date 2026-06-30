@@ -23,17 +23,20 @@ import (
 	"fmt"
 )
 
-// RegularStep is the default Step implementation (Python's plain Step).
-// Its fields are exported with JSON tags so stdlib json.Marshal /
-// json.Unmarshal operate on it directly; Idempotence carries its own
-// enum<->bool codec, so no custom marshaler is needed here.
+// RegularStep is the default Step implementation. Its fields are
+// exported with JSON tags so stdlib json.Marshal / json.Unmarshal
+// operate on it directly; Idempotence carries its own enum<->bool
+// codec, so no custom marshaler is needed here.
 //
-// Defaults: Name falls back to Path, Arguments to []string{},
-// Returncodes to []int{0}, Env to map[string]string{}, OnHost to true,
-// and Idempotence to Auto. applyDefaults centralizes these.
+// applyDefaults makes Name fall back to ScriptPath, Arguments to []string{},
+// Returncodes to []int{0}, Env to map[string]string{}, and Idempotence to Auto.
+// NewRegularStep additionally defaults OnHost to true.
+//
+// ScriptPath carries the json:"path" wire name; the field is named
+// distinctly so RegularStep can expose Path() to satisfy Step.
 type RegularStep struct {
 	Name        string            `json:"name"`
-	Path        string            `json:"path"`
+	ScriptPath  string            `json:"path"`
 	Arguments   []string          `json:"arguments"`
 	Returncodes []int             `json:"returncodes"`
 	OnHost      bool              `json:"on_host"`
@@ -41,14 +44,16 @@ type RegularStep struct {
 	UpgradeStep bool              `json:"upgrade_step"`
 	Env         map[string]string `json:"env,omitempty"`
 
-	// RequiresInterrupt round-trips via the wire as
-	// "requires_interrupt", emitted only when true. Python's Step.dump
-	// drops it entirely; here we keep it round-trippable, which stays
-	// schema-valid (the step schema permits extra properties).
+	// RequiresInterrupt round-trips via the wire as "requires_interrupt",
+	// emitted only when true; it stays schema-valid because the step schema
+	// permits extra properties.
 	RequiresInterrupt bool `json:"requires_interrupt,omitempty"`
 }
 
 var _ Step = RegularStep{}
+
+// Path returns the step's script path, relative to the package root.
+func (s RegularStep) Path() string { return s.ScriptPath }
 
 // Encode writes the JSON wire form with upgrade_step:false. Defaults
 // are applied to a local copy so the caller's value is not mutated;
@@ -81,7 +86,7 @@ func (s RegularStep) encode() ([]byte, error) {
 // slices and pass them through.
 type RegularStepOption func(*RegularStep)
 
-// WithName overrides the default Name (which otherwise falls back to Path).
+// WithName overrides the default Name (which otherwise falls back to ScriptPath).
 func WithName(name string) RegularStepOption { return func(s *RegularStep) { s.Name = name } }
 
 // WithArguments sets the step's arguments.
@@ -121,7 +126,7 @@ func NewRegularStep(path string, opts ...RegularStepOption) RegularStep {
 	// OnHost is seeded true here because Go's bool has no "absent"
 	// state, so applyDefaults can't tell zero apart from "explicit
 	// false"; WithOnHost(false) overrides this initial value.
-	rs := RegularStep{Path: path, OnHost: true}
+	rs := RegularStep{ScriptPath: path, OnHost: true}
 	for _, opt := range opts {
 		opt(&rs)
 	}
@@ -138,7 +143,7 @@ func NewRegularStep(path string, opts ...RegularStepOption) RegularStep {
 // constructor seeds it and stdlib decode reads whatever the payload set.
 func (s *RegularStep) applyDefaults() {
 	if s.Name == "" {
-		s.Name = s.Path
+		s.Name = s.ScriptPath
 	}
 	if len(s.Arguments) == 0 {
 		s.Arguments = []string{}
