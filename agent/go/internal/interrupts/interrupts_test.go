@@ -1,24 +1,27 @@
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: Apache-2.0
-//
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 package interrupts
 
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -63,19 +66,26 @@ var _ = Describe("Encode/Decode", func() {
 		}
 	})
 
-	It("returns python-compatible errors when input is not base64", func() {
+	It("returns the wire-shape error when input is not base64", func() {
 		_, err := Decode("not-base64")
-		Expect(err).To(MatchError(invalidSerializedInterruptError))
+		Expect(err).To(MatchError(errInvalidSerializedInterrupt))
+	})
+
+	It("wraps the underlying decode error while staying branchable on the sentinel", func() {
+		_, err := Decode("not-base64")
+		Expect(errors.Is(err, errInvalidSerializedInterrupt)).To(BeTrue())
+		// The original base64 failure is preserved for diagnostics, not dropped.
+		Expect(err.Error()).To(ContainSubstring("illegal base64"))
 	})
 
 	It("rejects payload without a type field", func() {
 		encoded := base64.StdEncoding.EncodeToString([]byte(`{"services":["kubelet"]}`))
 
 		_, err := Decode(encoded)
-		Expect(err).To(MatchError(invalidSerializedInterruptError))
+		Expect(err).To(MatchError(errInvalidSerializedInterrupt))
 	})
 
-	It("treats an empty type as unknown, matching python dispatch", func() {
+	It("treats an empty type as unknown", func() {
 		encoded := base64.StdEncoding.EncodeToString([]byte(`{"type":""}`))
 
 		_, err := Decode(encoded)
@@ -141,7 +151,7 @@ var _ = Describe("ServiceRestart", func() {
 		encoded := base64.StdEncoding.EncodeToString([]byte(`{"type":"service_restart","services":"kubelet"}`))
 
 		_, err := Decode(encoded)
-		Expect(err).To(MatchError(invalidSerializedInterruptError))
+		Expect(err).To(MatchError(errInvalidSerializedInterrupt))
 	})
 
 	It("emits an empty services array when Services is nil, not null", func() {

@@ -2,6 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -19,8 +20,16 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
+	"os"
 )
 
 func main() {
+	// Establish the agent's structured-logging seam. Packages (e.g.
+	// config.Loader.Load) log through *slog.Logger and fall back to
+	// slog.Default() when passed nil, so wiring it here once keeps that
+	// default sane for the whole process.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
 	fmt.Println("Hello, World!")
 }

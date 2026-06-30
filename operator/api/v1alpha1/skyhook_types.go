@@ -150,32 +150,29 @@ func (f Packages) Names() {
 	}
 }
 
-// Images removes the image tag if set on image
-func (f Packages) Images() {
-	for k := range f {
-		m := f[k]
-		image, _, found := splitImageTag(m.Image)
-		if found {
-			m.Image = image
-		}
-
-		f[k] = m
-	}
-}
-
-func splitImageTag(image string) (string, string, bool) {
-	imageWithoutDigest := image
-	if index := strings.Index(imageWithoutDigest, "@"); index >= 0 {
-		imageWithoutDigest = imageWithoutDigest[:index]
+// splitImageReference splits a container image reference into its repository,
+// tag, and digest. tag and digest are nil when their separator (":" or "@") is
+// absent, and non-nil (possibly pointing at "") when the separator is present,
+// so callers can distinguish "no tag" from an empty "repo:". A trailing
+// "@digest" is separated first, and a colon before the final "/" is treated as
+// a registry port rather than a tag separator (e.g. "localhost:5000/org/pkg"
+// has no tag).
+func splitImageReference(image string) (repository string, tag, digest *string) {
+	repository = image
+	if index := strings.LastIndex(repository, "@"); index >= 0 {
+		d := repository[index+1:]
+		digest = &d
+		repository = repository[:index]
 	}
 
-	lastSlash := strings.LastIndex(imageWithoutDigest, "/")
-	lastColon := strings.LastIndex(imageWithoutDigest, ":")
-	if lastColon == -1 || lastColon < lastSlash {
-		return image, "", false
+	lastSlash := strings.LastIndex(repository, "/")
+	if lastColon := strings.LastIndex(repository, ":"); lastColon > lastSlash {
+		t := repository[lastColon+1:]
+		tag = &t
+		repository = repository[:lastColon]
 	}
 
-	return imageWithoutDigest[:lastColon], imageWithoutDigest[lastColon+1:], true
+	return repository, tag, digest
 }
 
 func (f *Packages) UnmarshalJSON(data []byte) error {
@@ -183,11 +180,10 @@ func (f *Packages) UnmarshalJSON(data []byte) error {
 	var ret map[string]Package
 	err := json.Unmarshal(data, &ret)
 	if err != nil {
-		return err
+		return fmt.Errorf("unmarshalling packages: %w", err)
 	}
 
 	*f = Packages(ret)
-	f.Images()
 	f.Names()
 	return nil
 }
@@ -313,15 +309,22 @@ type Uninstall struct {
 type Package struct {
 	PackageRef `json:",inline"`
 
-	// Image is the container image to run. Do not included the tag, that is set in the version.
-	//+kubebuilder:example="alpine"
+	// Image is the container image to run, given as a registry/repository reference with
+	// no tag or digest (e.g. "ghcr.io/nvidia/skyhook-packages/shellscript" or a ported
+	// registry like "localhost:5000/org/pkg"). The version field supplies the tag, and
+	// containerSHA pins an exact digest. The webhook rejects any inline tag or
+	// "@sha256:..." digest embedded in image, and image must be non-empty with no
+	// whitespace.
+	//+kubebuilder:example="ghcr.io/nvidia/skyhook-packages/shellscript"
 	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Pattern=`^\S+$`
 	Image string `json:"image"`
 
 	// ContainerSHA is the SHA256 digest of the container image for verification purposes.
 	// When specified, this will be used instead of the version tag to pull the exact image.
-	// Format: sha256:1234567890abcdef...
+	// Format: sha256:<64 lowercase hex chars>
 	//+kubebuilder:example="sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	//+kubebuilder:validation:Pattern=`^sha256:[0-9a-f]{64}$`
 	//+optional
 	ContainerSHA string `json:"containerSHA,omitempty"`
 

@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("Skyhook Types", func() {
@@ -1109,5 +1110,26 @@ var _ = Describe("Skyhook Types", func() {
 			Expect(ns.GetComplete(packages, emptyInterrupt, emptyConfig)).To(ContainElement("baxter|3.2.1"))
 		})
 	})
+
+	DescribeTable("splitImageReference parses repository, tag, and digest",
+		func(image, wantRepo string, wantTag, wantDigest *string) {
+			repo, tag, digest := splitImageReference(image)
+			Expect(repo).To(Equal(wantRepo))
+			Expect(tag).To(Equal(wantTag))
+			Expect(digest).To(Equal(wantDigest))
+		},
+		Entry("bare name", "alpine", "alpine", nil, nil),
+		Entry("name with tag", "alpine:3.20", "alpine", ptr.To("3.20"), nil),
+		Entry("registry repository, no tag", "ghcr.io/org/pkg", "ghcr.io/org/pkg", nil, nil),
+		Entry("registry repository with tag", "ghcr.io/org/pkg:1.2.3", "ghcr.io/org/pkg", ptr.To("1.2.3"), nil),
+		Entry("registry port is not a tag", "localhost:5000/org/pkg", "localhost:5000/org/pkg", nil, nil),
+		Entry("registry port with tag", "localhost:5000/org/pkg:1.2.3", "localhost:5000/org/pkg", ptr.To("1.2.3"), nil),
+		Entry("digest only", "ghcr.io/org/pkg@sha256:abc123", "ghcr.io/org/pkg", nil, ptr.To("sha256:abc123")),
+		Entry("registry port with digest, no tag", "localhost:5000/org/pkg@sha256:abc123", "localhost:5000/org/pkg", nil, ptr.To("sha256:abc123")),
+		Entry("tag and digest", "ghcr.io/org/pkg:1.2.3@sha256:abc123", "ghcr.io/org/pkg", ptr.To("1.2.3"), ptr.To("sha256:abc123")),
+		Entry("registry port with tag and digest", "localhost:5000/org/pkg:1.2.3@sha256:abc123", "localhost:5000/org/pkg", ptr.To("1.2.3"), ptr.To("sha256:abc123")),
+		Entry("empty tag separator", "ghcr.io/org/pkg:", "ghcr.io/org/pkg", ptr.To(""), nil),
+		Entry("empty digest separator", "ghcr.io/org/pkg@", "ghcr.io/org/pkg", nil, ptr.To("")),
+	)
 
 })

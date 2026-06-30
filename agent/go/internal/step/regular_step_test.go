@@ -25,43 +25,43 @@ import (
 
 var _ = Describe("RegularStep.applyDefaults", func() {
 	It("fills name from path when name is empty", func() {
-		s := RegularStep{Path: "foo.sh"}
+		s := RegularStep{ScriptPath: "foo.sh"}
 		s.applyDefaults()
 		Expect(s.Name).To(Equal("foo.sh"))
 	})
 
 	It("preserves name when it is set", func() {
-		s := RegularStep{Name: "explicit", Path: "foo.sh"}
+		s := RegularStep{Name: "explicit", ScriptPath: "foo.sh"}
 		s.applyDefaults()
 		Expect(s.Name).To(Equal("explicit"))
 	})
 
 	It("defaults arguments to an empty slice", func() {
-		s := RegularStep{Path: "foo.sh"}
+		s := RegularStep{ScriptPath: "foo.sh"}
 		s.applyDefaults()
 		Expect(s.Arguments).To(Equal([]string{}))
 	})
 
 	It("defaults returncodes to [0]", func() {
-		s := RegularStep{Path: "foo.sh"}
+		s := RegularStep{ScriptPath: "foo.sh"}
 		s.applyDefaults()
 		Expect(s.Returncodes).To(Equal([]int{0}))
 	})
 
 	It("defaults env to an empty map", func() {
-		s := RegularStep{Path: "foo.sh"}
+		s := RegularStep{ScriptPath: "foo.sh"}
 		s.applyDefaults()
 		Expect(s.Env).To(Equal(map[string]string{}))
 	})
 
 	It("defaults idempotence to Auto", func() {
-		s := RegularStep{Path: "foo.sh"}
+		s := RegularStep{ScriptPath: "foo.sh"}
 		s.applyDefaults()
 		Expect(s.Idempotence).To(Equal(Auto))
 	})
 
 	It("does not change OnHost (the constructor seeds it; the schema requires it)", func() {
-		s := RegularStep{Path: "foo.sh", OnHost: true}
+		s := RegularStep{ScriptPath: "foo.sh", OnHost: true}
 		s.applyDefaults()
 		Expect(s.OnHost).To(BeTrue())
 	})
@@ -69,14 +69,14 @@ var _ = Describe("RegularStep.applyDefaults", func() {
 
 var _ = Describe("RegularStep.Encode", func() {
 	It("emits upgrade_step:false", func() {
-		s := RegularStep{Path: "foo.sh"}
+		s := RegularStep{ScriptPath: "foo.sh"}
 		dumped, err := s.Encode()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(dumped)).To(ContainSubstring(`"upgrade_step":false`))
 	})
 
 	It("does not mutate the caller's value when applying defaults", func() {
-		s := RegularStep{Path: "foo.sh"}
+		s := RegularStep{ScriptPath: "foo.sh"}
 		_, err := s.Encode()
 		Expect(err).NotTo(HaveOccurred())
 
@@ -85,7 +85,7 @@ var _ = Describe("RegularStep.Encode", func() {
 	})
 
 	It("rejects an explicitly invalid idempotence value", func() {
-		s := RegularStep{Path: "foo.sh", Idempotence: "bogus"}
+		s := RegularStep{ScriptPath: "foo.sh", Idempotence: "bogus"}
 		_, err := s.Encode()
 		Expect(err).To(MatchError(ContainSubstring("bogus is not a valid idempotence value")))
 	})
@@ -94,7 +94,7 @@ var _ = Describe("RegularStep.Encode", func() {
 var _ = Describe("NewRegularStep", func() {
 	It("applies all defaults when only path is provided", func() {
 		s := NewRegularStep("foo.sh")
-		Expect(s.Path).To(Equal("foo.sh"))
+		Expect(s.ScriptPath).To(Equal("foo.sh"))
 		Expect(s.Name).To(Equal("foo.sh"))
 		Expect(s.Arguments).To(Equal([]string{}))
 		Expect(s.Returncodes).To(Equal([]int{0}))
@@ -141,7 +141,7 @@ var _ = Describe("NewRegularStep", func() {
 
 		round, err := Decode(dumped)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(round.(RegularStep).Path).To(Equal("foo.sh"))
+		Expect(round.(RegularStep).ScriptPath).To(Equal("foo.sh"))
 		Expect(round.(RegularStep).Idempotence).To(Equal(Disabled))
 	})
 })

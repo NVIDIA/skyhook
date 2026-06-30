@@ -294,8 +294,9 @@ spec:
                       description: |-
                         ContainerSHA is the SHA256 digest of the container image for verification purposes.
                         When specified, this will be used instead of the version tag to pull the exact image.
-                        Format: sha256:1234567890abcdef...
+                        Format: sha256:<64 lowercase hex chars>
                       example: sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+                      pattern: ^sha256:[0-9a-f]{64}$
                       type: string
                     dependsOn:
                       additionalProperties:
@@ -467,9 +468,15 @@ spec:
                         for the package, if not set, uses k8s default
                       type: string
                     image:
-                      description: Image is the container image to run. Do not included
-                        the tag, that is set in the version.
-                      example: alpine
+                      description: |-
+                        Image is the container image to run, given as a registry/repository reference with
+                        no tag or digest (e.g. "ghcr.io/nvidia/skyhook-packages/shellscript" or a ported
+                        registry like "localhost:5000/org/pkg"). The version field supplies the tag, and
+                        containerSHA pins an exact digest. The webhook rejects any inline tag or
+                        "@sha256:..." digest embedded in image, and image must be non-empty with no
+                        whitespace.
+                      example: ghcr.io/nvidia/skyhook-packages/shellscript
+                      pattern: ^\S+$
                       type: string
                     interrupt:
                       description: Interrupt if supplied is the type of interrupt

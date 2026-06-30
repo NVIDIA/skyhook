@@ -1,19 +1,32 @@
-{{- if .Values.webhook.enable }}
+{{- if .Values.selectorMigration.enabled }}
+{{/*
+Deployment.spec.selector is immutable. When an existing release was first
+installed from a chart whose name produced a different selector (e.g. the
+skyhook-operator -> nodewright rename changed app.kubernetes.io/name), helm
+upgrade fails because it cannot patch the selector. This pre-upgrade hook
+inspects the live Deployment and deletes it ONLY when its selector does not
+match the desired chart.managerSelectorLabels, so helm can recreate it. It is a
+no-op (no downtime) on normal upgrades. The hook gets its own ServiceAccount and
+Role (selector-migration-{serviceaccount,role,rolebinding}.yaml) because, during
+pre-upgrade, the release's manager RBAC has not been applied yet, so it cannot be
+relied upon here.
+*/}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "{{ include "chart.fullname" . }}-webhook-cleanup"
+  name: "{{ include "chart.fullname" . }}-selector-migration"
   namespace: "{{ .Release.Namespace }}"
   annotations:
-    "helm.sh/hook": pre-delete
+    "helm.sh/hook": pre-upgrade
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-5"
 spec:
-  activeDeadlineSeconds: {{ .Values.cleanup.jobTimeoutSeconds }}
+  activeDeadlineSeconds: {{ .Values.selectorMigration.jobTimeoutSeconds }}
   template:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
-      serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      serviceAccountName: "{{ include "chart.fullname" . }}-selector-migration"
       {{- with .Values.controllerManager.tolerations }}
       tolerations:
         {{- toYaml . | nindent 6 }}
@@ -64,11 +77,12 @@ spec:
                   fieldPath: metadata.namespace
                 path: namespace
       # kubectl writes its discovery/http cache under KUBECACHEDIR; with a
-      # read-only root filesystem it needs a writable mount.
+      # read-only root filesystem it needs a writable mount, else it re-discovers
+      # the API on every call.
       - name: kube-cache
         emptyDir: {}
       containers:
-      - name: cleanup
+      - name: selector-migration
         image: {{ .Values.webhook.removalImage | default "alpine/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "latest" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "latest" }}{{- end }}
         imagePullPolicy: Always
         env:
@@ -109,10 +123,36 @@ spec:
         - /bin/sh
         - -c
         - |
-          NAMESPACE="{{ .Release.Namespace }}"
-          VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
-          MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
-          kubectl delete secret -n $NAMESPACE "{{ .Values.webhook.secretName | default "webhook-cert" }}" || true
-          kubectl delete validatingwebhookconfiguration $VALIDATING_WEBHOOK_CONFIGURATION_NAME || true
-          kubectl delete mutatingwebhookconfiguration $MUTATING_WEBHOOK_CONFIGURATION_NAME || true
-{{- end }} 
+          NS="{{ .Release.Namespace }}"
+          DEPLOY="{{ include "chart.fullname" . }}-controller-manager"
+
+          if ! kubectl get deployment "$DEPLOY" -n "$NS" >/dev/null 2>&1; then
+            echo "Deployment $DEPLOY not found; nothing to migrate"
+            exit 0
+          fi
+
+          echo "live selector: $(kubectl get deployment "$DEPLOY" -n "$NS" -o jsonpath='{.spec.selector.matchLabels}')"
+
+          mismatch=0
+          {{/* Compares each DESIRED label value against the live selector. This
+               catches a changed value (the skyhook-operator -> nodewright rename)
+               or a missing label, which covers every selector change in this
+               chart's history (the key set has always been control-plane + name
+               + instance). It does NOT detect a live selector with EXTRA keys
+               beyond the desired set; if a future change ever narrows the
+               selector, that case needs its own handling here. */}}
+          {{- range $k, $v := (include "chart.managerSelectorLabels" . | fromYaml) }}
+          live="$(kubectl get deployment "$DEPLOY" -n "$NS" -o jsonpath='{.spec.selector.matchLabels.{{ $k | replace "." "\\." }}}' 2>/dev/null || true)"
+          if [ "$live" != "{{ $v }}" ]; then
+            echo "selector label {{ $k }} differs: live='$live' want='{{ $v }}'"
+            mismatch=1
+          fi
+          {{- end }}
+
+          if [ "$mismatch" -eq 1 ]; then
+            echo "Deployment selector does not match desired; deleting so helm upgrade can recreate it"
+            kubectl delete deployment "$DEPLOY" -n "$NS" --ignore-not-found
+          else
+            echo "Deployment selector already matches desired; nothing to do"
+          fi
+{{- end }}

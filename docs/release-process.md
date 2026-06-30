@@ -233,6 +233,18 @@ for c in operator agent chart cli; do scripts/gen-changelog.sh "$c"; done   # bu
 make release-tag
 ```
 
+### Where a cut section is sourced from (patch vs. minor)
+
+When you cut a **patch** (`vX.Y.Z` whose `X.Y` already has a final tag), the new section is sourced from that line's release branch, `release/vX.Y.x`, not from your current `HEAD`. A patch ships only the fixes cherry-picked onto its release branch; `main` meanwhile carries unrelated work bound for the next minor (a breaking API change, a dependency bump, …), and ranging `prevTag..HEAD` on `main` would sweep all of that into the patch. Sourcing from the release branch gives exactly what the patch ships, and lets you run the generator from any branch.
+
+Practical consequences for a patch cut:
+
+- The release branch must already exist and already carry the cherry-picks. Order is: cherry-pick the fix onto `release/vX.Y.x` first, then run the generator. The generator prints `Patch cut: sourcing <c>/vX.Y.Z from release/vX.Y.x (...)` so you can see the source it chose.
+- If `release/vX.Y.x` (or `origin/release/vX.Y.x`) doesn't exist, it errors and tells you to create the branch and cherry-pick first.
+- If nothing new is on the release branch since the previous tag, it warns (`no <c> commits for vX.Y.Z ... cherry-picked onto ... yet?`) rather than emitting an empty section: the usual cause is forgetting the cherry-pick.
+
+A **minor or major** (`vX.Y.0`, no prior tag on that `X.Y`) has no backport branch to read from, so it still walks commits after the latest tag from `HEAD`. Cut it on its release branch as the workflow above describes.
+
 ### Cutting a release tag (`make release-tag`)
 
 `scripts/gen-changelog.sh` writes changelogs; `scripts/release-tag.sh` (via `make release-tag`) creates the git tag. They are separate steps. The tag helper:
@@ -278,36 +290,31 @@ Starting with digest pinning, the chart references images using tag@digest (or d
 
 Prerequisites:
 
-- Docker buildx (`docker-buildx version`)
+- skopeo (`skopeo --version`)
+- jq (`jq --version`)
 
-Fetch a multi-arch digest (example for bitnami/kubectl used by the webhook cleanup job):
+Fetch the multi-arch (manifest list) digest (example for alpine/kubectl, used by the cleanup pre-delete jobs and the selector-migration pre-upgrade hook). The digest to pin is the sha256 of the raw manifest list:
 
 ```bash
-docker-buildx imagetools inspect bitnami/kubectl:1.33.1
+skopeo inspect --raw docker://docker.io/alpine/kubectl:1.36.2 | skopeo manifest-digest /dev/stdin
+# sha256:01d138ce994b684abc62d9cfdff44de42a4c8996dcc12626dd0193afc3fb5a95
+# pin that value (including the sha256: prefix) in chart/values.yaml
 ```
 
-Example output (look for the top-level Digest):
+Confirm it is a manifest list covering the platforms we ship (at least amd64 + arm64):
 
-```
-Name:      docker.io/bitnami/kubectl:1.33.1
-MediaType: application/vnd.docker.distribution.manifest.list.v2+json
-Digest:    sha256:9081a6f83f4febf47369fc46b6f0f7683c7db243df5b43fc9defe51b0471a950
-
-Manifests:
-  Name:      docker.io/bitnami/kubectl:1.33.1@sha256:c8efec87588c7a2d84c760d54446b2e081e607a709f16f19283774d5612191b7
-  MediaType: application/vnd.docker.distribution.manifest.v2+json
-  Platform:  linux/amd64
-
-  Name:      docker.io/bitnami/kubectl:1.33.1@sha256:2af8ed9feaeada845f4d60f1fe4db951df2e5334ea01bec4b5ef4f191ad20d65
-  MediaType: application/vnd.docker.distribution.manifest.v2+json
-  Platform:  linux/arm64
+```bash
+skopeo inspect --raw docker://docker.io/alpine/kubectl:1.36.2 \
+  | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"'
 ```
 
-Update the digest in `chart/values.yaml` for kube-rbac-proxy, operator, and agent images:
+`alpine/kubectl` is a maintained, versioned, multi-arch image. These short-lived maintenance jobs only run `kubectl get`/`delete` on stable core/apps resources, where kubectl's version skew is a cosmetic warning rather than a functional break, so the tag tracks a recent maintained release for current base-image fixes. Bump it as the image is maintained.
+
+Update the digest in `chart/values.yaml` for the kube-rbac-proxy, operator, agent, and maintenance-job kubectl (`webhook.removalImage`/`removalTag`/`removalDigest`) images:
 
 Note:
 
-- Always use the multi-arch manifest digest (top-level Digest from imagetools), not a single-arch child manifest digest.
+- Always pin the manifest-list digest (`skopeo inspect --raw` returns the list itself, so `manifest-digest` of that output is the list digest), not a single-arch child manifest digest.
 
 **After tagging:**
 

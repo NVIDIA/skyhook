@@ -24,64 +24,16 @@ import (
 )
 
 // Step is the interface satisfied by every concrete step type the
-// agent recognises. Concrete types (RegularStep, UpgradeStep) expose
-// their data as exported fields; callers that need to distinguish the
-// two kinds use a type switch (or check `_, ok := s.(UpgradeStep)`).
+// agent recognises (RegularStep, UpgradeStep). Callers that must
+// distinguish the kinds type-assert on UpgradeStep.
 type Step interface {
 	// Encode serializes the step to its JSON wire form. Each concrete
 	// type owns its own discriminator bit and any invariants it
 	// enforces before marshaling.
 	Encode() ([]byte, error)
-}
 
-// Stage identifies an agent lifecycle stage.
-type Stage string
-
-const (
-	Uninstall          Stage = "uninstall"
-	UninstallCheck     Stage = "uninstall-check"
-	Upgrade            Stage = "upgrade"
-	UpgradeCheck       Stage = "upgrade-check"
-	Apply              Stage = "apply"
-	ApplyCheck         Stage = "apply-check"
-	Config             Stage = "config"
-	ConfigCheck        Stage = "config-check"
-	Interrupt          Stage = "interrupt"
-	PostInterrupt      Stage = "post-interrupt"
-	PostInterruptCheck Stage = "post-interrupt-check"
-)
-
-// ApplyToCheck maps each non-check stage to its check counterpart.
-var ApplyToCheck = map[Stage]Stage{
-	Uninstall:     UninstallCheck,
-	Upgrade:       UpgradeCheck,
-	Apply:         ApplyCheck,
-	Config:        ConfigCheck,
-	PostInterrupt: PostInterruptCheck,
-}
-
-// CheckToApply maps each check stage to its non-check counterpart.
-var CheckToApply = map[Stage]Stage{
-	UninstallCheck:     Uninstall,
-	UpgradeCheck:       Upgrade,
-	ApplyCheck:         Apply,
-	ConfigCheck:        Config,
-	PostInterruptCheck: PostInterrupt,
-}
-
-// nonStepStages is the Go counterpart to Python's NON_STEP_MODES list.
-// A "non-step" stage is one the agent dispatches without an apply/check
-// companion: Interrupt today, possibly more in the future. Adding a
-// stage here is enough to exclude it from IsStepStage.
-var nonStepStages = map[Stage]struct{}{
-	Interrupt: {},
-}
-
-// IsStepStage reports whether s carries normal step/check pairs.
-// Non-step stages (see nonStepStages) are dispatched on their own.
-func IsStepStage(s Stage) bool {
-	_, isNonStep := nonStepStages[s]
-	return !isNonStep
+	// Path is the step's script path, relative to the package root.
+	Path() string
 }
 
 // Idempotence controls how the agent treats step re-runs.
@@ -96,12 +48,6 @@ const (
 )
 
 // Validate reports whether the receiver is a recognised value.
-//
-// The error message intentionally differs from Python's
-// skyhook_agent.step.Idempotence.validate, which says "is not a valid
-// mode". The Go form is more specific so log readers don't confuse it
-// with Stage validation. Callers comparing error strings across the
-// language boundary must account for this.
 func (i Idempotence) Validate() error {
 	switch i {
 	case Auto, Disabled:
@@ -134,24 +80,17 @@ func (i *Idempotence) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Decode parses a JSON step payload, returning either a RegularStep or
-// an UpgradeStep based on the upgrade_step discriminator. Stdlib drives
-// field parsing (the exported tags + the Idempotence codec); Decode
-// routes on the discriminator and applies defaults.
+// Decode parses a JSON step payload, returning either a RegularStep or an
+// UpgradeStep based on the upgrade_step discriminator. Stdlib drives field
+// parsing (the exported tags + the Idempotence codec); Decode routes on the
+// discriminator and applies defaults.
 //
-// The probe's on_host is *bool so Decode can distinguish "field absent"
-// (default to true, matching Python's Step(on_host=True)) from "present
-// and false" - the plain bool field on RegularStep can't carry that
-// distinction, so the lenient default lives here at the gate.
-//
-// The Go contract is otherwise intentionally looser than Python's:
-// Python's load requires "idempotence" to be present and KeyErrors
-// otherwise; Go treats it as optional and defaults to Auto. UpgradeStep
-// invariant violations are propagated from Validate.
+// Missing JSON fields retain their Go zero values unless applyDefaults handles
+// them. Full package configs are schema-validated before they reach Decode, so
+// required fields such as on_host are present on that path.
 func Decode(data []byte) (Step, error) {
 	var probe struct {
-		OnHost      *bool `json:"on_host"`
-		UpgradeStep bool  `json:"upgrade_step"`
+		UpgradeStep bool `json:"upgrade_step"`
 	}
 	if err := json.Unmarshal(data, &probe); err != nil {
 		return nil, fmt.Errorf("decode step: %w", err)
@@ -161,9 +100,6 @@ func Decode(data []byte) (Step, error) {
 		var u UpgradeStep
 		if err := json.Unmarshal(data, &u); err != nil {
 			return nil, fmt.Errorf("decode upgrade step: %w", err)
-		}
-		if probe.OnHost == nil {
-			u.OnHost = true
 		}
 		u.RegularStep.applyDefaults()
 		if err := u.Validate(); err != nil {
@@ -175,9 +111,6 @@ func Decode(data []byte) (Step, error) {
 	var rs RegularStep
 	if err := json.Unmarshal(data, &rs); err != nil {
 		return nil, fmt.Errorf("decode step: %w", err)
-	}
-	if probe.OnHost == nil {
-		rs.OnHost = true
 	}
 	rs.applyDefaults()
 	return rs, nil
