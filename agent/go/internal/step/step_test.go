@@ -49,13 +49,13 @@ var _ = Describe("Step interface", func() {
 
 	It("promotes RegularStep fields to UpgradeStep through embedding", func() {
 		rs := RegularStep{
-			Name:        "explicit-name",
-			ScriptPath:  "foo.sh",
-			Arguments:   []string{},
-			Returncodes: []int{0},
-			Env:         map[string]string{"K": "V"},
-			OnHost:      true,
-			Idempotence: Auto,
+			Name:            "explicit-name",
+			ScriptPath:      "foo.sh",
+			Arguments:       []string{},
+			Returncodes:     []int{0},
+			Env:             map[string]string{"K": "V"},
+			OnHost:          true,
+			IdempotenceMode: Auto,
 		}
 		u := UpgradeStep{RegularStep: rs}
 
@@ -65,7 +65,7 @@ var _ = Describe("Step interface", func() {
 		Expect(u.Returncodes).To(Equal([]int{0}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(u.OnHost).To(BeTrue())
-		Expect(u.Idempotence).To(Equal(Auto))
+		Expect(u.Idempotence()).To(Equal(Auto))
 		Expect(u.RequiresInterrupt).To(BeFalse())
 	})
 
@@ -115,7 +115,7 @@ var _ = Describe("Decode", func() {
 		Expect(rs.Returncodes).To(Equal([]int{0}))
 		Expect(rs.OnHost).To(BeTrue())
 		Expect(rs.Env).To(Equal(map[string]string{}))
-		Expect(rs.Idempotence).To(Equal(Auto))
+		Expect(rs.Idempotence()).To(Equal(Auto))
 	})
 
 	It("leaves on_host at its zero value when absent", func() {
@@ -129,7 +129,7 @@ var _ = Describe("Decode", func() {
 		data := []byte(`{"path":"foo.sh","idempotence":true,"upgrade_step":false}`)
 		s, err := Decode(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(s.(RegularStep).Idempotence).To(Equal(Disabled))
+		Expect(s.(RegularStep).Idempotence()).To(Equal(Disabled))
 	})
 
 	It("returns a RegularStep when upgrade_step is false", func() {
@@ -160,12 +160,12 @@ var _ = Describe("Decode", func() {
 var _ = Describe("Encode/Decode round-trip", func() {
 	It("round-trips idempotence and preserves RegularStep type", func() {
 		start := RegularStep{
-			Name:        "foo",
-			ScriptPath:  "foo",
-			Arguments:   []string{},
-			Returncodes: []int{0},
-			OnHost:      true,
-			Idempotence: Disabled,
+			Name:            "foo",
+			ScriptPath:      "foo",
+			Arguments:       []string{},
+			Returncodes:     []int{0},
+			OnHost:          true,
+			IdempotenceMode: Disabled,
 		}
 
 		dumped, err := start.Encode()
@@ -176,7 +176,7 @@ var _ = Describe("Encode/Decode round-trip", func() {
 
 		rs, ok := end.(RegularStep)
 		Expect(ok).To(BeTrue(), "expected RegularStep, got %T", end)
-		Expect(rs.Idempotence).To(Equal(Disabled))
+		Expect(rs.Idempotence()).To(Equal(Disabled))
 	})
 
 	It("preserves UpgradeStep type through the round-trip", func() {
@@ -230,19 +230,19 @@ var _ = Describe("Encode/Decode round-trip", func() {
 		Expect(rs.Name).To(Equal("foo.sh"))
 		Expect(rs.Arguments).To(Equal([]string{}))
 		Expect(rs.Returncodes).To(Equal([]int{0}))
-		Expect(rs.Idempotence).To(Equal(Auto))
+		Expect(rs.Idempotence()).To(Equal(Auto))
 	})
 })
 
 var _ = Describe("Encode env handling", func() {
 	It("omits env when empty and includes it when populated", func() {
 		noEnv := RegularStep{
-			Name:        "a",
-			ScriptPath:  "a",
-			Arguments:   []string{},
-			Returncodes: []int{0},
-			OnHost:      true,
-			Idempotence: Auto,
+			Name:            "a",
+			ScriptPath:      "a",
+			Arguments:       []string{},
+			Returncodes:     []int{0},
+			OnHost:          true,
+			IdempotenceMode: Auto,
 		}
 		noEnvJSON, err := noEnv.Encode()
 		Expect(err).NotTo(HaveOccurred())
