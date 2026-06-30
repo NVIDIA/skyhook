@@ -19,6 +19,7 @@ package interrupts
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -63,19 +64,26 @@ var _ = Describe("Encode/Decode", func() {
 		}
 	})
 
-	It("returns python-compatible errors when input is not base64", func() {
+	It("returns the wire-shape error when input is not base64", func() {
 		_, err := Decode("not-base64")
-		Expect(err).To(MatchError(invalidSerializedInterruptError))
+		Expect(err).To(MatchError(errInvalidSerializedInterrupt))
+	})
+
+	It("wraps the underlying decode error while staying branchable on the sentinel", func() {
+		_, err := Decode("not-base64")
+		Expect(errors.Is(err, errInvalidSerializedInterrupt)).To(BeTrue())
+		// The original base64 failure is preserved for diagnostics, not dropped.
+		Expect(err.Error()).To(ContainSubstring("illegal base64"))
 	})
 
 	It("rejects payload without a type field", func() {
 		encoded := base64.StdEncoding.EncodeToString([]byte(`{"services":["kubelet"]}`))
 
 		_, err := Decode(encoded)
-		Expect(err).To(MatchError(invalidSerializedInterruptError))
+		Expect(err).To(MatchError(errInvalidSerializedInterrupt))
 	})
 
-	It("treats an empty type as unknown, matching python dispatch", func() {
+	It("treats an empty type as unknown", func() {
 		encoded := base64.StdEncoding.EncodeToString([]byte(`{"type":""}`))
 
 		_, err := Decode(encoded)
@@ -141,7 +149,7 @@ var _ = Describe("ServiceRestart", func() {
 		encoded := base64.StdEncoding.EncodeToString([]byte(`{"type":"service_restart","services":"kubelet"}`))
 
 		_, err := Decode(encoded)
-		Expect(err).To(MatchError(invalidSerializedInterruptError))
+		Expect(err).To(MatchError(errInvalidSerializedInterrupt))
 	})
 
 	It("emits an empty services array when Services is nil, not null", func() {

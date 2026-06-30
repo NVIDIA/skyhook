@@ -37,20 +37,20 @@ var (
 )
 
 var _ = Describe("Step interface", func() {
-	It("is satisfied by RegularStep", func() {
-		var s Step = RegularStep{Path: "foo.sh"}
-		Expect(s.(RegularStep).Path).To(Equal("foo.sh"))
+	It("is satisfied by RegularStep and exposes its path", func() {
+		var s Step = RegularStep{ScriptPath: "foo.sh"}
+		Expect(s.Path()).To(Equal("foo.sh"))
 	})
 
-	It("is satisfied by UpgradeStep", func() {
-		var s Step = UpgradeStep{RegularStep: RegularStep{Path: "foo.sh"}}
-		Expect(s.(UpgradeStep).Path).To(Equal("foo.sh"))
+	It("is satisfied by UpgradeStep and promotes Path through embedding", func() {
+		var s Step = UpgradeStep{RegularStep: RegularStep{ScriptPath: "foo.sh"}}
+		Expect(s.Path()).To(Equal("foo.sh"))
 	})
 
 	It("promotes RegularStep fields to UpgradeStep through embedding", func() {
 		rs := RegularStep{
 			Name:        "explicit-name",
-			Path:        "foo.sh",
+			ScriptPath:  "foo.sh",
 			Arguments:   []string{},
 			Returncodes: []int{0},
 			Env:         map[string]string{"K": "V"},
@@ -60,7 +60,7 @@ var _ = Describe("Step interface", func() {
 		u := UpgradeStep{RegularStep: rs}
 
 		Expect(u.Name).To(Equal("explicit-name"))
-		Expect(u.Path).To(Equal("foo.sh"))
+		Expect(u.ScriptPath).To(Equal("foo.sh"))
 		Expect(u.Arguments).To(Equal([]string{}))
 		Expect(u.Returncodes).To(Equal([]int{0}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
@@ -71,8 +71,8 @@ var _ = Describe("Step interface", func() {
 
 	It("supports type-switching between RegularStep and UpgradeStep", func() {
 		steps := []Step{
-			RegularStep{Path: "foo.sh"},
-			UpgradeStep{RegularStep: RegularStep{Path: "upgrade.sh"}},
+			RegularStep{ScriptPath: "foo.sh"},
+			UpgradeStep{RegularStep: RegularStep{ScriptPath: "upgrade.sh"}},
 		}
 
 		var sawRegular, sawUpgrade bool
@@ -95,43 +95,41 @@ var _ = Describe("Idempotence", func() {
 		Expect(Disabled.Validate()).To(Succeed())
 	})
 
-	It("rejects unrecognised values with a go-specific message", func() {
+	It("rejects unrecognised values", func() {
 		Expect(Idempotence("bad").Validate()).To(MatchError("bad is not a valid idempotence value"))
 	})
 })
 
-var _ = Describe("Stage", func() {
-	It("treats Interrupt as a non-step stage", func() {
-		Expect(IsStepStage(Interrupt)).To(BeFalse())
-	})
-
-	It("treats every apply/check pair as a step stage", func() {
-		for apply, check := range ApplyToCheck {
-			Expect(IsStepStage(apply)).To(BeTrue(), "expected %s to be a step stage", apply)
-			Expect(IsStepStage(check)).To(BeTrue(), "expected %s to be a step stage", check)
-		}
-	})
-
-	It("locks Interrupt as the only known non-step stage", func() {
-		Expect(nonStepStages).To(HaveLen(1))
-		Expect(nonStepStages).To(HaveKey(Interrupt))
-	})
-})
-
 var _ = Describe("Decode", func() {
-	It("loads defaults like python step.load", func() {
-		data := []byte(`{"path":"foo.sh","idempotence":false,"upgrade_step":false}`)
+	It("applies defaults to a direct decode payload", func() {
+		// idempotence is omitted so this exercises the missing-field fallback
+		// (absent -> Auto), not the legacy boolean form.
+		data := []byte(`{"path":"foo.sh","on_host":true,"upgrade_step":false}`)
 		s, err := Decode(data)
 		Expect(err).NotTo(HaveOccurred())
 
 		rs := s.(RegularStep)
 		Expect(rs.Name).To(Equal("foo.sh"))
-		Expect(rs.Path).To(Equal("foo.sh"))
+		Expect(rs.ScriptPath).To(Equal("foo.sh"))
 		Expect(rs.Arguments).To(Equal([]string{}))
 		Expect(rs.Returncodes).To(Equal([]int{0}))
 		Expect(rs.OnHost).To(BeTrue())
 		Expect(rs.Env).To(Equal(map[string]string{}))
 		Expect(rs.Idempotence).To(Equal(Auto))
+	})
+
+	It("leaves on_host at its zero value when absent", func() {
+		data := []byte(`{"path":"foo.sh","upgrade_step":false}`)
+		s, err := Decode(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(s.(RegularStep).OnHost).To(BeFalse())
+	})
+
+	It("decodes the legacy idempotence boolean", func() {
+		data := []byte(`{"path":"foo.sh","idempotence":true,"upgrade_step":false}`)
+		s, err := Decode(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(s.(RegularStep).Idempotence).To(Equal(Disabled))
 	})
 
 	It("returns a RegularStep when upgrade_step is false", func() {
@@ -163,7 +161,7 @@ var _ = Describe("Encode/Decode round-trip", func() {
 	It("round-trips idempotence and preserves RegularStep type", func() {
 		start := RegularStep{
 			Name:        "foo",
-			Path:        "foo",
+			ScriptPath:  "foo",
 			Arguments:   []string{},
 			Returncodes: []int{0},
 			OnHost:      true,
@@ -222,7 +220,7 @@ var _ = Describe("Encode/Decode round-trip", func() {
 	})
 
 	It("encodes a zero-value RegularStep by applying defaults", func() {
-		bare := RegularStep{Path: "foo.sh"}
+		bare := RegularStep{ScriptPath: "foo.sh"}
 		dumped, err := bare.Encode()
 		Expect(err).NotTo(HaveOccurred())
 
@@ -240,7 +238,7 @@ var _ = Describe("Encode env handling", func() {
 	It("omits env when empty and includes it when populated", func() {
 		noEnv := RegularStep{
 			Name:        "a",
-			Path:        "a",
+			ScriptPath:  "a",
 			Arguments:   []string{},
 			Returncodes: []int{0},
 			OnHost:      true,

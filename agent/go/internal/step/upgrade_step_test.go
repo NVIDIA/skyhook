@@ -29,10 +29,10 @@ var _ = Describe("NewUpgradeStep", func() {
 	It("succeeds when no arguments are supplied", func() {
 		u, err := NewUpgradeStep("upgrade.sh")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(u.Path).To(Equal("upgrade.sh"))
+		Expect(u.ScriptPath).To(Equal("upgrade.sh"))
 	})
 
-	It("rejects WithArguments at construction with the python-parity error", func() {
+	It("rejects WithArguments at construction", func() {
 		_, err := NewUpgradeStep(
 			"upgrade.sh",
 			WithName("upgrade"),
@@ -63,15 +63,15 @@ var _ = Describe("NewUpgradeStep", func() {
 
 var _ = Describe("UpgradeStep.Validate", func() {
 	It("passes when arguments are empty", func() {
-		u := UpgradeStep{RegularStep: RegularStep{Path: "upgrade.sh"}}
+		u := UpgradeStep{RegularStep: RegularStep{ScriptPath: "upgrade.sh"}}
 		Expect(u.Validate()).To(Succeed())
 	})
 
 	It("rejects directly-constructed values with non-empty arguments", func() {
 		u := UpgradeStep{RegularStep: RegularStep{
-			Name:      "upgrade",
-			Path:      "upgrade.sh",
-			Arguments: []string{"x"},
+			Name:       "upgrade",
+			ScriptPath: "upgrade.sh",
+			Arguments:  []string{"x"},
 		}}
 		Expect(u.Validate()).To(MatchError(
 			"UpgradeStep upgrade can not have any arguments, but found: [x]",
@@ -83,7 +83,7 @@ var _ = Describe("UpgradeStep fields", func() {
 	It("promote field access from the embedded RegularStep", func() {
 		rs := RegularStep{
 			Name:        "explicit",
-			Path:        "upgrade.sh",
+			ScriptPath:  "upgrade.sh",
 			Returncodes: []int{0},
 			Env:         map[string]string{"K": "V"},
 			OnHost:      true,
@@ -92,7 +92,7 @@ var _ = Describe("UpgradeStep fields", func() {
 		u := UpgradeStep{RegularStep: rs}
 
 		Expect(u.Name).To(Equal("explicit"))
-		Expect(u.Path).To(Equal("upgrade.sh"))
+		Expect(u.ScriptPath).To(Equal("upgrade.sh"))
 		Expect(u.Returncodes).To(Equal([]int{0}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(u.OnHost).To(BeTrue())
@@ -111,7 +111,7 @@ var _ = Describe("UpgradeStep.Encode", func() {
 	})
 
 	It("forces upgrade_step:true for a directly-constructed value", func() {
-		u := UpgradeStep{RegularStep: RegularStep{Path: "upgrade.sh"}}
+		u := UpgradeStep{RegularStep: RegularStep{ScriptPath: "upgrade.sh"}}
 		dumped, err := u.Encode()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(dumped)).To(ContainSubstring(`"upgrade_step":true`))
@@ -119,9 +119,9 @@ var _ = Describe("UpgradeStep.Encode", func() {
 
 	It("returns the invariant error before marshaling when arguments are set", func() {
 		u := UpgradeStep{RegularStep: RegularStep{
-			Name:      "upgrade",
-			Path:      "upgrade.sh",
-			Arguments: []string{"x"},
+			Name:       "upgrade",
+			ScriptPath: "upgrade.sh",
+			Arguments:  []string{"x"},
 		}}
 		_, err := u.Encode()
 		Expect(err).To(MatchError(
