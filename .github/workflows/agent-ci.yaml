@@ -24,6 +24,8 @@ on:
       - '!agent/go/**'
       - containers/agent.Dockerfile
       - .github/actions/**
+      - operator/versions.yaml
+      - operator/versions.sh
       - .github/workflows/agent-ci.yaml
   push:
     branches:
@@ -35,6 +37,8 @@ on:
       - '!agent/go/**'
       - containers/agent.Dockerfile
       - .github/actions/**
+      - operator/versions.yaml
+      - operator/versions.sh
       - .github/workflows/agent-ci.yaml
 env:
   REGISTRY: ghcr.io
@@ -175,9 +179,10 @@ jobs:
         env:
           GIT_SHA: ${{ needs.compute-metadata.outputs.git-sha }}
           AGENT_VERSION: ${{ needs.compute-metadata.outputs.agent-version }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           cd agent
-          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          PLATFORM_TAG=$(echo "$PLATFORM" | tr '/' '-')
           
           # Lowercase for Docker compliance
           IMAGE_NAME=$(echo "${{env.IMAGE_NAME}}" | tr '[:upper:]' '[:lower:]')
@@ -204,7 +209,7 @@ jobs:
             --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
             --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }} \
             ${PUSH_OR_LOAD} \
-            --platform ${{ matrix.platform }} \
+            --platform "$PLATFORM" \
             --provenance=false \
             ${TAGS@L} \
             --metadata-file=metadata.json \
@@ -322,12 +327,26 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load Kubernetes test versions
+        id: k8s-versions
+        run: |
+          cd operator
+          make yq
+          YQ="$PWD/bin/yq" ./versions.sh --print >> "$GITHUB_OUTPUT"
+
+      - name: Validate KinD node image
+        env:
+          K8S_VERSION: ${{ steps.k8s-versions.outputs.kind-node-image-version }}
+        run: |
+          cd operator
+          make validate-kind-node-image KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
       
       - name: Create Kubernetes KinD Cluster
         uses: helm/kind-action@v1.14.0
         with:
-          version: v0.31.0
-          node_image: kindest/node:v1.35.0
+          version: ${{ steps.k8s-versions.outputs.kind-binary-version }}
+          node_image: kindest/node:v${{ steps.k8s-versions.outputs.kind-node-image-version }}
           config: operator/config/local-dev/kind-config.yaml
           cluster_name: kind
       
@@ -335,7 +354,7 @@ jobs:
         id: cached-binaries
         uses: actions/cache/restore@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
@@ -351,7 +370,7 @@ jobs:
         if: steps.cached-binaries.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build

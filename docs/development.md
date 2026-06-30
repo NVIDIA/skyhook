@@ -18,6 +18,40 @@ brew install tilt-dev/tap/ctlptl
 
 Keep manual installs in sync with `CTLPTL_VERSION` in `operator/deps.mk`.
 
+## Kubernetes Test Versions
+
+`operator/versions.yaml` is the source of truth for Kubernetes versions used by envtest, local kind clusters, and GitHub Actions test matrices. `operator/versions.sh` is the only reader for that file; it uses `yq` and exports the Make and CI values.
+
+- `envtest.kubernetes` controls `setup-envtest` binary assets under `operator/bin/k8s/`.
+- `kind.nodeImage` controls the default `kindest/node` image for local kind clusters. Make also exposes this as `KIND_VERSION` and `KIND_NODE_IMAGE_VERSION` for local overrides.
+- `kind.binary` controls the Kind CLI/action version and is intentionally separate from Kubernetes node image versions.
+- `ci.kindNodeImages` and `ci.primaryKindNodeImage` feed the GitHub Actions matrix.
+
+For a development shell, install the local reader dependency and source the reader:
+
+```bash
+make -C operator yq
+source operator/versions.sh
+```
+
+For scripts, read one key or print the GitHub Actions output shape:
+
+```bash
+operator/versions.sh --get envtestK8s
+operator/versions.sh --print
+```
+
+`make unit-tests` installs the configured envtest assets and exports `KUBEBUILDER_ASSETS` for the Go test process. If you run `go test` or `ginkgo` directly, set `KUBEBUILDER_ASSETS` yourself or controller-runtime will use its default `/usr/local/kubebuilder` lookup path.
+
+These versions often match, but they are allowed to diverge. Kind does not publish every Kubernetes patch version as a `kindest/node` image, so validate a new node image before using it:
+
+```bash
+cd operator
+make validate-kind-node-image KIND_NODE_IMAGE_VERSION=1.35.0
+```
+
+When updating supported test versions, edit `operator/versions.yaml` first, then run the validation target and the relevant tests.
+
 ## Local Cluster
 
 Bring up the kind cluster and local registry:
@@ -27,7 +61,9 @@ cd operator
 make create-kind-cluster
 ```
 
-`make create-kind-cluster` applies `config/local-dev/ctlptl-config.yaml`, which creates the kind cluster and a local registry at `localhost:5005`. It also runs `make setup-kind-cluster`, which is idempotent and labels the test node and creates the `skyhook` namespace pull secret.
+`make create-kind-cluster` renders `config/local-dev/ctlptl-config.yaml` into `reporting/ctlptl-config.yaml`, deletes any existing cluster defined by that rendered config, and then creates the kind cluster plus a local registry at `localhost:5005`. It also runs `make setup-kind-cluster`, which is idempotent and labels the test node and creates the `skyhook` namespace pull secret.
+
+Do not run `ctlptl apply -f config/local-dev/ctlptl-config.yaml` directly; the tracked file is a Make-rendered template.
 
 ## Webhook Iteration
 
@@ -42,7 +78,7 @@ The local registry removes the need for `kind load docker-image` or registry-pin
 
 ## Teardown
 
-Delete the cluster and registry with the same ctlptl config:
+Delete the cluster and registry with the rendered ctlptl config:
 
 ```bash
 cd operator

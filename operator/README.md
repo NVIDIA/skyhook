@@ -163,7 +163,7 @@ Development
   watch-tests      watch unit tests and auto run on changes.
   unit-tests       Run unit tests.
   e2e-tests        Run end to end tests.
-  create-kind-cluster  deletes and creates a new kind cluster. versions is set via KIND_VERSION
+  create-kind-cluster  deletes and creates a new kind cluster. versions are set via KIND_NODE_IMAGE_VERSION
   podman-create-machine  creates a podman machine
   lint             Run golangci-lint linter & yamllint
   lint-fix         Run golangci-lint linter and perform fixes
