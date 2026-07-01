@@ -34,9 +34,15 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -518,6 +524,357 @@ var _ = Describe("skyhook controller tests", func() {
 			},
 		}
 		Expect(envs).To(BeEquivalentTo(expected))
+	})
+
+	Context("DrainNode", func() {
+		fakeDrainClient := func(objects ...client.Object) client.WithWatch {
+			scheme := runtime.NewScheme()
+			Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+
+			return fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objects...).
+				WithIndex(&corev1.Pod{}, fieldSelectorNodeName, func(obj client.Object) []string {
+					pod, ok := obj.(*corev1.Pod)
+					if !ok {
+						return nil
+					}
+					return []string{pod.Spec.NodeName}
+				}).
+				Build()
+		}
+
+		It("should delete pods directly when disableEviction is true", func() {
+			gracePeriodSeconds := int64(-1)
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "workload",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			baseClient := fakeDrainClient(pod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteOptions := &client.DeleteOptions{}
+					deleteOptions.ApplyOptions(opts)
+					if deleteOptions.GracePeriodSeconds != nil {
+						gracePeriodSeconds = *deleteOptions.GracePeriodSeconds
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
+			})
+
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-delete"},
+				Spec: v1alpha1.SkyhookSpec{
+					DrainConfig: &v1alpha1.DrainConfig{
+						DisableEviction: ptr(true),
+						GracePeriod:     &metav1.Duration{Duration: 7 * time.Second},
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			drained, err := r.DrainNode(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(gracePeriodSeconds).To(Equal(int64(7)))
+
+			deletedPod := &corev1.Pod{}
+			err = testClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "workload"}, deletedPod)
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+			drained, err = r.DrainNode(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeTrue())
+		})
+
+		It("should wait without deleting unmanaged pods when force is false", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "workload",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			deleteCalled := false
+			evictCalled := false
+			baseClient := fakeDrainClient(pod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteCalled = true
+					return c.Delete(ctx, obj, opts...)
+				},
+				SubResourceCreate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+					evictCalled = true
+					return nil
+				},
+			})
+
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			force := false
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-block"},
+				Spec: v1alpha1.SkyhookSpec{
+					DrainConfig: &v1alpha1.DrainConfig{
+						Force: &force,
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			drained, err := r.DrainNode(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(deleteCalled).To(BeFalse())
+			Expect(evictCalled).To(BeFalse())
+			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusInProgress))
+		})
+
+		It("should block before drain when podNonInterruptLabels match a running pod", func() {
+			goldenPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "golden",
+					Namespace: "default",
+					Labels: map[string]string{
+						"workload": "golden",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "golden", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			evictablePod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "evictable",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "evictable", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			deleteCalled := false
+			evictCalled := false
+			baseClient := fakeDrainClient(goldenPod, evictablePod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteCalled = true
+					return c.Delete(ctx, obj, opts...)
+				},
+				SubResourceCreate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+					evictCalled = true
+					return nil
+				},
+			})
+
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-golden"},
+				Spec: v1alpha1.SkyhookSpec{
+					PodNonInterruptLabels: metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"workload": "golden",
+						},
+					},
+					DrainConfig: &v1alpha1.DrainConfig{
+						DisableEviction: ptr(true),
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			ready, err := r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ready).To(BeFalse())
+			Expect(deleteCalled).To(BeFalse())
+			Expect(evictCalled).To(BeFalse())
+			Expect(skyhookNode.GetNode().Spec.Unschedulable).To(BeTrue())
+
+			drainStartedAt, err := skyhookNode.DrainStartedAt()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drainStartedAt).To(BeNil())
+		})
+
+		It("should mark the node erroring when drain timeout expires", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "workload",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind:       "ReplicaSet",
+							Name:       "workload-rs",
+							Controller: ptr(true),
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			deleteCalled := false
+			baseClient := fakeDrainClient(pod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteCalled = true
+					return c.Delete(ctx, obj, opts...)
+				},
+				SubResourceCreate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+					Fail("drain timeout should not evict pods")
+					return nil
+				},
+			})
+
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-a",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/drainStart_drain-timeout": time.Now().Add(-2 * time.Minute).Format(time.RFC3339Nano),
+					},
+				},
+			}
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-timeout"},
+				Spec: v1alpha1.SkyhookSpec{
+					DrainConfig: &v1alpha1.DrainConfig{
+						Timeout: &metav1.Duration{Duration: time.Second},
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			drained, err := r.DrainNode(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(deleteCalled).To(BeFalse())
+			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
+		})
+
+		It("should emit drain timeout events when the node is already erroring", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "workload",
+					Namespace: "default",
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind:       "ReplicaSet",
+							Name:       "workload-rs",
+							Controller: ptr(true),
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			baseClient := fakeDrainClient(pod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				SubResourceCreate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+					Fail("drain timeout should not evict pods")
+					return nil
+				},
+			})
+
+			recorder := events.NewFakeRecorder(10)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, recorder, opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-a",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/drainStart_drain-timeout": time.Now().Add(-2 * time.Minute).Format(time.RFC3339Nano),
+						"skyhook.nvidia.com/status_drain-timeout":     string(v1alpha1.StatusErroring),
+					},
+				},
+			}
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-timeout"},
+				Spec: v1alpha1.SkyhookSpec{
+					DrainConfig: &v1alpha1.DrainConfig{
+						Timeout: &metav1.Duration{Duration: time.Second},
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			drained, err := r.DrainNode(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [skyhook:drain-timeout]")))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0]")))
+		})
 	})
 
 	It("should set monotonic SKYHOOK_NODE_ORDER across nodes and batches", func() {

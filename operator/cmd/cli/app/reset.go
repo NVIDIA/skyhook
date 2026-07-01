@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
@@ -34,12 +35,13 @@ import (
 )
 
 const (
-	nodeStateAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/nodeState_"
-	statusAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/status_"
-	cordonAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/cordon_"
-	versionAnnotationPrefix   = v1alpha1.METADATA_PREFIX + "/version_"
-	autoTaintAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/autoTaint_"
-	statusLabelPrefix         = v1alpha1.METADATA_PREFIX + "/status_"
+	nodeStateAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/nodeState_"
+	statusAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/status_"
+	cordonAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/cordon_"
+	drainStartAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/drainStart_"
+	versionAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/version_"
+	autoTaintAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/autoTaint_"
+	statusLabelPrefix          = v1alpha1.METADATA_PREFIX + "/status_"
 )
 
 // resetOptions holds the options for the reset command
@@ -47,6 +49,37 @@ type resetOptions struct {
 	confirm        bool
 	skipBatchReset bool
 	pkg            string // --package <name>[:<version>]
+}
+
+func resetAnnotationKeys(skyhookName string) []string {
+	return []string{
+		nodeStateAnnotationPrefix + skyhookName,
+		statusAnnotationPrefix + skyhookName,
+		cordonAnnotationPrefix + skyhookName,
+		drainStartAnnotationPrefix + skyhookName,
+		versionAnnotationPrefix + skyhookName,
+		autoTaintAnnotationPrefix + skyhookName,
+	}
+}
+
+func resetLabelKeys(skyhookName string) []string {
+	return []string{
+		statusLabelPrefix + skyhookName,
+	}
+}
+
+func hasResettableMetadata(annotations, labels map[string]string, annotationKeys, labelKeys []string) bool {
+	for _, annotationKey := range annotationKeys {
+		if _, ok := annotations[annotationKey]; ok {
+			return true
+		}
+	}
+	for _, labelKey := range labelKeys {
+		if _, ok := labels[labelKey]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // NewResetCmd creates the reset command
@@ -97,32 +130,52 @@ existing batch state.`,
 }
 
 func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string, opts *resetOptions, cliCtx *cliContext.CLIContext) error {
-	nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, "")
-	if err != nil {
-		// nil map signals a list-from-apiserver failure (e.g. RBAC denied,
-		// unreachable apiserver); the helper returns an initialized map
-		// even when only parse failures occurred, so we use map identity
-		// to distinguish hard failures from per-node parse warnings.
-		if nodeStates == nil {
-			return fmt.Errorf("listing nodes: %w", err)
-		}
-		if cliCtx.GlobalFlags.Verbose {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
-		}
-	}
-	nodesToReset := make([]string, 0, len(nodeStates))
-	for name := range nodeStates {
-		nodesToReset = append(nodesToReset, name)
-	}
-	sort.Strings(nodesToReset)
-
 	// why: branch on --package BEFORE the empty-nodes early-return so the
 	// per-package path can version-gate on the operator. Otherwise a `reset
 	// --package` against an unsupported old operator that happens to have
 	// zero stateful nodes would silently succeed instead of erroring.
 	if opts.pkg != "" {
+		nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, "")
+		if err != nil {
+			if nodeStates == nil {
+				return fmt.Errorf("listing nodes: %w", err)
+			}
+			if cliCtx.GlobalFlags.Verbose {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
+			}
+		}
 		return runPackageReset(ctx, cmd, kubeClient, skyhookName, nodeStates, opts, cliCtx)
 	}
+
+	nodeList, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("listing nodes: %w", err)
+	}
+
+	annotationKey := nodeStateAnnotationPrefix + skyhookName
+	annotationKeys := resetAnnotationKeys(skyhookName)
+	labelKeys := resetLabelKeys(skyhookName)
+	nodesToReset := make([]string, 0)
+	nodeStates := make(map[string]v1alpha1.NodeState)
+
+	for _, node := range nodeList.Items {
+		if !hasResettableMetadata(node.Annotations, node.Labels, annotationKeys, labelKeys) {
+			continue
+		}
+
+		nodeState := v1alpha1.NodeState{}
+		if annotation, ok := node.Annotations[annotationKey]; ok {
+			if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+				if cliCtx.GlobalFlags.Verbose {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: node %q has invalid node state annotation; resetting metadata with empty package state: %v\n", node.Name, err)
+				}
+			}
+		}
+
+		nodesToReset = append(nodesToReset, node.Name)
+		nodeStates[node.Name] = nodeState
+	}
+	sort.Strings(nodesToReset)
 
 	if len(nodesToReset) == 0 {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for Skyhook %q\n", skyhookName)
@@ -193,16 +246,8 @@ func resetNodeAnnotations(ctx context.Context, cmd *cobra.Command, kubeClient *c
 	successCount := 0
 
 	for _, nodeName := range nodesToReset {
-		annotationsToRemove := []string{
-			nodeStateAnnotationPrefix + skyhookName,
-			statusAnnotationPrefix + skyhookName,
-			cordonAnnotationPrefix + skyhookName,
-			versionAnnotationPrefix + skyhookName,
-			autoTaintAnnotationPrefix + skyhookName,
-		}
-		labelsToRemove := []string{
-			statusLabelPrefix + skyhookName,
-		}
+		annotationsToRemove := resetAnnotationKeys(skyhookName)
+		labelsToRemove := resetLabelKeys(skyhookName)
 
 		// Try to remove the main nodeState annotation first - this is the critical one
 		mainAnnotationKey := nodeStateAnnotationPrefix + skyhookName

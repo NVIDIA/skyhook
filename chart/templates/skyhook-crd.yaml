@@ -133,6 +133,52 @@ spec:
                       setting for this Skyhook
                     type: boolean
                 type: object
+              drainConfig:
+                description: |-
+                  DrainConfig tunes how nodes are drained before running interrupt packages.
+                  If unset, the operator preserves its existing drain behavior.
+                properties:
+                  deleteEmptyDirData:
+                    default: true
+                    description: |-
+                      DeleteEmptyDirData allows draining pods that use emptyDir volumes.
+                      Defaults to true to preserve the operator's existing behavior.
+                    nullable: true
+                    type: boolean
+                  disableEviction:
+                    default: false
+                    description: |-
+                      DisableEviction bypasses the eviction API and deletes pods directly.
+                      This bypasses PodDisruptionBudgets.
+                    nullable: true
+                    type: boolean
+                  force:
+                    default: true
+                    description: |-
+                      Force allows draining pods not managed by a controller.
+                      Defaults to true to preserve the operator's existing behavior.
+                    nullable: true
+                    type: boolean
+                  gracePeriod:
+                    description: |-
+                      GracePeriod overrides the grace period used on pod eviction/delete.
+                      Unset uses each pod's own terminationGracePeriodSeconds.
+                    nullable: true
+                    type: string
+                  ignoreDaemonSets:
+                    default: true
+                    description: |-
+                      IgnoreDaemonSets skips DaemonSet-managed pods during drain.
+                      Defaults to true to preserve the operator's existing behavior.
+                    nullable: true
+                    type: boolean
+                  timeout:
+                    description: |-
+                      Timeout bounds how long the operator waits for a node to drain.
+                      Zero or unset means no timeout.
+                    nullable: true
+                    type: string
+                type: object
               interruptionBudget:
                 description: InterruptionBudget configures how many nodes that match
                   node selectors that allowed to be interrupted at once.

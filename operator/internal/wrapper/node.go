@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/graph"
@@ -98,6 +99,12 @@ type SkyhookNodeOnly interface {
 	RemoveTaint(key string)
 	// Cordon marks the node unschedulable and records the cordon in annotations for this Skyhook.
 	Cordon()
+	// StartDrain records when draining started for this Skyhook on this node.
+	StartDrain(startedAt metav1.Time)
+	// DrainStartedAt returns when draining started for this Skyhook on this node.
+	DrainStartedAt() (*metav1.Time, error)
+	// ClearDrainStart removes the drain start marker for this Skyhook on this node.
+	ClearDrainStart()
 	// Uncordon marks the node schedulable and removes this Skyhook's cordon annotation if present.
 	Uncordon()
 	// Reset clears Skyhook-related state and annotations so the node can be reconfigured from scratch.
@@ -164,6 +171,10 @@ type skyhookNode struct {
 	nodeState   v1alpha1.NodeState
 	graph       graph.DependencyGraph[*v1alpha1.Package]
 	updated     bool
+}
+
+func (node *skyhookNode) drainStartAnnotationKey() string {
+	return fmt.Sprintf("%s/drainStart_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)
 }
 
 // GetSkyhook returns the Skyhook associated with this node, or nil if only a name was set.
@@ -469,10 +480,63 @@ func (node *skyhookNode) HasSkyhookAnnotations() bool {
 func (node *skyhookNode) Cordon() {
 	_, ok := node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)]
 	if !node.Spec.Unschedulable || !ok {
+		if node.Annotations == nil {
+			node.Annotations = make(map[string]string)
+		}
 		node.Spec.Unschedulable = true
 		node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)] = "true"
 		node.updated = true
 	}
+}
+
+// StartDrain records when draining started for this Skyhook on this node.
+func (node *skyhookNode) StartDrain(startedAt metav1.Time) {
+	if node.Annotations == nil {
+		node.Annotations = make(map[string]string)
+	}
+
+	key := node.drainStartAnnotationKey()
+	if _, ok := node.Annotations[key]; ok {
+		return
+	}
+
+	node.Annotations[key] = startedAt.Time.Format(time.RFC3339Nano)
+	node.updated = true
+}
+
+// DrainStartedAt returns when draining started for this Skyhook on this node.
+func (node *skyhookNode) DrainStartedAt() (*metav1.Time, error) {
+	if node.Annotations == nil {
+		return nil, nil
+	}
+
+	value, ok := node.Annotations[node.drainStartAnnotationKey()]
+	if !ok {
+		return nil, nil
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing drain start annotation: %w", err)
+	}
+
+	startedAt := metav1.NewTime(parsed)
+	return &startedAt, nil
+}
+
+// ClearDrainStart removes the drain start marker for this Skyhook on this node.
+func (node *skyhookNode) ClearDrainStart() {
+	if node.Annotations == nil {
+		return
+	}
+
+	key := node.drainStartAnnotationKey()
+	if _, ok := node.Annotations[key]; !ok {
+		return
+	}
+
+	delete(node.Annotations, key)
+	node.updated = true
 }
 
 // Uncordon marks the node schedulable and removes this Skyhook's cordon annotation if present.
@@ -496,8 +560,10 @@ func (node *skyhookNode) Reset() {
 	node.skyhook.Updated = true
 
 	delete(node.Annotations, fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/drainStart_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 	delete(node.Annotations, fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 	delete(node.Annotations, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/version_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 
 	delete(node.Labels, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 

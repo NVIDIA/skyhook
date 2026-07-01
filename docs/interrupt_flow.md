@@ -81,6 +81,75 @@ The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyFo
 - Ensure the node is ready before proceeding with package operations
 - Handle the timing and sequencing of all stages
 
+## Drain Configuration
+
+Interrupt-enabled Skyhooks can tune drain behavior with `spec.drainConfig`.
+Unset fields preserve the operator's existing behavior:
+
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: gpu-mode-switch
+spec:
+  drainConfig:
+    disableEviction: false
+    deleteEmptyDirData: true
+    force: true
+    ignoreDaemonSets: true
+    timeout: 10m
+    gracePeriod: 30s
+```
+
+The fields map to Kubernetes drain behavior:
+
+- `disableEviction`: when `true`, pods are deleted directly instead of evicted. This bypasses PodDisruptionBudgets. The default is `false`, so the eviction API is used.
+- `deleteEmptyDirData`: when `false`, pods with `emptyDir` volumes block drain. The default is `true`.
+- `force`: when `false`, pods without a managing controller block drain. The default is `true`.
+- `ignoreDaemonSets`: when `true`, DaemonSet-managed pods are skipped during drain. The default is `true`.
+- `timeout`: bounds how long a node may spend draining. Unset or zero means no timeout. When the timeout expires, the node is marked `erroring` and package stages do not proceed on that node.
+- `gracePeriod`: overrides the grace period used for eviction or direct deletion. Unset uses each pod's own `terminationGracePeriodSeconds`.
+
+The operator also skips pods that are already terminating, pods that tolerate
+the `node.kubernetes.io/unschedulable` taint, mirror/static pods, and pods in
+`kube-system`. These exclusions are not user-configurable.
+
+Compared to earlier releases, the default drain filter now follows Kubernetes
+matching more closely: the unschedulable toleration check uses Kubernetes
+`ToleratesTaint` semantics, DaemonSet pods are identified from the controller
+owner reference, and already-terminating or mirror/static pods are ignored.
+
+`podNonInterruptLabels` remains a pre-drain barrier. Matching pods must finish
+or move away before the operator starts the configurable drain step.
+
+### Recovering From a Drain Timeout
+
+When `spec.drainConfig.timeout` expires, the operator records a `DrainTimeout`
+warning event, marks the node and Skyhook `erroring`, and leaves the node
+cordoned. The operator stops issuing further evict/delete actions while the
+blocking condition remains, so package stages do not proceed on that node.
+
+To recover, remove the underlying blocker first, such as a PDB with zero allowed
+disruptions, an unmanaged pod when `force: false`, or an `emptyDir` pod when
+`deleteEmptyDirData: false`. Then reset the failed rollout metadata:
+
+```bash
+kubectl skyhook reset <skyhook-name> --confirm
+```
+
+For a single node, use:
+
+```bash
+kubectl skyhook node reset <node-name> --skyhook <skyhook-name> --confirm
+```
+
+If the blocker clears after the timeout without a reset, a later reconcile can
+observe the node as drained and continue from current cluster state. Reset is
+still the recommended recovery workflow in production because it explicitly
+clears the `erroring` status, drain-start metadata, cordon metadata, and batch
+state before retrying. If the blocker is still present after reset, the drain
+will time out again.
+
 ## Best Practices
 
 - Always test interrupt-enabled packages in non-production environments first

@@ -16,20 +16,16 @@
  * limitations under the License.
  */
 
-package main
+package drain
 
 import (
-	"fmt"
-	"log/slog"
-	"os"
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func main() {
-	// Establish the agent's structured-logging seam. Packages (e.g.
-	// config.Loader.Load) log through *slog.Logger and fall back to
-	// slog.Default() when passed nil, so wiring it here once keeps that
-	// default sane for the whole process.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-
-	fmt.Println("Hello, World!")
+func TestDrain(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Drain Suite")
 }

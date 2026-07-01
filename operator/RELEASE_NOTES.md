@@ -41,6 +41,20 @@ For the full commit-level log see CHANGELOG.md.
   the reboot pending to be retried. Also fixes `Reset()` deleting the cordon
   annotation with a key missing the Skyhook name.
 
+### New Features
+
+- Add `spec.drainConfig` so interrupt drains can tune eviction, direct deletion,
+  emptyDir handling, unmanaged-pod handling, DaemonSet skipping, timeout, and
+  grace-period behavior.
+
+### Changed
+
+- Align the default interrupt drain pod filter with Kubernetes drain semantics:
+  already-terminating pods and mirror/static pods are skipped, unschedulable
+  tolerations use Kubernetes `ToleratesTaint` matching, and DaemonSet pods are
+  identified from the controller owner reference instead of the previous owner
+  reference count heuristic.
+
 ## operator/v0.16.1 - 2026-05-22
 
 ### Bug Fixes

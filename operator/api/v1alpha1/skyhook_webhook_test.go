@@ -21,6 +21,7 @@ package v1alpha1
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -661,6 +662,26 @@ var _ = Describe("Skyhook Webhook", func() {
 			res5 = res
 			res5.MemoryLimit = resource.MustParse("-1Mi")
 			Expect(mkSkyhook(res5).Validate()).NotTo(Succeed())
+		})
+
+		It("should validate drain config durations", func() {
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					DrainConfig: &DrainConfig{
+						Timeout:     &metav1.Duration{Duration: time.Minute},
+						GracePeriod: &metav1.Duration{Duration: 30 * time.Second},
+					},
+				},
+			}
+			Expect(skyhook.Validate()).To(Succeed())
+
+			skyhook.Spec.DrainConfig.Timeout = &metav1.Duration{Duration: -time.Second}
+			Expect(skyhook.Validate()).NotTo(Succeed())
+
+			skyhook.Spec.DrainConfig.Timeout = nil
+			skyhook.Spec.DrainConfig.GracePeriod = &metav1.Duration{Duration: -time.Second}
+			Expect(skyhook.Validate()).NotTo(Succeed())
 		})
 	})
 

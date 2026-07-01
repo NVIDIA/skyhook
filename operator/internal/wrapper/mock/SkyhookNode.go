@@ -27,7 +27,8 @@ import (
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	"github.com/go-logr/logr"
 	mock "github.com/stretchr/testify/mock"
-	"k8s.io/api/core/v1"
+	v10 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // NewMockSkyhookNode creates a new instance of MockSkyhookNode. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -134,6 +135,39 @@ func (_c *MockSkyhookNode_CleanupSCRMetadata_Call) RunAndReturn(run func()) *Moc
 	return _c
 }
 
+// ClearDrainStart provides a mock function for the type MockSkyhookNode
+func (_mock *MockSkyhookNode) ClearDrainStart() {
+	_mock.Called()
+	return
+}
+
+// MockSkyhookNode_ClearDrainStart_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ClearDrainStart'
+type MockSkyhookNode_ClearDrainStart_Call struct {
+	*mock.Call
+}
+
+// ClearDrainStart is a helper method to define mock.On call
+func (_e *MockSkyhookNode_Expecter) ClearDrainStart() *MockSkyhookNode_ClearDrainStart_Call {
+	return &MockSkyhookNode_ClearDrainStart_Call{Call: _e.mock.On("ClearDrainStart")}
+}
+
+func (_c *MockSkyhookNode_ClearDrainStart_Call) Run(run func()) *MockSkyhookNode_ClearDrainStart_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNode_ClearDrainStart_Call) Return() *MockSkyhookNode_ClearDrainStart_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNode_ClearDrainStart_Call) RunAndReturn(run func()) *MockSkyhookNode_ClearDrainStart_Call {
+	_c.Run(run)
+	return _c
+}
+
 // Cordon provides a mock function for the type MockSkyhookNode
 func (_mock *MockSkyhookNode) Cordon() {
 	_mock.Called()
@@ -164,6 +198,61 @@ func (_c *MockSkyhookNode_Cordon_Call) Return() *MockSkyhookNode_Cordon_Call {
 
 func (_c *MockSkyhookNode_Cordon_Call) RunAndReturn(run func()) *MockSkyhookNode_Cordon_Call {
 	_c.Run(run)
+	return _c
+}
+
+// DrainStartedAt provides a mock function for the type MockSkyhookNode
+func (_mock *MockSkyhookNode) DrainStartedAt() (*v1.Time, error) {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for DrainStartedAt")
+	}
+
+	var r0 *v1.Time
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func() (*v1.Time, error)); ok {
+		return returnFunc()
+	}
+	if returnFunc, ok := ret.Get(0).(func() *v1.Time); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*v1.Time)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func() error); ok {
+		r1 = returnFunc()
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockSkyhookNode_DrainStartedAt_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DrainStartedAt'
+type MockSkyhookNode_DrainStartedAt_Call struct {
+	*mock.Call
+}
+
+// DrainStartedAt is a helper method to define mock.On call
+func (_e *MockSkyhookNode_Expecter) DrainStartedAt() *MockSkyhookNode_DrainStartedAt_Call {
+	return &MockSkyhookNode_DrainStartedAt_Call{Call: _e.mock.On("DrainStartedAt")}
+}
+
+func (_c *MockSkyhookNode_DrainStartedAt_Call) Run(run func()) *MockSkyhookNode_DrainStartedAt_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNode_DrainStartedAt_Call) Return(time *v1.Time, err error) *MockSkyhookNode_DrainStartedAt_Call {
+	_c.Call.Return(time, err)
+	return _c
+}
+
+func (_c *MockSkyhookNode_DrainStartedAt_Call) RunAndReturn(run func() (*v1.Time, error)) *MockSkyhookNode_DrainStartedAt_Call {
+	_c.Call.Return(run)
 	return _c
 }
 
@@ -214,19 +303,19 @@ func (_c *MockSkyhookNode_GetComplete_Call) RunAndReturn(run func() []string) *M
 }
 
 // GetNode provides a mock function for the type MockSkyhookNode
-func (_mock *MockSkyhookNode) GetNode() *v1.Node {
+func (_mock *MockSkyhookNode) GetNode() *v10.Node {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetNode")
 	}
 
-	var r0 *v1.Node
-	if returnFunc, ok := ret.Get(0).(func() *v1.Node); ok {
+	var r0 *v10.Node
+	if returnFunc, ok := ret.Get(0).(func() *v10.Node); ok {
 		r0 = returnFunc()
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1.Node)
+			r0 = ret.Get(0).(*v10.Node)
 		}
 	}
 	return r0
@@ -249,12 +338,12 @@ func (_c *MockSkyhookNode_GetNode_Call) Run(run func()) *MockSkyhookNode_GetNode
 	return _c
 }
 
-func (_c *MockSkyhookNode_GetNode_Call) Return(node *v1.Node) *MockSkyhookNode_GetNode_Call {
+func (_c *MockSkyhookNode_GetNode_Call) Return(node *v10.Node) *MockSkyhookNode_GetNode_Call {
 	_c.Call.Return(node)
 	return _c
 }
 
-func (_c *MockSkyhookNode_GetNode_Call) RunAndReturn(run func() *v1.Node) *MockSkyhookNode_GetNode_Call {
+func (_c *MockSkyhookNode_GetNode_Call) RunAndReturn(run func() *v10.Node) *MockSkyhookNode_GetNode_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1048,6 +1137,46 @@ func (_c *MockSkyhookNode_SetVersion_Call) Return() *MockSkyhookNode_SetVersion_
 }
 
 func (_c *MockSkyhookNode_SetVersion_Call) RunAndReturn(run func()) *MockSkyhookNode_SetVersion_Call {
+	_c.Run(run)
+	return _c
+}
+
+// StartDrain provides a mock function for the type MockSkyhookNode
+func (_mock *MockSkyhookNode) StartDrain(startedAt v1.Time) {
+	_mock.Called(startedAt)
+	return
+}
+
+// MockSkyhookNode_StartDrain_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'StartDrain'
+type MockSkyhookNode_StartDrain_Call struct {
+	*mock.Call
+}
+
+// StartDrain is a helper method to define mock.On call
+//   - startedAt v1.Time
+func (_e *MockSkyhookNode_Expecter) StartDrain(startedAt interface{}) *MockSkyhookNode_StartDrain_Call {
+	return &MockSkyhookNode_StartDrain_Call{Call: _e.mock.On("StartDrain", startedAt)}
+}
+
+func (_c *MockSkyhookNode_StartDrain_Call) Run(run func(startedAt v1.Time)) *MockSkyhookNode_StartDrain_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 v1.Time
+		if args[0] != nil {
+			arg0 = args[0].(v1.Time)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNode_StartDrain_Call) Return() *MockSkyhookNode_StartDrain_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNode_StartDrain_Call) RunAndReturn(run func(startedAt v1.Time)) *MockSkyhookNode_StartDrain_Call {
 	_c.Run(run)
 	return _c
 }

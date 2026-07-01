@@ -19,6 +19,8 @@
 package wrapper
 
 import (
+	"time"
+
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -175,6 +177,99 @@ var _ = Describe("SkyhookNode", func() {
 			},
 			}
 			Expect(node.HasSkyhookAnnotations()).To(BeTrue())
+		})
+	})
+
+	Context("DrainStart", func() {
+		It("should record, read, and clear the drain start annotation", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			}
+
+			sn, err := NewSkyhookNode(node, &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
+				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			started := metav1.NewTime(time.Date(2026, time.June, 2, 13, 14, 15, 0, time.UTC))
+			sn.StartDrain(started)
+
+			Expect(node.Annotations).To(HaveKeyWithValue("skyhook.nvidia.com/drainStart_my-skyhook", "2026-06-02T13:14:15Z"))
+			Expect(sn.Changed()).To(BeTrue())
+
+			drainStartedAt, err := sn.DrainStartedAt()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drainStartedAt).To(Equal(&started))
+
+			sn.ClearDrainStart()
+			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/drainStart_my-skyhook"))
+		})
+
+		It("should return an error for a malformed drain start annotation", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/drainStart_my-skyhook": "not-a-time",
+					},
+				},
+			}
+
+			sn, err := NewSkyhookNode(node, &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
+				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			drainStartedAt, err := sn.DrainStartedAt()
+			Expect(err).To(HaveOccurred())
+			Expect(drainStartedAt).To(BeNil())
+		})
+	})
+
+	Context("Reset", func() {
+		It("should remove drain start and other node metadata for the skyhook", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						"skyhook.nvidia.com/cordon_my-skyhook":     "true",
+						"skyhook.nvidia.com/drainStart_my-skyhook": "2026-06-02T13:14:15Z",
+						"skyhook.nvidia.com/nodeState_my-skyhook":  "{}",
+						"skyhook.nvidia.com/status_my-skyhook":     "erroring",
+						"skyhook.nvidia.com/version_my-skyhook":    "1.0.0",
+					},
+					Labels: map[string]string{
+						"skyhook.nvidia.com/status_my-skyhook": "erroring",
+					},
+				},
+			}
+			skyhook := &v1alpha1.Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
+				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
+				Status: v1alpha1.SkyhookStatus{
+					NodeState:  map[string]v1alpha1.NodeState{"test-node": {}},
+					NodeStatus: map[string]v1alpha1.Status{"test-node": v1alpha1.StatusErroring},
+				},
+			}
+
+			sn, err := NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			sn.Reset()
+
+			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/cordon_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/drainStart_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/nodeState_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/version_my-skyhook"))
+			Expect(node.Labels).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
+			Expect(skyhook.Status.NodeState).ToNot(HaveKey("test-node"))
+			Expect(skyhook.Status.NodeStatus).ToNot(HaveKey("test-node"))
+			Expect(skyhook.Status.Status).To(Equal(v1alpha1.StatusUnknown))
 		})
 	})
 
