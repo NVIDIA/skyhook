@@ -115,6 +115,11 @@ type SkyhookNodeOnly interface {
 
 var _ SkyhookNode = &skyhookNode{}
 
+const (
+	cordonAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/cordon_"
+	cordonAnnotationValue  = "true"
+)
+
 // NewSkyhookNodeOnly most of use cases for the wrapper just needs name, so this stub is for making helpers for those use cases,
 // should help reduce calls to api, and not leak stubbed skyhooks with just name set.
 //
@@ -478,13 +483,14 @@ func (node *skyhookNode) HasSkyhookAnnotations() bool {
 
 // Cordon marks the node unschedulable and records the cordon in annotations for this Skyhook.
 func (node *skyhookNode) Cordon() {
-	_, ok := node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)]
+	if node.Annotations == nil {
+		node.Annotations = make(map[string]string)
+	}
+
+	_, ok := node.Annotations[cordonAnnotationKey(node.skyhookName)]
 	if !node.Spec.Unschedulable || !ok {
-		if node.Annotations == nil {
-			node.Annotations = make(map[string]string)
-		}
 		node.Spec.Unschedulable = true
-		node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)] = "true"
+		node.Annotations[cordonAnnotationKey(node.skyhookName)] = cordonAnnotationValue
 		node.updated = true
 	}
 }
@@ -543,12 +549,29 @@ func (node *skyhookNode) ClearDrainStart() {
 func (node *skyhookNode) Uncordon() {
 
 	// if we hold a cordon remove it, also we dont want to remove a cordon if we dont have one...
-	_, ok := node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)]
+	_, ok := node.Annotations[cordonAnnotationKey(node.skyhookName)]
 	if ok {
-		node.Spec.Unschedulable = false
-		delete(node.Annotations, fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+		delete(node.Annotations, cordonAnnotationKey(node.skyhookName))
+		// Multiple Skyhooks can cordon the same node; only mark it schedulable
+		// after every Skyhook-owned cordon has been released.
+		if !hasSkyhookCordon(node.Annotations) {
+			node.Spec.Unschedulable = false
+		}
 		node.updated = true
 	}
+}
+
+func cordonAnnotationKey(skyhookName string) string {
+	return cordonAnnotationPrefix + skyhookName
+}
+
+func hasSkyhookCordon(annotations map[string]string) bool {
+	for key := range annotations {
+		if strings.HasPrefix(key, cordonAnnotationPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Reset clears Skyhook-related state and annotations so the node can be reconfigured from scratch.
@@ -559,8 +582,8 @@ func (node *skyhookNode) Reset() {
 	node.skyhook.Status.Status = v1alpha1.StatusUnknown
 	node.skyhook.Updated = true
 
-	delete(node.Annotations, fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
-	delete(node.Annotations, fmt.Sprintf("%s/drainStart_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, cordonAnnotationKey(node.skyhookName))
+	delete(node.Annotations, node.drainStartAnnotationKey())
 	delete(node.Annotations, fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 	delete(node.Annotations, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 	delete(node.Annotations, fmt.Sprintf("%s/version_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))

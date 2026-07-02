@@ -180,6 +180,123 @@ var _ = Describe("SkyhookNode", func() {
 		})
 	})
 
+	Context("Cordon", func() {
+		It("should initialize annotations if the node has none", func() {
+			myCordonKey := cordonAnnotationKey("my-skyhook")
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			sn.Cordon()
+
+			Expect(node.Spec.Unschedulable).To(BeTrue())
+			Expect(node.Annotations).To(HaveKeyWithValue(myCordonKey, cordonAnnotationValue))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+	})
+
+	Context("Uncordon", func() {
+		myCordonKey := cordonAnnotationKey("my-skyhook")
+		otherCordonKey := cordonAnnotationKey("other-skyhook")
+
+		It("should make the node schedulable if this Skyhook owns the only cordon", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						myCordonKey: cordonAnnotationValue,
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			sn.Uncordon()
+
+			Expect(node.Spec.Unschedulable).To(BeFalse())
+			Expect(node.Annotations).ToNot(HaveKey(myCordonKey))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+
+		It("should keep the node unschedulable if another Skyhook still owns a cordon", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						myCordonKey:    cordonAnnotationValue,
+						otherCordonKey: cordonAnnotationValue,
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			sn.Uncordon()
+
+			Expect(node.Spec.Unschedulable).To(BeTrue())
+			Expect(node.Annotations).ToNot(HaveKey(myCordonKey))
+			Expect(node.Annotations).To(HaveKeyWithValue(otherCordonKey, cordonAnnotationValue))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+
+		It("should make the node schedulable if only unrelated Skyhook annotations remain", func() {
+			otherStatusKey := "skyhook.nvidia.com/status_other-skyhook"
+			otherNodeStateKey := "skyhook.nvidia.com/nodeState_other-skyhook"
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						myCordonKey:       cordonAnnotationValue,
+						otherStatusKey:    string(v1alpha1.StatusInProgress),
+						otherNodeStateKey: "{}",
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			sn.Uncordon()
+
+			Expect(node.Spec.Unschedulable).To(BeFalse())
+			Expect(node.Annotations).ToNot(HaveKey(myCordonKey))
+			Expect(node.Annotations).To(HaveKeyWithValue(otherStatusKey, string(v1alpha1.StatusInProgress)))
+			Expect(node.Annotations).To(HaveKeyWithValue(otherNodeStateKey, "{}"))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+
+		It("should not change the node if this Skyhook does not own a cordon", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						otherCordonKey: cordonAnnotationValue,
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			sn.Uncordon()
+
+			Expect(node.Spec.Unschedulable).To(BeTrue())
+			Expect(node.Annotations).To(HaveKeyWithValue(otherCordonKey, cordonAnnotationValue))
+			Expect(sn.Changed()).To(BeFalse())
+		})
+	})
+
 	Context("DrainStart", func() {
 		It("should record, read, and clear the drain start annotation", func() {
 			node := &corev1.Node{
