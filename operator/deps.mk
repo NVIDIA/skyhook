@@ -24,12 +24,12 @@ $(LOCALBIN):
 YQ ?= $(LOCALBIN)/yq
 VERSIONS ?= $(CURDIR)/versions.sh
 
-ENVTEST_K8S_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get envtestK8s)
-KIND_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get kindVersion)
+ENVTEST_K8S_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get envtest.k8s.version)
+KIND_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get kind.nodeImage)
 KIND_NODE_IMAGE_VERSION ?= $(KIND_VERSION)
-KIND_BINARY_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get kindBinary)
-CI_KIND_NODE_IMAGE_VERSIONS_JSON ?= $(shell YQ="$(YQ)" $(VERSIONS) --get ciKindNodeImagesJson)
-CI_PRIMARY_KIND_NODE_IMAGE_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get ciPrimaryKindNodeImage)
+KIND_BINARY_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get kind.binary)
+CI_KIND_NODE_IMAGE_VERSIONS_JSON ?= $(shell YQ="$(YQ)" $(VERSIONS) --get ci.kindNodeImages -o=json -I=0)
+CI_PRIMARY_KIND_NODE_IMAGE_VERSION ?= $(shell YQ="$(YQ)" $(VERSIONS) --get ci.primaryKindNodeImage)
 
 UNAMEO 	?=$(shell uname -o | tr A-Z a-z)
 ifndef OS

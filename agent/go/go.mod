@@ -1,6 +1,6 @@
 module github.com/NVIDIA/nodewright/agent
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/onsi/ginkgo/v2 v2.28.1

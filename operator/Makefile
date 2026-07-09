@@ -16,7 +16,10 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.26.4
+# Go toolchain version read from go.mod (the single source; also used by CI's
+# setup-go go-version-file and the image build-arg). Prefer a toolchain
+# directive over the go directive, matching how setup-go resolves the version.
+GO_VERSION ?= $(shell awk '/^go /{go=$$2} /^toolchain /{tc=$$2; sub(/^go/,"",tc)} END{print (tc!=""?tc:go)}' $(CURDIR)/go.mod)
 DEBIAN_VERSION ?= trixie
 DISTROLESS_VERSION ?= 4.0.2
 
