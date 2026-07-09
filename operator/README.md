@@ -90,7 +90,7 @@ Packages can depend on each other, so if you needed `something_important` to be 
 
 ### Prerequisites
 
-- go version v1.26.4+
+- go version v1.26.5+
 - docker version 17.03+ or podman 4.9.4+ (project makefile kind of assumes podman)
 - kubectl version v1.27.3+.
 - Access to a Kubernetes v1.27+ cluster. (We test on 1.32+, could work on older, not regularly tested. Could be api compatibilities issues.)

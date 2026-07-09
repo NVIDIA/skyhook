@@ -20,24 +20,27 @@ Keep manual installs in sync with `CTLPTL_VERSION` in `operator/deps.mk`.
 
 ## Kubernetes Test Versions
 
-`operator/versions.yaml` is the source of truth for Kubernetes versions used by envtest, local kind clusters, and GitHub Actions test matrices. `operator/versions.sh` is the only reader for that file; it uses `yq` and exports the Make and CI values.
+`operator/versions.yaml` is the source of truth for the Kubernetes versions used by envtest, local kind clusters, and GitHub Actions test matrices. `operator/versions.sh` is the only reader for that file; it uses `yq` and derives every consumer name from the key's path (see the header comment in `versions.yaml`). The Go toolchain version is not here: it lives in `go.mod`, which the Make build (image build-arg) and CI (`setup-go` `go-version-file`) both read directly.
 
-- `envtest.kubernetes` controls `setup-envtest` binary assets under `operator/bin/k8s/`.
+- `envtest.k8s.version` controls `setup-envtest` binary assets under `operator/bin/k8s/`. It is nested three deep so the derived name is `ENVTEST_K8S_VERSION`, which the test lib expects.
 - `kind.nodeImage` controls the default `kindest/node` image for local kind clusters. Make also exposes this as `KIND_VERSION` and `KIND_NODE_IMAGE_VERSION` for local overrides.
 - `kind.binary` controls the Kind CLI/action version and is intentionally separate from Kubernetes node image versions.
 - `ci.kindNodeImages` and `ci.primaryKindNodeImage` feed the GitHub Actions matrix.
 
-For a development shell, install the local reader dependency and source the reader:
+For a development shell, install the local reader dependency and load the `UPPER_SNAKE` values into your environment. `source` works in bash; in other shells (zsh, etc.) eval the exports instead:
 
 ```bash
 make -C operator yq
-source operator/versions.sh
+source operator/versions.sh                 # bash
+eval "$(operator/versions.sh --export)"     # any shell
 ```
 
-For scripts, read one key or print the GitHub Actions output shape:
+Note the exported names are derived from the yaml path (`kind.nodeImage` → `KIND_NODEIMAGE`) and are not the same as the Make override variables (`KIND_VERSION`, `KIND_NODE_IMAGE_VERSION`, …). To override a Make default, set that Make variable directly, e.g. `make KIND_VERSION=1.34.0 …`.
+
+For scripts, read one key (a yq path) or print the GitHub Actions output shape:
 
 ```bash
-operator/versions.sh --get envtestK8s
+operator/versions.sh --get envtest.k8s.version
 operator/versions.sh --print
 ```
 
