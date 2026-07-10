@@ -18,7 +18,7 @@ Cleanup, completion tracking, "does this stage already run" checks, and stale-sp
 
 1. **Stable, queryable execution records**: one Job per (skyhook, package, version, stage, node); `kubectl logs job/<name>` works during and after execution.
 2. **Logs outlive completion**: finished work is retained for a configurable window; the logs that matter most for humans (failing steps) are retained the longest.
-3. **No behavior change to the lifecycle state machine, with one deliberate enhancement**: Stage progression, Status/State derivation, interrupt/cordon/drain sequencing, DeploymentPolicy interactions, and agent-visible env are unchanged. A pod lost to disruption (eviction, node churn) is silently re-executed, exactly as today — no `erroring`, no DeploymentPolicy impact. The enhancement: a stage that runs past its **deadline** (hung, crash-looping, or unpullable) is failed, surfaced as `erroring`, and **parked** — today it churns or hangs invisibly forever.
+3. **No behavior change to the lifecycle state machine, with two deliberate enhancements**: Stage progression, Status/State derivation, interrupt/cordon/drain sequencing, DeploymentPolicy interactions, and agent-visible env are unchanged. A pod lost to disruption (eviction, node churn) is silently re-executed, exactly as today — no `erroring`, no DeploymentPolicy impact. The enhancements: a stage that runs past its **deadline** (hung, crash-looping, or unpullable) is failed, surfaced as `erroring`, and **parked** — today it churns or hangs invisibly forever; and **pause becomes a true stop** — the pause annotation cascades to Job suspension, halting in-flight stages instead of letting them run to completion.
 4. **Safe upgrade**: an operator upgrade with in-flight raw pods completes those stages correctly, without double-executing them.
 
 ## Current behavior (baseline)
@@ -173,6 +173,20 @@ What survives the deadline, all told: everything observable during the deadline 
 
 **DeploymentPolicy interaction:** deadline-`erroring` counts toward compartment failure thresholds like any `erroring`. For crash loops that's identical to today (the Pod watch already reports them); for hung stages it's new signal — a stuck node now *correctly* slows or halts a rollout instead of silently absorbing a batch slot forever.
 
+### Pause cascades to Job suspension
+
+The second deliberate enhancement (Goal 3). Today the `skyhook.nvidia.com/pause` annotation only blocks *new* stage scheduling — in-flight stage pods run to completion, so "pause" (documented in the CLI as the **Emergency Stop**) cannot actually stop a running stage. With Jobs, pause gets teeth: when the operator observes the pause annotation (the existing `UpdatePauseStatus` path, which runs before the pause short-circuit), it sets `spec.suspend: true` on all of the Skyhook's **unfinished** Jobs; on resume it clears it. The annotation remains the user-facing primitive; suspension is the enforcement mechanism.
+
+Semantics, precisely:
+
+- **Suspension SIGTERMs the running pod** (honoring the package's `gracefulShutdown` grace period) and the Job controller creates no pods until resume. Pods deleted by suspension count as neither succeeded nor failed. On resume, the fresh pod re-runs the stage; the agent's flag files skip already-completed steps and re-run the interrupted one — the identical recovery shape as a reboot or eviction mid-stage, which the step-idempotency contract already requires packages to tolerate. This is the trade-off the earlier draft rejected `suspend` over ("no checkpointing"); it is now accepted *deliberately*, because a pause that can't stop anything isn't an emergency stop.
+- **The stage deadline pauses with the Job.** Suspension clears the Job's `startTime` and resume resets it, so `activeDeadlineSeconds` stops ticking while paused and a resumed stage gets a fresh, full `stageTimeout`. Without the cascade, pause and the deadline would interact badly: an in-flight stage could hit its deadline and park as `erroring` while the user believed the Skyhook was frozen.
+- **The rest of the machinery is indifferent**: a suspended Job is unfinished, so `JobExists` still counts it (no duplicate creation), `ValidateRunningPackages`' unfinished-Job checks still apply (a spec edited while paused invalidates the suspended Job, and the corrected Job is created after resume), and the completion flow ignores it (`Suspended` is not a terminal condition). Node state stays `in_progress`; the Skyhook-level `paused` Status already reports the situation.
+- **Interrupt Jobs**: if the interrupt already fired the reboot, suspension can't un-ring that bell — the node reboots, and on resume the replacement pod skips the interrupt via the `SKYHOOK_RESOURCE_ID` flag file and completes. Cordon ownership is untouched (a paused Skyhook keeps its cordon annotation, as today).
+- **Upgrade window**: legacy raw pods have no suspend — for them pause keeps today's let-finish semantics until the legacy window closes. This makes pause's stop-the-world strength operator-version-dependent, which the CLI docs must state (`docs/cli.md` pause/Emergency Stop sections; `docs/ordering_of_skyhooks.md` flow-control annotation definitions).
+
+`disable` is unchanged: it skips a Skyhook from processing but has never claimed to halt in-flight work, and extending the cascade there is a separate decision if ever wanted.
+
 ### TTL: outcome-based, set at completion
 
 `ttlSecondsAfterFinished` applies to both `Complete` and `Failed` Jobs and is **mutable**. Jobs are created with the field unset; `JobReconcile` sets it in the same Update that writes `state-recorded` — for `Complete` and for backstop-`Failed` Jobs alike:
@@ -239,10 +253,6 @@ CLI: child pods inherit the full label set via the pod template, so `kubectl sky
 ### Rejected: `podFailurePolicy` for ImagePullBackOff
 
 `podFailurePolicy` evaluates `OnExitCodes` (requires a terminated container) and `OnPodConditions` (e.g. `DisruptionTarget`). An unpullable image never starts a container: the container sits in `Waiting` (`ErrImagePull`/`ImagePullBackOff`), the pod stays `Pending`, the Job stays Active. No declarative Job policy fires. `podFailurePolicy` is not set at all (it also cannot be combined with `restartPolicy: OnFailure`, which the retry model requires). The stage deadline now bounds this failure mode — an unpullable image surfaces as `erroring` after `stageTimeout` instead of never — but the *precise, fast* surfacing (naming the pull error within seconds via the Pod watch's Waiting-reason handling) remains issue #306.
-
-### Rejected: Job `spec.suspend` as a pause primitive
-
-Suspending a Job with a running pod SIGTERMs the pod and recreates it from scratch on resume — no checkpointing. The `skyhook.nvidia.com/pause` annotation (block new stage scheduling, let in-flight work finish) remains the pause mechanism.
 
 ### Rejected: a separate JobReconciler with its own writes
 
