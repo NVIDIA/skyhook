@@ -1490,6 +1490,7 @@ func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.S
 	}
 
 	options := drain.OptionsFromConfig(skyhookNode.GetSkyhook().Spec.DrainConfig)
+	options.PackageNamespace = r.opts.Namespace
 	for _, pod := range pods.Items {
 		if drain.DecidePod(&pod, options).BlocksDrain() {
 			return false, nil
@@ -1802,6 +1803,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 	)
 
 	options := drain.OptionsFromConfig(skyhookNode.GetSkyhook().Spec.DrainConfig)
+	options.PackageNamespace = r.opts.Namespace
 	errs := make([]error, 0)
 	waitingForPods := false
 	for _, pod := range pods.Items {

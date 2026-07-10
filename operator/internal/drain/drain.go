@@ -19,6 +19,7 @@
 package drain
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
@@ -33,6 +34,7 @@ const (
 
 	ReasonPhase                   = "phase"
 	ReasonTerminating             = "terminating"
+	ReasonSkyhookPackage          = "skyhook-package"
 	ReasonUnschedulableToleration = "unschedulable-toleration"
 	ReasonDaemonSet               = "daemonset"
 	ReasonKubeSystem              = "kube-system"
@@ -58,6 +60,11 @@ type Options struct {
 	Force              bool
 	IgnoreDaemonSets   bool
 	GracePeriodSeconds *int64
+	// PackageNamespace is the namespace the operator creates package pods in.
+	// It is operator identity, not user configuration, so callers set it
+	// directly rather than through DrainConfig. When empty, the label-based
+	// package-pod exemption is disabled.
+	PackageNamespace string
 }
 
 func DefaultOptions() Options {
@@ -146,6 +153,16 @@ func DecidePod(pod *corev1.Pod, options Options) Decision {
 		return Decision{Action: ActionIgnore, Reason: ReasonTerminating}
 	}
 
+	// Package pods normally dodge drain via toleratesUnschedulable below, but
+	// some admission controllers rewrite or strip pod tolerations, so the
+	// operator's own in-flight pods are also recognized by the labels stamped
+	// on every package pod. The check is scoped to the operator's namespace:
+	// the labels alone could be copied onto any pod, while creating pods in
+	// the operator's namespace requires RBAC there.
+	if isSkyhookPackagePod(pod, options.PackageNamespace) {
+		return Decision{Action: ActionIgnore, Reason: ReasonSkyhookPackage}
+	}
+
 	if toleratesUnschedulable(pod) {
 		return Decision{Action: ActionIgnore, Reason: ReasonUnschedulableToleration}
 	}
@@ -176,6 +193,15 @@ func DecidePod(pod *corev1.Pod, options Options) Decision {
 	}
 
 	return Decision{Action: ActionEvict, Reason: ReasonEviction}
+}
+
+func isSkyhookPackagePod(pod *corev1.Pod, packageNamespace string) bool {
+	if packageNamespace == "" || pod.Namespace != packageNamespace {
+		return false
+	}
+	_, hasName := pod.Labels[fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX)]
+	_, hasPackage := pod.Labels[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)]
+	return hasName && hasPackage
 }
 
 func toleratesUnschedulable(pod *corev1.Pod) bool {
