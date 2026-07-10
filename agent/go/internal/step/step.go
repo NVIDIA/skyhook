@@ -34,6 +34,14 @@ type Step interface {
 
 	// Path is the step's script path, relative to the package root.
 	Path() string
+
+	// Fingerprint is a stable SHA-256 hex digest of the step's
+	// execution-relevant inputs (path, arguments, return codes, env,
+	// host execution); changing any of them changes the fingerprint.
+	Fingerprint() (string, error)
+
+	// Idempotence reports how the agent treats re-runs of the step.
+	Idempotence() Idempotence
 }
 
 // Idempotence controls how the agent treats step re-runs.

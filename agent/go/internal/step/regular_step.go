@@ -19,6 +19,8 @@
 package step
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 )
@@ -32,17 +34,18 @@ import (
 // Returncodes to []int{0}, Env to map[string]string{}, and Idempotence to Auto.
 // NewRegularStep additionally defaults OnHost to true.
 //
-// ScriptPath carries the json:"path" wire name; the field is named
-// distinctly so RegularStep can expose Path() to satisfy Step.
+// ScriptPath carries the json:"path" wire name and IdempotenceMode the
+// json:"idempotence" wire name; both fields are named distinctly so
+// RegularStep can expose Path() and Idempotence() to satisfy Step.
 type RegularStep struct {
-	Name        string            `json:"name"`
-	ScriptPath  string            `json:"path"`
-	Arguments   []string          `json:"arguments"`
-	Returncodes []int             `json:"returncodes"`
-	OnHost      bool              `json:"on_host"`
-	Idempotence Idempotence       `json:"idempotence"`
-	UpgradeStep bool              `json:"upgrade_step"`
-	Env         map[string]string `json:"env,omitempty"`
+	Name            string            `json:"name"`
+	ScriptPath      string            `json:"path"`
+	Arguments       []string          `json:"arguments"`
+	Returncodes     []int             `json:"returncodes"`
+	OnHost          bool              `json:"on_host"`
+	IdempotenceMode Idempotence       `json:"idempotence"`
+	UpgradeStep     bool              `json:"upgrade_step"`
+	Env             map[string]string `json:"env,omitempty"`
 
 	// RequiresInterrupt round-trips via the wire as "requires_interrupt",
 	// emitted only when true; it stays schema-valid because the step schema
@@ -54,6 +57,45 @@ var _ Step = RegularStep{}
 
 // Path returns the step's script path, relative to the package root.
 func (s RegularStep) Path() string { return s.ScriptPath }
+
+// Idempotence reports how the agent treats re-runs of the step.
+func (s RegularStep) Idempotence() Idempotence { return s.IdempotenceMode }
+
+// Fingerprint returns a stable SHA-256 hex digest of the step's
+// execution-relevant inputs. Nil and empty arguments, return codes, and
+// env hash identically so hand-constructed and decoded steps agree.
+func (s RegularStep) Fingerprint() (string, error) {
+	arguments := s.Arguments
+	if arguments == nil {
+		arguments = []string{}
+	}
+	returnCodes := s.Returncodes
+	if returnCodes == nil {
+		returnCodes = []int{}
+	}
+	env := s.Env
+	if env == nil {
+		env = map[string]string{}
+	}
+	payload, err := json.Marshal(struct {
+		Path        string            `json:"path"`
+		Arguments   []string          `json:"arguments"`
+		ReturnCodes []int             `json:"returnCodes"`
+		Env         map[string]string `json:"env"`
+		OnHost      bool              `json:"onHost"`
+	}{
+		Path:        s.ScriptPath,
+		Arguments:   arguments,
+		ReturnCodes: returnCodes,
+		Env:         env,
+		OnHost:      s.OnHost,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encoding step fingerprint: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
+}
 
 // Encode writes the JSON wire form with upgrade_step:false. Defaults
 // are applied to a local copy so the caller's value is not mutated;
@@ -71,7 +113,7 @@ func (s RegularStep) Encode() ([]byte, error) {
 // delegates here for defaulting, validation, and marshaling.
 func (s RegularStep) encode() ([]byte, error) {
 	s.applyDefaults()
-	if err := s.Idempotence.Validate(); err != nil {
+	if err := s.IdempotenceMode.Validate(); err != nil {
 		return nil, fmt.Errorf("validate idempotence: %w", err)
 	}
 	out, err := json.Marshal(s)
@@ -111,7 +153,7 @@ func WithOnHost(onHost bool) RegularStepOption {
 
 // WithIdempotence overrides the default Idempotence=Auto.
 func WithIdempotence(i Idempotence) RegularStepOption {
-	return func(s *RegularStep) { s.Idempotence = i }
+	return func(s *RegularStep) { s.IdempotenceMode = i }
 }
 
 // WithRequiresInterrupt sets the requires_interrupt flag.
@@ -154,7 +196,7 @@ func (s *RegularStep) applyDefaults() {
 	if s.Env == nil {
 		s.Env = map[string]string{}
 	}
-	if s.Idempotence == "" {
-		s.Idempotence = Auto
+	if s.IdempotenceMode == "" {
+		s.IdempotenceMode = Auto
 	}
 }
