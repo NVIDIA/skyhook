@@ -129,8 +129,9 @@ the `node.kubernetes.io/unschedulable` taint, mirror/static pods, pods in
 `kube-system`, and its own package pods — identified by the
 `skyhook.nvidia.com/name` and `skyhook.nvidia.com/package` labels stamped on
 every package pod, so they remain exempt even if an admission controller
-rewrites or strips their tolerations. These exclusions are not
-user-configurable.
+rewrites or strips their tolerations. The label exemption only applies to
+pods in the operator's own namespace, so workloads elsewhere cannot opt out
+of drain by copying the labels. These exclusions are not user-configurable.
 
 Compared to earlier releases, the default drain filter now follows Kubernetes
 matching more closely: the unschedulable toleration check uses Kubernetes
