@@ -57,7 +57,7 @@ var _ = Describe("NewUpgradeStep", func() {
 		Expect(u.Returncodes).To(Equal([]int{0, 2}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(u.OnHost).To(BeFalse())
-		Expect(u.Idempotence).To(Equal(Disabled))
+		Expect(u.Idempotence()).To(Equal(Disabled))
 	})
 })
 
@@ -82,12 +82,12 @@ var _ = Describe("UpgradeStep.Validate", func() {
 var _ = Describe("UpgradeStep fields", func() {
 	It("promote field access from the embedded RegularStep", func() {
 		rs := RegularStep{
-			Name:        "explicit",
-			ScriptPath:  "upgrade.sh",
-			Returncodes: []int{0},
-			Env:         map[string]string{"K": "V"},
-			OnHost:      true,
-			Idempotence: Disabled,
+			Name:            "explicit",
+			ScriptPath:      "upgrade.sh",
+			Returncodes:     []int{0},
+			Env:             map[string]string{"K": "V"},
+			OnHost:          true,
+			IdempotenceMode: Disabled,
 		}
 		u := UpgradeStep{RegularStep: rs}
 
@@ -96,7 +96,7 @@ var _ = Describe("UpgradeStep fields", func() {
 		Expect(u.Returncodes).To(Equal([]int{0}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(u.OnHost).To(BeTrue())
-		Expect(u.Idempotence).To(Equal(Disabled))
+		Expect(u.Idempotence()).To(Equal(Disabled))
 	})
 })
 

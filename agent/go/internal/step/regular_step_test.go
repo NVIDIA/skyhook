@@ -57,7 +57,7 @@ var _ = Describe("RegularStep.applyDefaults", func() {
 	It("defaults idempotence to Auto", func() {
 		s := RegularStep{ScriptPath: "foo.sh"}
 		s.applyDefaults()
-		Expect(s.Idempotence).To(Equal(Auto))
+		Expect(s.Idempotence()).To(Equal(Auto))
 	})
 
 	It("does not change OnHost (the constructor seeds it; the schema requires it)", func() {
@@ -81,11 +81,11 @@ var _ = Describe("RegularStep.Encode", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(s.Name).To(Equal(""), "Encode received a value copy; the caller's RegularStep must be untouched")
-		Expect(s.Idempotence).To(Equal(Idempotence("")))
+		Expect(s.Idempotence()).To(Equal(Idempotence("")))
 	})
 
 	It("rejects an explicitly invalid idempotence value", func() {
-		s := RegularStep{ScriptPath: "foo.sh", Idempotence: "bogus"}
+		s := RegularStep{ScriptPath: "foo.sh", IdempotenceMode: "bogus"}
 		_, err := s.Encode()
 		Expect(err).To(MatchError(ContainSubstring("bogus is not a valid idempotence value")))
 	})
@@ -100,7 +100,7 @@ var _ = Describe("NewRegularStep", func() {
 		Expect(s.Returncodes).To(Equal([]int{0}))
 		Expect(s.Env).To(Equal(map[string]string{}))
 		Expect(s.OnHost).To(BeTrue())
-		Expect(s.Idempotence).To(Equal(Auto))
+		Expect(s.Idempotence()).To(Equal(Auto))
 		Expect(s.RequiresInterrupt).To(BeFalse())
 	})
 
@@ -130,7 +130,7 @@ var _ = Describe("NewRegularStep", func() {
 		Expect(s.Returncodes).To(Equal([]int{0, 2}))
 		Expect(s.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(s.OnHost).To(BeFalse())
-		Expect(s.Idempotence).To(Equal(Disabled))
+		Expect(s.Idempotence()).To(Equal(Disabled))
 		Expect(s.RequiresInterrupt).To(BeTrue())
 	})
 
@@ -142,6 +142,6 @@ var _ = Describe("NewRegularStep", func() {
 		round, err := Decode(dumped)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(round.(RegularStep).ScriptPath).To(Equal("foo.sh"))
-		Expect(round.(RegularStep).Idempotence).To(Equal(Disabled))
+		Expect(round.(RegularStep).Idempotence()).To(Equal(Disabled))
 	})
 })
