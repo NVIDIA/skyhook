@@ -125,8 +125,12 @@ The fields map to Kubernetes drain behavior:
 - `gracePeriod`: overrides the grace period used for eviction or direct deletion. Unset uses each pod's own `terminationGracePeriodSeconds`.
 
 The operator also skips pods that are already terminating, pods that tolerate
-the `node.kubernetes.io/unschedulable` taint, mirror/static pods, and pods in
-`kube-system`. These exclusions are not user-configurable.
+the `node.kubernetes.io/unschedulable` taint, mirror/static pods, pods in
+`kube-system`, and its own package pods — identified by the
+`skyhook.nvidia.com/name` and `skyhook.nvidia.com/package` labels stamped on
+every package pod, so they remain exempt even if an admission controller
+rewrites or strips their tolerations. These exclusions are not
+user-configurable.
 
 Compared to earlier releases, the default drain filter now follows Kubernetes
 matching more closely: the unschedulable toleration check uses Kubernetes

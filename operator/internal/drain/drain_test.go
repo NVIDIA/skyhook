@@ -153,6 +153,40 @@ var _ = Describe("DecidePod", func() {
 		),
 	)
 
+	DescribeTable("should exempt the operator's own package pods by label even when admission strips tolerations",
+		func(labels map[string]string, expectedDecision Decision) {
+			pod := basePod()
+			pod.Labels = labels
+
+			decision := DecidePod(pod, DefaultOptions())
+
+			Expect(decision).To(Equal(expectedDecision))
+		},
+		Entry("ignores pods with both skyhook package labels",
+			map[string]string{
+				"skyhook.nvidia.com/name":    "my-skyhook",
+				"skyhook.nvidia.com/package": "pkg-1.0.0",
+			},
+			Decision{Action: ActionIgnore, Reason: ReasonSkyhookPackage},
+		),
+		Entry("ignores interrupt pods carrying the package labels",
+			map[string]string{
+				"skyhook.nvidia.com/name":      "my-skyhook",
+				"skyhook.nvidia.com/package":   "pkg-1.0.0",
+				"skyhook.nvidia.com/interrupt": "True",
+			},
+			Decision{Action: ActionIgnore, Reason: ReasonSkyhookPackage},
+		),
+		Entry("still drains pods with only the name label",
+			map[string]string{"skyhook.nvidia.com/name": "my-skyhook"},
+			Decision{Action: ActionEvict, Reason: ReasonEviction},
+		),
+		Entry("still drains pods with only the package label",
+			map[string]string{"skyhook.nvidia.com/package": "pkg-1.0.0"},
+			Decision{Action: ActionEvict, Reason: ReasonEviction},
+		),
+	)
+
 	It("should ignore daemonset pods by default", func() {
 		pod := basePod()
 		pod.OwnerReferences[0].Kind = daemonSetKind

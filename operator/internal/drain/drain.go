@@ -19,6 +19,7 @@
 package drain
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
@@ -33,6 +34,7 @@ const (
 
 	ReasonPhase                   = "phase"
 	ReasonTerminating             = "terminating"
+	ReasonSkyhookPackage          = "skyhook-package"
 	ReasonUnschedulableToleration = "unschedulable-toleration"
 	ReasonDaemonSet               = "daemonset"
 	ReasonKubeSystem              = "kube-system"
@@ -146,6 +148,14 @@ func DecidePod(pod *corev1.Pod, options Options) Decision {
 		return Decision{Action: ActionIgnore, Reason: ReasonTerminating}
 	}
 
+	// Package pods normally dodge drain via toleratesUnschedulable below, but
+	// some admission controllers rewrite or strip pod tolerations, so the
+	// operator's own in-flight pods are also recognized by the labels stamped
+	// on every package pod.
+	if isSkyhookPackagePod(pod) {
+		return Decision{Action: ActionIgnore, Reason: ReasonSkyhookPackage}
+	}
+
 	if toleratesUnschedulable(pod) {
 		return Decision{Action: ActionIgnore, Reason: ReasonUnschedulableToleration}
 	}
@@ -176,6 +186,12 @@ func DecidePod(pod *corev1.Pod, options Options) Decision {
 	}
 
 	return Decision{Action: ActionEvict, Reason: ReasonEviction}
+}
+
+func isSkyhookPackagePod(pod *corev1.Pod) bool {
+	_, hasName := pod.Labels[fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX)]
+	_, hasPackage := pod.Labels[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)]
+	return hasName && hasPackage
 }
 
 func toleratesUnschedulable(pod *corev1.Pod) bool {
