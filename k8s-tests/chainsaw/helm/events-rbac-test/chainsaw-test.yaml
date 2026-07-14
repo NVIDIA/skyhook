@@ -1,0 +1,91 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helm-events-rbac
+spec:
+  # Installs into the shared `skyhook` namespace, so keep it serial with the
+  # other helm tests.
+  concurrent: false
+  timeouts:
+    exec: 120s
+  steps:
+  # The operator records events through the events.k8s.io/v1 API (client-go
+  # tools/events). This asserts the deployed chart grants the operator
+  # ServiceAccount permission to create those events, so recorded events are
+  # not rejected as forbidden. Regression guard for #308 (the chart previously
+  # granted only the legacy core "" events API).
+  - name: operator-can-create-events-k8s-io
+    try:
+    - script:
+        timeout: 120s
+        content: |
+          ## Install the operator helm chart; the ClusterRole under test is
+          ## rendered from chart/templates/manager-rbac.yaml.
+          ../install-helm-chart.sh events-rbac
+    - script:
+        timeout: 30s
+        content: |
+          # chainsaw runs script content under POSIX /bin/sh (dash in CI), so
+          # keep this POSIX-clean: no `pipefail`, `[[ ]]`, or other bashisms.
+          set -u
+          NS=skyhook
+
+          # Resolve the operator ServiceAccount from the manager Deployment rather
+          # than hard-coding it, so the test survives a fullnameOverride change.
+          SA=$(kubectl -n "${NS}" get deploy -l control-plane=controller-manager \
+                -o jsonpath='{.items[0].spec.template.spec.serviceAccountName}')
+          if [ -z "${SA}" ]; then
+            echo "FAIL: could not resolve controller-manager ServiceAccount in ns/${NS}" >&2
+            exit 1
+          fi
+          SUBJECT="system:serviceaccount:${NS}:${SA}"
+          echo "operator ServiceAccount: ${SUBJECT}"
+
+          # Regression guard (#308): the recorder writes to events.k8s.io/v1, so
+          # both verbs the rule grants (create for new events, patch for the
+          # aggregated series) MUST be allowed. can-i's exit code (0 allowed /
+          # non-zero denied) fails the step closed on a denial.
+          for verb in create patch; do
+            if kubectl auth can-i "${verb}" events.events.k8s.io --as="${SUBJECT}" -n default >/dev/null; then
+              echo "PASS: ${SUBJECT} may ${verb} events.events.k8s.io"
+            else
+              echo "FAIL: ${SUBJECT} cannot ${verb} events.events.k8s.io - RBAC regression (#308)" >&2
+              exit 1
+            fi
+          done
+
+          # Negative control: an action the manager role does not grant must be
+          # denied, proving the impersonated can-i check actually discriminates
+          # (guards against a spuriously-passing test).
+          if kubectl auth can-i delete nodes --as="${SUBJECT}" >/dev/null 2>&1; then
+            echo "FAIL: negative control passed - ${SUBJECT} unexpectedly may delete nodes" >&2
+            exit 1
+          fi
+          echo "PASS: negative control denied (delete nodes)"
+    finally:
+    - script:
+        content: |
+          ## Remove the chart regardless of assertion outcome. Do not swallow the
+          ## exit status: a failed uninstall leaks resources into the shared
+          ## skyhook namespace and would contaminate later tests.
+          if ! ../uninstall-helm-chart.sh events-rbac; then
+            echo "FAIL: could not uninstall Helm release events-rbac" >&2
+            exit 1
+          fi
