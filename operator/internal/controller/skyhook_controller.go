@@ -285,6 +285,10 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=core,resources=nodes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=pods/eviction,verbs=create
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// The event recorder writes via the events.k8s.io/v1 API (client-go tools/events,
+// wired through mgr.GetEventRecorder), so the core rule above is not sufficient on
+// its own — without this rule every recorded event is rejected as forbidden.
+//+kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
