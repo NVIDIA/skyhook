@@ -68,6 +68,12 @@ const (
 	MirroredGenerationAnnotation = nwv1.METADATA_PREFIX + "/mirrored-generation"
 )
 
+//+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights/finalizers,verbs=update
+//+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=deploymentpolicies,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=deploymentpolicies/status,verbs=get;update;patch
+
 // SkyhookMirrorReconciler mirrors legacy Skyhook objects into NodeWright objects.
 type SkyhookMirrorReconciler struct {
 	Client client.Client
