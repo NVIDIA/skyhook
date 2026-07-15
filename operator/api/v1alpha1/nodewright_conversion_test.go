@@ -291,7 +291,7 @@ func fullDeploymentPolicy() *DeploymentPolicy {
 // check has teeth.
 func requireAllFieldsPopulated(path string, v reflect.Value) {
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		ExpectWithOffset(1, v.IsNil()).To(BeFalse(), "%s: pointer must be non-nil", path)
 		requireAllFieldsPopulated(path, v.Elem())
 	case reflect.Struct:

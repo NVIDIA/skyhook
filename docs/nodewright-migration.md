@@ -3,7 +3,7 @@
 > **STATUS: DRAFT.** This guide describes the in-progress `skyhook.nvidia.com` -> `nodewright.nvidia.com`
 > API rename. It is written against the mirror-based upgrade flow. Do not treat version numbers here as
 > final.
-
+>
 > **BREAKING CHANGE.** The primary CRD moves group and Kind: `skyhook.nvidia.com/v1alpha1 Skyhook` ->
 > `nodewright.nvidia.com/v1alpha1 NodeWright`. `DeploymentPolicy` moves group (same Kind name). The
 > on-node annotation/label/finalizer prefix moves `skyhook.nvidia.com/* -> nodewright.nvidia.com/*`, and
@@ -21,7 +21,7 @@
    reconciled resources and are never deleted by this step.
 
 Do steps 2 and 3 **as one change** (a rename = delete old + add new together). **Perform the operator
-upgrade during a quiet window** with no active package rollout (see [Timing](#timing)).
+upgrade during a quiet window** with no active package rollout (see [the prerequisite](#prerequisite-all-skyhooks-must-be-complete)).
 
 ## What the operator does automatically
 
