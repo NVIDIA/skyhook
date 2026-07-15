@@ -44,6 +44,7 @@ import (
 	kzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	nwv1 "github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/controller"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
@@ -72,6 +73,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+	utilruntime.Must(nwv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -147,6 +149,17 @@ func main() {
 	}
 	if err = cont.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Skyhook")
+		os.Exit(1)
+	}
+
+	// Mirror controllers import legacy skyhook.nvidia.com objects into the new
+	// nodewright.nvidia.com group during the migration bridge (one-way, level-triggered).
+	if err = (&controller.SkyhookMirrorReconciler{}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SkyhookMirror")
+		os.Exit(1)
+	}
+	if err = (&controller.DeploymentPolicyMirrorReconciler{}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DeploymentPolicyMirror")
 		os.Exit(1)
 	}
 

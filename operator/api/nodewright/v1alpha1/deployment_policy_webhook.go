@@ -45,10 +45,10 @@ func (r *DeploymentPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-//+kubebuilder:webhook:path=/mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy,mutating=true,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=deploymentpolicies,verbs=create;update,versions=v1alpha1,name=mdeploymentpolicy.kb.io,admissionReviewVersions=v1
+//+kubebuilder:webhook:path=/mutate-nodewright-nvidia-com-v1alpha1-deploymentpolicy,mutating=true,failurePolicy=fail,sideEffects=None,groups=nodewright.nvidia.com,resources=deploymentpolicies,verbs=create;update,versions=v1alpha1,name=mdeploymentpolicy-nodewright.kb.io,admissionReviewVersions=v1
 
 // DeploymentPolicyWebhook validates DeploymentPolicy resources at admission time.
-// Includes a client to check if any Skyhooks reference this policy before allowing deletion.
+// Includes a client to check if any NodeWrights reference this policy before allowing deletion.
 // +kubebuilder:object:generate=false
 type DeploymentPolicyWebhook struct {
 	Client client.Client
@@ -79,22 +79,16 @@ func (r *DeploymentPolicyWebhook) Default(ctx context.Context, deploymentPolicy 
 	return nil
 }
 
-//+kubebuilder:webhook:path=/validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=deploymentpolicies,verbs=create;update;delete,versions=v1alpha1,name=vdeploymentpolicy.kb.io,admissionReviewVersions=v1
+//+kubebuilder:webhook:path=/validate-nodewright-nvidia-com-v1alpha1-deploymentpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=nodewright.nvidia.com,resources=deploymentpolicies,verbs=create;update;delete,versions=v1alpha1,name=vdeploymentpolicy-nodewright.kb.io,admissionReviewVersions=v1
 
 var _ admission.Validator[*DeploymentPolicy] = &DeploymentPolicyWebhook{}
-
-// deploymentPolicyDeprecationWarning is surfaced on every create/update of a legacy
-// DeploymentPolicy during the migration bridge. It does not name a specific removal release.
-const deploymentPolicyDeprecationWarning = "skyhook.nvidia.com/v1alpha1 DeploymentPolicy is deprecated; " +
-	"migrate to nodewright.nvidia.com/v1alpha1 DeploymentPolicy (kubectl nodewright migrate). The " +
-	"skyhook.nvidia.com group will be removed in a future release."
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateCreate(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
 	deploymentPolicylog.Info("validate create", "name", deploymentPolicy.Name)
 
-	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
+	return nil, deploymentPolicy.Validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
@@ -102,7 +96,7 @@ func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldDeploym
 
 	deploymentPolicylog.Info("validate update", "name", deploymentPolicy.Name)
 
-	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
+	return nil, deploymentPolicy.Validate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
@@ -110,22 +104,22 @@ func (r *DeploymentPolicyWebhook) ValidateDelete(ctx context.Context, deployment
 
 	deploymentPolicylog.Info("validate delete", "name", deploymentPolicy.Name)
 
-	// Check if any Skyhooks are still referencing this policy
-	skyhooks := &SkyhookList{}
+	// Check if any NodeWrights are still referencing this policy
+	skyhooks := &NodeWrightList{}
 	if err := r.Client.List(ctx, skyhooks); err != nil {
 		return nil, fmt.Errorf("failed to list skyhooks to check for references: %w", err)
 	}
 
-	referencingSkyhooks := []string{}
+	referencingNodeWrights := []string{}
 	for _, skyhook := range skyhooks.Items {
 		if skyhook.Spec.DeploymentPolicy == deploymentPolicy.Name {
-			referencingSkyhooks = append(referencingSkyhooks, skyhook.Name)
+			referencingNodeWrights = append(referencingNodeWrights, skyhook.Name)
 		}
 	}
 
-	if len(referencingSkyhooks) > 0 {
-		return nil, fmt.Errorf("cannot delete DeploymentPolicy %q: still referenced by %d Skyhook(s): %v",
-			deploymentPolicy.Name, len(referencingSkyhooks), referencingSkyhooks)
+	if len(referencingNodeWrights) > 0 {
+		return nil, fmt.Errorf("cannot delete DeploymentPolicy %q: still referenced by %d NodeWright(s): %v",
+			deploymentPolicy.Name, len(referencingNodeWrights), referencingNodeWrights)
 	}
 
 	return nil, nil
