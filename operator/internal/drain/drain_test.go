@@ -21,7 +21,7 @@ package drain
 import (
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -168,8 +168,8 @@ var _ = Describe("DecidePod", func() {
 		Entry("ignores pods with both skyhook package labels in the operator namespace",
 			"skyhook",
 			map[string]string{
-				"skyhook.nvidia.com/name":    "my-skyhook",
-				"skyhook.nvidia.com/package": "pkg-1.0.0",
+				"nodewright.nvidia.com/name":    "my-skyhook",
+				"nodewright.nvidia.com/package": "pkg-1.0.0",
 			},
 			"skyhook",
 			Decision{Action: ActionIgnore, Reason: ReasonSkyhookPackage},
@@ -177,30 +177,30 @@ var _ = Describe("DecidePod", func() {
 		Entry("ignores interrupt pods carrying the package labels",
 			"skyhook",
 			map[string]string{
-				"skyhook.nvidia.com/name":      "my-skyhook",
-				"skyhook.nvidia.com/package":   "pkg-1.0.0",
-				"skyhook.nvidia.com/interrupt": "True",
+				"nodewright.nvidia.com/name":      "my-skyhook",
+				"nodewright.nvidia.com/package":   "pkg-1.0.0",
+				"nodewright.nvidia.com/interrupt": "True",
 			},
 			"skyhook",
 			Decision{Action: ActionIgnore, Reason: ReasonSkyhookPackage},
 		),
 		Entry("still drains pods with only the name label",
 			"skyhook",
-			map[string]string{"skyhook.nvidia.com/name": "my-skyhook"},
+			map[string]string{"nodewright.nvidia.com/name": "my-skyhook"},
 			"skyhook",
 			Decision{Action: ActionEvict, Reason: ReasonEviction},
 		),
 		Entry("still drains pods with only the package label",
 			"skyhook",
-			map[string]string{"skyhook.nvidia.com/package": "pkg-1.0.0"},
+			map[string]string{"nodewright.nvidia.com/package": "pkg-1.0.0"},
 			"skyhook",
 			Decision{Action: ActionEvict, Reason: ReasonEviction},
 		),
 		Entry("still drains pods carrying both labels outside the operator namespace",
 			"default",
 			map[string]string{
-				"skyhook.nvidia.com/name":    "my-skyhook",
-				"skyhook.nvidia.com/package": "pkg-1.0.0",
+				"nodewright.nvidia.com/name":    "my-skyhook",
+				"nodewright.nvidia.com/package": "pkg-1.0.0",
 			},
 			"skyhook",
 			Decision{Action: ActionEvict, Reason: ReasonEviction},
@@ -208,8 +208,8 @@ var _ = Describe("DecidePod", func() {
 		Entry("does not exempt by label when no package namespace is configured",
 			"skyhook",
 			map[string]string{
-				"skyhook.nvidia.com/name":    "my-skyhook",
-				"skyhook.nvidia.com/package": "pkg-1.0.0",
+				"nodewright.nvidia.com/name":    "my-skyhook",
+				"nodewright.nvidia.com/package": "pkg-1.0.0",
 			},
 			"",
 			Decision{Action: ActionEvict, Reason: ReasonEviction},

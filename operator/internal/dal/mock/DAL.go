@@ -25,7 +25,7 @@ package dal
 import (
 	"context"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	mock "github.com/stretchr/testify/mock"
 	"k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -512,7 +512,7 @@ func (_c *MockDAL_GetPods_Call) RunAndReturn(run func(ctx context.Context, opts 
 }
 
 // GetSkyhook provides a mock function for the type MockDAL
-func (_mock *MockDAL) GetSkyhook(ctx context.Context, name string, opts ...client.ListOption) (*v1alpha1.Skyhook, error) {
+func (_mock *MockDAL) GetSkyhook(ctx context.Context, name string, opts ...client.ListOption) (*v1alpha1.NodeWright, error) {
 	// client.ListOption
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
@@ -527,16 +527,16 @@ func (_mock *MockDAL) GetSkyhook(ctx context.Context, name string, opts ...clien
 		panic("no return value specified for GetSkyhook")
 	}
 
-	var r0 *v1alpha1.Skyhook
+	var r0 *v1alpha1.NodeWright
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...client.ListOption) (*v1alpha1.Skyhook, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...client.ListOption) (*v1alpha1.NodeWright, error)); ok {
 		return returnFunc(ctx, name, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...client.ListOption) *v1alpha1.Skyhook); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, ...client.ListOption) *v1alpha1.NodeWright); ok {
 		r0 = returnFunc(ctx, name, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1alpha1.Skyhook)
+			r0 = ret.Get(0).(*v1alpha1.NodeWright)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, ...client.ListOption) error); ok {
@@ -588,18 +588,18 @@ func (_c *MockDAL_GetSkyhook_Call) Run(run func(ctx context.Context, name string
 	return _c
 }
 
-func (_c *MockDAL_GetSkyhook_Call) Return(skyhook *v1alpha1.Skyhook, err error) *MockDAL_GetSkyhook_Call {
-	_c.Call.Return(skyhook, err)
+func (_c *MockDAL_GetSkyhook_Call) Return(nodeWright *v1alpha1.NodeWright, err error) *MockDAL_GetSkyhook_Call {
+	_c.Call.Return(nodeWright, err)
 	return _c
 }
 
-func (_c *MockDAL_GetSkyhook_Call) RunAndReturn(run func(ctx context.Context, name string, opts ...client.ListOption) (*v1alpha1.Skyhook, error)) *MockDAL_GetSkyhook_Call {
+func (_c *MockDAL_GetSkyhook_Call) RunAndReturn(run func(ctx context.Context, name string, opts ...client.ListOption) (*v1alpha1.NodeWright, error)) *MockDAL_GetSkyhook_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetSkyhooks provides a mock function for the type MockDAL
-func (_mock *MockDAL) GetSkyhooks(ctx context.Context, opts ...client.ListOption) (*v1alpha1.SkyhookList, error) {
+func (_mock *MockDAL) GetSkyhooks(ctx context.Context, opts ...client.ListOption) (*v1alpha1.NodeWrightList, error) {
 	// client.ListOption
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
@@ -614,16 +614,16 @@ func (_mock *MockDAL) GetSkyhooks(ctx context.Context, opts ...client.ListOption
 		panic("no return value specified for GetSkyhooks")
 	}
 
-	var r0 *v1alpha1.SkyhookList
+	var r0 *v1alpha1.NodeWrightList
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v1alpha1.SkyhookList, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v1alpha1.NodeWrightList, error)); ok {
 		return returnFunc(ctx, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v1alpha1.SkyhookList); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v1alpha1.NodeWrightList); ok {
 		r0 = returnFunc(ctx, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1alpha1.SkyhookList)
+			r0 = ret.Get(0).(*v1alpha1.NodeWrightList)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, ...client.ListOption) error); ok {
@@ -669,12 +669,12 @@ func (_c *MockDAL_GetSkyhooks_Call) Run(run func(ctx context.Context, opts ...cl
 	return _c
 }
 
-func (_c *MockDAL_GetSkyhooks_Call) Return(skyhookList *v1alpha1.SkyhookList, err error) *MockDAL_GetSkyhooks_Call {
-	_c.Call.Return(skyhookList, err)
+func (_c *MockDAL_GetSkyhooks_Call) Return(nodeWrightList *v1alpha1.NodeWrightList, err error) *MockDAL_GetSkyhooks_Call {
+	_c.Call.Return(nodeWrightList, err)
 	return _c
 }
 
-func (_c *MockDAL_GetSkyhooks_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v1alpha1.SkyhookList, error)) *MockDAL_GetSkyhooks_Call {
+func (_c *MockDAL_GetSkyhooks_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v1alpha1.NodeWrightList, error)) *MockDAL_GetSkyhooks_Call {
 	_c.Call.Return(run)
 	return _c
 }

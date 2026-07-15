@@ -24,20 +24,20 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewSkyhookWrapper(s *v1alpha1.Skyhook) *Skyhook {
+func NewSkyhookWrapper(s *v1alpha1.NodeWright) *Skyhook {
 	return &Skyhook{
-		Skyhook: s,
+		NodeWright: s,
 	}
 }
 
 type Skyhook struct {
-	*v1alpha1.Skyhook
+	*v1alpha1.NodeWright
 	// nodes []*corev1.Node
 	// Updated is set to true when the skyhook has been updated, used to track changes to the skyhook
 	// and to determine if the skyhook needs to be updated in the API
@@ -211,9 +211,9 @@ func (s *Skyhook) AddCondition(cond metav1.Condition) {
 
 // RemoveCondition removes a condition by type if it exists.
 func (s *Skyhook) RemoveCondition(condType string) {
-	for i, c := range s.Skyhook.Status.Conditions {
+	for i, c := range s.NodeWright.Status.Conditions {
 		if c.Type == condType {
-			s.Skyhook.Status.Conditions = append(s.Skyhook.Status.Conditions[:i], s.Skyhook.Status.Conditions[i+1:]...)
+			s.NodeWright.Status.Conditions = append(s.NodeWright.Status.Conditions[:i], s.NodeWright.Status.Conditions[i+1:]...)
 			s.Updated = true
 			return
 		}

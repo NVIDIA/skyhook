@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/graph"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"github.com/go-logr/logr"
@@ -144,9 +144,9 @@ func NewSkyhookNodeOnly(node *corev1.Node, skyhookName string) (SkyhookNodeOnly,
 }
 
 // Convert upgrades a SkyhookNodeOnly to a full SkyhookNode when a Skyhook object is available.
-func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.Skyhook) (SkyhookNode, error) {
+func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.NodeWright) (SkyhookNode, error) {
 	ret := node.(*skyhookNode)
-	ret.skyhook = &Skyhook{Skyhook: skyhook}
+	ret.skyhook = &Skyhook{NodeWright: skyhook}
 
 	graph, err := skyhook.Spec.BuildGraph()
 	if err != nil {
@@ -159,7 +159,7 @@ func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.Skyhook) (SkyhookNode, erro
 }
 
 // NewSkyhookNode creates a full SkyhookNode from a Node and a Skyhook (node + graph + name).
-func NewSkyhookNode(node *corev1.Node, skyhook *v1alpha1.Skyhook) (SkyhookNode, error) {
+func NewSkyhookNode(node *corev1.Node, skyhook *v1alpha1.NodeWright) (SkyhookNode, error) {
 
 	t, err := NewSkyhookNodeOnly(node, skyhook.Name)
 	if err != nil {

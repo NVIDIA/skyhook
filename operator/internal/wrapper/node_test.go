@@ -21,7 +21,7 @@ package wrapper
 import (
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -36,11 +36,11 @@ var _ = Describe("SkyhookNode", func() {
 					Name: "test-node",
 				},
 			}
-			skyhook := v1alpha1.Skyhook{
+			skyhook := v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"a-package": {
 							PackageRef: v1alpha1.PackageRef{Name: "a-package", Version: "1.0"},
@@ -171,7 +171,7 @@ var _ = Describe("SkyhookNode", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "processed-node",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_myskyhook": `{"some":"state"}`,
+						"nodewright.nvidia.com/nodeState_myskyhook": `{"some":"state"}`,
 					},
 				},
 			},
@@ -249,8 +249,8 @@ var _ = Describe("SkyhookNode", func() {
 		})
 
 		It("should make the node schedulable if only unrelated Skyhook annotations remain", func() {
-			otherStatusKey := "skyhook.nvidia.com/status_other-skyhook"
-			otherNodeStateKey := "skyhook.nvidia.com/nodeState_other-skyhook"
+			otherStatusKey := "nodewright.nvidia.com/status_other-skyhook"
+			otherNodeStateKey := "nodewright.nvidia.com/nodeState_other-skyhook"
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
@@ -305,16 +305,16 @@ var _ = Describe("SkyhookNode", func() {
 				},
 			}
 
-			sn, err := NewSkyhookNode(node, &v1alpha1.Skyhook{
+			sn, err := NewSkyhookNode(node, &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
-				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
 			started := metav1.NewTime(time.Date(2026, time.June, 2, 13, 14, 15, 0, time.UTC))
 			sn.StartDrain(started)
 
-			Expect(node.Annotations).To(HaveKeyWithValue("skyhook.nvidia.com/drainStart_my-skyhook", "2026-06-02T13:14:15Z"))
+			Expect(node.Annotations).To(HaveKeyWithValue("nodewright.nvidia.com/drainStart_my-skyhook", "2026-06-02T13:14:15Z"))
 			Expect(sn.Changed()).To(BeTrue())
 
 			drainStartedAt, err := sn.DrainStartedAt()
@@ -322,7 +322,7 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(drainStartedAt).To(Equal(&started))
 
 			sn.ClearDrainStart()
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/drainStart_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/drainStart_my-skyhook"))
 		})
 
 		It("should return an error for a malformed drain start annotation", func() {
@@ -330,14 +330,14 @@ var _ = Describe("SkyhookNode", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/drainStart_my-skyhook": "not-a-time",
+						"nodewright.nvidia.com/drainStart_my-skyhook": "not-a-time",
 					},
 				},
 			}
 
-			sn, err := NewSkyhookNode(node, &v1alpha1.Skyhook{
+			sn, err := NewSkyhookNode(node, &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
-				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
@@ -353,21 +353,21 @@ var _ = Describe("SkyhookNode", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/cordon_my-skyhook":     "true",
-						"skyhook.nvidia.com/drainStart_my-skyhook": "2026-06-02T13:14:15Z",
-						"skyhook.nvidia.com/nodeState_my-skyhook":  "{}",
-						"skyhook.nvidia.com/status_my-skyhook":     "erroring",
-						"skyhook.nvidia.com/version_my-skyhook":    "1.0.0",
+						"nodewright.nvidia.com/cordon_my-skyhook":     "true",
+						"nodewright.nvidia.com/drainStart_my-skyhook": "2026-06-02T13:14:15Z",
+						"nodewright.nvidia.com/nodeState_my-skyhook":  "{}",
+						"nodewright.nvidia.com/status_my-skyhook":     "erroring",
+						"nodewright.nvidia.com/version_my-skyhook":    "1.0.0",
 					},
 					Labels: map[string]string{
-						"skyhook.nvidia.com/status_my-skyhook": "erroring",
+						"nodewright.nvidia.com/status_my-skyhook": "erroring",
 					},
 				},
 			}
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
-				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
-				Status: v1alpha1.SkyhookStatus{
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
+				Status: v1alpha1.NodeWrightStatus{
 					NodeState:  map[string]v1alpha1.NodeState{"test-node": {}},
 					NodeStatus: map[string]v1alpha1.Status{"test-node": v1alpha1.StatusErroring},
 				},
@@ -378,12 +378,12 @@ var _ = Describe("SkyhookNode", func() {
 
 			sn.Reset()
 
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/cordon_my-skyhook"))
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/drainStart_my-skyhook"))
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/nodeState_my-skyhook"))
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/version_my-skyhook"))
-			Expect(node.Labels).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/cordon_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/drainStart_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/nodeState_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/status_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/version_my-skyhook"))
+			Expect(node.Labels).ToNot(HaveKey("nodewright.nvidia.com/status_my-skyhook"))
 			Expect(skyhook.Status.NodeState).ToNot(HaveKey("test-node"))
 			Expect(skyhook.Status.NodeStatus).ToNot(HaveKey("test-node"))
 			Expect(skyhook.Status.Status).To(Equal(v1alpha1.StatusUnknown))
@@ -396,45 +396,45 @@ var _ = Describe("SkyhookNode", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/status_my-skyhook":    "complete",
-						"skyhook.nvidia.com/nodeState_my-skyhook": "{}",
-						"skyhook.nvidia.com/version_my-skyhook":   "1.0.0",
-						"skyhook.nvidia.com/status_other-skyhook": "complete", // different skyhook
-						"unrelated-annotation":                    "keep-me",
+						"nodewright.nvidia.com/status_my-skyhook":    "complete",
+						"nodewright.nvidia.com/nodeState_my-skyhook": "{}",
+						"nodewright.nvidia.com/version_my-skyhook":   "1.0.0",
+						"nodewright.nvidia.com/status_other-skyhook": "complete", // different skyhook
+						"unrelated-annotation":                       "keep-me",
 					},
 					Labels: map[string]string{
-						"skyhook.nvidia.com/status_my-skyhook":    "complete",
-						"skyhook.nvidia.com/status_other-skyhook": "in_progress", // different skyhook
-						"unrelated-label":                         "keep-me",
+						"nodewright.nvidia.com/status_my-skyhook":    "complete",
+						"nodewright.nvidia.com/status_other-skyhook": "in_progress", // different skyhook
+						"unrelated-label":                            "keep-me",
 					},
 				},
 				Status: corev1.NodeStatus{
 					Conditions: []corev1.NodeCondition{
-						{Type: "skyhook.nvidia.com/my-skyhook/NotReady", Status: "False"},
-						{Type: "skyhook.nvidia.com/my-skyhook/Erroring", Status: "False"},
-						{Type: "skyhook.nvidia.com/other-skyhook/NotReady", Status: "True"}, // different skyhook
-						{Type: "Ready", Status: "True"},                                     // system condition
+						{Type: "nodewright.nvidia.com/my-skyhook/NotReady", Status: "False"},
+						{Type: "nodewright.nvidia.com/my-skyhook/Erroring", Status: "False"},
+						{Type: "nodewright.nvidia.com/other-skyhook/NotReady", Status: "True"}, // different skyhook
+						{Type: "Ready", Status: "True"},                                        // system condition
 					},
 				},
 			}
 
-			sn, err := NewSkyhookNode(node, &v1alpha1.Skyhook{
+			sn, err := NewSkyhookNode(node, &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
-				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
 			sn.CleanupSCRMetadata()
 
 			// my-skyhook keys removed
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/nodeState_my-skyhook"))
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/version_my-skyhook"))
-			Expect(node.Labels).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/status_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/nodeState_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/version_my-skyhook"))
+			Expect(node.Labels).ToNot(HaveKey("nodewright.nvidia.com/status_my-skyhook"))
 
 			// other-skyhook keys preserved
-			Expect(node.Annotations).To(HaveKey("skyhook.nvidia.com/status_other-skyhook"))
-			Expect(node.Labels).To(HaveKey("skyhook.nvidia.com/status_other-skyhook"))
+			Expect(node.Annotations).To(HaveKey("nodewright.nvidia.com/status_other-skyhook"))
+			Expect(node.Labels).To(HaveKey("nodewright.nvidia.com/status_other-skyhook"))
 
 			// unrelated keys preserved
 			Expect(node.Annotations).To(HaveKey("unrelated-annotation"))
@@ -446,7 +446,7 @@ var _ = Describe("SkyhookNode", func() {
 			for _, c := range node.Status.Conditions {
 				types = append(types, string(c.Type))
 			}
-			Expect(types).To(ContainElement("skyhook.nvidia.com/other-skyhook/NotReady"))
+			Expect(types).To(ContainElement("nodewright.nvidia.com/other-skyhook/NotReady"))
 			Expect(types).To(ContainElement("Ready"))
 		})
 
@@ -459,36 +459,36 @@ var _ = Describe("SkyhookNode", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/status_my-skyhook":    "complete",
-						"skyhook.nvidia.com/nodeState_my-skyhook": nodeState,
-						"skyhook.nvidia.com/version_my-skyhook":   "1.0.0",
+						"nodewright.nvidia.com/status_my-skyhook":    "complete",
+						"nodewright.nvidia.com/nodeState_my-skyhook": nodeState,
+						"nodewright.nvidia.com/version_my-skyhook":   "1.0.0",
 					},
 					Labels: map[string]string{
-						"skyhook.nvidia.com/status_my-skyhook": "complete",
+						"nodewright.nvidia.com/status_my-skyhook": "complete",
 					},
 				},
 				Status: corev1.NodeStatus{
 					Conditions: []corev1.NodeCondition{
-						{Type: "skyhook.nvidia.com/my-skyhook/NotReady", Status: "False"},
+						{Type: "nodewright.nvidia.com/my-skyhook/NotReady", Status: "False"},
 					},
 				},
 			}
 
-			sn, err := NewSkyhookNode(node, &v1alpha1.Skyhook{
+			sn, err := NewSkyhookNode(node, &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-skyhook"},
-				Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{}},
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
 			sn.CleanupSCRMetadata()
 
 			// nodeState and version preserved because state is non-empty
-			Expect(node.Annotations).To(HaveKeyWithValue("skyhook.nvidia.com/nodeState_my-skyhook", nodeState))
-			Expect(node.Annotations).To(HaveKeyWithValue("skyhook.nvidia.com/version_my-skyhook", "1.0.0"))
+			Expect(node.Annotations).To(HaveKeyWithValue("nodewright.nvidia.com/nodeState_my-skyhook", nodeState))
+			Expect(node.Annotations).To(HaveKeyWithValue("nodewright.nvidia.com/version_my-skyhook", "1.0.0"))
 
 			// status annotation, label, and condition still cleaned up
-			Expect(node.Annotations).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
-			Expect(node.Labels).ToNot(HaveKey("skyhook.nvidia.com/status_my-skyhook"))
+			Expect(node.Annotations).ToNot(HaveKey("nodewright.nvidia.com/status_my-skyhook"))
+			Expect(node.Labels).ToNot(HaveKey("nodewright.nvidia.com/status_my-skyhook"))
 			Expect(node.Status.Conditions).To(BeEmpty())
 		})
 	})
@@ -498,9 +498,9 @@ var _ = Describe("SkyhookNode", func() {
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
 			}
-			skyhook := v1alpha1.Skyhook{
+			skyhook := v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"baxter": {
 							PackageRef: v1alpha1.PackageRef{Name: "baxter", Version: "3.2.1"},

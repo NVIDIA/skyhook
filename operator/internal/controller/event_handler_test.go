@@ -24,7 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	dalmock "github.com/NVIDIA/nodewright/operator/internal/dal/mock"
 	"github.com/NVIDIA/nodewright/operator/internal/mocks/workqueue"
 	corev1 "k8s.io/api/core/v1"
@@ -39,10 +39,10 @@ var _ = Describe("Global delay handler", func() {
 
 	matchingLabels := map[string]string{"foo": "bar"}
 
-	skyhookList := &v1alpha1.SkyhookList{
-		Items: []v1alpha1.Skyhook{{
+	skyhookList := &v1alpha1.NodeWrightList{
+		Items: []v1alpha1.NodeWright{{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
-			Spec:       v1alpha1.SkyhookSpec{NodeSelector: metav1.LabelSelector{MatchLabels: matchingLabels}},
+			Spec:       v1alpha1.NodeWrightSpec{NodeSelector: metav1.LabelSelector{MatchLabels: matchingLabels}},
 		}},
 	}
 
@@ -83,7 +83,7 @@ var _ = Describe("Global delay handler", func() {
 		// dal is intentionally nil: a skyhook event must not need to list skyhooks.
 		handler := &globalDelayHandler{logger: GinkgoLogr, delay: delay}
 
-		skyhook := &v1alpha1.Skyhook{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
+		skyhook := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
 
 		queue.EXPECT().AddAfter(globalReconcileKey, delay).Once()
 

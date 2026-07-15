@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	"github.com/go-logr/logr"
@@ -72,7 +72,7 @@ type clusterState struct {
 	skyhooks []SkyhookNodes
 }
 
-func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deploymentPolicies *v1alpha1.DeploymentPolicyList) (*clusterState, error) {
+func BuildState(skyhooks *v1alpha1.NodeWrightList, nodes *corev1.NodeList, deploymentPolicies *v1alpha1.DeploymentPolicyList) (*clusterState, error) {
 
 	ret := &clusterState{
 		tracker:  ObjectTracker{objects: make(map[string]client.Object)},
@@ -164,7 +164,7 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 // initializeCompartmentsFromPolicy loads compartments from the specified DeploymentPolicy.
 // It handles finding the policy, loading persisted batch states, creating compartments,
 // and managing the DeploymentPolicyNotFound condition.
-func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1alpha1.Skyhook, deploymentPolicies *v1alpha1.DeploymentPolicyList) {
+func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1alpha1.NodeWright, deploymentPolicies *v1alpha1.DeploymentPolicyList) {
 	policyFound := false
 	for _, deploymentPolicy := range deploymentPolicies.Items {
 		if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
@@ -258,7 +258,7 @@ func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
 // createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility
 // when no DeploymentPolicy is specified. It translates the legacy InterruptionBudget into a
 // FixedStrategy compartment that behaves the same way.
-func createLegacyDefaultCompartment(spec v1alpha1.SkyhookSpec, nodeCount int) *v1alpha1.Compartment {
+func createLegacyDefaultCompartment(spec v1alpha1.NodeWrightSpec, nodeCount int) *v1alpha1.Compartment {
 	// Create a synthetic budget from InterruptionBudget
 	// If InterruptionBudget is not set, default to 100% (all nodes at once)
 	var budget v1alpha1.DeploymentBudget
@@ -870,12 +870,12 @@ func (s *skyhookNodes) GetDeploymentPolicy() *v1alpha1.DeploymentPolicy {
 // resetSkyhookBatchState resets all compartment batch states to fresh values if configured.
 // This is used when transitioning to Complete or when a version change is detected.
 func resetSkyhookBatchState(skyhook SkyhookNodes) {
-	if !skyhook.GetSkyhook().Skyhook.ShouldResetBatchStateOnCompletion(skyhook.GetDeploymentPolicy()) {
+	if !skyhook.GetSkyhook().NodeWright.ShouldResetBatchStateOnCompletion(skyhook.GetDeploymentPolicy()) {
 		return
 	}
 
 	// Reset persisted compartment statuses via the canonical API method
-	if skyhook.GetSkyhook().Skyhook.ResetCompartmentBatchStates() {
+	if skyhook.GetSkyhook().NodeWright.ResetCompartmentBatchStates() {
 		skyhook.GetSkyhook().Updated = true
 	}
 

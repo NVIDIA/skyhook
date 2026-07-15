@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	"github.com/NVIDIA/nodewright/operator/internal/drain"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
@@ -258,7 +258,7 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		// Heavy path: Skyhook and Node events collapse onto the global key.
 		Watches(
-			&v1alpha1.Skyhook{},
+			&v1alpha1.NodeWright{},
 			globalHandler,
 		).
 		Watches(
@@ -571,7 +571,7 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			return false, fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
-		if err := skyhook.GetSkyhook().Skyhook.Validate(); err != nil {
+		if err := skyhook.GetSkyhook().NodeWright.Validate(); err != nil {
 			return false, fmt.Errorf("error validating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
@@ -594,7 +594,7 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			// need to do this because SaveNodesAndSkyhook only saves skyhook status, not the main skyhook object where the annotations are
 			// additionally it needs to be an update, a patch nils out the annotations for some reason, which the save function does a patch
 
-			if err = r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+			if err = r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating during migration skyhook status [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 
@@ -681,7 +681,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 
 			if id != "" && id != node.GetNode().Status.NodeInfo.BootID { // node rebooted
 				if r.opts.ReapplyOnReboot {
-					r.recorder.Eventf(skyhook.GetSkyhook().Skyhook, nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node [%s] to be reapplied", node.GetNode().Name)
+					r.recorder.Eventf(skyhook.GetSkyhook().NodeWright, nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node [%s] to be reapplied", node.GetNode().Name)
 					r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node for [%s] to be reapplied", node.GetSkyhook().Name)
 					node.Reset()
 
@@ -721,7 +721,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 		}
 		if skyhook.GetSkyhook().Updated { // update
 			updates = true
-			err := r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook)
+			err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error updating skyhook status after reboot [%s]: %w", skyhook.GetSkyhook().Name, err))
 			}
@@ -904,8 +904,8 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 	}
 
 	if len(errs) == 0 && skyhook.GetSkyhook().Updated {
-		patch := client.MergeFrom(clusterState.tracker.GetOriginal(skyhook.GetSkyhook().Skyhook))
-		err := r.Status().Patch(ctx, skyhook.GetSkyhook().Skyhook, patch)
+		patch := client.MergeFrom(clusterState.tracker.GetOriginal(skyhook.GetSkyhook().NodeWright))
+		err := r.Status().Patch(ctx, skyhook.GetSkyhook().NodeWright, patch)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -1229,7 +1229,7 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotationsPackages(ctx context.Cont
 		},
 	}
 
-	if err := ctrl.SetControllerReference(skyhook.Skyhook, newCM, r.scheme); err != nil {
+	if err := ctrl.SetControllerReference(skyhook.NodeWright, newCM, r.scheme); err != nil {
 		return fmt.Errorf("error setting ownership: %w", err)
 	}
 
@@ -1452,7 +1452,7 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook Skyhoo
 				Data: _package.ConfigMap,
 			}
 			// set owner of CM to the SCR, which will clean up the CM in delete of the SCR
-			if err := ctrl.SetControllerReference(skyhook.GetSkyhook().Skyhook, newCM, r.scheme); err != nil {
+			if err := ctrl.SetControllerReference(skyhook.GetSkyhook().NodeWright, newCM, r.scheme); err != nil {
 				return false, false, fmt.Errorf("error setting ownership of cm: %w", err)
 			}
 
@@ -1511,15 +1511,15 @@ func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.S
 // Phase 3: cleanup (zero metrics, uncordon, remove SCR metadata, remove finalizer)
 func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, error) {
 	if skyhook.GetSkyhook().DeletionTimestamp.IsZero() { // if not deleted, and does not have our finalizer, add it
-		if !controllerutil.ContainsFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer) {
-			controllerutil.AddFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer)
+		if !controllerutil.ContainsFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer) {
+			controllerutil.AddFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
 
-			if err := r.Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating skyhook to add finalizer: %w", err)
 			}
 		}
 	} else { // being deleted
-		if controllerutil.ContainsFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer) {
+		if controllerutil.ContainsFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer) {
 
 			// Phase 2: scan uninstall-enabled packages across all nodes to
 			// decide whether to block, wait, or proceed to Phase 3. Capture
@@ -1567,7 +1567,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 						"Repair the nodeState annotation before deletion.",
 				})
 				r.recorder.Eventf(
-					skyhook.GetSkyhook().Skyhook,
+					skyhook.GetSkyhook().NodeWright,
 					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
@@ -1595,7 +1595,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 						"Unpause to let uninstall complete before deletion.",
 				})
 				r.recorder.Eventf(
-					skyhook.GetSkyhook().Skyhook,
+					skyhook.GetSkyhook().NodeWright,
 					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
@@ -1626,7 +1626,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 						"Re-enable the Skyhook to let uninstall complete before deletion.",
 				})
 				r.recorder.Eventf(
-					skyhook.GetSkyhook().Skyhook,
+					skyhook.GetSkyhook().NodeWright,
 					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
@@ -1680,14 +1680,14 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 				return false, utilerrors.NewAggregate(errs)
 			}
 
-			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer)
-			if err := r.Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
+			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating skyhook removing finalizer: %w", err)
 			}
 			// should be 1, and now 2. we want to set ObservedGeneration up to not trigger an logic from this update adding the finalizer
 			skyhook.GetSkyhook().Status.ObservedGeneration = skyhook.GetSkyhook().Status.ObservedGeneration + 1
 
-			if err := r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+			if err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating skyhook status: %w", err)
 			}
 
@@ -1776,7 +1776,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 			_package.Version,
 			skyhookNode.GetSkyhook().Name,
 		)
-		r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
+		r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
 			"drain timed out after [%s] for node [%s] package [%s:%s]",
 			drainConfig.Timeout.Duration,
 			skyhookNode.GetNode().Name,
@@ -1872,11 +1872,11 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 
 	pod := createInterruptPodForPackage(r.opts, _interrupt, argEncode, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name, stage)
 
-	if err := SetPackages(pod, skyhookNode.GetSkyhook().Skyhook, _package.Image, stage, _package); err != nil {
+	if err := SetPackages(pod, skyhookNode.GetSkyhook().NodeWright, _package.Image, stage, _package); err != nil {
 		return fmt.Errorf("error setting package on interrupt: %w", err)
 	}
 
-	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().Skyhook, pod, r.scheme); err != nil {
+	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().NodeWright, pod, r.scheme); err != nil {
 		return fmt.Errorf("error setting ownership: %w", err)
 	}
 
@@ -1886,7 +1886,7 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 
 	_ = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, stage, 0, _package.ContainerSHA)
 
-	r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, nil, EventTypeNormal, EventsReasonSkyhookInterrupt, "InterruptNode",
+	r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, EventTypeNormal, EventsReasonSkyhookInterrupt, "InterruptNode",
 		"Interrupting node [%s] package [%s:%s] from [skyhook:%s]",
 		skyhookNode.GetNode().Name,
 		_package.Name,
@@ -2852,13 +2852,13 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 
 	pod := createPodFromPackage(r.opts, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name, stage)
 
-	if err := SetPackages(pod, skyhookNode.GetSkyhook().Skyhook, _package.Image, stage, _package); err != nil {
+	if err := SetPackages(pod, skyhookNode.GetSkyhook().NodeWright, _package.Image, stage, _package); err != nil {
 		return fmt.Errorf("error setting package on pod: %w", err)
 	}
 
 	// setup ownership of the pod we created
 	// helps run time know what to do when something happens to this pod we are about to create
-	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().Skyhook, pod, r.scheme); err != nil {
+	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().NodeWright, pod, r.scheme); err != nil {
 		return fmt.Errorf("error setting ownership: %w", err)
 	}
 
