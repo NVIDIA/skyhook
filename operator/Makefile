@@ -105,14 +105,22 @@ confirm:
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen generate-nodewright ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	$(MAKE) license-fmt ## fix up license headers
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen generate-nodewright ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object paths="./..."
 	$(MAKE) license-fmt ## fix up license headers
+
+.PHONY: generate-nodewright
+generate-nodewright: ## Re-derive the nodewright.nvidia.com API group from the legacy skyhook types (kills copy drift).
+	../scripts/gen_nodewright.sh
+
+.PHONY: verify-nodewright-gen
+verify-nodewright-gen: generate-nodewright ## Fail if the checked-in nodewright group is stale vs the legacy source.
+	@git diff --exit-code -- api/nodewright || { echo "ERROR: api/nodewright is stale; run 'make generate-nodewright' and commit."; exit 1; }
 
 .PHONY: generate-mocks 
 generate-mocks: mockery ## Generate code for interface mocking
