@@ -30,16 +30,16 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-var _ = Describe("Skyhook Webhook", func() {
-	var skyhookWebhook *SkyhookWebhook
+var _ = Describe("NodeWright Webhook", func() {
+	var nodewrightWebhook *NodeWrightWebhook
 
 	BeforeEach(func() {
-		skyhookWebhook = &SkyhookWebhook{
+		nodewrightWebhook = &NodeWrightWebhook{
 			Client: k8sClient,
 		}
 	})
 
-	Context("When creating Skyhook under Defaulting Webhook", func() {
+	Context("When creating NodeWright under Defaulting Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
 
 			// TODO(user): Add your logic here
@@ -47,34 +47,12 @@ var _ = Describe("Skyhook Webhook", func() {
 		})
 	})
 
-	Context("When creating Skyhook under Validating Webhook", func() {
-		It("Should return a migration deprecation warning on create and update", func() {
-
-			skyhook := &Skyhook{
-				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
-					Packages: Packages{
-						"foo": {
-							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
-						},
-					},
-				},
-			}
-
-			warnings, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
-			Expect(err).To(BeNil())
-			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
-
-			warnings, err = skyhookWebhook.ValidateUpdate(ctx, skyhook, skyhook)
-			Expect(err).To(BeNil())
-			Expect(warnings).To(ContainElement(ContainSubstring("nodewright.nvidia.com")))
-		})
-
+	Context("When creating NodeWright under Validating Webhook", func() {
 		It("Should deny if missing a depends on", func() {
 
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foobar": {
 							PackageRef: PackageRef{
@@ -88,15 +66,15 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
+			_, err := nodewrightWebhook.ValidateUpdate(ctx, nil, nodewright)
 			Expect(err).ToNot(BeNil())
 
 		})
 		It("Should deny if duplicate packages", func() {
 
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foobar": {
 							PackageRef: PackageRef{
@@ -116,15 +94,15 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
+			_, err := nodewrightWebhook.ValidateUpdate(ctx, nil, nodewright)
 			Expect(err).ToNot(BeNil())
 		})
 
 		It("Should deny if a package's name is explicitly set and changed", func() {
 
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -144,12 +122,12 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).To(BeNil())
 
-			skyhook = &Skyhook{
+			nodewright = &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -169,15 +147,15 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err = nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).ToNot(BeNil())
 		})
 
 		It("Should deny an inline image tag even when it matches the version", func() {
 
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -191,12 +169,12 @@ var _ = Describe("Skyhook Webhook", func() {
 			}
 
 			// A bare image (no tag) is accepted.
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).To(BeNil())
 
 			// A tag is rejected even though it matches the version: version owns the tag,
 			// it is not duplicated in image.
-			skyhook.Spec.Packages["foo"] = Package{
+			nodewright.Spec.Packages["foo"] = Package{
 				PackageRef: PackageRef{
 					Name:    "foo",
 					Version: "1.0.0",
@@ -204,16 +182,16 @@ var _ = Describe("Skyhook Webhook", func() {
 				Image: "testing:1.0.0",
 			}
 
-			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err = nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).ToNot(BeNil())
 			Expect(err.Error()).To(ContainSubstring("tag"))
 			Expect(err.Error()).To(ContainSubstring("testing"))
 		})
 
 		It("Should allow registry ports in package images", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -226,14 +204,14 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).To(BeNil())
 		})
 
 		It("Should deny an inline tag after a registry port but not the port itself", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -248,7 +226,7 @@ var _ = Describe("Skyhook Webhook", func() {
 
 			// The colon in the registry port must not be mistaken for a tag separator:
 			// only the trailing ":1.0.0" is the tag, and it is rejected.
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).ToNot(BeNil())
 			Expect(err.Error()).To(ContainSubstring("tag"))
 			Expect(err.Error()).To(ContainSubstring("1.0.0"))
@@ -257,9 +235,9 @@ var _ = Describe("Skyhook Webhook", func() {
 
 		It("Should reject an inline image digest and point at containerSHA", func() {
 			digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -272,17 +250,17 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).ToNot(BeNil())
 			Expect(err.Error()).To(ContainSubstring("digest"))
 			Expect(err.Error()).To(ContainSubstring("containerSHA"))
 		})
 
 		It("Should reject empty inline tag or digest separators", func() {
-			mk := func(image string) *Skyhook {
-				return &Skyhook{
+			mk := func(image string) *NodeWright {
+				return &NodeWright{
 					ObjectMeta: metav1.ObjectMeta{Name: "test"},
-					Spec: SkyhookSpec{
+					Spec: NodeWrightSpec{
 						Packages: Packages{
 							"foo": {
 								PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
@@ -295,11 +273,11 @@ var _ = Describe("Skyhook Webhook", func() {
 
 			// A trailing separator with nothing after it is still invalid: it would
 			// otherwise compose into a broken reference like "repo::1.0.0".
-			_, err := skyhookWebhook.ValidateCreate(ctx, mk("ghcr.io/org/pkg:"))
+			_, err := nodewrightWebhook.ValidateCreate(ctx, mk("ghcr.io/org/pkg:"))
 			Expect(err).ToNot(BeNil())
 			Expect(err.Error()).To(ContainSubstring("tag"))
 
-			_, err = skyhookWebhook.ValidateCreate(ctx, mk("ghcr.io/org/pkg@"))
+			_, err = nodewrightWebhook.ValidateCreate(ctx, mk("ghcr.io/org/pkg@"))
 			Expect(err).ToNot(BeNil())
 			Expect(err.Error()).To(ContainSubstring("digest"))
 		})
@@ -308,10 +286,10 @@ var _ = Describe("Skyhook Webhook", func() {
 		// CRD's OpenAPI Pattern (apiserver-side), so they are exercised through a real
 		// create rather than a direct ValidateCreate call.
 		It("Should reject an empty or whitespace image via the CRD schema", func() {
-			mk := func(name, image string) *Skyhook {
-				return &Skyhook{
+			mk := func(name, image string) *NodeWright {
+				return &NodeWright{
 					ObjectMeta: metav1.ObjectMeta{Name: name},
-					Spec: SkyhookSpec{
+					Spec: NodeWrightSpec{
 						Packages: Packages{
 							"foo": {
 								PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
@@ -328,10 +306,10 @@ var _ = Describe("Skyhook Webhook", func() {
 		})
 
 		It("Should validate containerSHA format via the CRD schema", func() {
-			mk := func(name, sha string) *Skyhook {
-				return &Skyhook{
+			mk := func(name, sha string) *NodeWright {
+				return &NodeWright{
 					ObjectMeta: metav1.ObjectMeta{Name: name},
-					Spec: SkyhookSpec{
+					Spec: NodeWrightSpec{
 						Packages: Packages{
 							"foo": {
 								PackageRef:   PackageRef{Name: "foo", Version: "1.0.0"},
@@ -354,9 +332,9 @@ var _ = Describe("Skyhook Webhook", func() {
 		})
 
 		It("should validate that the configInterrupts are for valid configMaps", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -394,12 +372,12 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
+			_, err := nodewrightWebhook.ValidateUpdate(ctx, nil, nodewright)
 			Expect(err).ToNot(BeNil())
 
-			skyhook = &Skyhook{
+			nodewright = &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{
@@ -442,14 +420,14 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err = skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
+			_, err = nodewrightWebhook.ValidateUpdate(ctx, nil, nodewright)
 			Expect(err).To(BeNil())
 		})
 
 		It("should allow glob patterns in configInterrupts that match at least one key", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
@@ -466,14 +444,14 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).To(BeNil())
 		})
 
 		It("should reject glob patterns in configInterrupts that match no keys", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
@@ -489,14 +467,14 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).ToNot(BeNil())
 		})
 
 		It("Should deny if ambiguous version match", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"cats": {
 							PackageRef: PackageRef{
@@ -524,14 +502,14 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateUpdate(ctx, nil, skyhook)
+			_, err := nodewrightWebhook.ValidateUpdate(ctx, nil, nodewright)
 			Expect(err).ToNot(BeNil())
 		})
 
 		It("Should deny if invalid version string is provided", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"cats": {
 							PackageRef: PackageRef{
@@ -552,12 +530,12 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).ToNot(BeNil())
 
-			skyhook = &Skyhook{
+			nodewright = &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"cats": {
 							PackageRef: PackageRef{
@@ -578,15 +556,15 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err = nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).To(BeNil())
 		})
 
 		It("Should admit graph is valid", func() {
 
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					Packages: Packages{
 						"foobar": {
 							PackageRef: PackageRef{
@@ -599,7 +577,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			}
 
-			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 			Expect(err).To(BeNil())
 		})
 
@@ -619,13 +597,13 @@ var _ = Describe("Skyhook Webhook", func() {
 			}
 
 			for _, t := range tests {
-				skyhook := &Skyhook{
+				nodewright := &NodeWright{
 					ObjectMeta: metav1.ObjectMeta{Name: "test"},
-					Spec: SkyhookSpec{
+					Spec: NodeWrightSpec{
 						NodeSelector: metav1.LabelSelector{MatchLabels: t.labels},
 					},
 				}
-				err := skyhook.Validate()
+				err := nodewright.Validate()
 
 				if t.valid {
 					Expect(err).To(BeNil())
@@ -641,10 +619,10 @@ var _ = Describe("Skyhook Webhook", func() {
 				PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
 				Image:      "alpine",
 			}
-			mkSkyhook := func(res *ResourceRequirements) *Skyhook {
-				return &Skyhook{
+			mkNodeWright := func(res *ResourceRequirements) *NodeWright {
+				return &NodeWright{
 					ObjectMeta: metav1.ObjectMeta{Name: "test"},
-					Spec: SkyhookSpec{
+					Spec: NodeWrightSpec{
 						Packages: Packages{
 							"foo": func() Package { p := basePkg; p.Resources = res; return p }(),
 						},
@@ -653,7 +631,7 @@ var _ = Describe("Skyhook Webhook", func() {
 			}
 
 			// 1. All unset (valid)
-			Expect(mkSkyhook(&ResourceRequirements{}).Validate()).To(Succeed())
+			Expect(mkNodeWright(&ResourceRequirements{}).Validate()).To(Succeed())
 
 			// 2. All set and valid
 			res := &ResourceRequirements{
@@ -662,48 +640,48 @@ var _ = Describe("Skyhook Webhook", func() {
 				MemoryRequest: resource.MustParse("128Mi"),
 				MemoryLimit:   resource.MustParse("256Mi"),
 			}
-			Expect(mkSkyhook(res).Validate()).To(Succeed())
+			Expect(mkNodeWright(res).Validate()).To(Succeed())
 
 			// 3. Only some set (invalid)
 			res3 := res
 			res3.CPULimit = resource.Quantity{} // unset
-			Expect(mkSkyhook(res3).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(res3).Validate()).NotTo(Succeed())
 
 			// 4. Limit < request (invalid)
 			res4 := res
 			res4.CPULimit = resource.MustParse("50m")
-			Expect(mkSkyhook(res4).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(res4).Validate()).NotTo(Succeed())
 			res4 = res
 			res4.MemoryLimit = resource.MustParse("64Mi")
-			Expect(mkSkyhook(res4).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(res4).Validate()).NotTo(Succeed())
 
 			// 5. Negative or zero values (invalid)
 			res5 := res
 			res5.CPURequest = resource.MustParse("0")
-			Expect(mkSkyhook(res5).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(res5).Validate()).NotTo(Succeed())
 			res5 = res
 			res5.MemoryLimit = resource.MustParse("-1Mi")
-			Expect(mkSkyhook(res5).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(res5).Validate()).NotTo(Succeed())
 		})
 
 		It("should validate drain config durations", func() {
-			skyhook := &Skyhook{
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					DrainConfig: &DrainConfig{
 						Timeout:     &metav1.Duration{Duration: time.Minute},
 						GracePeriod: &metav1.Duration{Duration: 30 * time.Second},
 					},
 				},
 			}
-			Expect(skyhook.Validate()).To(Succeed())
+			Expect(nodewright.Validate()).To(Succeed())
 
-			skyhook.Spec.DrainConfig.Timeout = &metav1.Duration{Duration: -time.Second}
-			Expect(skyhook.Validate()).NotTo(Succeed())
+			nodewright.Spec.DrainConfig.Timeout = &metav1.Duration{Duration: -time.Second}
+			Expect(nodewright.Validate()).NotTo(Succeed())
 
-			skyhook.Spec.DrainConfig.Timeout = nil
-			skyhook.Spec.DrainConfig.GracePeriod = &metav1.Duration{Duration: -time.Second}
-			Expect(skyhook.Validate()).NotTo(Succeed())
+			nodewright.Spec.DrainConfig.Timeout = nil
+			nodewright.Spec.DrainConfig.GracePeriod = &metav1.Duration{Duration: -time.Second}
+			Expect(nodewright.Validate()).NotTo(Succeed())
 		})
 	})
 
@@ -722,9 +700,9 @@ var _ = Describe("Skyhook Webhook", func() {
 
 	It("should validate the package name is a valid RFC 1123 name", func() {
 
-		skyhook := &Skyhook{
+		nodewright := &NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
-			Spec: SkyhookSpec{
+			Spec: NodeWrightSpec{
 				Packages: Packages{
 					"11": {
 						PackageRef: PackageRef{Version: "1"},
@@ -734,15 +712,15 @@ var _ = Describe("Skyhook Webhook", func() {
 			},
 		}
 
-		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+		_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 		Expect(err).ToNot(BeNil())
 
 	})
 
 	It("should validate the deployment policy", func() {
-		skyhook := &Skyhook{
+		nodewright := &NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
-			Spec: SkyhookSpec{
+			Spec: NodeWrightSpec{
 				DeploymentPolicy: "foobar",
 				InterruptionBudget: InterruptionBudget{
 					Percent: ptr.To(25),
@@ -750,17 +728,17 @@ var _ = Describe("Skyhook Webhook", func() {
 			},
 		}
 
-		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+		_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("deploymentPolicy and interruptionBudget are mutually exclusive"))
 	})
 
-	It("should reject skyhook with non-existent deployment policy", func() {
-		skyhook := &Skyhook{
+	It("should reject nodewright with non-existent deployment policy", func() {
+		nodewright := &NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-skyhook",
+				Name: "test-nodewright",
 			},
-			Spec: SkyhookSpec{
+			Spec: NodeWrightSpec{
 				DeploymentPolicy: "non-existent-policy",
 				Packages: Packages{
 					"test-pkg": {
@@ -774,12 +752,12 @@ var _ = Describe("Skyhook Webhook", func() {
 			},
 		}
 
-		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+		_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("deploymentPolicy \"non-existent-policy\" not found"))
 	})
 
-	It("should accept skyhook when deployment policy exists", func() {
+	It("should accept nodewright when deployment policy exists", func() {
 		// Create a cluster-scoped deployment policy first
 		policy := &DeploymentPolicy{
 			ObjectMeta: metav1.ObjectMeta{
@@ -798,11 +776,11 @@ var _ = Describe("Skyhook Webhook", func() {
 		}
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
-		skyhook := &Skyhook{
+		nodewright := &NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-skyhook-valid",
+				Name: "test-nodewright-valid",
 			},
-			Spec: SkyhookSpec{
+			Spec: NodeWrightSpec{
 				DeploymentPolicy: "test-policy-webhook",
 				Packages: Packages{
 					"test-pkg": {
@@ -816,20 +794,20 @@ var _ = Describe("Skyhook Webhook", func() {
 			},
 		}
 
-		_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+		_, err := nodewrightWebhook.ValidateCreate(ctx, nodewright)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 	})
 
-	It("should reject skyhook update to reference non-existent deployment policy", func() {
-		// Create a Skyhook without deployment policy
-		skyhook := &Skyhook{
+	It("should reject nodewright update to reference non-existent deployment policy", func() {
+		// Create a NodeWright without deployment policy
+		nodewright := &NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-skyhook-update",
+				Name: "test-nodewright-update",
 			},
-			Spec: SkyhookSpec{
+			Spec: NodeWrightSpec{
 				Packages: Packages{
 					"test-pkg": {
 						PackageRef: PackageRef{
@@ -841,21 +819,21 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			},
 		}
-		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+		Expect(k8sClient.Create(ctx, nodewright)).To(Succeed())
 
 		// Try to update it to reference a non-existent policy
-		updatedSkyhook := skyhook.DeepCopy()
-		updatedSkyhook.Spec.DeploymentPolicy = "does-not-exist"
+		updatedNodeWright := nodewright.DeepCopy()
+		updatedNodeWright.Spec.DeploymentPolicy = "does-not-exist"
 
-		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
+		_, err := nodewrightWebhook.ValidateUpdate(ctx, nodewright, updatedNodeWright)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("deploymentPolicy \"does-not-exist\" not found"))
 
 		// Cleanup
-		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, nodewright)).To(Succeed())
 	})
 
-	It("should allow skyhook update to reference valid deployment policy", func() {
+	It("should allow nodewright update to reference valid deployment policy", func() {
 		// Create a deployment policy
 		policy := &DeploymentPolicy{
 			ObjectMeta: metav1.ObjectMeta{
@@ -874,12 +852,12 @@ var _ = Describe("Skyhook Webhook", func() {
 		}
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
-		// Create a Skyhook without deployment policy
-		skyhook := &Skyhook{
+		// Create a NodeWright without deployment policy
+		nodewright := &NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-skyhook-update-valid",
+				Name: "test-nodewright-update-valid",
 			},
-			Spec: SkyhookSpec{
+			Spec: NodeWrightSpec{
 				Packages: Packages{
 					"test-pkg": {
 						PackageRef: PackageRef{
@@ -891,17 +869,17 @@ var _ = Describe("Skyhook Webhook", func() {
 				},
 			},
 		}
-		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+		Expect(k8sClient.Create(ctx, nodewright)).To(Succeed())
 
 		// Update it to reference the valid policy - should succeed
-		updatedSkyhook := skyhook.DeepCopy()
-		updatedSkyhook.Spec.DeploymentPolicy = "valid-policy-for-update"
+		updatedNodeWright := nodewright.DeepCopy()
+		updatedNodeWright.Spec.DeploymentPolicy = "valid-policy-for-update"
 
-		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
+		_, err := nodewrightWebhook.ValidateUpdate(ctx, nodewright, updatedNodeWright)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Cleanup
-		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, nodewright)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 	})
 })

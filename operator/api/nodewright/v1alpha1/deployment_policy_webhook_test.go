@@ -94,26 +94,6 @@ var _ = Describe("DeploymentPolicy", func() {
 	})
 
 	Context("When creating DeploymentPolicy under Validation Webhook", func() {
-		It("should return a migration deprecation warning on create and update", func() {
-			deploymentPolicy := &DeploymentPolicy{
-				ObjectMeta: metav1.ObjectMeta{Name: "foobar"},
-				Spec: DeploymentPolicySpec{
-					Default: PolicyDefault{
-						Budget:   DeploymentBudget{Percent: ptr.To(25)},
-						Strategy: &DeploymentStrategy{Fixed: &FixedStrategy{}},
-					},
-				},
-			}
-
-			warnings, err := deploymentPolicyWebhook.ValidateCreate(ctx, deploymentPolicy)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
-
-			warnings, err = deploymentPolicyWebhook.ValidateUpdate(ctx, deploymentPolicy, deploymentPolicy)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(ContainElement(ContainSubstring("nodewright.nvidia.com")))
-		})
-
 		It("should require exactly one of fixed, linear, or exponential", func() {
 			// No strategy set: should fail
 			deploymentPolicy := &DeploymentPolicy{
@@ -285,7 +265,7 @@ var _ = Describe("DeploymentPolicy", func() {
 	})
 
 	Context("When deleting DeploymentPolicy under Validating Webhook", func() {
-		It("should allow deletion when no Skyhooks reference it", func() {
+		It("should allow deletion when no NodeWrights reference it", func() {
 			policy := &DeploymentPolicy{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "unused-policy",
@@ -306,7 +286,7 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should reject deletion when Skyhooks reference it", func() {
+		It("should reject deletion when NodeWrights reference it", func() {
 			// Create a deployment policy
 			policy := &DeploymentPolicy{
 				ObjectMeta: metav1.ObjectMeta{
@@ -325,12 +305,12 @@ var _ = Describe("DeploymentPolicy", func() {
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
-			// Create a Skyhook that references the policy
-			skyhook := &Skyhook{
+			// Create a NodeWright that references the policy
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-skyhook-using-policy",
+					Name: "test-nodewright-using-policy",
 				},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					DeploymentPolicy: "policy-in-use",
 					Packages: Packages{
 						"test-pkg": {
@@ -343,27 +323,27 @@ var _ = Describe("DeploymentPolicy", func() {
 					},
 				},
 			}
-			Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+			Expect(k8sClient.Create(ctx, nodewright)).To(Succeed())
 
 			// Try to delete the policy - should be rejected
 			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot delete DeploymentPolicy"))
 			Expect(err.Error()).To(ContainSubstring("policy-in-use"))
-			Expect(err.Error()).To(ContainSubstring("test-skyhook-using-policy"))
+			Expect(err.Error()).To(ContainSubstring("test-nodewright-using-policy"))
 
-			// Cleanup. The validating webhook on policy deletion queries Skyhook
-			// references via the client; envtest deletes are async, so the Skyhook
+			// Cleanup. The validating webhook on policy deletion queries NodeWright
+			// references via the client; envtest deletes are async, so the NodeWright
 			// can still be visible to the webhook for a brief window after Delete
 			// returns. Wait for it to actually be gone before deleting the policy.
-			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, nodewright)).To(Succeed())
 			Eventually(func() bool {
-				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: skyhook.Name}, &Skyhook{}))
+				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: nodewright.Name}, &NodeWright{}))
 			}, "10s", "100ms").Should(BeTrue())
 			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 		})
 
-		It("should allow deletion after Skyhooks no longer reference it", func() {
+		It("should allow deletion after NodeWrights no longer reference it", func() {
 			// Create a deployment policy
 			policy := &DeploymentPolicy{
 				ObjectMeta: metav1.ObjectMeta{
@@ -382,12 +362,12 @@ var _ = Describe("DeploymentPolicy", func() {
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
-			// Create a Skyhook that references the policy
-			skyhook := &Skyhook{
+			// Create a NodeWright that references the policy
+			nodewright := &NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-skyhook-temp",
+					Name: "test-nodewright-temp",
 				},
-				Spec: SkyhookSpec{
+				Spec: NodeWrightSpec{
 					DeploymentPolicy: "policy-to-be-freed",
 					Packages: Packages{
 						"test-pkg": {
@@ -400,14 +380,14 @@ var _ = Describe("DeploymentPolicy", func() {
 					},
 				},
 			}
-			Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
+			Expect(k8sClient.Create(ctx, nodewright)).To(Succeed())
 
-			// Delete the Skyhook and wait for it to actually be gone before
+			// Delete the NodeWright and wait for it to actually be gone before
 			// validating the policy delete — envtest deletes are async, see
 			// the cleanup race in the previous It block.
-			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, nodewright)).To(Succeed())
 			Eventually(func() bool {
-				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: skyhook.Name}, &Skyhook{}))
+				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: nodewright.Name}, &NodeWright{}))
 			}, "10s", "100ms").Should(BeTrue())
 
 			// Now deletion should succeed
