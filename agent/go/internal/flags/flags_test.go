@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NVIDIA/nodewright/agent/internal/command"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -50,7 +52,7 @@ var _ = Describe("flag store", func() {
 		value = step.NewRegularStep(
 			"scripts/apply.sh",
 			step.WithArguments([]string{"--mode", "fast"}),
-			step.WithReturncodes([]int{0, 2}),
+			step.WithReturncodes([]command.ExitCode{0, 2}),
 		)
 
 		var err error
@@ -91,9 +93,9 @@ var _ = Describe("flag store", func() {
 		hostExecutionChanged.OnHost = false
 
 		cases := []step.RegularStep{
-			step.NewRegularStep("scripts/other.sh", step.WithArguments([]string{"--mode", "fast"}), step.WithReturncodes([]int{0, 2})),
-			step.NewRegularStep("scripts/apply.sh", step.WithArguments([]string{"--mode", "slow"}), step.WithReturncodes([]int{0, 2})),
-			step.NewRegularStep("scripts/apply.sh", step.WithArguments([]string{"--mode", "fast"}), step.WithReturncodes([]int{0})),
+			step.NewRegularStep("scripts/other.sh", step.WithArguments([]string{"--mode", "fast"}), step.WithReturncodes([]command.ExitCode{0, 2})),
+			step.NewRegularStep("scripts/apply.sh", step.WithArguments([]string{"--mode", "slow"}), step.WithReturncodes([]command.ExitCode{0, 2})),
+			step.NewRegularStep("scripts/apply.sh", step.WithArguments([]string{"--mode", "fast"}), step.WithReturncodes([]command.ExitCode{command.SuccessExitCode})),
 			environmentChanged,
 			hostExecutionChanged,
 		}

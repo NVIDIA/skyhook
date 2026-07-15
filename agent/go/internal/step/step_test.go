@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/NVIDIA/nodewright/agent/internal/command"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -52,7 +54,7 @@ var _ = Describe("Step interface", func() {
 			Name:            "explicit-name",
 			ScriptPath:      "foo.sh",
 			Arguments:       []string{},
-			Returncodes:     []int{0},
+			Returncodes:     []command.ExitCode{command.SuccessExitCode},
 			Env:             map[string]string{"K": "V"},
 			OnHost:          true,
 			IdempotenceMode: Auto,
@@ -62,7 +64,7 @@ var _ = Describe("Step interface", func() {
 		Expect(u.Name).To(Equal("explicit-name"))
 		Expect(u.ScriptPath).To(Equal("foo.sh"))
 		Expect(u.Arguments).To(Equal([]string{}))
-		Expect(u.Returncodes).To(Equal([]int{0}))
+		Expect(u.Returncodes).To(Equal([]command.ExitCode{command.SuccessExitCode}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(u.OnHost).To(BeTrue())
 		Expect(u.Idempotence()).To(Equal(Auto))
@@ -112,7 +114,7 @@ var _ = Describe("Decode", func() {
 		Expect(rs.Name).To(Equal("foo.sh"))
 		Expect(rs.ScriptPath).To(Equal("foo.sh"))
 		Expect(rs.Arguments).To(Equal([]string{}))
-		Expect(rs.Returncodes).To(Equal([]int{0}))
+		Expect(rs.Returncodes).To(Equal([]command.ExitCode{command.SuccessExitCode}))
 		Expect(rs.OnHost).To(BeTrue())
 		Expect(rs.Env).To(Equal(map[string]string{}))
 		Expect(rs.Idempotence()).To(Equal(Auto))
@@ -163,7 +165,7 @@ var _ = Describe("Encode/Decode round-trip", func() {
 			Name:            "foo",
 			ScriptPath:      "foo",
 			Arguments:       []string{},
-			Returncodes:     []int{0},
+			Returncodes:     []command.ExitCode{command.SuccessExitCode},
 			OnHost:          true,
 			IdempotenceMode: Disabled,
 		}
@@ -183,7 +185,7 @@ var _ = Describe("Encode/Decode round-trip", func() {
 		start, err := NewUpgradeStep(
 			"upgrade",
 			WithName("upgrade"),
-			WithReturncodes([]int{0}),
+			WithReturncodes([]command.ExitCode{command.SuccessExitCode}),
 			WithOnHost(true),
 			WithIdempotence(Auto),
 		)
@@ -204,7 +206,7 @@ var _ = Describe("Encode/Decode round-trip", func() {
 			"foo.sh",
 			WithName("custom"),
 			WithArguments([]string{"-x"}),
-			WithReturncodes([]int{0, 2}),
+			WithReturncodes([]command.ExitCode{0, 2}),
 			WithEnv(map[string]string{"K": "V"}),
 			WithOnHost(false),
 			WithIdempotence(Disabled),
@@ -229,7 +231,7 @@ var _ = Describe("Encode/Decode round-trip", func() {
 		rs := round.(RegularStep)
 		Expect(rs.Name).To(Equal("foo.sh"))
 		Expect(rs.Arguments).To(Equal([]string{}))
-		Expect(rs.Returncodes).To(Equal([]int{0}))
+		Expect(rs.Returncodes).To(Equal([]command.ExitCode{command.SuccessExitCode}))
 		Expect(rs.Idempotence()).To(Equal(Auto))
 	})
 })
@@ -240,7 +242,7 @@ var _ = Describe("Encode env handling", func() {
 			Name:            "a",
 			ScriptPath:      "a",
 			Arguments:       []string{},
-			Returncodes:     []int{0},
+			Returncodes:     []command.ExitCode{command.SuccessExitCode},
 			OnHost:          true,
 			IdempotenceMode: Auto,
 		}
