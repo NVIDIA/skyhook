@@ -23,7 +23,7 @@
 package wrapper
 
 import (
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/go-logr/logr"
 	mock "github.com/stretchr/testify/mock"
 	v10 "k8s.io/api/core/v1"

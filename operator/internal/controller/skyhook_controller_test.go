@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/nodewright/operator/internal/controller/mock"
 	dalMock "github.com/NVIDIA/nodewright/operator/internal/dal/mock"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
@@ -83,13 +83,13 @@ var _ = Describe("skyhook controller tests", func() {
 		It("should pick the correct number of nodes by percent", func() {
 
 			testfunc := func(percent, count, expected int) {
-				skyhooks := &v1alpha1.SkyhookList{
-					Items: []v1alpha1.Skyhook{
+				skyhooks := &v1alpha1.NodeWrightList{
+					Items: []v1alpha1.NodeWright{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "skyhook1",
 							},
-							Spec: v1alpha1.SkyhookSpec{
+							Spec: v1alpha1.NodeWrightSpec{
 								InterruptionBudget: v1alpha1.InterruptionBudget{
 									Percent: ptr[int](percent),
 								},
@@ -115,7 +115,7 @@ var _ = Describe("skyhook controller tests", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: fmt.Sprintf("node_%d", i),
 								// Annotations: map[string]string{
-								// 	"skyhook.nvidia.com/state": string(v1alpha1.ENABLED),
+								// 	"nodewright.nvidia.com/state": string(v1alpha1.ENABLED),
 								// },
 							},
 						})
@@ -142,13 +142,13 @@ var _ = Describe("skyhook controller tests", func() {
 		It("should pick the correct number of nodes by count", func() {
 
 			testfunc := func(count, nodeCode, expected int) {
-				skyhooks := &v1alpha1.SkyhookList{
-					Items: []v1alpha1.Skyhook{
+				skyhooks := &v1alpha1.NodeWrightList{
+					Items: []v1alpha1.NodeWright{
 						{
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "skyhook1",
 							},
-							Spec: v1alpha1.SkyhookSpec{
+							Spec: v1alpha1.NodeWrightSpec{
 								InterruptionBudget: v1alpha1.InterruptionBudget{
 									Count: ptr[int](count),
 								},
@@ -174,7 +174,7 @@ var _ = Describe("skyhook controller tests", func() {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: fmt.Sprintf("node_%d", i),
 								// Annotations: map[string]string{
-								// 	"skyhook.nvidia.com/state": string(v1alpha1.ENABLED),
+								// 	"nodewright.nvidia.com/state": string(v1alpha1.ENABLED),
 								// },
 							},
 						})
@@ -577,9 +577,9 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "drain-delete"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					DrainConfig: &v1alpha1.DrainConfig{
 						DisableEviction: ptr(true),
 						GracePeriod:     &metav1.Duration{Duration: 7 * time.Second},
@@ -642,9 +642,9 @@ var _ = Describe("skyhook controller tests", func() {
 
 			force := false
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "drain-block"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					DrainConfig: &v1alpha1.DrainConfig{
 						Force: &force,
 					},
@@ -713,9 +713,9 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "drain-golden"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					PodNonInterruptLabels: metav1.LabelSelector{
 						MatchLabels: map[string]string{
 							"workload": "golden",
@@ -786,13 +786,13 @@ var _ = Describe("skyhook controller tests", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node-a",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/drainStart_drain-timeout": time.Now().Add(-2 * time.Minute).Format(time.RFC3339Nano),
+						"nodewright.nvidia.com/drainStart_drain-timeout": time.Now().Add(-2 * time.Minute).Format(time.RFC3339Nano),
 					},
 				},
 			}
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "drain-timeout"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					DrainConfig: &v1alpha1.DrainConfig{
 						Timeout: &metav1.Duration{Duration: time.Second},
 					},
@@ -849,14 +849,14 @@ var _ = Describe("skyhook controller tests", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node-a",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/drainStart_drain-timeout": time.Now().Add(-2 * time.Minute).Format(time.RFC3339Nano),
-						"skyhook.nvidia.com/status_drain-timeout":     string(v1alpha1.StatusErroring),
+						"nodewright.nvidia.com/drainStart_drain-timeout": time.Now().Add(-2 * time.Minute).Format(time.RFC3339Nano),
+						"nodewright.nvidia.com/status_drain-timeout":     string(v1alpha1.StatusErroring),
 					},
 				},
 			}
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "drain-timeout"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					DrainConfig: &v1alpha1.DrainConfig{
 						Timeout: &metav1.Duration{Duration: time.Second},
 					},
@@ -879,8 +879,8 @@ var _ = Describe("skyhook controller tests", func() {
 
 	It("should set monotonic SKYHOOK_NODE_ORDER across nodes and batches", func() {
 		now := time.Now()
-		testSkyhook := wrapper.NewSkyhookWrapper(&v1alpha1.Skyhook{
-			Status: v1alpha1.SkyhookStatus{
+		testSkyhook := wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Status: v1alpha1.NodeWrightStatus{
 				NodePriority: map[string]metav1.Time{
 					"node-a": metav1.NewTime(now),
 					"node-b": metav1.NewTime(now.Add(1 * time.Second)),
@@ -1036,13 +1036,13 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(opts.Validate()).ToNot(BeNil())
 	})
 	It("Should group skyhooks by node correctly", func() {
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook1",
 					},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						NodeSelector: metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								"foo": "bar",
@@ -1055,7 +1055,7 @@ var _ = Describe("skyhook controller tests", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook2",
 					},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						NodeSelector: metav1.LabelSelector{
 							MatchExpressions: []metav1.LabelSelectorRequirement{
 								{
@@ -1103,13 +1103,13 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(node_to_skyhooks[nodes.Items[1].UID]).To(HaveLen(1))
 	})
 	It("Should group skyhooks by node but ignore ones without runtime required", func() {
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook1",
 					},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						NodeSelector: metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								"foo": "bar",
@@ -1122,7 +1122,7 @@ var _ = Describe("skyhook controller tests", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "skyhook2",
 					},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						NodeSelector: metav1.LabelSelector{
 							MatchLabels: map[string]string{
 								"foo": "bar",
@@ -1300,8 +1300,8 @@ var _ = Describe("skyhook controller tests", func() {
 				Image: "foo/bar",
 			},
 			&wrapper.Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Spec: v1alpha1.SkyhookSpec{
+				NodeWright: &v1alpha1.NodeWright{
+					Spec: v1alpha1.NodeWrightSpec{
 						RuntimeRequired: true,
 					},
 				},
@@ -1335,8 +1335,8 @@ var _ = Describe("skyhook controller tests", func() {
 				Image: "foo/bar",
 			},
 			&wrapper.Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Spec: v1alpha1.SkyhookSpec{
+				NodeWright: &v1alpha1.NodeWright{
+					Spec: v1alpha1.NodeWrightSpec{
 						RuntimeRequired: true,
 					},
 				},
@@ -1377,8 +1377,8 @@ var _ = Describe("skyhook controller tests", func() {
 				Image: "foo/bar",
 			},
 			&wrapper.Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Spec: v1alpha1.SkyhookSpec{
+				NodeWright: &v1alpha1.NodeWright{
+					Spec: v1alpha1.NodeWrightSpec{
 						RuntimeRequired: true,
 					},
 				},
@@ -1415,8 +1415,8 @@ var _ = Describe("skyhook controller tests", func() {
 				Image: "foo/bar",
 			},
 			&wrapper.Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Spec: v1alpha1.SkyhookSpec{
+				NodeWright: &v1alpha1.NodeWright{
+					Spec: v1alpha1.NodeWrightSpec{
 						RuntimeRequired: true,
 					},
 				},
@@ -1430,7 +1430,7 @@ var _ = Describe("skyhook controller tests", func() {
 	It("should generate deterministic pod names", func() {
 		// Setup basic test data
 		skyhook := &wrapper.Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
+			NodeWright: &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
@@ -1521,11 +1521,11 @@ var _ = Describe("skyhook controller tests", func() {
 
 		// Create a test skyhook
 		testSkyhook := &wrapper.Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
+			NodeWright: &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: v1alpha1.Packages{
 						"test-package": *testPackage,
 					},
@@ -1633,7 +1633,7 @@ var _ = Describe("skyhook controller tests", func() {
 			},
 		}
 		testSkyhook := &wrapper.Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
+			NodeWright: &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
 			},
 		}
@@ -1745,12 +1745,12 @@ var _ = Describe("skyhook controller tests", func() {
 
 	It("should create metadata configmap with packages.json including agentVersion and packages", func() {
 		// build minimal skyhook and node
-		skyhookCR := &v1alpha1.Skyhook{
+		skyhookCR := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "skyhook-meta",
 				UID:  "uid-1234",
 			},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"pkg1": {
 						PackageRef: v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"},
@@ -1793,11 +1793,11 @@ var _ = Describe("skyhook controller tests", func() {
 				Image:      "ghcr.io/org/pkg1",
 				ConfigMap:  map[string]string{"a.properties": "old"},
 			}
-			skyhooks := &v1alpha1.SkyhookList{
-				Items: []v1alpha1.Skyhook{
+			skyhooks := &v1alpha1.NodeWrightList{
+				Items: []v1alpha1.NodeWright{
 					{
 						ObjectMeta: metav1.ObjectMeta{Name: "config-sync"},
-						Spec: v1alpha1.SkyhookSpec{
+						Spec: v1alpha1.NodeWrightSpec{
 							Packages: v1alpha1.Packages{"pkg1": pkg},
 						},
 					},
@@ -1910,11 +1910,11 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		skyhook = &wrapper.Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
+			NodeWright: &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"test-package": *package_,
 					},
@@ -1960,7 +1960,7 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		// Set the package in the pod annotations
-		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
@@ -2009,7 +2009,7 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		// Set the package in the pod annotations
-		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
@@ -2028,7 +2028,7 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		// Set the package in the pod annotations
-		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
@@ -2052,7 +2052,7 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		// Set the package in the pod annotations
-		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
@@ -2076,7 +2076,7 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		// Set the package in the pod annotations
-		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
@@ -2096,7 +2096,7 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		// Set the package in the pod annotations
-		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
@@ -2116,18 +2116,18 @@ var _ = Describe("Resource Comparison", func() {
 		}
 
 		// Set the package in the pod annotations
-		err := SetPackages(actualPod, skyhook.Skyhook, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
 	})
 
 	It("should partition nodes into compartments", func() {
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "skyhook-a"},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						DeploymentPolicy: "deployment-policy-a",
 					},
 				},
@@ -2193,8 +2193,8 @@ func TestHandleVersionChangeAutoReset(t *testing.T) {
 
 	t.Run("should reset batch state when version change detected with config enabled", func(t *testing.T) {
 		// Create a skyhook with batch state and an old package version
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
 					ResetBatchStateOnCompletion: ptr(true),
 				},
@@ -2208,7 +2208,7 @@ func TestHandleVersionChangeAutoReset(t *testing.T) {
 					},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 					"compartment-1": {
 						BatchState: &v1alpha1.BatchProcessingState{
@@ -2264,8 +2264,8 @@ func TestHandleVersionChangeAutoReset(t *testing.T) {
 	})
 
 	t.Run("should not reset batch state when config is disabled", func(t *testing.T) {
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
 					ResetBatchStateOnCompletion: ptr(false),
 				},
@@ -2279,7 +2279,7 @@ func TestHandleVersionChangeAutoReset(t *testing.T) {
 					},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 					"compartment-1": {
 						BatchState: &v1alpha1.BatchProcessingState{
@@ -2326,8 +2326,8 @@ func TestHandleVersionChangeAutoReset(t *testing.T) {
 	})
 
 	t.Run("should not reset when no version changes detected", func(t *testing.T) {
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
 					ResetBatchStateOnCompletion: ptr(true),
 				},
@@ -2341,7 +2341,7 @@ func TestHandleVersionChangeAutoReset(t *testing.T) {
 					},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 					"compartment-1": {
 						BatchState: &v1alpha1.BatchProcessingState{
@@ -2389,8 +2389,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 	t.Run("should trigger uninstall for package at complete install stage", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2431,8 +2431,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 	t.Run("should skip package absent from node state (already uninstalled)", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2459,8 +2459,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 	t.Run("should skip package with IsUninstalling false", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2492,8 +2492,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 	t.Run("should return full package with ConfigMap/Env/Resources", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2538,8 +2538,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 	t.Run("should trigger uninstall for PostInterrupt/Complete package (bug #1 regression)", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2579,8 +2579,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 	t.Run("should not trigger uninstall for StageInterrupt/InProgress (install mid-interrupt)", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2614,8 +2614,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 	t.Run("should cleanup StageUninstallInterrupt/Complete", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2654,8 +2654,8 @@ func TestHandleUninstallRequests(t *testing.T) {
 
 		// User flipped apply back to false AFTER interrupt completed.
 		// Must still RemoveState — otherwise the node state is stranded.
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2698,13 +2698,13 @@ func TestHandleVersionChange_WI3(t *testing.T) {
 		// its node-state entry stays so the user can see the package's files
 		// are still on the node (no uninstall.sh was ever run). The operator
 		// stops tracking it; only config-update status is cleaned.
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					// "removed-pkg" is NOT in spec
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				ConfigUpdates: map[string][]string{
 					"removed-pkg": {"key1"},
 				},
@@ -2735,8 +2735,8 @@ func TestHandleVersionChange_WI3(t *testing.T) {
 	t.Run("should skip IsUninstalling packages", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2772,9 +2772,9 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 	t.Run("should RemoveState and zero metrics for explicit uninstall", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhookCR := &v1alpha1.Skyhook{
+		skyhookCR := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2807,9 +2807,9 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 	t.Run("should transition to StageUninstallInterrupt for explicit uninstall with interrupt", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhookCR := &v1alpha1.Skyhook{
+		skyhookCR := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2850,9 +2850,9 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 
 		// Spec has v2.0.0, but a pod completes at v1.0.0 (version mismatch — shouldn't
 		// happen under new webhook rules, but HandleCompletePod guards defensively).
-		skyhookCR := &v1alpha1.Skyhook{
+		skyhookCR := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "2.0.0"},
@@ -2885,9 +2885,9 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 	t.Run("should RemoveState when package removed from spec", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhookCR := &v1alpha1.Skyhook{
+		skyhookCR := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					// my-pkg NOT in spec
 				},
@@ -2918,8 +2918,8 @@ func TestHandleCancelledUninstalls(t *testing.T) {
 	t.Run("should reset InProgress uninstall to StageApply", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2955,8 +2955,8 @@ func TestHandleCancelledUninstalls(t *testing.T) {
 	t.Run("should reset Erroring uninstall to StageApply", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -2992,8 +2992,8 @@ func TestHandleCancelledUninstalls(t *testing.T) {
 	t.Run("should skip active uninstall", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3026,11 +3026,11 @@ func TestHandleCancelledUninstalls(t *testing.T) {
 		g := NewWithT(t)
 
 		now := metav1.Now()
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
 				DeletionTimestamp: &now, // CR is being deleted
 			},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3065,11 +3065,11 @@ func TestHandleUninstallRequests_FinalizerPath(t *testing.T) {
 		g := NewWithT(t)
 
 		now := metav1.Now()
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
 				DeletionTimestamp: &now,
 			},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3109,8 +3109,8 @@ func TestHandleUninstallRequests_InstallCompleteGuard(t *testing.T) {
 	t.Run("should not trigger uninstall for package still installing", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3304,8 +3304,8 @@ func TestUpdateBlockedCondition(t *testing.T) {
 	t.Run("set: dep in uninstall cycle, dependent has pending work", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"dep-a": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "dep-a", Version: "1.0.0"},
@@ -3353,8 +3353,8 @@ func TestUpdateBlockedCondition(t *testing.T) {
 		// complete, the Skyhook is still in_progress and Blocked must persist.
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"dep-a": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "dep-a", Version: "1.0.0"},
@@ -3394,8 +3394,8 @@ func TestUpdateBlockedCondition(t *testing.T) {
 		// itself, not from pkg-b — don't double-signal via Blocked.
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"dep-a": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "dep-a", Version: "1.0.0"},
@@ -3409,7 +3409,7 @@ func TestUpdateBlockedCondition(t *testing.T) {
 					},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				Conditions: []metav1.Condition{
 					{Type: blockedCondType, Status: metav1.ConditionTrue},
 				},
@@ -3444,8 +3444,8 @@ func TestUpdateBlockedCondition(t *testing.T) {
 		// Blocked — there's no in-progress work to be blocked.
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"dep-a": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "dep-a", Version: "1.0.0"},
@@ -3482,8 +3482,8 @@ func TestUpdateBlockedCondition(t *testing.T) {
 	t.Run("clear: no dependencies are gone", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"dep-a": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "dep-a", Version: "1.0.0"},
@@ -3497,7 +3497,7 @@ func TestUpdateBlockedCondition(t *testing.T) {
 					},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				Conditions: []metav1.Condition{
 					{Type: blockedCondType, Status: metav1.ConditionTrue},
 				},
@@ -3521,8 +3521,8 @@ func TestUpdateBlockedCondition(t *testing.T) {
 		// surfaces the parse failure separately.
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"dep-a": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "dep-a", Version: "1.0.0"},
@@ -3576,8 +3576,8 @@ func TestUpdateBlockedCondition(t *testing.T) {
 		// signal is left to NodeStateMalformed alone.
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"dep-a": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "dep-a", Version: "1.0.0"},
@@ -3644,8 +3644,8 @@ func TestUpdateNodeStateMalformedCondition(t *testing.T) {
 		good.EXPECT().State().Return(v1alpha1.NodeState{}, nil)
 
 		sn := &skyhookNodes{
-			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					Conditions: []metav1.Condition{
 						{Type: condType, Status: metav1.ConditionTrue, Reason: "ParseError", Message: "stale"},
 					},
@@ -3667,7 +3667,7 @@ func TestUpdateNodeStateMalformedCondition(t *testing.T) {
 			makeBadNode(t, "node-b"),
 		}
 		sn := &skyhookNodes{
-			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.Skyhook{}),
+			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{}),
 			nodes:   nodes,
 		}
 
@@ -3690,7 +3690,7 @@ func TestUpdateNodeStateMalformedCondition(t *testing.T) {
 			nodes = append(nodes, makeBadNode(t, n))
 		}
 		sn := &skyhookNodes{
-			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.Skyhook{}),
+			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{}),
 			nodes:   nodes,
 		}
 
@@ -3709,7 +3709,7 @@ func TestUpdateNodeStateMalformedCondition(t *testing.T) {
 		long := "ip-10-0-1-234.us-west-2.compute.internal"
 		nodes := []wrapper.SkyhookNode{makeBadNode(t, long)}
 		sn := &skyhookNodes{
-			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.Skyhook{}),
+			skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{}),
 			nodes:   nodes,
 		}
 
@@ -3726,8 +3726,8 @@ func TestHasUninstallWork(t *testing.T) {
 	t.Run("should return true when a package has IsUninstalling", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3751,8 +3751,8 @@ func TestHasUninstallWork(t *testing.T) {
 	t.Run("should return true when node has StageUninstall even with apply=false", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3784,8 +3784,8 @@ func TestHasUninstallWork(t *testing.T) {
 	t.Run("should return false when no uninstall work exists", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3818,11 +3818,11 @@ func TestHasUninstallWork(t *testing.T) {
 		g := NewWithT(t)
 
 		now := metav1.Now()
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
 				DeletionTimestamp: &now,
 			},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3857,9 +3857,9 @@ func TestHandleCompletePod_VersionComparison(t *testing.T) {
 		g := NewWithT(t)
 
 		// Simulates finalizer-driven uninstall where apply=false but enabled=true
-		skyhookCR := &v1alpha1.Skyhook{
+		skyhookCR := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3894,8 +3894,8 @@ func TestHandleVersionChange_DowngradeIsNoOp(t *testing.T) {
 	t.Run("downgrade with enabled=false leaves old state in node state", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
@@ -3928,8 +3928,8 @@ func TestHandleVersionChange_DowngradeIsNoOp(t *testing.T) {
 	t.Run("upgrade still triggers StageUpgrade", func(t *testing.T) {
 		g := NewWithT(t)
 
-		skyhook := &v1alpha1.Skyhook{
-			Spec: v1alpha1.SkyhookSpec{
+		skyhook := &v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{
 				Packages: v1alpha1.Packages{
 					"my-pkg": v1alpha1.Package{
 						PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "2.0.0"},
@@ -4025,21 +4025,21 @@ var _ = Describe("TrackReboots reapply-on-reboot on a busy node", func() {
 		// Skyhook is kept in memory only: creating it would let the running manager reconcile
 		// it asynchronously. We assert on the in-memory clusterState, which the manager cannot
 		// reach, so the test stays deterministic.
-		skyhook := v1alpha1.Skyhook{
+		skyhook := v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				NodeSelector: metav1.LabelSelector{MatchLabels: nodeLabel},
 				Packages: v1alpha1.Packages{
 					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				NodeBootIds: map[string]string{nodeName: oldBootID},
 			},
 		}
 
 		clusterState, err := BuildState(
-			&v1alpha1.SkyhookList{Items: []v1alpha1.Skyhook{skyhook}},
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
 			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
 			&v1alpha1.DeploymentPolicyList{},
 		)
@@ -4110,9 +4110,9 @@ var _ = Describe("ProcessInterrupt skipped-package promotion", func() {
 			Image:      "baxter-image",
 			Interrupt:  &v1alpha1.Interrupt{Type: v1alpha1.SERVICE, Services: []string{"cron"}},
 		}
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "config-skyhook"},
-			Spec:       v1alpha1.SkyhookSpec{Packages: v1alpha1.Packages{"baxter": pkg}},
+			Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{"baxter": pkg}},
 		}
 		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "kind-worker"}}
 		sn, err := wrapper.NewSkyhookNode(node, skyhook)
@@ -4187,9 +4187,9 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 		snapshotNode := node.DeepCopy()
 
 		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
-		skyhook := v1alpha1.Skyhook{
+		skyhook := v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				NodeSelector:      metav1.LabelSelector{MatchLabels: nodeLabel},
 				RuntimeRequired:   true,
 				AutoTaintNewNodes: true,
@@ -4197,13 +4197,13 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				NodeBootIds: map[string]string{nodeName: oldBootID},
 			},
 		}
 
 		clusterState, err := BuildState(
-			&v1alpha1.SkyhookList{Items: []v1alpha1.Skyhook{skyhook}},
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
 			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
 			&v1alpha1.DeploymentPolicyList{},
 		)
@@ -4254,9 +4254,9 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 		snapshotNode := node.DeepCopy()
 
 		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
-		skyhook := v1alpha1.Skyhook{
+		skyhook := v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				NodeSelector:      metav1.LabelSelector{MatchLabels: nodeLabel},
 				RuntimeRequired:   true,
 				AutoTaintNewNodes: false, // guard: disabled
@@ -4264,13 +4264,13 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
 				},
 			},
-			Status: v1alpha1.SkyhookStatus{
+			Status: v1alpha1.NodeWrightStatus{
 				NodeBootIds: map[string]string{nodeName: oldBootID},
 			},
 		}
 
 		clusterState, err := BuildState(
-			&v1alpha1.SkyhookList{Items: []v1alpha1.Skyhook{skyhook}},
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
 			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
 			&v1alpha1.DeploymentPolicyList{},
 		)

@@ -19,7 +19,7 @@
 package wrapper
 
 import (
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 )
 
 // Compartment invariant: all nodes in a Compartment belong to the same Skyhook.
@@ -136,7 +136,7 @@ func (c *Compartment) getStickyBatchNodes() []SkyhookNode {
 	}
 
 	skyhook := c.Nodes[0].GetSkyhook()
-	if skyhook == nil || skyhook.Skyhook == nil || skyhook.Status.NodePriority == nil {
+	if skyhook == nil || skyhook.NodeWright == nil || skyhook.Status.NodePriority == nil {
 		return nil
 	}
 

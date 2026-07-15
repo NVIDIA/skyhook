@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -22,7 +22,7 @@ import (
 	"context"
 	"fmt"
 
-	skyhookv1alpha1 "github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	skyhookv1alpha1 "github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -37,8 +37,8 @@ func New(c client.Client) DAL {
 // I find this to be more readable and using the generated mock is easier too
 // get and list are hard to mock, update is not an issue, but might as well live here too
 type DAL interface {
-	GetSkyhook(ctx context.Context, name string, opts ...client.ListOption) (*skyhookv1alpha1.Skyhook, error)
-	GetSkyhooks(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.SkyhookList, error)
+	GetSkyhook(ctx context.Context, name string, opts ...client.ListOption) (*skyhookv1alpha1.NodeWright, error)
+	GetSkyhooks(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.NodeWrightList, error)
 	GetNode(ctx context.Context, nodeName string) (*corev1.Node, error)
 	GetNodes(ctx context.Context, opts ...client.ListOption) (*corev1.NodeList, error)
 	GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error)
@@ -51,8 +51,8 @@ type dal struct {
 	client client.Client
 }
 
-func (e *dal) GetSkyhook(ctx context.Context, name string, opts ...client.ListOption) (*skyhookv1alpha1.Skyhook, error) {
-	var skyhook skyhookv1alpha1.Skyhook
+func (e *dal) GetSkyhook(ctx context.Context, name string, opts ...client.ListOption) (*skyhookv1alpha1.NodeWright, error) {
+	var skyhook skyhookv1alpha1.NodeWright
 
 	// nodes does have namespace so leaving blank
 	if err := e.client.Get(ctx, types.NamespacedName{Name: name}, &skyhook); err != nil {
@@ -65,9 +65,9 @@ func (e *dal) GetSkyhook(ctx context.Context, name string, opts ...client.ListOp
 	return &skyhook, nil
 }
 
-func (e *dal) GetSkyhooks(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.SkyhookList, error) {
+func (e *dal) GetSkyhooks(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.NodeWrightList, error) {
 
-	var skyhook skyhookv1alpha1.SkyhookList
+	var skyhook skyhookv1alpha1.NodeWrightList
 	if err := e.client.List(ctx, &skyhook, opts...); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
