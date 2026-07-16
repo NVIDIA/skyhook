@@ -363,7 +363,11 @@ endif
 
 setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook namespace
 	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
+	## Dual-labelled during the NodeWright rename: the skyhook and deployment-policy
+	## pools select nodewright.nvidia.com/test-node; the not-yet-migrated cli pool still
+	## selects skyhook.nvidia.com/test-node. Drop the skyhook label once the cli pool moves.
 	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e --overwrite
+	$(KUBECTL) label node/kind-worker nodewright.nvidia.com/test-node=skyhooke2e --overwrite
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	@if [ -f "$(DOCKER_AUTH_FILE)" ]; then \
 		$(KUBECTL) create secret generic node-init-secret --type=kubernetes.io/dockerconfigjson -n $(SKYHOOK_NAMESPACE) \
