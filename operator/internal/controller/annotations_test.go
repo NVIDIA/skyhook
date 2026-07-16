@@ -71,10 +71,29 @@ var _ = Describe("package annotation helpers", func() {
 		Expect(fromPod.Skyhook).To(Equal("gpu-init"))
 		Expect(fromPod.Stage).To(Equal(v1alpha1.StageApply))
 		Expect(fromPod.Name).To(Equal("tuning"))
+		Expect(fromPod.Version).To(Equal(pkg.Version))
+		Expect(fromPod.Image).To(Equal(image))
+		Expect(fromPod.ContainerSHA).To(Equal(pkg.ContainerSHA))
 
 		Expect(job.GetAnnotations()).To(HaveKey(packageAnnotationKey))
 		Expect(job.GetAnnotations()[packageAnnotationKey]).To(Equal(pod.GetAnnotations()[packageAnnotationKey]))
 		Expect(tmpl.GetAnnotations()[packageAnnotationKey]).To(Equal(pod.GetAnnotations()[packageAnnotationKey]))
+	})
+
+	It("treats a typed-nil object as absent instead of panicking", func() {
+		var pod *corev1.Pod // typed nil: non-nil interface wrapping a nil pointer
+
+		pkgOut, err := GetPackage(pod)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(pkgOut).To(BeNil())
+
+		Expect(SetPackages(pod, nw, image, v1alpha1.StageApply, pkg)).To(Succeed())
+
+		invalid, err := IsInvalidPackage(pod)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(invalid).To(BeFalse())
+
+		Expect(InvalidatePackage(pod)).To(Succeed())
 	})
 
 	It("marks a Job's package invalid via InvalidatePackage/IsInvalidPackage", func() {

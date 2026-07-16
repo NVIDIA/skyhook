@@ -21,6 +21,7 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +31,17 @@ import (
 // the package it runs — a Pod today, and a batch/v1 Job plus its pod template once
 // stages run as Jobs.
 const packageAnnotationKey = v1alpha1.METADATA_PREFIX + "/package"
+
+// isNil reports whether obj is nil, catching both a nil interface and a typed-nil
+// pointer (e.g. a (*corev1.Pod)(nil)). These helpers take an interface, so a plain
+// obj == nil misses the typed-nil case, which would then panic in GetAnnotations.
+func isNil(obj metav1.Object) bool {
+	if obj == nil {
+		return true
+	}
+	v := reflect.ValueOf(obj)
+	return v.Kind() == reflect.Pointer && v.IsNil()
+}
 
 type PackageSkyhook struct {
 	v1alpha1.PackageRef `json:",inline"`
@@ -45,7 +57,7 @@ type PackageSkyhook struct {
 // also accept a *corev1.PodTemplateSpec (the Job pod template) — which satisfies
 // metav1.Object but not client.Object (it has no runtime.Object methods).
 func GetPackage(obj metav1.Object) (*PackageSkyhook, error) {
-	if obj == nil {
+	if isNil(obj) {
 		return nil, nil
 	}
 	s, ok := obj.GetAnnotations()[packageAnnotationKey]
@@ -63,7 +75,7 @@ func GetPackage(obj metav1.Object) (*PackageSkyhook, error) {
 
 // SetPackages sets the package in the object's annotations
 func SetPackages(obj metav1.Object, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
-	if obj == nil || _package == nil {
+	if isNil(obj) || _package == nil {
 		return nil
 	}
 
@@ -92,7 +104,7 @@ func SetPackages(obj metav1.Object, skyhook *v1alpha1.NodeWright, image string, 
 
 // InvalidatePackage invalidates a package and updates the object, which will trigger the executor to be deleted
 func InvalidatePackage(obj metav1.Object) error {
-	if obj == nil {
+	if isNil(obj) {
 		return nil
 	}
 
@@ -120,7 +132,7 @@ func InvalidatePackage(obj metav1.Object) error {
 
 // IsInvalidPackage returns true if the package is invalid
 func IsInvalidPackage(obj metav1.Object) (bool, error) {
-	if obj == nil {
+	if isNil(obj) {
 		return false, nil
 	}
 
