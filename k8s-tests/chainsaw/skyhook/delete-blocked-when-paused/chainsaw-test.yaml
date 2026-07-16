@@ -63,7 +63,7 @@ spec:
     try:
     - script:
         content: |
-          kubectl annotate skyhook delete-blocked-when-paused \
+          kubectl annotate nodewright delete-blocked-when-paused \
             nodewright.nvidia.com/pause=true --overwrite
     - script:
         content: |
@@ -89,7 +89,7 @@ spec:
         content: |
           for i in $(seq 1 40); do
             count=$(kubectl get events -A \
-              --field-selector=type=Warning,reason=DeletionBlocked,involvedObject.kind=Skyhook,involvedObject.name=delete-blocked-when-paused \
+              --field-selector=type=Warning,reason=DeletionBlocked,involvedObject.kind=NodeWright,involvedObject.name=delete-blocked-when-paused \
               --no-headers 2>/dev/null | wc -l | tr -d ' ')
             if [ "$count" != "0" ]; then
               echo "Found DeletionBlocked warning event(s): $count"
@@ -110,7 +110,7 @@ spec:
     try:
     - script:
         content: |
-          kubectl annotate skyhook delete-blocked-when-paused \
+          kubectl annotate nodewright delete-blocked-when-paused \
             nodewright.nvidia.com/pause- --overwrite
     - script:
         content: |
