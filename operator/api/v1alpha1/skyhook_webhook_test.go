@@ -67,7 +67,7 @@ var _ = Describe("Skyhook Webhook", func() {
 
 			warnings, err = skyhookWebhook.ValidateUpdate(ctx, skyhook, skyhook)
 			Expect(err).To(BeNil())
-			Expect(warnings).To(ContainElement(ContainSubstring("nodewright.nvidia.com")))
+			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
 		})
 
 		It("Should deny if missing a depends on", func() {

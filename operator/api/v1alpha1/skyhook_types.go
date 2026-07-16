@@ -798,6 +798,7 @@ type PackageStatus struct {
 func (left *PackageStatus) Equal(right *PackageStatus) bool {
 	return left.Name == right.Name &&
 		left.Version == right.Version &&
+		left.Image == right.Image &&
 		left.ContainerSHA == right.ContainerSHA &&
 		left.Stage == right.Stage &&
 		left.State == right.State &&

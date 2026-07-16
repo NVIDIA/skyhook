@@ -226,6 +226,17 @@ func main() {
 			os.Exit(1)
 		}
 
+		// The nodewright.nvidia.com webhook configs are fail-closed, so their handlers
+		// must be registered too or every NodeWright/DeploymentPolicy write is rejected.
+		if err = (&nwv1.NodeWright{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "NodeWright")
+			os.Exit(1)
+		}
+		if err = (&nwv1.DeploymentPolicy{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "DeploymentPolicy (nodewright)")
+			os.Exit(1)
+		}
+
 		if err := mgr.AddReadyzCheck("readyz", webhookController.WebhookSecretReadyzCheck); err != nil {
 			setupLog.Error(err, "unable to set up ready check")
 			os.Exit(1)

@@ -158,7 +158,7 @@ func (r *DeploymentPolicy) Validate() error {
 
 		// Validate the compartment itself
 		if err := compartment.Validate(); err != nil {
-			return err
+			return fmt.Errorf("compartment %q: %w", compartment.Name, err)
 		}
 
 		// Check for identical selectors
