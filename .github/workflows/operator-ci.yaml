@@ -99,7 +99,7 @@ jobs:
           VERSIONS_JSON=$(curl -fsSL https://developer.download.nvidia.com/distroless-oss/versions.json)
           
           # Extract latest Go v4 version (format: "v4.0.1" -> "4.0.1")
-          GO_DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r '.v4.go.go' | sed 's/^v//')
+          GO_DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r '.v4.static.static' | sed 's/^v//')
           
           echo "go-version=${GO_DISTROLESS_VERSION}" >> $GITHUB_OUTPUT
           echo "📦 Go v4 Distroless Version: ${GO_DISTROLESS_VERSION}"
