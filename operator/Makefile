@@ -119,8 +119,8 @@ generate-nodewright: ## Re-derive the nodewright.nvidia.com API group from the l
 	../scripts/gen_nodewright.sh
 
 .PHONY: verify-nodewright-gen
-verify-nodewright-gen: generate-nodewright ## Fail if the checked-in nodewright group is stale vs the legacy source.
-	@git diff --exit-code -- api/nodewright || { echo "ERROR: api/nodewright is stale; run 'make generate-nodewright' and commit."; exit 1; }
+verify-nodewright-gen: manifests generate ## Fail if any generated output (nodewright types, deepcopy, CRDs, RBAC, webhooks) is stale vs the source.
+	@git diff --exit-code -- api/nodewright config/crd/bases config/rbac/role.yaml config/webhook/manifests.yaml || { echo "ERROR: generated outputs are stale; run 'make manifests generate' and commit."; exit 1; }
 
 .PHONY: generate-mocks 
 generate-mocks: mockery ## Generate code for interface mocking
