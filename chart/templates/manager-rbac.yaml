@@ -101,6 +101,44 @@ rules:
   - update
   - watch
 - apiGroups:
+  - nodewright.nvidia.com
+  resources:
+  - deploymentpolicies
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nodewright.nvidia.com
+  resources:
+  - deploymentpolicies/status
+  - nodewrights/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - nodewright.nvidia.com
+  resources:
+  - nodewrights
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - nodewright.nvidia.com
+  resources:
+  - nodewrights/finalizers
+  verbs:
+  - update
+- apiGroups:
   - skyhook.nvidia.com
   resources:
   - deploymentpolicies

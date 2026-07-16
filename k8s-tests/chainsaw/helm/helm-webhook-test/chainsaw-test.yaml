@@ -57,7 +57,7 @@ spec:
             echo "ERROR: invalid CR was accepted"
             exit 1
           fi
-          if ! grep -q "admission webhook \"validate-skyhook.nvidia.com\" denied the request" err.txt; then
+          if ! grep -q "admission webhook \"validate-nodewright.nvidia.com\" denied the request" err.txt; then
             echo "ERROR: Did not get expected webhook validation error"
             cat err.txt
             exit 1
@@ -72,7 +72,7 @@ spec:
             echo "ERROR: invalid DeploymentPolicy was accepted"
             exit 1
           fi
-          if ! grep -q "admission webhook \"validate-deploymentpolicy.nvidia.com\" denied the request" err.txt; then
+          if ! grep -q "admission webhook \"validate-deploymentpolicy-nodewright.nvidia.com\" denied the request" err.txt; then
             echo "ERROR: Did not get expected DeploymentPolicy webhook validation error"
             cat err.txt
             exit 1
@@ -108,7 +108,7 @@ spec:
     - script:
         content: |
           echo "Testing: Update Skyhook to reference non-existent policy..."
-          kubectl patch skyhook skyhook-valid-policy --type=merge -p '{"spec":{"deploymentPolicy":"does-not-exist"}}' 2>err.txt
+          kubectl patch nodewright skyhook-valid-policy --type=merge -p '{"spec":{"deploymentPolicy":"does-not-exist"}}' 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -126,7 +126,7 @@ spec:
     - script:
         content: |
           echo "Testing: Delete DeploymentPolicy while in use..."
-          kubectl delete deploymentpolicy test-policy 2>err.txt
+          kubectl delete deploymentpolicy.nodewright.nvidia.com test-policy 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -144,9 +144,9 @@ spec:
     - script:
         content: |
           echo "Testing: Delete Skyhook then policy..."
-          kubectl delete skyhook skyhook-valid-policy
+          kubectl delete nodewright skyhook-valid-policy
           echo "✅ Skyhook deleted"
-          kubectl delete deploymentpolicy test-policy
+          kubectl delete deploymentpolicy.nodewright.nvidia.com test-policy
           echo "✅ Policy deleted after Skyhook removed"
     
     # Test: Reject uninstall.apply=true with enabled=false
@@ -172,8 +172,8 @@ spec:
         file: skyhook-uninstall-valid.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-webhook-reject
           status:
@@ -215,7 +215,7 @@ spec:
 
     - script:
         content: |
-          kubectl delete skyhook uninstall-webhook-reject --timeout=120s || true
+          kubectl delete nodewright uninstall-webhook-reject --timeout=120s || true
 
     - assert:
         file: assert-webhook.yaml

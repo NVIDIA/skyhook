@@ -15,14 +15,14 @@
 # limitations under the License.
 
 # Invalid: apply=true with enabled=false should be rejected
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: uninstall-webhook-reject
 spec:
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      nodewright.nvidia.com/test-node: skyhooke2e
   interruptionBudget:
     count: 1
   packages:
