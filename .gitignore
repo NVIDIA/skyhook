@@ -7,6 +7,7 @@ coverage.out
 
 # Symlinks created by Makefile build-cli
 k8s-tests/chainsaw/*/skyhook-cli
+k8s-tests/chainsaw/*/nodewright-cli
 docs/plans/*
 docs/superpowers/*
 .claude/worktrees/
