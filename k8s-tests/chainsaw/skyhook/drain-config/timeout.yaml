@@ -26,15 +26,15 @@ spec:
   terminationGracePeriodSeconds: 5
   restartPolicy: Never
   nodeSelector:
-    skyhook.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/test-node: skyhooke2e
   containers:
   - name: workload
     image: ghcr.io/nvidia/skyhook/agentless:3.2.3
     imagePullPolicy: IfNotPresent
     command: ["sh", "-c", "sleep 1000"]
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: drain-config-timeout
   namespace: skyhook
@@ -44,7 +44,7 @@ spec:
     timeout: 5s
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      nodewright.nvidia.com/test-node: skyhooke2e
   interruptionBudget:
     count: 1
   packages:

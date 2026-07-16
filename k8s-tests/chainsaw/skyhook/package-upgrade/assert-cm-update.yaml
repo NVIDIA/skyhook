@@ -22,12 +22,12 @@ metadata:
   name: package-upgrade-nullptr-2.0.1
   namespace: skyhook
   labels:
-    skyhook.nvidia.com/name: package-upgrade
+    nodewright.nvidia.com/name: package-upgrade
   ownerReferences:
-  - apiVersion: skyhook.nvidia.com/v1alpha1
+  - apiVersion: nodewright.nvidia.com/v1alpha1
     blockOwnerDeletion: true
     controller: true
-    kind: Skyhook
+    kind: NodeWright
     name: package-upgrade
 data:
   game.properties: |

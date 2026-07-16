@@ -18,7 +18,7 @@ not deleted if it still contains entries.
 1. Install a Skyhook with one `uninstall.enabled: true` package
    (`enabled-pkg`) and one `uninstall.enabled: false` package
    (`disabled-pkg`), wait for complete.
-2. `kubectl delete skyhook --wait=false`. Assert:
+2. `kubectl delete nodewright --wait=false`. Assert:
    - An uninstall pod is created for `enabled-pkg-2.1.4` (init containers
      `enabled-pkg-init`, `enabled-pkg-uninstall`, `enabled-pkg-uninstallcheck`).
    - No uninstall pod is created for `disabled-pkg`.

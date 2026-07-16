@@ -18,10 +18,10 @@ apiVersion: v1
 kind: Node
 metadata:
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
-    skyhook.nvidia.com/status_package-upgrade: in_progress
+    nodewright.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/status_package-upgrade: in_progress
   annotations:
-    ("skyhook.nvidia.com/nodeState_package-upgrade" && parse_json("skyhook.nvidia.com/nodeState_package-upgrade")):
+    ("nodewright.nvidia.com/nodeState_package-upgrade" && parse_json("nodewright.nvidia.com/nodeState_package-upgrade")):
       {
         "nullptr|2.0.0": {
             "name": "nullptr",
@@ -31,16 +31,16 @@ metadata:
             "state": "in_progress"
         }
       }
-    skyhook.nvidia.com/status_package-upgrade: in_progress
+    nodewright.nvidia.com/status_package-upgrade: in_progress
 spec:
   taints:
   - effect: NoSchedule
     key: node.kubernetes.io/unschedulable
 status:
-  (conditions[?type == 'skyhook.nvidia.com/package-upgrade/NotReady']):
+  (conditions[?type == 'nodewright.nvidia.com/package-upgrade/NotReady']):
   - reason: "Incomplete"
     status: "True"
-  (conditions[?type == 'skyhook.nvidia.com/package-upgrade/Erroring']):
+  (conditions[?type == 'nodewright.nvidia.com/package-upgrade/Erroring']):
   - reason: "Not Erroring"
     status: "False"
 ---
@@ -48,10 +48,10 @@ apiVersion: v1
 kind: Node
 metadata:
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
-    skyhook.nvidia.com/status_package-upgrade: complete
+    nodewright.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/status_package-upgrade: complete
   annotations:
-    ("skyhook.nvidia.com/nodeState_package-upgrade" && parse_json("skyhook.nvidia.com/nodeState_package-upgrade")):
+    ("nodewright.nvidia.com/nodeState_package-upgrade" && parse_json("nodewright.nvidia.com/nodeState_package-upgrade")):
       {
         "nullptr|2.0.0": {
             "name": "nullptr",
@@ -61,17 +61,17 @@ metadata:
             "state": "complete"
         }
       }
-    skyhook.nvidia.com/status_package-upgrade: complete
+    nodewright.nvidia.com/status_package-upgrade: complete
 status:
-  (conditions[?type == 'skyhook.nvidia.com/package-upgrade/NotReady']):
+  (conditions[?type == 'nodewright.nvidia.com/package-upgrade/NotReady']):
   - reason: "Complete"
     status: "False"
-  (conditions[?type == 'skyhook.nvidia.com/package-upgrade/Erroring']):
+  (conditions[?type == 'nodewright.nvidia.com/package-upgrade/Erroring']):
   - reason: "Not Erroring"
     status: "False"
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: package-upgrade
 status:
@@ -98,12 +98,12 @@ metadata:
   name: package-upgrade-nullptr-2.0.0
   namespace: skyhook
   labels:
-    skyhook.nvidia.com/name: package-upgrade
+    nodewright.nvidia.com/name: package-upgrade
   ownerReferences:
-  - apiVersion: skyhook.nvidia.com/v1alpha1
+  - apiVersion: nodewright.nvidia.com/v1alpha1
     blockOwnerDeletion: true
     controller: true
-    kind: Skyhook
+    kind: NodeWright
     name: package-upgrade
 data:
   game.properties: |

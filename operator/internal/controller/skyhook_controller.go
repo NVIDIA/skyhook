@@ -70,7 +70,7 @@ const (
 	TaintUnschedulable     = corev1.TaintNodeUnschedulable
 	InterruptContainerName = "interrupt"
 
-	SkyhookFinalizer = "skyhook.nvidia.com/skyhook"
+	SkyhookFinalizer = "nodewright.nvidia.com/nodewright"
 
 	// Annotation values used as truthy/falsy strings on Skyhook and Node objects.
 	annotationTrueValue  = "true"

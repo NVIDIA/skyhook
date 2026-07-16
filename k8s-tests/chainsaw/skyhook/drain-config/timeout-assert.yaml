@@ -18,18 +18,18 @@ apiVersion: v1
 kind: Node
 metadata:
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
-    skyhook.nvidia.com/status_drain-config-timeout: erroring
+    nodewright.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/status_drain-config-timeout: erroring
   annotations:
-    skyhook.nvidia.com/status_drain-config-timeout: erroring
-    (contains(keys(@), 'skyhook.nvidia.com/drainStart_drain-config-timeout')): true
+    nodewright.nvidia.com/status_drain-config-timeout: erroring
+    (contains(keys(@), 'nodewright.nvidia.com/drainStart_drain-config-timeout')): true
 spec:
   taints:
   - effect: NoSchedule
     key: node.kubernetes.io/unschedulable
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: drain-config-timeout
 status:

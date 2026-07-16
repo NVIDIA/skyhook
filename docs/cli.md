@@ -8,6 +8,15 @@ The Skyhook CLI (`kubectl skyhook`) provides SRE tooling for managing Skyhook op
 
 ## Compatibility
 
+### Required API Group
+
+This CLI targets the `nodewright.nvidia.com` API group and the `NodeWright`
+kind, and it reads and writes `nodewright.nvidia.com/*` node annotations. It
+requires an operator that serves `nodewright.nvidia.com`; older Skyhook-only
+operators that serve just `skyhook.nvidia.com` and the `Skyhook` kind are
+unsupported. Upgrade the operator to a NodeWright-capable version before using
+this CLI.
+
 ### Minimum Operator Version
 
 The CLI requires **operator version v0.8.0 or later** for full functionality of all commands.
@@ -34,7 +43,7 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `enable` | ❌ Not supported | ✅ Full |
 
 > **Note on `update-state` and `reset --package`:** These commands edit the
-> `skyhook.nvidia.com/nodeState_<skyhook>` annotation in-place. The
+> `nodewright.nvidia.com/nodeState_<skyhook>` annotation in-place. The
 > annotation's `map[string]PackageStatus` shape has been stable since
 > **operator v0.7.5**, and the CLI refuses to run against anything older.
 > What *has* evolved across operator releases is the set of recognised
@@ -58,8 +67,8 @@ Starting with **v0.8.0**, the operator uses **annotations** instead:
 ```yaml
 metadata:
   annotations:
-    skyhook.nvidia.com/pause: "true"
-    skyhook.nvidia.com/disable: "true"
+    nodewright.nvidia.com/pause: "true"
+    nodewright.nvidia.com/disable: "true"
 ```
 
 The CLI's `pause`, `resume`, `disable`, and `enable` commands set these annotations. If you're running an older operator (v0.7.x or earlier), these commands will appear to succeed but the operator won't recognize the annotations - you'll need to edit the Skyhook spec directly using `kubectl edit`.
@@ -189,7 +198,7 @@ each node's `nodeState` annotation instead of removing the whole annotation:
 
 Edit the recorded state of a single package on Skyhook-managed nodes.
 `update-state` performs a surgical edit to the per-node
-`skyhook.nvidia.com/nodeState_<skyhook>` annotation — replacing (or, with
+`nodewright.nvidia.com/nodeState_<skyhook>` annotation — replacing (or, with
 `--add`, inserting) one entry in the `map[string]PackageStatus` value. It is
 an **administrator escape hatch** for recovering from stuck rollouts and
 deliberately does *not* validate that the requested `(stage, state)`

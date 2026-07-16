@@ -29,11 +29,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: config-skyhook
         format: yaml
   steps:
@@ -55,10 +55,10 @@ spec:
           metadata:
             name: kind-worker
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_config-skyhook: in_progress
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_config-skyhook: in_progress
             annotations:
-              ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")):
+              ("nodewright.nvidia.com/nodeState_config-skyhook" && parse_json("nodewright.nvidia.com/nodeState_config-skyhook")):
                 {
                   "baxter|3.2.1": {
                       "name": "baxter",
@@ -82,23 +82,23 @@ spec:
                       "state": "in_progress"
                   },
                 }
-              skyhook.nvidia.com/status_config-skyhook: in_progress
+              nodewright.nvidia.com/status_config-skyhook: in_progress
           spec:
             taints:
             - effect: NoSchedule
               key: node.kubernetes.io/unschedulable
           status:
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/NotReady']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/NotReady']):
             - reason: "Incomplete"
               status: "True"
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/Erroring']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/Erroring']):
             - reason: "Not Erroring"
               status: "False"
     - assert:
         ## skyhook in_progress
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: config-skyhook
           status:
@@ -144,10 +144,10 @@ spec:
           metadata:
             name: kind-worker
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_config-skyhook: complete
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_config-skyhook: complete
             annotations:
-              ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")):
+              ("nodewright.nvidia.com/nodeState_config-skyhook" && parse_json("nodewright.nvidia.com/nodeState_config-skyhook")):
                 {
                   "baxter|3.2.1": {
                       "name": "baxter",
@@ -171,19 +171,19 @@ spec:
                       "state": "complete"
                   }
                 }
-              skyhook.nvidia.com/status_config-skyhook: complete
+              nodewright.nvidia.com/status_config-skyhook: complete
           status:
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/NotReady']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/NotReady']):
             - reason: "Complete"
               status: "False"
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/Erroring']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/Erroring']):
             - reason: "Not Erroring"
               status: "False"
     - assert:
         ## skyhook complete (gen 3)
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: config-skyhook
           status:
@@ -229,10 +229,10 @@ spec:
           metadata:
             name: kind-worker
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_config-skyhook: complete
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_config-skyhook: complete
             annotations:
-              ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")):
+              ("nodewright.nvidia.com/nodeState_config-skyhook" && parse_json("nodewright.nvidia.com/nodeState_config-skyhook")):
                 {
                   "baxter|3.2.1": {
                       "name": "baxter",
@@ -256,19 +256,19 @@ spec:
                       "state": "complete"
                   }
                 }
-              skyhook.nvidia.com/status_config-skyhook: complete
+              nodewright.nvidia.com/status_config-skyhook: complete
           status:
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/NotReady']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/NotReady']):
             - reason: "Complete"
               status: "False"
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/Erroring']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/Erroring']):
             - reason: "Not Erroring"
               status: "False"
     - assert:
         ## skyhook complete (gen 4)
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: config-skyhook
           status:
@@ -314,10 +314,10 @@ spec:
           metadata:
             name: kind-worker
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_config-skyhook: complete
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_config-skyhook: complete
             annotations:
-              ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")):
+              ("nodewright.nvidia.com/nodeState_config-skyhook" && parse_json("nodewright.nvidia.com/nodeState_config-skyhook")):
                 {
                   "baxter|3.2.1": {
                       "name": "baxter",
@@ -341,19 +341,19 @@ spec:
                       "state": "complete"
                   }
                 }
-              skyhook.nvidia.com/status_config-skyhook: complete
+              nodewright.nvidia.com/status_config-skyhook: complete
           status:
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/NotReady']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/NotReady']):
             - reason: "Complete"
               status: "False"
-            (conditions[?type == 'skyhook.nvidia.com/config-skyhook/Erroring']):
+            (conditions[?type == 'nodewright.nvidia.com/config-skyhook/Erroring']):
             - reason: "Not Erroring"
               status: "False"
     - assert:
         ## skyhook complete (gen 5)
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: config-skyhook
           status:

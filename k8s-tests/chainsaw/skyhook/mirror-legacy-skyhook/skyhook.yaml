@@ -14,20 +14,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: nodewright.nvidia.com/v1alpha1
-kind: NodeWright
+# A legacy skyhook.nvidia.com/v1alpha1 Skyhook. The operator no longer reconciles
+# this kind directly; the mirror controller converts it into a
+# nodewright.nvidia.com/v1alpha1 NodeWright. The nodeSelector matches no node on
+# purpose so the mirror bridge is exercised without scheduling package pods.
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
 metadata:
-  name: downgrade-after-uninstall
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: mirror-legacy-skyhook
 spec:
   nodeSelectors:
     matchLabels:
-      nodewright.nvidia.com/test-node: skyhooke2e
+      nodewright.nvidia.com/test-node: mirror-no-such-node
   interruptionBudget:
     count: 1
   packages:
-    mypkg:
-      version: "2.1.4"
+    dexter:
+      version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
-      uninstall:
-        enabled: true
-        apply: true
+      env:
+        - name: SLEEP_LEN
+          value: "1"

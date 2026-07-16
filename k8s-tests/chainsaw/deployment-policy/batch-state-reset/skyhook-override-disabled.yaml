@@ -18,8 +18,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Skyhook that overrides policy to disable auto-reset (tests precedence)
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: test-override-disabled
 spec:
@@ -31,7 +31,7 @@ spec:
 
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: batch-reset-test
+      nodewright.nvidia.com/test-node: batch-reset-test
 
   packages:
     quick-package:

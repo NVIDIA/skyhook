@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/context"
 	mockdynamic "github.com/NVIDIA/nodewright/operator/internal/mocks/dynamic"
@@ -51,12 +51,12 @@ var _ = Describe("Package Rerun Command", func() {
 	Describe("nodeStateAnnotationKey", func() {
 		It("should return correct annotation key format", func() {
 			key := nodeStateAnnotationKey("my-skyhook")
-			Expect(key).To(Equal("skyhook.nvidia.com/nodeState_my-skyhook"))
+			Expect(key).To(Equal("nodewright.nvidia.com/nodeState_my-skyhook"))
 		})
 
 		It("should handle different skyhook names", func() {
-			Expect(nodeStateAnnotationKey("gpu-init")).To(Equal("skyhook.nvidia.com/nodeState_gpu-init"))
-			Expect(nodeStateAnnotationKey("test")).To(Equal("skyhook.nvidia.com/nodeState_test"))
+			Expect(nodeStateAnnotationKey("gpu-init")).To(Equal("nodewright.nvidia.com/nodeState_gpu-init"))
+			Expect(nodeStateAnnotationKey("test")).To(Equal("nodewright.nvidia.com/nodeState_test"))
 		})
 	})
 
@@ -272,8 +272,8 @@ var _ = Describe("Package Rerun Command", func() {
 		createSkyhookUnstructured := func() *unstructured.Unstructured {
 			return &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "skyhook.nvidia.com/v1alpha1",
-					"kind":       "Skyhook",
+					"apiVersion": "nodewright.nvidia.com/v1alpha1",
+					"kind":       "NodeWright",
 					"metadata": map[string]interface{}{
 						"name": testSkyhookNameRerun,
 					},
@@ -331,7 +331,7 @@ var _ = Describe("Package Rerun Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -366,7 +366,7 @@ var _ = Describe("Package Rerun Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -402,7 +402,7 @@ var _ = Describe("Package Rerun Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -439,7 +439,7 @@ var _ = Describe("Package Rerun Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -474,7 +474,7 @@ var _ = Describe("Package Rerun Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -624,9 +624,9 @@ var _ = Describe("Package Rerun Command", func() {
 
 	Describe("skyhookGVR", func() {
 		It("should have correct group version resource", func() {
-			Expect(skyhookGVR.Group).To(Equal("skyhook.nvidia.com"))
+			Expect(skyhookGVR.Group).To(Equal("nodewright.nvidia.com"))
 			Expect(skyhookGVR.Version).To(Equal("v1alpha1"))
-			Expect(skyhookGVR.Resource).To(Equal("skyhooks"))
+			Expect(skyhookGVR.Resource).To(Equal("nodewrights"))
 		})
 	})
 })

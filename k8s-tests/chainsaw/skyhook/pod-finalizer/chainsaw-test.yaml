@@ -31,7 +31,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          for node in $(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o name); do kubectl annotate ${node} skyhook.nvidia.com/nodeState_foobar-; done
+          for node in $(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o name); do kubectl annotate ${node} nodewright.nvidia.com/nodeState_foobar-; done
     - create:
         file: pod.yaml
     - assert:
@@ -40,5 +40,5 @@ spec:
       - get:
           apiVersion: v1
           kind: Node
-          selector: skyhook.nvidia.com/test-node=skyhooke2e
+          selector: nodewright.nvidia.com/test-node=skyhooke2e
           format: yaml

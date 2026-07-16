@@ -26,9 +26,9 @@ kind: Node
 metadata:
   name: kind-worker
   labels:
-    skyhook.nvidia.com/strict-order-test: "true"
+    nodewright.nvidia.com/strict-order-test: "true"
   annotations:
-    skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-zzz: complete
 ---
 # 2. Worker2 blocked on priority 1 (proves per-node ordering)
 apiVersion: v1
@@ -36,8 +36,8 @@ kind: Node
 metadata:
   name: kind-worker2
   labels:
-    skyhook.nvidia.com/strict-order-test: "true"
+    nodewright.nvidia.com/strict-order-test: "true"
   annotations:
-    skyhook.nvidia.com/status_strict-order-skyhook-zzz: blocked
+    nodewright.nvidia.com/status_strict-order-skyhook-zzz: blocked
 spec:
   (taints != null && length(taints[?key == 'test-block' && effect == 'NoSchedule']) > `0`): true

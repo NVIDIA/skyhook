@@ -25,7 +25,7 @@ spec:
   terminationGracePeriodSeconds: 5
   restartPolicy: OnFailure
   nodeSelector:
-    skyhook.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/test-node: skyhooke2e
   containers:
   - name: workload
     image: busybox:latest
@@ -41,7 +41,7 @@ spec:
   terminationGracePeriodSeconds: 5
   restartPolicy: OnFailure
   nodeSelector:
-    skyhook.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/test-node: skyhooke2e
   containers:
   - name: workload
     image: busybox:latest
@@ -54,15 +54,15 @@ metadata:
   name: invalid-package
   namespace: skyhook
   labels:
-    skyhook.nvidia.com/package: invalid-1.2.3
-    skyhook.nvidia.com/name: interrupt
+    nodewright.nvidia.com/package: invalid-1.2.3
+    nodewright.nvidia.com/name: interrupt
   annotations:
-    skyhook.nvidia.com/package: '{"name":"invalid","version":"1.2.3","stage":"apply","skyhook":"interrupt","image":"ghcr.io/nvidia/skyhook/agentless"}'
+    nodewright.nvidia.com/package: '{"name":"invalid","version":"1.2.3","stage":"apply","skyhook":"interrupt","image":"ghcr.io/nvidia/skyhook/agentless"}'
 spec:
   terminationGracePeriodSeconds: 5
   restartPolicy: OnFailure
   nodeSelector:
-    skyhook.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/test-node: skyhooke2e
   initContainers:
   - name: workload
     image: busybox:latest

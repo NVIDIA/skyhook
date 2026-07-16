@@ -20,19 +20,19 @@ kind: Node
 metadata:
   name: kind-worker
   labels:
-    skyhook.nvidia.com/strict-order-test: "true"
+    nodewright.nvidia.com/strict-order-test: "true"
   annotations:
-    skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-gate: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-aa: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-b: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-c: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-d: disabled
+    nodewright.nvidia.com/status_strict-order-skyhook-zzz: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-gate: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-aa: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-b: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-c: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-d: disabled
 ---
 # Verify nodeOrderOffset incremented as nodes completed and were pruned from NodePriority
 # With 2 nodes, each skyhook should have offset=2 after both complete
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: strict-order-skyhook-zzz
 status:
@@ -45,11 +45,11 @@ kind: Node
 metadata:
   name: kind-worker2
   labels:
-    skyhook.nvidia.com/strict-order-test: "true"
+    nodewright.nvidia.com/strict-order-test: "true"
   annotations:
-    skyhook.nvidia.com/status_strict-order-skyhook-zzz: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-gate: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-aa: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-b: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-c: complete
-    skyhook.nvidia.com/status_strict-order-skyhook-d: disabled
+    nodewright.nvidia.com/status_strict-order-skyhook-zzz: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-gate: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-aa: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-b: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-c: complete
+    nodewright.nvidia.com/status_strict-order-skyhook-d: disabled

@@ -37,7 +37,7 @@ spec:
           # Clean up any leftover labels
           chmod +x ../label-nodes.sh
           ../label-nodes.sh clean-all priority 2>/dev/null || true
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node 2>/dev/null || true
           echo "✓ State reset complete"
   
   - name: setup-nodes
@@ -46,11 +46,11 @@ spec:
         content: |
           chmod +x ../label-nodes.sh
           # Label nodes for multi-compartment test
-          ../label-nodes.sh add 0-4 priority=critical skyhook.nvidia.com/test-node=skyhooke2e
-          ../label-nodes.sh add 5-10 priority=standard skyhook.nvidia.com/test-node=skyhooke2e
-          ../label-nodes.sh add 11-14 priority=test skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 0-4 priority=critical nodewright.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 5-10 priority=standard nodewright.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 11-14 priority=test nodewright.nvidia.com/test-node=skyhooke2e
           echo "✓ Node labeling complete"
-          kubectl get nodes -L priority,skyhook.nvidia.com/test-node --no-headers | grep -E "critical|standard|test" | sort -k6
+          kubectl get nodes -L priority,nodewright.nvidia.com/test-node --no-headers | grep -E "critical|standard|test" | sort -k6
   
   - name: apply-resources
     try:
@@ -136,14 +136,14 @@ spec:
           ../skyhook-cli reset multi-compartment-test --confirm 2>/dev/null || true
           # Clean up labels
           ../label-nodes.sh clean-all priority
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           name: multi-compartment-test
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
+          apiVersion: nodewright.nvidia.com/v1alpha1
           kind: DeploymentPolicy
           name: multi-tier-policy

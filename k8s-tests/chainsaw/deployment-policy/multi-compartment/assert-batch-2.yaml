@@ -18,8 +18,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Assert: Batch 2 - Exponential growth (1 -> 2, 1 -> 2, 2 -> 4)
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: multi-compartment-test
 status:

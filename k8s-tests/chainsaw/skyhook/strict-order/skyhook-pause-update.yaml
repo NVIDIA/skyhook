@@ -14,21 +14,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
   name: strict-order-skyhook-zzz
   annotations:
-    skyhook.nvidia.com/disable: "false"
-    skyhook.nvidia.com/pause: "false"
+    nodewright.nvidia.com/disable: "false"
+    nodewright.nvidia.com/pause: "false"
 spec:
   priority: 1
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/strict-order-test: "true"
+      nodewright.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       interrupt:
@@ -40,21 +40,21 @@ spec:
         - name: SLEEP_LEN
           value: "3" ## making faster so the test works for asserting node condition
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
   name: strict-order-skyhook-aa
   annotations:
-    skyhook.nvidia.com/disable: "false"
-    skyhook.nvidia.com/pause: "false"
+    nodewright.nvidia.com/disable: "false"
+    nodewright.nvidia.com/pause: "false"
 spec:
   priority: 3
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/strict-order-test: "true"
+      nodewright.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       version: "1.2"
@@ -63,21 +63,21 @@ spec:
         - name: SLEEP_LEN
           value: "1"
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
   name: strict-order-skyhook-b
   annotations:
-    skyhook.nvidia.com/disable: "false"
-    skyhook.nvidia.com/pause: "false"
+    nodewright.nvidia.com/disable: "false"
+    nodewright.nvidia.com/pause: "false"
 spec:
   priority: 3
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/strict-order-test: "true"
+      nodewright.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       interrupt:
@@ -89,21 +89,21 @@ spec:
         - name: SLEEP_LEN
           value: "3" ## making faster so the test works for asserting node condition
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
   name: strict-order-skyhook-c
   annotations:
-    skyhook.nvidia.com/disable: "false"
-    skyhook.nvidia.com/pause: "false"
+    nodewright.nvidia.com/disable: "false"
+    nodewright.nvidia.com/pause: "false"
 spec:
   priority: 3
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/strict-order-test: "true"
+      nodewright.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       version: "1.2"
@@ -112,21 +112,21 @@ spec:
         - name: SLEEP_LEN
           value: "1" ## making faster so the test works for asserting node condition
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
     app.kubernetes.io/created-by: skyhook-operator
   name: strict-order-skyhook-d
   annotations:
-    skyhook.nvidia.com/disable: "true"
-    skyhook.nvidia.com/pause: "false"
+    nodewright.nvidia.com/disable: "true"
+    nodewright.nvidia.com/pause: "false"
 spec:
   priority: 3
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/strict-order-test: "true"
+      nodewright.nvidia.com/strict-order-test: "true"
   packages:
     foobar:
       version: "1.2"

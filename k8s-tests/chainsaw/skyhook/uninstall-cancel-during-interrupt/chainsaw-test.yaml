@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: uninstall-cancel-during-interrupt
         format: yaml
   steps:
@@ -46,8 +46,8 @@ spec:
         file: skyhook.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-cancel-during-interrupt
           status:
@@ -67,14 +67,14 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-cancel-during-interrupt")."mypkg|2.1.4".stage == 'uninstall-interrupt'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-cancel-during-interrupt")."mypkg|2.1.4".stage == 'uninstall-interrupt'): true
     - assert:
         ## UninstallInProgress condition is set — baseline for the next step.
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-cancel-during-interrupt
           status:
@@ -102,13 +102,13 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-cancel-during-interrupt")."mypkg|2.1.4".stage == 'uninstall-interrupt'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-cancel-during-interrupt")."mypkg|2.1.4".stage == 'uninstall-interrupt'): true
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-cancel-during-interrupt
           status:
@@ -132,10 +132,10 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_uninstall-cancel-during-interrupt: complete
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_uninstall-cancel-during-interrupt: complete
             annotations:
-              ("skyhook.nvidia.com/nodeState_uninstall-cancel-during-interrupt" && parse_json("skyhook.nvidia.com/nodeState_uninstall-cancel-during-interrupt")):
+              ("nodewright.nvidia.com/nodeState_uninstall-cancel-during-interrupt" && parse_json("nodewright.nvidia.com/nodeState_uninstall-cancel-during-interrupt")):
                 {
                   "mypkg|2.1.4": {
                       "name": "mypkg",
@@ -147,8 +147,8 @@ spec:
                 }
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-cancel-during-interrupt
           status:
@@ -162,7 +162,7 @@ spec:
       Phase 2 sees no pending uninstall work and falls straight through to
       Phase 3 cleanup — fast enough for chainsaw's default context deadline.
       Leaving the finalizer in place (vs. manually stripping it) lets the
-      controller remove skyhook.nvidia.com/* annotations, labels, and
+      controller remove nodewright.nvidia.com/* annotations, labels, and
       conditions from the shared node, which matters when this test runs
       alongside others.
     try:
@@ -174,13 +174,13 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              skyhook.nvidia.com/nodeState_uninstall-cancel-during-interrupt: '{}'
+              nodewright.nvidia.com/nodeState_uninstall-cancel-during-interrupt: '{}'
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-cancel-during-interrupt
           status:

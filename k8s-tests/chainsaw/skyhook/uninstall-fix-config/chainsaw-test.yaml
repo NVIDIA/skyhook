@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: uninstall-fix-config
         format: yaml
   steps:
@@ -46,8 +46,8 @@ spec:
         file: skyhook.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-fix-config
           status:
@@ -67,16 +67,16 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-fix-config")."mypkg|2.1.4".name == 'mypkg'): true
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-fix-config")."mypkg|2.1.4".stage == 'uninstall'): true
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-fix-config")."mypkg|2.1.4".state == 'erroring'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-fix-config")."mypkg|2.1.4".name == 'mypkg'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-fix-config")."mypkg|2.1.4".stage == 'uninstall'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-fix-config")."mypkg|2.1.4".state == 'erroring'): true
     - assert:
         ## UninstallFailed condition should be set
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-fix-config
           status:
@@ -98,16 +98,16 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              skyhook.nvidia.com/nodeState_uninstall-fix-config: '{}'
+              nodewright.nvidia.com/nodeState_uninstall-fix-config: '{}'
     - assert:
         ## skyhook should return to complete, UninstallFailed condition cleared.
         ## updateUninstallConditions calls RemoveCondition (not flip to False)
         ## when errors clear, so assert the condition is absent from the array.
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-fix-config
           status:
