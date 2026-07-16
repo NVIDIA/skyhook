@@ -110,10 +110,16 @@ spec:
         - /bin/sh
         - -c
         - |
-          # Delete all Skyhook resources (cluster-scoped)
-          # Using || true to ensure job succeeds even if delete times out
+          # Delete all Skyhook/NodeWright resources (cluster-scoped) so the
+          # operator can strip finalizers before it is torn down; otherwise the
+          # CRD deletion during helm uninstall hangs on the finalizer.
+          # Using || true to ensure job succeeds even if delete times out.
           kubectl delete skyhooks --all --ignore-not-found || true
-          # Delete all DeploymentPolicy resources (cluster-scoped)
-          kubectl delete deploymentpolicies --all --ignore-not-found || true
+          kubectl delete nodewrights --all --ignore-not-found || true
+          # Delete all DeploymentPolicy resources (cluster-scoped). The plural
+          # "deploymentpolicies" exists in both groups during the migration, so
+          # fully qualify each to avoid an ambiguous short-name lookup.
+          kubectl delete deploymentpolicies.skyhook.nvidia.com --all --ignore-not-found || true
+          kubectl delete deploymentpolicies.nodewright.nvidia.com --all --ignore-not-found || true
           echo "Cleanup completed"
 {{- end }}
