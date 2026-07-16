@@ -156,7 +156,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-bin-
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
