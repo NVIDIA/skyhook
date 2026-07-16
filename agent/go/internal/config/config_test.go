@@ -55,7 +55,7 @@ const validConfigJSON = `{
 
 func writeStepFiles(dir string, names ...string) {
 	for _, n := range names {
-		Expect(os.WriteFile(filepath.Join(dir, n), []byte("#!/bin/sh\n"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, n), []byte("fixture"), 0o755)).To(Succeed())
 	}
 }
 

@@ -91,7 +91,7 @@ var _ = Describe("Command validation", func() {
 		Entry("empty executable", Command{}, "command executable is empty"),
 		Entry(
 			"non-permission mode bits",
-			Command{Executable: "/bin/true", Permissions: fs.ModeDir | 0o755},
+			Command{Executable: "/test", Permissions: fs.ModeDir | 0o755},
 			"permissions contain non-permission mode bits",
 		),
 		Entry(
@@ -102,37 +102,37 @@ var _ = Describe("Command validation", func() {
 		Entry("NUL executable", Command{Executable: "bad\x00name"}, "executable contains a NUL byte"),
 		Entry(
 			"NUL argument",
-			Command{Executable: "/bin/true", Arguments: []string{"bad\x00value"}},
+			Command{Executable: "/test", Arguments: []string{"bad\x00value"}},
 			"argument 0 contains a NUL byte",
 		),
 		Entry(
 			"NUL working directory",
-			Command{Executable: "/bin/true", WorkingDirectory: "/bad\x00directory"},
+			Command{Executable: "/test", WorkingDirectory: "/bad\x00directory"},
 			"working directory contains a NUL byte",
 		),
 		Entry(
 			"relative working directory",
-			Command{Executable: "/bin/true", WorkingDirectory: "tmp"},
+			Command{Executable: "/test", WorkingDirectory: "tmp"},
 			"working directory \"tmp\" is not absolute",
 		),
 		Entry(
 			"empty environment name",
-			Command{Executable: "/bin/true", Environment: map[string]string{"": "value"}},
+			Command{Executable: "/test", Environment: map[string]string{"": "value"}},
 			"environment contains an empty name",
 		),
 		Entry(
 			"environment name containing equals",
-			Command{Executable: "/bin/true", Environment: map[string]string{"BAD=NAME": "value"}},
+			Command{Executable: "/test", Environment: map[string]string{"BAD=NAME": "value"}},
 			"environment name \"BAD=NAME\" contains '='",
 		),
 		Entry(
 			"NUL environment name",
-			Command{Executable: "/bin/true", Environment: map[string]string{"BAD\x00NAME": "value"}},
+			Command{Executable: "/test", Environment: map[string]string{"BAD\x00NAME": "value"}},
 			"environment variable \"BAD\\x00NAME\" contains a NUL byte",
 		),
 		Entry(
 			"NUL environment value",
-			Command{Executable: "/bin/true", Environment: map[string]string{"NAME": "bad\x00value"}},
+			Command{Executable: "/test", Environment: map[string]string{"NAME": "bad\x00value"}},
 			"environment variable \"NAME\" contains a NUL byte",
 		),
 	)

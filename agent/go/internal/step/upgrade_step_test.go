@@ -19,6 +19,7 @@
 package step
 
 import (
+	"context"
 	"strings"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
@@ -77,6 +78,23 @@ var _ = Describe("UpgradeStep.Validate", func() {
 		}}
 		Expect(u.Validate()).To(MatchError(
 			"UpgradeStep upgrade can not have any arguments, but found: [x]",
+		))
+	})
+})
+
+var _ = Describe("UpgradeStep.Run", func() {
+	It("rejects invalid arguments before running the regular step", func() {
+		u := UpgradeStep{RegularStep: RegularStep{
+			Name:       "upgrade",
+			ScriptPath: "upgrade.sh",
+			Arguments:  []string{"x"},
+		}}
+
+		status, err := u.Run(context.Background(), RunConfig{})
+
+		Expect(status).To(Equal(StatusFailed))
+		Expect(err).To(MatchError(
+			ContainSubstring("UpgradeStep upgrade can not have any arguments, but found: [x]"),
 		))
 	})
 })

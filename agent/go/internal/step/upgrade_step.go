@@ -18,7 +18,10 @@
 
 package step
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // UpgradeStep is a Step that runs only during the Upgrade and
 // UpgradeCheck modes.
@@ -43,6 +46,14 @@ func NewUpgradeStep(path string, opts ...RegularStepOption) (UpgradeStep, error)
 		return UpgradeStep{}, fmt.Errorf("NewUpgradeStep: %w", err)
 	}
 	return u, nil
+}
+
+// Run validates the upgrade-step invariant before executing the embedded regular step.
+func (u UpgradeStep) Run(ctx context.Context, config RunConfig) (Status, error) {
+	if err := u.Validate(); err != nil {
+		return StatusFailed, fmt.Errorf("upgrade step validation failed: %w", err)
+	}
+	return u.RegularStep.Run(ctx, config)
 }
 
 // Validate reports whether u satisfies the UpgradeStep invariant:

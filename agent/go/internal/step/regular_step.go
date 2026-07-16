@@ -19,10 +19,17 @@
 package step
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
 )
@@ -63,6 +70,59 @@ func (s RegularStep) Path() string { return s.ScriptPath }
 
 // Idempotence reports how the agent treats re-runs of the step.
 func (s RegularStep) Idempotence() Idempotence { return s.IdempotenceMode }
+
+// Run resolves the step into a command and executes it in its configured host context.
+func (s RegularStep) Run(ctx context.Context, config RunConfig) (Status, error) {
+	if ctx == nil {
+		return StatusFailed, errors.New("running step: context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return StatusFailed, fmt.Errorf("running step %q: %w", s.ScriptPath, err)
+	}
+	if err := config.validate(); err != nil {
+		return StatusFailed, fmt.Errorf("running step %q: invalid run config: %w", s.ScriptPath, err)
+	}
+	if !filepath.IsLocal(s.ScriptPath) {
+		return StatusFailed, fmt.Errorf("running step: path %q must be relative to the step root", s.ScriptPath)
+	}
+
+	s.applyDefaults()
+	arguments, missing := s.resolveArguments()
+	if len(missing) > 0 {
+		return StatusFailed, fmt.Errorf(
+			"running step %q: expected environment variables do not exist: %s",
+			s.ScriptPath,
+			strings.Join(missing, ", "),
+		)
+	}
+
+	runner := command.NewRunner(command.WithChroot(config.rootMount))
+	if !s.OnHost {
+		runner = command.NewRunner()
+	}
+
+	environment := maps.Clone(s.Env)
+	environment["STEP_ROOT"] = config.stepRoot
+	environment["SKYHOOK_DIR"] = config.skyhookDir
+	cmd := command.NewCommand(
+		filepath.Join(config.stepRoot, s.ScriptPath),
+		command.WithArguments(arguments...),
+		command.WithWorkingDirectory(config.skyhookDir),
+		command.WithEnvironment(environment),
+		command.WithStdout(config.stdout),
+		command.WithStderr(config.stderr),
+	)
+
+	commandResult, runErr := runner.Run(ctx, cmd)
+	if runErr != nil {
+		return StatusFailed, fmt.Errorf("running step %q command: %w", s.ScriptPath, runErr)
+	}
+	if commandResult.Signal != nil || !slices.Contains(s.Returncodes, commandResult.ExitCode) {
+		return StatusFailed, nil
+	}
+
+	return StatusSuccess, nil
+}
 
 // Fingerprint returns a stable SHA-256 hex digest of the step's
 // execution-relevant inputs. Nil and empty arguments, return codes, and
@@ -202,4 +262,26 @@ func (s *RegularStep) applyDefaults() {
 	if s.IdempotenceMode == "" {
 		s.IdempotenceMode = Auto
 	}
+}
+
+func (s RegularStep) resolveArguments() ([]string, []string) {
+	arguments := slices.Clone(s.Arguments)
+	missing := make([]string, 0)
+	seenMissing := make(map[string]struct{})
+	for index, argument := range arguments {
+		name, found := strings.CutPrefix(argument, "env:")
+		if !found {
+			continue
+		}
+		value, ok := os.LookupEnv(name)
+		if !ok {
+			if _, seen := seenMissing[name]; !seen {
+				missing = append(missing, name)
+				seenMissing[name] = struct{}{}
+			}
+			continue
+		}
+		arguments[index] = value
+	}
+	return arguments, missing
 }

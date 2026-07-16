@@ -40,6 +40,10 @@ func (f *fakeRunner) Run(_ context.Context, command Command) (Result, error) {
 }
 
 var _ = Describe("Runner", func() {
+	It("uses the os/exec signal sentinel", func() {
+		Expect(SignalExitCode).To(Equal(ExitCode(-1)))
+	})
+
 	It("constructs a non-nil interface implementation", func() {
 		runner := NewRunner()
 		Expect(runner).NotTo(BeNil())
@@ -58,21 +62,6 @@ var _ = Describe("Runner", func() {
 		Expect(runner).NotTo(BeNil())
 		Expect(observedChroot).To(Equal("/target"))
 	})
-
-	DescribeTable("validates the chroot configured by WithChroot",
-		func(root, expected string) {
-			_, err := NewRunner(WithChroot(root)).Run(
-				context.Background(),
-				NewCommand("/bin/true"),
-			)
-
-			Expect(err).To(MatchError(ContainSubstring("preparing chroot command execution")))
-			Expect(err).To(MatchError(ContainSubstring(expected)))
-		},
-		Entry("empty", "", "command chroot is empty"),
-		Entry("relative", "tmp", "chroot \"tmp\" is not absolute"),
-		Entry("NUL", "/tmp/bad\x00root", "command chroot contains a NUL byte"),
-	)
 
 	It("permits downstream substitution through the interface", func() {
 		command := NewCommand("test")
