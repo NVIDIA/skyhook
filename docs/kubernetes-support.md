@@ -4,20 +4,15 @@ This document outlines Skyhook's approach to supporting different Kubernetes ver
 
 ## What Version Should I Use?
 
-| Kubernetes Version | Recommended Skyhook | Status |
-|--------------------|---------------------|--------|
-| 1.36, 1.35, 1.34, 1.33 | v0.12.x (latest) | ✅ Fully Supported, CI tested |
-| 1.32 and older | v0.8.x | ⚠️ Legacy (dropped from CI when kind v0.32.0 stopped publishing 1.32 node images) |
+The operator relies only on core, long-stable Kubernetes APIs (nodes, pods, configmaps, taints, cordon/drain) and gates on no version-specific features. It therefore very likely runs on clusters well older than the tested set, plausibly back to around 1.23, though those older versions are not CI-tested and so not officially supported.
 
-### Previous Release Compatibility
+What we **CI-test and officially support is the latest four Kubernetes minor versions** (see [Support Policy](#support-policy)).
 
-| Skyhook Version | Supported Kubernetes Versions |
-|-----------------|-------------------------------|
-| v0.12.x | 1.31, 1.32, 1.33, 1.34, 1.35 |
-| v0.11.x | 1.31, 1.32, 1.33, 1.34, 1.35 |
-| v0.10.x | 1.31, 1.32, 1.33, 1.34 |
-| v0.9.x  | 1.31, 1.32, 1.33, 1.34 |
-| v0.8.x  | 1.30 |
+| Kubernetes Version | Status |
+|--------------------|--------|
+| 1.36, 1.35, 1.34, 1.33 | ✅ Supported and CI-tested |
+| ~1.23 – 1.32 | 🟡 Untested but expected to work (core APIs only) |
+| Older than ~1.23 | ❌ Unverified |
 
 ## Support Policy
 
@@ -70,25 +65,9 @@ We understand many installations run slightly older Kubernetes versions. Our str
 
 ## Version Selection Guide
 
-**Choose your Skyhook version based on your Kubernetes version:**
+Use the **latest release**. It is CI-tested against the latest four Kubernetes minor versions (currently 1.33 through 1.36) and, because it depends only on core Kubernetes APIs, is expected to run on older clusters (roughly back to 1.23) without CI coverage.
 
-- **Kubernetes 1.36, 1.35, 1.34, or 1.33:** Use latest Skyhook (v0.12.x)
-- **Kubernetes 1.30:** Use Skyhook v0.8.x (K8s 1.30 is EOL but v0.8.x still works)
-- **Kubernetes 1.29 or older:** Use Skyhook v0.8.x or older (check release notes for compatibility)
-
-### Migration Path
-
-**If you're on an older Kubernetes version:**
-
-1. **First:** Upgrade your Kubernetes cluster to a supported version (1.33, 1.34, 1.35, or 1.36)
-2. **Then:** Upgrade to the latest Skyhook version
-
-**If you're on Kubernetes 1.30:**
-
-- **Option A:** Upgrade to K8s 1.33/1.34/1.35/1.36, then use latest Skyhook
-- **Option B:** Stay on Skyhook v0.8.x until you can upgrade Kubernetes
-
-**Recommended:** If you can choose your Kubernetes version, use 1.36, 1.35, or 1.34 for the longest support runway.
+If your cluster is older than the tested range, the operator will very likely still run; upgrade into 1.33 – 1.36 when you can for the fully supported, CI-tested experience.
 
 ## FAQ
 
