@@ -306,6 +306,14 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// Migration safety interlock: while any legacy skyhook.nvidia.com Skyhook is still
+	// mid-rollout, hold this NodeWright reconcile and requeue rather than take over a
+	// node the pre-rename operator may still be mutating. Clears once the legacy
+	// Skyhooks read complete; fresh clusters and post-migration installs never hold.
+	if hold := r.legacyMigrationHold(ctx); hold != nil {
+		return *hold, nil
+	}
+
 	// get all skyhooks (SCR)
 	skyhooks, err := r.dal.GetSkyhooks(ctx)
 	if err != nil {
