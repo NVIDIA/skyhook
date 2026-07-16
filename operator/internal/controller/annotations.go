@@ -23,7 +23,7 @@ import (
 	"fmt"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type PackageSkyhook struct {
@@ -35,12 +35,14 @@ type PackageSkyhook struct {
 	Invalid             bool           `json:"invalid,omitempty"`
 }
 
-// GetPackage returns the package from the pod annotations
-func GetPackage(pod *corev1.Pod) (*PackageSkyhook, error) {
-	if pod == nil {
+// GetPackage returns the package from the object's annotations. The object is any
+// executor carrying the package annotation — a package Pod or, once package stages
+// run as Jobs, a batch/v1 Job (and its pod template). Only metadata is touched.
+func GetPackage(obj client.Object) (*PackageSkyhook, error) {
+	if obj == nil {
 		return nil, nil
 	}
-	s, ok := pod.Annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)]
+	s, ok := obj.GetAnnotations()[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)]
 	if !ok {
 		return nil, nil
 	}
@@ -53,9 +55,9 @@ func GetPackage(pod *corev1.Pod) (*PackageSkyhook, error) {
 	return ret, nil
 }
 
-// SetPackages sets the package in the pod annotations
-func SetPackages(pod *corev1.Pod, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
-	if pod == nil || _package == nil {
+// SetPackages sets the package in the object's annotations
+func SetPackages(obj client.Object, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
+	if obj == nil || _package == nil {
 		return nil
 	}
 
@@ -72,21 +74,23 @@ func SetPackages(pod *corev1.Pod, skyhook *v1alpha1.NodeWright, image string, st
 		return fmt.Errorf("error marshalling package: %w", err)
 	}
 
-	if pod.Annotations == nil {
-		pod.Annotations = map[string]string{}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
 	}
-	pod.Annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	obj.SetAnnotations(annotations)
 
 	return nil
 }
 
-// InvalidatePackage invalidates a package and updates the pod, which will trigger the pod to be deleted
-func InvalidatePackage(pod *corev1.Pod) error {
-	if pod == nil {
+// InvalidatePackage invalidates a package and updates the object, which will trigger the executor to be deleted
+func InvalidatePackage(obj client.Object) error {
+	if obj == nil {
 		return nil
 	}
 
-	pkg, err := GetPackage(pod)
+	pkg, err := GetPackage(obj)
 	if err != nil {
 		return fmt.Errorf("error getting package: %w", err)
 	}
@@ -98,18 +102,23 @@ func InvalidatePackage(pod *corev1.Pod) error {
 		return fmt.Errorf("error marshalling package: %w", err)
 	}
 
-	pod.Annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	obj.SetAnnotations(annotations)
 
 	return nil
 }
 
 // IsInvalidPackage returns true if the package is invalid
-func IsInvalidPackage(pod *corev1.Pod) (bool, error) {
-	if pod == nil {
+func IsInvalidPackage(obj client.Object) (bool, error) {
+	if obj == nil {
 		return false, nil
 	}
 
-	pkg, err := GetPackage(pod)
+	pkg, err := GetPackage(obj)
 	if err != nil {
 		return false, fmt.Errorf("error getting package: %w", err)
 	}
