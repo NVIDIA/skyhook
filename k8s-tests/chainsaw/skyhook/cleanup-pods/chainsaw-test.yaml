@@ -31,7 +31,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset cleanup-pods --confirm 2>/dev/null || true
+          ../nodewright-cli reset cleanup-pods --confirm 2>/dev/null || true
           
     - create:
         file: setup.yaml

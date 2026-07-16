@@ -4,7 +4,7 @@ kubectl plugin for managing Skyhook deployments, packages, and nodes.
 
 ## Overview
 
-The Skyhook CLI (`kubectl skyhook`) provides SRE tooling for managing Skyhook operators and their packages across Kubernetes cluster nodes. It supports inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
+The Skyhook CLI (`kubectl nodewright`) provides SRE tooling for managing Skyhook operators and their packages across Kubernetes cluster nodes. It supports inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
 
 ## Compatibility
 
@@ -90,10 +90,10 @@ cd operator
 make build-cli
 
 # Install as kubectl plugin
-cp bin/skyhook /usr/local/bin/kubectl-skyhook # other another directory in $PATH with write access
+cp bin/skyhook /usr/local/bin/kubectl-nodewright # other another directory in $PATH with write access
 
 # Verify installation
-kubectl skyhook version
+kubectl nodewright version
 ```
 
 ## Usage Structure
@@ -101,7 +101,7 @@ kubectl skyhook version
 ### Basic Command Structure
 
 ```
-kubectl skyhook [global-flags] <command> [subcommand] [flags] [arguments]
+kubectl nodewright [global-flags] <command> [subcommand] [flags] [arguments]
 ```
 
 ### Global Flags
@@ -122,13 +122,13 @@ Show plugin and operator versions.
 
 ```bash
 # Show both plugin and operator versions
-kubectl skyhook version
+kubectl nodewright version
 
 # Show only plugin version (no cluster query)
-kubectl skyhook version --client-only
+kubectl nodewright version --client-only
 
 # With custom timeout
-kubectl skyhook version --timeout 10s
+kubectl nodewright version --timeout 10s
 ```
 
 ### Pause/Resume Commands
@@ -139,11 +139,11 @@ Control Skyhook processing state.
 
 ```bash
 # Pause a Skyhook (stops processing new nodes)
-kubectl skyhook pause my-skyhook
-kubectl skyhook pause my-skyhook --confirm  # Skip confirmation
+kubectl nodewright pause my-skyhook
+kubectl nodewright pause my-skyhook --confirm  # Skip confirmation
 
 # Resume a paused Skyhook
-kubectl skyhook resume my-skyhook
+kubectl nodewright resume my-skyhook
 ```
 
 ### Disable/Enable Commands
@@ -154,11 +154,11 @@ Completely disable or re-enable a Skyhook.
 
 ```bash
 # Disable a Skyhook completely
-kubectl skyhook disable my-skyhook
-kubectl skyhook disable my-skyhook --confirm
+kubectl nodewright disable my-skyhook
+kubectl nodewright disable my-skyhook --confirm
 
 # Re-enable a disabled Skyhook
-kubectl skyhook enable my-skyhook
+kubectl nodewright enable my-skyhook
 ```
 
 ### Reset Command
@@ -167,16 +167,16 @@ Reset all package state for a Skyhook, causing re-execution from the beginning.
 
 ```bash
 # Reset all nodes for a Skyhook (also resets batch state by default)
-kubectl skyhook reset gpu-init --confirm
+kubectl nodewright reset gpu-init --confirm
 
 # Preview changes without applying (dry-run)
-kubectl skyhook reset gpu-init --dry-run
+kubectl nodewright reset gpu-init --dry-run
 
 # Reset nodes only, preserve deployment policy batch state
-kubectl skyhook reset gpu-init --skip-batch-reset --confirm
+kubectl nodewright reset gpu-init --skip-batch-reset --confirm
 
 # Reset only a single package across all tracked nodes
-kubectl skyhook reset gpu-init --package pkg1:1.0 --confirm --skip-batch-reset
+kubectl nodewright reset gpu-init --package pkg1:1.0 --confirm --skip-batch-reset
 ```
 
 | Flag | Description |
@@ -200,7 +200,7 @@ each node's `nodeState` annotation instead of removing the whole annotation:
 - Batch state is **deliberately not reset** on this path regardless of
   `--skip-batch-reset`: restarting the full rollout from batch 1 to recover a
   single package would be disproportionate. Pair with
-  `kubectl skyhook deployment-policy reset` explicitly if you also want to
+  `kubectl nodewright deployment-policy reset` explicitly if you also want to
   restart batches.
 
 ### Update-State Command
@@ -216,7 +216,7 @@ destructive stages (`uninstall`, `uninstall-interrupt`) behind extra
 prompts.
 
 ```bash
-kubectl skyhook update-state <skyhook-name> <package> <version> <stage> <state>
+kubectl nodewright update-state <skyhook-name> <package> <version> <stage> <state>
 ```
 
 > **⚠️ Pause the Skyhook before running `update-state`.**
@@ -229,7 +229,7 @@ kubectl skyhook update-state <skyhook-name> <package> <version> <stage> <state>
 > node between the CLI's read and write, the operator can immediately
 > overwrite the manual edit — at best wasting the operation, at worst racing
 > the operator into an inconsistent state. Always pause the Skyhook
-> (`kubectl skyhook pause <name> --confirm`) before running this command,
+> (`kubectl nodewright pause <name> --confirm`) before running this command,
 > and resume only when finished.
 >
 > `update-state` also requires the package + version to still be present in
@@ -239,16 +239,16 @@ kubectl skyhook update-state <skyhook-name> <package> <version> <stage> <state>
 
 ```bash
 # Mark pkg1@1.0 as complete on every node that already tracks this Skyhook
-kubectl skyhook update-state gpu-init pkg1 1.0 config complete --confirm
+kubectl nodewright update-state gpu-init pkg1 1.0 config complete --confirm
 
 # Same, but only on one node
-kubectl skyhook update-state gpu-init pkg1 1.0 config complete --node worker-1 --confirm
+kubectl nodewright update-state gpu-init pkg1 1.0 config complete --node worker-1 --confirm
 
 # Narrow to a label-selected set of nodes
-kubectl skyhook update-state gpu-init pkg1 1.0 interrupt in_progress -l role=gpu --confirm
+kubectl nodewright update-state gpu-init pkg1 1.0 interrupt in_progress -l role=gpu --confirm
 
 # Preview the changes without writing them
-kubectl skyhook update-state gpu-init pkg1 1.0 config erroring --dry-run
+kubectl nodewright update-state gpu-init pkg1 1.0 config erroring --dry-run
 ```
 
 | Flag | Description |
@@ -307,13 +307,13 @@ so the result is a clean, apply-able manifest.
 
 ```bash
 # Convert a file and apply the result
-kubectl skyhook migrate -f skyhook.yaml | kubectl apply -f -
+kubectl nodewright migrate -f skyhook.yaml | kubectl apply -f -
 
 # Convert everything piped in on stdin
-cat skyhooks.yaml | kubectl skyhook migrate -f -
+cat skyhooks.yaml | kubectl nodewright migrate -f -
 
 # Convert every legacy object in the cluster and save for GitOps
-kubectl skyhook migrate > nodewright.yaml
+kubectl nodewright migrate > nodewright.yaml
 ```
 
 | Flag | Description |
@@ -332,13 +332,13 @@ Manage deployment policy batch state.
 
 ```bash
 # Reset batch state for a Skyhook (starts rollout from batch 1)
-kubectl skyhook deployment-policy reset gpu-init --confirm
+kubectl nodewright deployment-policy reset gpu-init --confirm
 
 # Preview what would be reset (dry-run)
-kubectl skyhook deployment-policy reset gpu-init --dry-run
+kubectl nodewright deployment-policy reset gpu-init --dry-run
 
 # Using the short alias
-kubectl skyhook dp reset gpu-init --confirm
+kubectl nodewright dp reset gpu-init --confirm
 ```
 
 The `deployment-policy reset` command resets the batch processing state for all compartments in the specified Skyhook, including:
@@ -367,23 +367,23 @@ Manage Skyhook nodes across the cluster.
 
 ```bash
 # List all nodes targeted by a Skyhook
-kubectl skyhook node list --skyhook my-skyhook
-kubectl skyhook node list --skyhook my-skyhook -o json
+kubectl nodewright node list --skyhook my-skyhook
+kubectl nodewright node list --skyhook my-skyhook -o json
 
 # Show all Skyhook activity on specific node(s)
-kubectl skyhook node status worker-1
-kubectl skyhook node status worker-1 worker-2
-kubectl skyhook node status "worker-.*"  # Regex pattern
-kubectl skyhook node status worker-1 --skyhook my-skyhook  # Filter by Skyhook
+kubectl nodewright node status worker-1
+kubectl nodewright node status worker-1 worker-2
+kubectl nodewright node status "worker-.*"  # Regex pattern
+kubectl nodewright node status worker-1 --skyhook my-skyhook  # Filter by Skyhook
 
 # Reset all package state on node(s)
-kubectl skyhook node reset worker-1 --skyhook my-skyhook --confirm
-kubectl skyhook node reset "node-.*" --skyhook my-skyhook --dry-run
+kubectl nodewright node reset worker-1 --skyhook my-skyhook --confirm
+kubectl nodewright node reset "node-.*" --skyhook my-skyhook --dry-run
 
 # Ignore/unignore nodes from processing
-kubectl skyhook node ignore worker-1
-kubectl skyhook node ignore "test-node-.*"
-kubectl skyhook node unignore worker-1
+kubectl nodewright node ignore worker-1
+kubectl nodewright node ignore "test-node-.*"
+kubectl nodewright node unignore worker-1
 ```
 
 #### Node Flags
@@ -401,21 +401,21 @@ Manage Skyhook packages.
 
 ```bash
 # Query package status across nodes
-kubectl skyhook package status my-package --skyhook my-skyhook
-kubectl skyhook package status my-package --skyhook my-skyhook --node worker-1
-kubectl skyhook package status my-package --skyhook my-skyhook -o wide
+kubectl nodewright package status my-package --skyhook my-skyhook
+kubectl nodewright package status my-package --skyhook my-skyhook --node worker-1
+kubectl nodewright package status my-package --skyhook my-skyhook -o wide
 
 # Force package re-run on specific nodes
-kubectl skyhook package rerun my-package --skyhook my-skyhook --node worker-1
-kubectl skyhook package rerun my-package --skyhook my-skyhook --node "worker-.*" --confirm
-kubectl skyhook package rerun my-package --skyhook my-skyhook --node worker-1 --stage config
+kubectl nodewright package rerun my-package --skyhook my-skyhook --node worker-1
+kubectl nodewright package rerun my-package --skyhook my-skyhook --node "worker-.*" --confirm
+kubectl nodewright package rerun my-package --skyhook my-skyhook --node worker-1 --stage config
 
 # Get package logs
-kubectl skyhook package logs my-package --skyhook my-skyhook
-kubectl skyhook package logs my-package --skyhook my-skyhook --node worker-1
-kubectl skyhook package logs my-package --skyhook my-skyhook --stage apply
-kubectl skyhook package logs my-package --skyhook my-skyhook -f  # Follow
-kubectl skyhook package logs my-package --skyhook my-skyhook --tail 100
+kubectl nodewright package logs my-package --skyhook my-skyhook
+kubectl nodewright package logs my-package --skyhook my-skyhook --node worker-1
+kubectl nodewright package logs my-package --skyhook my-skyhook --stage apply
+kubectl nodewright package logs my-package --skyhook my-skyhook -f  # Follow
+kubectl nodewright package logs my-package --skyhook my-skyhook --tail 100
 ```
 
 #### Package Flags
@@ -438,17 +438,17 @@ kubectl skyhook package logs my-package --skyhook my-skyhook --tail 100
 
 ```bash
 # General help
-kubectl skyhook --help
+kubectl nodewright --help
 
 # Command group help
-kubectl skyhook node --help
-kubectl skyhook package --help
-kubectl skyhook deployment-policy --help
+kubectl nodewright node --help
+kubectl nodewright package --help
+kubectl nodewright deployment-policy --help
 
 # Specific command help
-kubectl skyhook node reset --help
-kubectl skyhook package rerun --help
-kubectl skyhook deployment-policy reset --help
+kubectl nodewright node reset --help
+kubectl nodewright package rerun --help
+kubectl nodewright deployment-policy reset --help
 ```
 
 ## Common Usage Patterns
@@ -457,52 +457,52 @@ kubectl skyhook deployment-policy reset --help
 
 ```bash
 # 1. Check package status
-kubectl skyhook package status my-package --skyhook my-skyhook -o wide
+kubectl nodewright package status my-package --skyhook my-skyhook -o wide
 
 # 2. View logs for the failed package
-kubectl skyhook package logs my-package --skyhook my-skyhook --node worker-1
+kubectl nodewright package logs my-package --skyhook my-skyhook --node worker-1
 
 # 3. Fix the issue, then force re-run
-kubectl skyhook package rerun my-package --skyhook my-skyhook --node worker-1 --confirm
+kubectl nodewright package rerun my-package --skyhook my-skyhook --node worker-1 --confirm
 ```
 
 ### Node Maintenance
 
 ```bash
 # 1. Ignore node before maintenance
-kubectl skyhook node ignore worker-1
+kubectl nodewright node ignore worker-1
 
 # 2. Perform maintenance...
 
 # 3. Unignore and reset to re-run all packages
-kubectl skyhook node unignore worker-1
-kubectl skyhook node reset worker-1 --skyhook my-skyhook --confirm
+kubectl nodewright node unignore worker-1
+kubectl nodewright node reset worker-1 --skyhook my-skyhook --confirm
 ```
 
 ### Cluster-Wide Status Check
 
 ```bash
 # List all nodes for a Skyhook
-kubectl skyhook node list --skyhook my-skyhook
+kubectl nodewright node list --skyhook my-skyhook
 
 # Check status of all nodes
-kubectl skyhook node status
+kubectl nodewright node status
 
 # Check specific Skyhook across all nodes
-kubectl skyhook node status --skyhook my-skyhook -o json
+kubectl nodewright node status --skyhook my-skyhook -o json
 ```
 
 ### Resetting a Rollout
 
 ```bash
 # 1. Full reset: nodes + batch state (starts everything fresh)
-kubectl skyhook reset my-skyhook --confirm
+kubectl nodewright reset my-skyhook --confirm
 
 # 2. Or reset only batch state (keep node state, restart batch progression)
-kubectl skyhook deployment-policy reset my-skyhook --confirm
+kubectl nodewright deployment-policy reset my-skyhook --confirm
 
 # 3. Or reset only nodes (keep batch progression)
-kubectl skyhook reset my-skyhook --skip-batch-reset --confirm
+kubectl nodewright reset my-skyhook --skip-batch-reset --confirm
 ```
 
 ### Surgical Recovery
@@ -513,22 +513,22 @@ resume:
 
 ```bash
 # 1. Pause so the operator doesn't clobber the manual edit
-kubectl skyhook pause my-skyhook --confirm
+kubectl nodewright pause my-skyhook --confirm
 
 # 2. Mark the wedged package as complete (or set whatever stage/state
 #    you need to unblock the rollout)
-kubectl skyhook update-state my-skyhook my-package 1.0 config complete \
+kubectl nodewright update-state my-skyhook my-package 1.0 config complete \
     --node worker-1 --confirm
 
 # 3. Resume processing
-kubectl skyhook resume my-skyhook --confirm
+kubectl nodewright resume my-skyhook --confirm
 ```
 
 For a single-package reset across all nodes (without disturbing the
 deployment policy batch state), prefer `reset --package`:
 
 ```bash
-kubectl skyhook reset my-skyhook --package my-package:1.0 --confirm
+kubectl nodewright reset my-skyhook --package my-package:1.0 --confirm
 ```
 
 ### Emergency Stop
@@ -537,10 +537,10 @@ kubectl skyhook reset my-skyhook --package my-package:1.0 --confirm
 
 ```bash
 # Pause all processing
-kubectl skyhook pause my-skyhook --confirm
+kubectl nodewright pause my-skyhook --confirm
 
 # Or disable completely
-kubectl skyhook disable my-skyhook --confirm
+kubectl nodewright disable my-skyhook --confirm
 ```
 
 ## Output Formats
@@ -549,16 +549,16 @@ All status commands support multiple output formats:
 
 ```bash
 # Table (default) - human-readable
-kubectl skyhook node list --skyhook my-skyhook
+kubectl nodewright node list --skyhook my-skyhook
 
 # Wide - table with additional columns
-kubectl skyhook node list --skyhook my-skyhook -o wide
+kubectl nodewright node list --skyhook my-skyhook -o wide
 
 # JSON - machine-readable
-kubectl skyhook node list --skyhook my-skyhook -o json
+kubectl nodewright node list --skyhook my-skyhook -o json
 
 # YAML - machine-readable
-kubectl skyhook node list --skyhook my-skyhook -o yaml
+kubectl nodewright node list --skyhook my-skyhook -o yaml
 ```
 
 ## Architecture

@@ -55,7 +55,7 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset drain-config-disable-eviction --confirm 2>/dev/null || true
+          ../nodewright-cli reset drain-config-disable-eviction --confirm 2>/dev/null || true
           kubectl -n skyhook delete nodewright drain-config-disable-eviction --ignore-not-found --wait=false
           kubectl -n skyhook delete deployment drain-config-pdb --ignore-not-found --wait=false
           kubectl -n skyhook delete pdb drain-config-pdb --ignore-not-found
@@ -85,7 +85,7 @@ spec:
     finally:
     - script:
         content: |
-          ../skyhook-cli reset drain-config-disable-eviction --confirm 2>/dev/null || true
+          ../nodewright-cli reset drain-config-disable-eviction --confirm 2>/dev/null || true
           kubectl -n skyhook delete nodewright drain-config-disable-eviction --ignore-not-found --wait=false
           kubectl -n skyhook delete deployment drain-config-pdb --ignore-not-found --wait=false
           kubectl -n skyhook delete pdb drain-config-pdb --ignore-not-found
@@ -97,7 +97,7 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset drain-config-timeout --confirm 2>/dev/null || true
+          ../nodewright-cli reset drain-config-timeout --confirm 2>/dev/null || true
           kubectl -n skyhook delete nodewright drain-config-timeout --ignore-not-found --wait=false
           kubectl -n skyhook delete pod drain-config-blocker --ignore-not-found --wait=false
     - apply:
@@ -132,7 +132,7 @@ spec:
     finally:
     - script:
         content: |
-          ../skyhook-cli reset drain-config-timeout --confirm 2>/dev/null || true
+          ../nodewright-cli reset drain-config-timeout --confirm 2>/dev/null || true
           kubectl -n skyhook delete nodewright drain-config-timeout --ignore-not-found --wait=false
           kubectl -n skyhook delete pod drain-config-blocker --ignore-not-found --wait=false
           kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o name | while read -r node; do kubectl uncordon "${node}" || true; done

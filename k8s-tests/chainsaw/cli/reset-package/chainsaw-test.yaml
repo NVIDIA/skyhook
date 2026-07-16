@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: cli-reset-package-test
         format: yaml
     - get:
@@ -47,7 +47,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-reset-package-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset cli-reset-package-test --confirm 2>/dev/null || true
           echo "State reset complete"
 
   # Step 1: Create a two-package Skyhook and wait for both packages to complete
@@ -65,7 +65,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli disable cli-reset-package-test --confirm
+          ../nodewright-cli disable cli-reset-package-test --confirm
     - assert:
         file: assert-skyhook-disabled.yaml
 
@@ -77,7 +77,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-reset-package-test --package pkg-one --confirm --skip-batch-reset
+          ../nodewright-cli reset cli-reset-package-test --package pkg-one --confirm --skip-batch-reset
 
   # Step 4: Assert the per-node annotation no longer contains pkg-one|1.2.3 but
   # still contains pkg-two|2.1.4. The nodeState annotation is JSON-as-string, so
@@ -88,14 +88,14 @@ spec:
         timeout: 30s
         content: |
           set -eu
-          nodes=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}')
+          nodes=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}')
           if [ -z "$nodes" ]; then
             echo "no test nodes found"
             exit 1
           fi
           fail=0
           for node in $nodes; do
-            raw=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/nodeState_cli-reset-package-test}')
+            raw=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.nodewright\.nvidia\.com/nodeState_cli-reset-package-test}')
             if [ -z "$raw" ]; then
               echo "node $node: nodeState annotation missing (expected pkg-two to remain)"
               fail=1

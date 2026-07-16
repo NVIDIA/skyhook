@@ -42,7 +42,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset runtime-required --confirm 2>/dev/null || true
+          ../nodewright-cli reset runtime-required --confirm 2>/dev/null || true
           ## label both worker nodes for this test (multi-node isolation)
           kubectl label node kind-worker nodewright.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
           kubectl label node kind-worker2 nodewright.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true

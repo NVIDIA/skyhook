@@ -42,7 +42,7 @@ spec:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../skyhook-cli reset package-upgrade --confirm 2>/dev/null || true
+          ../nodewright-cli reset package-upgrade --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     ## parallel: all docs checked simultaneously — in_progress and complete Node checks

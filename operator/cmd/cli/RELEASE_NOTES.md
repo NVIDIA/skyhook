@@ -7,6 +7,9 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Breaking Changes
 
+- The plugin is now invoked as `kubectl nodewright` (binary `kubectl-nodewright`)
+  instead of `kubectl skyhook`. Reinstall the plugin under the new name; update any
+  scripts or aliases that call `kubectl skyhook`.
 - The CLI now targets the `nodewright.nvidia.com` API group and the `NodeWright`
   kind, and it reads and writes `nodewright.nvidia.com/*` node annotations. It no
   longer works against operators that only serve the legacy `skyhook.nvidia.com`

@@ -243,36 +243,36 @@ endif
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
 cli-e2e-tests: chainsaw install run build-cli-with-coverage ensure-test-symlinks ## Run CLI end to end tests with coverage.
-	## Tests the kubectl-skyhook CLI commands against a real cluster
+	## Tests the kubectl-nodewright CLI commands against a real cluster
 	## Requires nodes labeled with skyhook.nvidia.com/test-node=skyhooke2e
 	@mkdir -p $(REPORTING)/cli-cover
-	@# Ensure bin/skyhook exists (build-cli-with-coverage only creates bin/skyhook-cover)
-	@if [ ! -f bin/skyhook ]; then \
-		if [ -f bin/skyhook-cover ]; then \
-			cp bin/skyhook-cover bin/skyhook; \
+	@# Ensure bin/nodewright exists (build-cli-with-coverage only creates bin/nodewright-cover)
+	@if [ ! -f bin/nodewright ]; then \
+		if [ -f bin/nodewright-cover ]; then \
+			cp bin/nodewright-cover bin/nodewright; \
 		else \
-			echo "Error: bin/skyhook-cover not found. Run build-cli-with-coverage first."; \
+			echo "Error: bin/nodewright-cover not found. Run build-cli-with-coverage first."; \
 			exit 1; \
 		fi; \
 	fi
 	@# Replace CLI binary with a wrapper that sets GOCOVERDIR for coverage collection
-	@mv bin/skyhook bin/skyhook.orig 2>/dev/null || true
-	@echo '#!/bin/bash' > bin/skyhook
-	@echo '# Resolve actual script location (handles symlinks)' >> bin/skyhook
-	@echo 'if [ -L "$${BASH_SOURCE[0]}" ]; then' >> bin/skyhook
-	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$$(readlink -f "$${BASH_SOURCE[0]}")")" && pwd)"' >> bin/skyhook
-	@echo 'else' >> bin/skyhook
-	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> bin/skyhook
-	@echo 'fi' >> bin/skyhook
-	@echo 'export GOCOVERDIR="$$SCRIPT_DIR/../reporting/cli-cover"' >> bin/skyhook
-	@echo 'exec "$$SCRIPT_DIR/skyhook-cover" "$$@"' >> bin/skyhook
-	@chmod +x bin/skyhook
+	@mv bin/nodewright bin/nodewright.orig 2>/dev/null || true
+	@echo '#!/bin/bash' > bin/nodewright
+	@echo '# Resolve actual script location (handles symlinks)' >> bin/nodewright
+	@echo 'if [ -L "$${BASH_SOURCE[0]}" ]; then' >> bin/nodewright
+	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$$(readlink -f "$${BASH_SOURCE[0]}")")" && pwd)"' >> bin/nodewright
+	@echo 'else' >> bin/nodewright
+	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> bin/nodewright
+	@echo 'fi' >> bin/nodewright
+	@echo 'export GOCOVERDIR="$$SCRIPT_DIR/../reporting/cli-cover"' >> bin/nodewright
+	@echo 'exec "$$SCRIPT_DIR/nodewright-cover" "$$@"' >> bin/nodewright
+	@chmod +x bin/nodewright
 	@# Update symlinks to point to the new wrapper script
 	@$(MAKE) ensure-test-symlinks
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	@# Restore original CLI binary
-	@mv bin/skyhook.orig bin/skyhook 2>/dev/null || true
+	@mv bin/nodewright.orig bin/nodewright 2>/dev/null || true
 	@# Extract coverage from operator running in cluster
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/cli-int.coverprofile
 	@# Extract coverage from CLI binary if any was generated
@@ -438,16 +438,16 @@ build-manager: manifests generate fmt vet lint ## Build manager binary.
 ensure-test-symlinks:  ## Ensure symlinks exist in test directories (idempotent).
 	@# Create symlinks in test directories for easy access
 	@# This target is idempotent and can be called even if binaries are cached
-	@# Note: symlinks will be created even if bin/skyhook doesn't exist yet (it will be created by build targets)
+	@# Note: symlinks will be created even if bin/nodewright doesn't exist yet (it will be created by build targets)
 	@for dir in cli deployment-policy skyhook helm; do \
-		ln -sf ../../../operator/bin/skyhook ../k8s-tests/chainsaw/$$dir/skyhook-cli 2>/dev/null || true; \
+		ln -sf ../../../operator/bin/nodewright ../k8s-tests/chainsaw/$$dir/nodewright-cli 2>/dev/null || true; \
 	done
 
 .PHONY: build-cli
 CLI_VERSION ?= $(CLI_TAG_LAST)
 CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/nodewright/operator/internal/version.VERSION=$(CLI_VERSION) -X github.com/NVIDIA/nodewright/operator/internal/version.GIT_SHA=$(GIT_SHA)"
 build-cli: ensure-test-symlinks ## Build CLI binary.
-	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/skyhook cmd/cli/main.go
+	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/nodewright cmd/cli/main.go
 CLI_DIST_DIR ?= dist
 cli-release-build: ## Build CLI binaries for all platforms (used by CI release workflow).
 	@echo "Building CLI $(CLI_VERSION) for all platforms..."
@@ -459,7 +459,7 @@ cli-release-build: ## Build CLI binaries for all platforms (used by CI release w
 			ext=""; if [ "$$os" = "windows" ]; then ext=".exe"; fi; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GOFLAGS) \
 				-ldflags "-X github.com/NVIDIA/nodewright/operator/internal/version.VERSION=$(CLI_VERSION) -X github.com/NVIDIA/nodewright/operator/internal/version.GIT_SHA=$(GIT_SHA)" \
-				-o $(CLI_DIST_DIR)/skyhook_$(CLI_VERSION)_$${os}_$${arch}$${ext} cmd/cli/main.go; \
+				-o $(CLI_DIST_DIR)/nodewright_$(CLI_VERSION)_$${os}_$${arch}$${ext} cmd/cli/main.go; \
 		done; \
 	done
 	@# Create archives (rename binary to just "skyhook" inside archive)
@@ -482,10 +482,10 @@ cli-release-build: ## Build CLI binaries for all platforms (used by CI release w
 	@echo "Done! Artifacts in $(CLI_DIST_DIR)/"
 
 build-cli-with-coverage: ensure-test-symlinks ## Build CLI binary with coverage instrumentation.
-	go build $(GOFLAGS) -cover $(CLI_LDFLAGS) -o bin/skyhook-cover cmd/cli/main.go
-	@# Ensure bin/skyhook exists (copy from cover binary if not cached) so symlinks work
-	@if [ ! -f bin/skyhook ]; then \
-		cp bin/skyhook-cover bin/skyhook; \
+	go build $(GOFLAGS) -cover $(CLI_LDFLAGS) -o bin/nodewright-cover cmd/cli/main.go
+	@# Ensure bin/nodewright exists (copy from cover binary if not cached) so symlinks work
+	@if [ ! -f bin/nodewright ]; then \
+		cp bin/nodewright-cover bin/nodewright; \
 	fi
 
 .PHONY: run

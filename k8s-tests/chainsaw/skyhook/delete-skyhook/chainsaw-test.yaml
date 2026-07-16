@@ -32,7 +32,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset delete-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset delete-skyhook --confirm 2>/dev/null || true
     - apply:
         file: skyhook.yaml
     - assert:

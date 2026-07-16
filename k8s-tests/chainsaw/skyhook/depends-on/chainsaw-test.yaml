@@ -49,7 +49,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset depends-on --confirm 2>/dev/null || true
+          ../nodewright-cli reset depends-on --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     ## sequential: pods get cleaned up between stages, dependency order: aa-fast → bb-slow → cc-last
