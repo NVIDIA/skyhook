@@ -8,16 +8,17 @@
 > `nodewright.nvidia.com/v1alpha1 NodeWright`. `DeploymentPolicy` moves group (same Kind name). The
 > on-node annotation/label/finalizer prefix moves `skyhook.nvidia.com/* -> nodewright.nvidia.com/*`, and
 > the kubectl plugin is renamed `kubectl skyhook -> kubectl nodewright`.
-
+>
 > **Scope of the current release.** This guide is written against the full migration flow, but not all of
 > it has shipped yet. Available **now**: the `nodewright.nvidia.com` API group and CRDs, the mirror
 > controller that pre-creates a `NodeWright`/`DeploymentPolicy` for each legacy object, new-group admission
-> webhooks, legacy deprecation warnings, and the primary reconciler reconciling `NodeWright`. **Not yet
-> available** (planned for a later release, do not rely on it today): the `kubectl nodewright migrate` CLI
-> command, the per-node state migration (annotation re-keying and package-pod/ConfigMap relabeling), the
-> Helm chart's `nodewright.nvidia.com` CRDs/RBAC and the pre-upgrade safety hook, and safe-deletion
-> tooling. Sections below flag these inline; where a step depends on an unshipped piece, rewrite the CRs by
-> hand for now.
+> webhooks, legacy deprecation warnings, the primary reconciler reconciling `NodeWright`, the on-node
+> annotation/label/condition re-keying to the `nodewright.nvidia.com/*` prefix on upgrade, the runtime
+> migration hold that waits while any legacy `Skyhook` is non-complete, and the `migrate` CLI command
+> (`kubectl skyhook migrate`, pending the plugin binary rename). **Not yet available** (planned, do not rely
+> on it today): the Helm chart's `nodewright.nvidia.com` CRDs/RBAC and its pre-upgrade safety hook, the
+> plugin binary rename, and safe-deletion tooling. Sections below flag these inline; where a step depends
+> on an unshipped piece, rewrite the CRs by hand for now.
 
 ## TL;DR
 
