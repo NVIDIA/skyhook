@@ -23,8 +23,13 @@ import (
 	"fmt"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// packageAnnotationKey is the annotation every package executor carries to round-trip
+// the package it runs — a Pod today, and a batch/v1 Job plus its pod template once
+// stages run as Jobs.
+const packageAnnotationKey = v1alpha1.METADATA_PREFIX + "/package"
 
 type PackageSkyhook struct {
 	v1alpha1.PackageRef `json:",inline"`
@@ -35,14 +40,15 @@ type PackageSkyhook struct {
 	Invalid             bool           `json:"invalid,omitempty"`
 }
 
-// GetPackage returns the package from the object's annotations. The object is any
-// executor carrying the package annotation — a package Pod or, once package stages
-// run as Jobs, a batch/v1 Job (and its pod template). Only metadata is touched.
-func GetPackage(obj client.Object) (*PackageSkyhook, error) {
+// GetPackage returns the package from the object's annotations. These helpers take
+// metav1.Object rather than client.Object because they only touch metadata and must
+// also accept a *corev1.PodTemplateSpec (the Job pod template) — which satisfies
+// metav1.Object but not client.Object (it has no runtime.Object methods).
+func GetPackage(obj metav1.Object) (*PackageSkyhook, error) {
 	if obj == nil {
 		return nil, nil
 	}
-	s, ok := obj.GetAnnotations()[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)]
+	s, ok := obj.GetAnnotations()[packageAnnotationKey]
 	if !ok {
 		return nil, nil
 	}
@@ -56,7 +62,7 @@ func GetPackage(obj client.Object) (*PackageSkyhook, error) {
 }
 
 // SetPackages sets the package in the object's annotations
-func SetPackages(obj client.Object, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
+func SetPackages(obj metav1.Object, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
 	if obj == nil || _package == nil {
 		return nil
 	}
@@ -78,14 +84,14 @@ func SetPackages(obj client.Object, skyhook *v1alpha1.NodeWright, image string, 
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	annotations[packageAnnotationKey] = string(data)
 	obj.SetAnnotations(annotations)
 
 	return nil
 }
 
 // InvalidatePackage invalidates a package and updates the object, which will trigger the executor to be deleted
-func InvalidatePackage(obj client.Object) error {
+func InvalidatePackage(obj metav1.Object) error {
 	if obj == nil {
 		return nil
 	}
@@ -106,14 +112,14 @@ func InvalidatePackage(obj client.Object) error {
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	annotations[packageAnnotationKey] = string(data)
 	obj.SetAnnotations(annotations)
 
 	return nil
 }
 
 // IsInvalidPackage returns true if the package is invalid
-func IsInvalidPackage(obj client.Object) (bool, error) {
+func IsInvalidPackage(obj metav1.Object) (bool, error) {
 	if obj == nil {
 		return false, nil
 	}

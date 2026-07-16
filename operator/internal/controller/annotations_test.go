@@ -19,7 +19,6 @@
 package controller
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
@@ -48,26 +47,34 @@ var _ = Describe("package annotation helpers", func() {
 		image = "ghcr.io/nvidia/skyhook-packages/tuning:1.2.3"
 	})
 
-	It("round-trips the package annotation identically on a Pod and a Job", func() {
+	It("round-trips the package annotation identically on a Pod, a Job, and a Job pod template", func() {
 		pod := &corev1.Pod{}
 		job := &batchv1.Job{}
+		// the Job path sets the annotation on both the Job and its pod template
+		// (the in-flight erroring path reads it off the child pod), so the pod
+		// template — a *corev1.PodTemplateSpec — must round-trip too.
+		tmpl := &job.Spec.Template
 
 		Expect(SetPackages(pod, nw, image, v1alpha1.StageApply, pkg)).To(Succeed())
 		Expect(SetPackages(job, nw, image, v1alpha1.StageApply, pkg)).To(Succeed())
+		Expect(SetPackages(tmpl, nw, image, v1alpha1.StageApply, pkg)).To(Succeed())
 
 		fromPod, err := GetPackage(pod)
 		Expect(err).ToNot(HaveOccurred())
 		fromJob, err := GetPackage(job)
 		Expect(err).ToNot(HaveOccurred())
+		fromTmpl, err := GetPackage(tmpl)
+		Expect(err).ToNot(HaveOccurred())
 
 		Expect(fromJob).To(Equal(fromPod))
-		Expect(fromJob.Skyhook).To(Equal("gpu-init"))
-		Expect(fromJob.Stage).To(Equal(v1alpha1.StageApply))
-		Expect(fromJob.Name).To(Equal("tuning"))
+		Expect(fromTmpl).To(Equal(fromPod))
+		Expect(fromPod.Skyhook).To(Equal("gpu-init"))
+		Expect(fromPod.Stage).To(Equal(v1alpha1.StageApply))
+		Expect(fromPod.Name).To(Equal("tuning"))
 
-		key := fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)
-		Expect(job.GetAnnotations()).To(HaveKey(key))
-		Expect(job.GetAnnotations()[key]).To(Equal(pod.GetAnnotations()[key]))
+		Expect(job.GetAnnotations()).To(HaveKey(packageAnnotationKey))
+		Expect(job.GetAnnotations()[packageAnnotationKey]).To(Equal(pod.GetAnnotations()[packageAnnotationKey]))
+		Expect(tmpl.GetAnnotations()[packageAnnotationKey]).To(Equal(pod.GetAnnotations()[packageAnnotationKey]))
 	})
 
 	It("marks a Job's package invalid via InvalidatePackage/IsInvalidPackage", func() {
