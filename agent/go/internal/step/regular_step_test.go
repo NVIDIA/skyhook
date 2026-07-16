@@ -19,6 +19,8 @@
 package step
 
 import (
+	"github.com/NVIDIA/nodewright/agent/internal/command"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -45,7 +47,7 @@ var _ = Describe("RegularStep.applyDefaults", func() {
 	It("defaults returncodes to [0]", func() {
 		s := RegularStep{ScriptPath: "foo.sh"}
 		s.applyDefaults()
-		Expect(s.Returncodes).To(Equal([]int{0}))
+		Expect(s.Returncodes).To(Equal([]command.ExitCode{command.SuccessExitCode}))
 	})
 
 	It("defaults env to an empty map", func() {
@@ -97,7 +99,7 @@ var _ = Describe("NewRegularStep", func() {
 		Expect(s.ScriptPath).To(Equal("foo.sh"))
 		Expect(s.Name).To(Equal("foo.sh"))
 		Expect(s.Arguments).To(Equal([]string{}))
-		Expect(s.Returncodes).To(Equal([]int{0}))
+		Expect(s.Returncodes).To(Equal([]command.ExitCode{command.SuccessExitCode}))
 		Expect(s.Env).To(Equal(map[string]string{}))
 		Expect(s.OnHost).To(BeTrue())
 		Expect(s.Idempotence()).To(Equal(Auto))
@@ -119,7 +121,7 @@ var _ = Describe("NewRegularStep", func() {
 			"foo.sh",
 			WithName("custom"),
 			WithArguments([]string{"-x", "y"}),
-			WithReturncodes([]int{0, 2}),
+			WithReturncodes([]command.ExitCode{0, 2}),
 			WithEnv(map[string]string{"K": "V"}),
 			WithOnHost(false),
 			WithIdempotence(Disabled),
@@ -127,7 +129,7 @@ var _ = Describe("NewRegularStep", func() {
 		)
 		Expect(s.Name).To(Equal("custom"))
 		Expect(s.Arguments).To(Equal([]string{"-x", "y"}))
-		Expect(s.Returncodes).To(Equal([]int{0, 2}))
+		Expect(s.Returncodes).To(Equal([]command.ExitCode{0, 2}))
 		Expect(s.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(s.OnHost).To(BeFalse())
 		Expect(s.Idempotence()).To(Equal(Disabled))

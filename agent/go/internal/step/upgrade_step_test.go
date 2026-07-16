@@ -21,6 +21,8 @@ package step
 import (
 	"strings"
 
+	"github.com/NVIDIA/nodewright/agent/internal/command"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -47,14 +49,14 @@ var _ = Describe("NewUpgradeStep", func() {
 		u, err := NewUpgradeStep(
 			"upgrade.sh",
 			WithName("custom"),
-			WithReturncodes([]int{0, 2}),
+			WithReturncodes([]command.ExitCode{0, 2}),
 			WithEnv(map[string]string{"K": "V"}),
 			WithOnHost(false),
 			WithIdempotence(Disabled),
 		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(u.Name).To(Equal("custom"))
-		Expect(u.Returncodes).To(Equal([]int{0, 2}))
+		Expect(u.Returncodes).To(Equal([]command.ExitCode{0, 2}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(u.OnHost).To(BeFalse())
 		Expect(u.Idempotence()).To(Equal(Disabled))
@@ -84,7 +86,7 @@ var _ = Describe("UpgradeStep fields", func() {
 		rs := RegularStep{
 			Name:            "explicit",
 			ScriptPath:      "upgrade.sh",
-			Returncodes:     []int{0},
+			Returncodes:     []command.ExitCode{command.SuccessExitCode},
 			Env:             map[string]string{"K": "V"},
 			OnHost:          true,
 			IdempotenceMode: Disabled,
@@ -93,7 +95,7 @@ var _ = Describe("UpgradeStep fields", func() {
 
 		Expect(u.Name).To(Equal("explicit"))
 		Expect(u.ScriptPath).To(Equal("upgrade.sh"))
-		Expect(u.Returncodes).To(Equal([]int{0}))
+		Expect(u.Returncodes).To(Equal([]command.ExitCode{command.SuccessExitCode}))
 		Expect(u.Env).To(Equal(map[string]string{"K": "V"}))
 		Expect(u.OnHost).To(BeTrue())
 		Expect(u.Idempotence()).To(Equal(Disabled))

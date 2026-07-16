@@ -23,6 +23,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
+	"github.com/NVIDIA/nodewright/agent/internal/command"
 )
 
 // RegularStep is the default Step implementation. Its fields are
@@ -31,21 +33,22 @@ import (
 // codec, so no custom marshaler is needed here.
 //
 // applyDefaults makes Name fall back to ScriptPath, Arguments to []string{},
-// Returncodes to []int{0}, Env to map[string]string{}, and Idempotence to Auto.
+// Returncodes to command.SuccessExitCode, Env to map[string]string{}, and
+// Idempotence to Auto.
 // NewRegularStep additionally defaults OnHost to true.
 //
 // ScriptPath carries the json:"path" wire name and IdempotenceMode the
 // json:"idempotence" wire name; both fields are named distinctly so
 // RegularStep can expose Path() and Idempotence() to satisfy Step.
 type RegularStep struct {
-	Name            string            `json:"name"`
-	ScriptPath      string            `json:"path"`
-	Arguments       []string          `json:"arguments"`
-	Returncodes     []int             `json:"returncodes"`
-	OnHost          bool              `json:"on_host"`
-	IdempotenceMode Idempotence       `json:"idempotence"`
-	UpgradeStep     bool              `json:"upgrade_step"`
-	Env             map[string]string `json:"env,omitempty"`
+	Name            string             `json:"name"`
+	ScriptPath      string             `json:"path"`
+	Arguments       []string           `json:"arguments"`
+	Returncodes     []command.ExitCode `json:"returncodes"`
+	OnHost          bool               `json:"on_host"`
+	IdempotenceMode Idempotence        `json:"idempotence"`
+	UpgradeStep     bool               `json:"upgrade_step"`
+	Env             map[string]string  `json:"env,omitempty"`
 
 	// RequiresInterrupt round-trips via the wire as "requires_interrupt",
 	// emitted only when true; it stays schema-valid because the step schema
@@ -71,18 +74,18 @@ func (s RegularStep) Fingerprint() (string, error) {
 	}
 	returnCodes := s.Returncodes
 	if returnCodes == nil {
-		returnCodes = []int{}
+		returnCodes = []command.ExitCode{}
 	}
 	env := s.Env
 	if env == nil {
 		env = map[string]string{}
 	}
 	payload, err := json.Marshal(struct {
-		Path        string            `json:"path"`
-		Arguments   []string          `json:"arguments"`
-		ReturnCodes []int             `json:"returnCodes"`
-		Env         map[string]string `json:"env"`
-		OnHost      bool              `json:"onHost"`
+		Path        string             `json:"path"`
+		Arguments   []string           `json:"arguments"`
+		ReturnCodes []command.ExitCode `json:"returnCodes"`
+		Env         map[string]string  `json:"env"`
+		OnHost      bool               `json:"onHost"`
 	}{
 		Path:        s.ScriptPath,
 		Arguments:   arguments,
@@ -137,7 +140,7 @@ func WithArguments(args []string) RegularStepOption {
 }
 
 // WithReturncodes sets the accepted return codes (default: [0]).
-func WithReturncodes(codes []int) RegularStepOption {
+func WithReturncodes(codes []command.ExitCode) RegularStepOption {
 	return func(s *RegularStep) { s.Returncodes = codes }
 }
 
@@ -191,7 +194,7 @@ func (s *RegularStep) applyDefaults() {
 		s.Arguments = []string{}
 	}
 	if len(s.Returncodes) == 0 {
-		s.Returncodes = []int{0}
+		s.Returncodes = []command.ExitCode{command.SuccessExitCode}
 	}
 	if s.Env == nil {
 		s.Env = map[string]string{}
