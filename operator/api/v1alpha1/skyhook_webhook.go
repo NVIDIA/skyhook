@@ -269,6 +269,11 @@ func (r *Skyhook) Validate() error {
 		if v.Uninstall != nil && v.Uninstall.Apply && !v.Uninstall.Enabled {
 			return fmt.Errorf("package %q: uninstall.apply requires uninstall.enabled to be true", name)
 		}
+
+		// stageTimeout maps to a Job activeDeadlineSeconds; 0 disables it, negatives are meaningless.
+		if v.StageTimeout != nil && v.StageTimeout.Duration < 0 {
+			return fmt.Errorf("package %q: stageTimeout must be greater than or equal to 0", name)
+		}
 	}
 
 	var graph graph.DependencyGraph[*Package]

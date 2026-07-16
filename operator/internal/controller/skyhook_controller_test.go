@@ -497,6 +497,8 @@ var _ = Describe("skyhook controller tests", func() {
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
 			AgentLogRoot:         "/log",
+			JobTTLSucceeded:      time.Hour,
+			JobTTLFailed:         24 * time.Hour,
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -998,6 +1000,8 @@ var _ = Describe("skyhook controller tests", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
+			JobTTLSucceeded:      time.Hour,
+			JobTTLFailed:         24 * time.Hour,
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -1034,6 +1038,35 @@ var _ = Describe("skyhook controller tests", func() {
 
 		opts.PauseImage = "bar"
 		Expect(opts.Validate()).ToNot(BeNil())
+
+		// reset to a fully valid set, then exercise the Job-related floors in isolation
+		opts = SkyhookOperatorOptions{
+			Namespace:            "skyhook",
+			MaxInterval:          time.Second * 61,
+			CopyDirRoot:          "/tmp",
+			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:           "foo:bar",
+			PauseImage:           "foo:bar",
+			JobTTLSucceeded:      time.Hour,
+			JobTTLFailed:         24 * time.Hour,
+		}
+		Expect(opts.Validate()).To(BeNil())
+
+		// JobTTLSucceeded below the 1 minute floor
+		opts.JobTTLSucceeded = 30 * time.Second
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobTTLSucceeded = time.Hour
+
+		// JobTTLFailed below the 1 minute floor
+		opts.JobTTLFailed = 0
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobTTLFailed = 24 * time.Hour
+
+		// negative JobStageTimeout is rejected; 0 is allowed (disables the deadline)
+		opts.JobStageTimeout = -time.Second
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobStageTimeout = 0
+		Expect(opts.Validate()).To(BeNil())
 	})
 	It("Should group skyhooks by node correctly", func() {
 		skyhooks := &v1alpha1.NodeWrightList{

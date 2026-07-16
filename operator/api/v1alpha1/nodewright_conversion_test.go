@@ -108,6 +108,7 @@ func fullSkyhook() *Skyhook {
 						MemoryLimit:   resource.MustParse("128Mi"),
 					},
 					GracefulShutdown: &metav1.Duration{Duration: 30 * time.Second},
+					StageTimeout:     &metav1.Duration{Duration: 2 * time.Hour},
 					Uninstall: &Uninstall{
 						Enabled: true,
 						Apply:   true,

@@ -69,6 +69,15 @@ const (
 	// EventTypeWarning = "Warning"
 	TaintUnschedulable     = corev1.TaintNodeUnschedulable
 	InterruptContainerName = "interrupt"
+	// pauseContainerName is the single main container in the raw-pod builders (a
+	// forever-running pause). The Job builder swaps it for a container that exits 0 so
+	// the pod can reach Succeeded and the Job can complete.
+	pauseContainerName = "pause"
+	// interruptLabelValue is the value of the .../interrupt label (capital "True",
+	// distinct from the lowercase annotationTrueValue "true" used elsewhere).
+	interruptLabelValue = "True"
+	// shellBinary is the shell entrypoint for the init-copy step and the Job's exit-0 container.
+	shellBinary = "/bin/sh"
 
 	SkyhookFinalizer = "nodewright.nvidia.com/nodewright"
 
@@ -125,6 +134,14 @@ type SkyhookOperatorOptions struct {
 	// around (a rollback window) before pruning them. 0 or less prunes immediately (no
 	// rollback window). Remove with the legacy group at the removal release.
 	LegacyCleanupDelay time.Duration `env:"LEGACY_CLEANUP_DELAY, default=24h"`
+
+	// JobTTLSucceeded / JobTTLFailed set ttlSecondsAfterFinished at completion time by
+	// outcome so failure logs outlive success logs; JobStageTimeout is the default
+	// activeDeadlineSeconds for a package stage Job when the package sets no stageTimeout
+	// (0 disables the deadline).
+	JobTTLSucceeded time.Duration `env:"JOB_TTL_SUCCEEDED, default=1h"`
+	JobTTLFailed    time.Duration `env:"JOB_TTL_FAILED, default=24h"`
+	JobStageTimeout time.Duration `env:"JOB_STAGE_TIMEOUT, default=1h"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {
@@ -171,6 +188,19 @@ func (o *SkyhookOperatorOptions) Validate() error {
 
 	if !strings.Contains(o.PauseImage, ":") {
 		messages = append(messages, "pause image must contain a tag")
+	}
+
+	if o.JobTTLSucceeded < time.Minute {
+		messages = append(messages, "job ttl succeeded must be at least 1 minute")
+	}
+
+	if o.JobTTLFailed < time.Minute {
+		messages = append(messages, "job ttl failed must be at least 1 minute")
+	}
+
+	// 0 disables the stage deadline; negatives are meaningless.
+	if o.JobStageTimeout < 0 {
+		messages = append(messages, "job stage timeout must be greater than or equal to 0")
 	}
 
 	if len(messages) > 0 {
@@ -2380,7 +2410,7 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 			Labels: map[string]string{
 				fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):      skyhook.Name,
 				fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX):   fmt.Sprintf("%s-%s", _package.Name, _package.Version),
-				fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX): "True",
+				fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX): interruptLabelValue,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -2410,7 +2440,7 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 			},
 			Containers: []corev1.Container{
 				{
-					Name:  "pause",
+					Name:  pauseContainerName,
 					Image: opts.PauseImage,
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
@@ -2604,7 +2634,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 					Name:            fmt.Sprintf("%s-init", trunstr(_package.Name, 43)),
 					Image:           getPackageImage(_package),
 					ImagePullPolicy: corev1.PullAlways,
-					Command:         []string{"/bin/sh"},
+					Command:         []string{shellBinary},
 					Args: []string{
 						"-c",
 						"mkdir -p /root/${SKYHOOK_DIR} && cp -r /skyhook-package/* /root/${SKYHOOK_DIR}",
@@ -2645,7 +2675,7 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 			},
 			Containers: []corev1.Container{
 				{
-					Name:  "pause",
+					Name:  pauseContainerName,
 					Image: opts.PauseImage,
 					Resources: corev1.ResourceRequirements{
 						Limits: corev1.ResourceList{
@@ -2716,7 +2746,7 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 	isInterrupt := false
 	_, limitRange := pod.Annotations["kubernetes.io/limit-ranger"]
 
-	if pod.Labels[fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX)] == "True" {
+	if pod.Labels[fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX)] == interruptLabelValue {
 		expectedPod = createInterruptPodForPackage(opts, &v1alpha1.Interrupt{}, "", _package, skyhook, "", stage)
 		isInterrupt = true
 	} else {
