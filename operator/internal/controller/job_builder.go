@@ -138,8 +138,10 @@ func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.S
 
 	// From the package's stageTimeout, else the operator default. A value of 0 disables
 	// the deadline: the field is omitted, because a literal 0 would insta-fail every Job.
+	// Round up so a positive sub-second timeout can't truncate to 0 (which would also
+	// insta-fail) — any positive value yields at least a 1s deadline.
 	if timeout := effectiveStageTimeout(opts, _package); timeout > 0 {
-		spec.ActiveDeadlineSeconds = ptr(int64(timeout.Seconds()))
+		spec.ActiveDeadlineSeconds = ptr(int64(math.Ceil(timeout.Seconds())))
 	}
 
 	return &batchv1.Job{

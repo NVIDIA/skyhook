@@ -164,6 +164,26 @@ var _ = Describe("job builders", func() {
 					Expect(job.Spec.ActiveDeadlineSeconds).To(BeNil())
 				})
 			})
+
+			When("the package sets a positive sub-second stageTimeout", func() {
+				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 500 * time.Millisecond} })
+				It("rounds up to at least one second, never 0 (which would insta-fail)", func() {
+					Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
+					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(1)))
+				})
+			})
+		})
+
+		When("the package sets gracefulShutdown and the operator sets an image pull secret", func() {
+			BeforeEach(func() {
+				opts.ImagePullSecret = "regcred"
+				pkg.GracefulShutdown = &metav1.Duration{Duration: 45 * time.Second}
+			})
+			It("carries both through to the pod template", func() {
+				Expect(job.Spec.Template.Spec.TerminationGracePeriodSeconds).ToNot(BeNil())
+				Expect(*job.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(45)))
+				Expect(job.Spec.Template.Spec.ImagePullSecrets).To(ContainElement(corev1.LocalObjectReference{Name: "regcred"}))
+			})
 		})
 
 		When("the node name exceeds the label-value limit", func() {
@@ -195,11 +215,35 @@ var _ = Describe("job builders", func() {
 			Expect(job.Spec.PodFailurePolicy).To(BeNil())
 		})
 
+		It("applies the stage deadline to the interrupt Job too (reboot time included)", func() {
+			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
+			Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(3600)))
+		})
+
 		It("still replaces the pause container with an exit-0 container", func() {
 			// the exit-0 command itself is asserted in the package-Job spec above; the
 			// transform is shared, so here just confirm the swap happened.
 			Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
 			Expect(job.Spec.Template.Spec.Containers[0].Name).To(Equal(doneContainerName))
+		})
+	})
+
+	Describe("API admission (envtest)", func() {
+		// The struct-level specs above cannot see apiserver validation of the Job field
+		// combinations (podFailurePolicy x restartPolicy x podReplacementPolicy x
+		// activeDeadlineSeconds). Create both Job kinds against the envtest apiserver so an
+		// admission regression fails here instead of only at e2e / wiring time.
+		It("creates both a package and an interrupt Job against the apiserver", func() {
+			built := []*batchv1.Job{
+				createJobFromPackage(opts, pkg, skyhook, "worker-admission", v1alpha1.StageApply),
+				createInterruptJobFromPackage(opts, &v1alpha1.Interrupt{Type: v1alpha1.REBOOT}, "args", pkg, skyhook, "worker-admission", v1alpha1.StageInterrupt),
+			}
+			for _, job := range built {
+				Expect(k8sClient.Create(ctx, job)).To(Succeed(), "apiserver must admit job %s", job.Name)
+				DeferCleanup(func(j *batchv1.Job) {
+					_ = k8sClient.Delete(ctx, j)
+				}, job)
+			}
 		})
 	})
 })
