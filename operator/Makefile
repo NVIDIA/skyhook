@@ -21,7 +21,7 @@ VERSION ?= $(GIT_TAG_LAST)
 # directive over the go directive, matching how setup-go resolves the version.
 GO_VERSION ?= $(shell awk '/^go /{go=$$2} /^toolchain /{tc=$$2; sub(/^go/,"",tc)} END{print (tc!=""?tc:go)}' $(CURDIR)/go.mod)
 DEBIAN_VERSION ?= trixie
-DISTROLESS_VERSION ?= 4.0.2
+DISTROLESS_VERSION ?= 4.0.0
 
 # Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location

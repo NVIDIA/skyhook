@@ -43,7 +43,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -mod=ven
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless/tree/main/base for more 
-FROM nvcr.io/nvidia/distroless/go:v${DISTROLESS_VERSION}
+FROM nvcr.io/nvidia/distroless/static:v${DISTROLESS_VERSION}
 
 ARG DISTROLESS_VERSION
 ARG GO_VERSION
@@ -51,7 +51,7 @@ ARG VERSION
 ARG GIT_SHA
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/go:v${DISTROLESS_VERSION}" \
+LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/static:v${DISTROLESS_VERSION}" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="skyhook-operator" \
       org.opencontainers.image.version="${VERSION}" \
