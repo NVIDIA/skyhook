@@ -190,9 +190,17 @@ Check before upgrading:
 kubectl get skyhooks.skyhook.nvidia.com -o custom-columns=NAME:.metadata.name,STATUS:.status.status,INPROGRESS:.status.nodesInProgress
 ```
 
-Proceed only when `STATUS` is `complete` and `INPROGRESS` is `0` for **all** Skyhooks. (Planned: the
-operator performing this check at upgrade time and warning or blocking if a rollout is in progress. For
-now, verify it yourself with the command above.)
+Proceed only when `STATUS` is `complete` and `INPROGRESS` is `0` for **all** Skyhooks.
+
+The operator enforces this at runtime as a fail-safe. On startup, while any legacy `Skyhook` reports a
+status that is set and not `complete` (i.e. a rollout was in flight when you upgraded), the operator
+**holds**: it does not take over any node, requeues every 20 seconds, and logs a warning naming the
+non-complete Skyhooks. This prevents the new operator from double-driving a node the pre-rename operator
+may still be mutating. It is a stop, not an auto-resume: because a legacy `Skyhook`'s status is frozen
+once the operator stops reconciling that kind, the hold clears only when the legacy Skyhooks genuinely
+read `complete`. If you upgraded mid-rollout, roll back to the pre-rename operator, let the rollout
+finish, then upgrade again. A legacy `Skyhook` created *after* the upgrade (with no status, mirrored into
+a `NodeWright`) does not trigger the hold.
 
 ## Downstream consumers (e.g. aicr)
 
