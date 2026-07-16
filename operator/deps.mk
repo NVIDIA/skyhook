@@ -65,7 +65,7 @@ GOVULNCHECK_VERSION ?= v1.3.0
 YQ_VERSION ?= v4.44.3
 
 ## ctlptl (local cluster + registry management)
-CTLPTL_VERSION ?= v0.9.3
+CTLPTL_VERSION ?= v0.9.4
 
 
 
