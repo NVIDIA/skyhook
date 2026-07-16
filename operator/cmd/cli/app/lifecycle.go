@@ -27,6 +27,7 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
@@ -94,6 +95,10 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
+			}
+
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
 			}
 
 			// Fetch the Skyhook to check operator version from its annotation

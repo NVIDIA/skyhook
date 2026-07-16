@@ -27,6 +27,7 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
@@ -62,6 +63,10 @@ Node names can be exact matches or regex patterns.`,
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
+			}
+
 			return runIgnore(cmd.Context(), cmd, kubeClient, args, ctx, true)
 		},
 	}
@@ -93,6 +98,10 @@ Node names can be exact matches or regex patterns.`,
 			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
+			}
+
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
 			}
 
 			return runIgnore(cmd.Context(), cmd, kubeClient, args, ctx, false)

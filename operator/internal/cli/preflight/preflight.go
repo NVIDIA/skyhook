@@ -1,0 +1,65 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// Package preflight holds cluster-capability checks the CLI runs before it
+// operates on NodeWright resources.
+package preflight
+
+import (
+	"fmt"
+
+	"k8s.io/client-go/discovery"
+
+	nwv1 "github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
+	skyhookv1 "github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+)
+
+// EnsureNodeWrightServed verifies the cluster serves the nodewright.nvidia.com
+// API group. When it does not but the legacy skyhook.nvidia.com group is served,
+// it returns an actionable error telling the operator to upgrade: every
+// NodeWright-operating CLI command would otherwise fail with a confusing
+// NotFound against a legacy-only operator. When neither group is served the
+// check passes and the command surfaces its own NotFound: absence of the legacy
+// group means this is not the legacy-only case this preflight exists to catch.
+func EnsureNodeWrightServed(disco discovery.DiscoveryInterface) error {
+	groups, err := disco.ServerGroups()
+	if err != nil {
+		return fmt.Errorf("discovering served API groups: %w", err)
+	}
+
+	var nodewrightServed, skyhookServed bool
+	for _, group := range groups.Groups {
+		switch group.Name {
+		case nwv1.GroupVersion.Group:
+			nodewrightServed = true
+		case skyhookv1.GroupVersion.Group:
+			skyhookServed = true
+		}
+	}
+
+	if nodewrightServed {
+		return nil
+	}
+	if skyhookServed {
+		return fmt.Errorf(
+			"this CLI targets the %s API group, but the cluster's operator only serves the legacy %s group; "+
+				"upgrade to a NodeWright-capable operator (see docs/cli.md)",
+			nwv1.GroupVersion.Group, skyhookv1.GroupVersion.Group)
+	}
+	return nil
+}
