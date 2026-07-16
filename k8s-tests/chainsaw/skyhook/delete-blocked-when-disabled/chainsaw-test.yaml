@@ -64,7 +64,7 @@ spec:
     try:
     - script:
         content: |
-          kubectl annotate skyhook delete-blocked-when-disabled \
+          kubectl annotate nodewright delete-blocked-when-disabled \
             nodewright.nvidia.com/disable=true --overwrite
     - script:
         content: |
@@ -90,7 +90,7 @@ spec:
         content: |
           for i in $(seq 1 40); do
             count=$(kubectl get events -A \
-              --field-selector=type=Warning,reason=DeletionBlocked,involvedObject.kind=Skyhook,involvedObject.name=delete-blocked-when-disabled \
+              --field-selector=type=Warning,reason=DeletionBlocked,involvedObject.kind=NodeWright,involvedObject.name=delete-blocked-when-disabled \
               --no-headers 2>/dev/null | wc -l | tr -d ' ')
             if [ "$count" != "0" ]; then
               echo "Found DeletionBlocked warning event(s): $count"
@@ -111,7 +111,7 @@ spec:
     try:
     - script:
         content: |
-          kubectl annotate skyhook delete-blocked-when-disabled \
+          kubectl annotate nodewright delete-blocked-when-disabled \
             nodewright.nvidia.com/disable- --overwrite
     - script:
         content: |
