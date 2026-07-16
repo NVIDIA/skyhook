@@ -6,8 +6,8 @@ This document outlines Skyhook's approach to supporting different Kubernetes ver
 
 | Kubernetes Version | Recommended Skyhook | Status |
 |--------------------|---------------------|--------|
-| 1.35, 1.34, 1.33, 1.32, 1.31 | v0.12.x (latest) | ✅ Fully Supported, CI tested |
-| 1.30 and older | v0.8.x | ⚠️ Legacy (K8s 1.30 EOL June 2025) |
+| 1.36, 1.35, 1.34, 1.33 | v0.12.x (latest) | ✅ Fully Supported, CI tested |
+| 1.32 and older | v0.8.x | ⚠️ Legacy (dropped from CI when kind v0.32.0 stopped publishing 1.32 node images) |
 
 ### Previous Release Compatibility
 
