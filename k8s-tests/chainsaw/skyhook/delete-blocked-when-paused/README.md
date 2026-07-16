@@ -15,8 +15,8 @@ The symmetric disabled-with-pending case is covered in
 
 1. Install a Skyhook with one `uninstall.enabled: true` package, wait for
    `status: complete`.
-2. Annotate the Skyhook with `skyhook.nvidia.com/pause=true`.
-3. Issue `kubectl delete skyhook --wait=false`.
+2. Annotate the Skyhook with `nodewright.nvidia.com/pause=true`.
+3. Issue `kubectl delete nodewright --wait=false`.
 4. Assert the CR is still present (`deletionTimestamp != null`) with a
    `DeletionBlocked` condition
    (`status=True`, `reason=PausedWithPendingUninstall`).

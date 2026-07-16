@@ -28,11 +28,11 @@ spec:
   - get:
       apiVersion: v1
       kind: Node
-      selector: skyhook.nvidia.com/runtime-required-test=true
+      selector: nodewright.nvidia.com/runtime-required-test=true
       format: yaml
   - get:
-      apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
       name: runtime-required
       format: yaml
   steps:
@@ -44,10 +44,10 @@ spec:
           ## remove annotation from last run
           ../skyhook-cli reset runtime-required --confirm 2>/dev/null || true
           ## label both worker nodes for this test (multi-node isolation)
-          kubectl label node kind-worker skyhook.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
-          kubectl label node kind-worker2 skyhook.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
+          kubectl label node kind-worker nodewright.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
+          kubectl label node kind-worker2 nodewright.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
           ## add runtime-required taints to both nodes
-          ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/runtime-required-test=true
+          ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule nodewright.nvidia.com/runtime-required-test=true
           ## add blocking taint to kind-worker2 only (skyhook doesn't tolerate this)
           kubectl taint node kind-worker2 test-block=true:NoSchedule --overwrite 2>/dev/null || true
   
@@ -56,8 +56,8 @@ spec:
     try:
     - create:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             labels:
               app.kubernetes.io/part-of: skyhook-operator
@@ -67,7 +67,7 @@ spec:
             runtimeRequired: true
             nodeSelectors:
               matchLabels:
-                skyhook.nvidia.com/runtime-required-test: "true"
+                nodewright.nvidia.com/runtime-required-test: "true"
             packages:
               spencer:
                 version: "3.2.3"
@@ -89,10 +89,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: runtime-required
-              skyhook.nvidia.com/package: spencer-3.2.3
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package").stage == 'apply'): true
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'apply'): true
           spec:
             nodeName: kind-worker
     - assert:
@@ -103,10 +103,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: runtime-required
-              skyhook.nvidia.com/package: spencer-3.2.3
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package").stage == 'config'): true
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'config'): true
           spec:
             nodeName: kind-worker
     - assert:
@@ -117,9 +117,9 @@ spec:
           metadata:
             name: kind-worker
             labels:
-              skyhook.nvidia.com/status_runtime-required: complete
+              nodewright.nvidia.com/status_runtime-required: complete
             annotations:
-              skyhook.nvidia.com/status_runtime-required: complete
+              nodewright.nvidia.com/status_runtime-required: complete
           spec:
             (!taints || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true
     - assert:
@@ -130,9 +130,9 @@ spec:
           metadata:
             name: kind-worker2
             labels:
-              skyhook.nvidia.com/status_runtime-required: blocked
+              nodewright.nvidia.com/status_runtime-required: blocked
             annotations:
-              skyhook.nvidia.com/status_runtime-required: blocked
+              nodewright.nvidia.com/status_runtime-required: blocked
           spec:
             taints:
             - key: test-block
@@ -162,10 +162,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: runtime-required
-              skyhook.nvidia.com/package: spencer-3.2.3
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package").stage == 'apply'): true
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'apply'): true
           spec:
             nodeName: kind-worker2
     - assert:
@@ -176,10 +176,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: runtime-required
-              skyhook.nvidia.com/package: spencer-3.2.3
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package").stage == 'config'): true
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'config'): true
           spec:
             nodeName: kind-worker2
     - assert:
@@ -190,9 +190,9 @@ spec:
           metadata:
             name: kind-worker2
             labels:
-              skyhook.nvidia.com/status_runtime-required: complete
+              nodewright.nvidia.com/status_runtime-required: complete
             annotations:
-              skyhook.nvidia.com/status_runtime-required: complete
+              nodewright.nvidia.com/status_runtime-required: complete
           spec:
             (!taints || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true
   
@@ -209,10 +209,10 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/runtime-required-test: "true"
-              skyhook.nvidia.com/status_runtime-required: complete
+              nodewright.nvidia.com/runtime-required-test: "true"
+              nodewright.nvidia.com/status_runtime-required: complete
             annotations:
-              skyhook.nvidia.com/status_runtime-required: complete
+              nodewright.nvidia.com/status_runtime-required: complete
           spec:
             # Verify the runtime-required taint has been removed from this node
             (!taints || length(taints)==`0` || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule'  && value == 'runtime-required'])==`0`): true
@@ -221,4 +221,4 @@ spec:
     - script:
         content: |
           ## remove taints from nodes
-          ../nodes_remove_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule skyhook.nvidia.com/runtime-required-test=true
+          ../nodes_remove_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule nodewright.nvidia.com/runtime-required-test=true

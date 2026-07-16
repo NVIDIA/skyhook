@@ -18,8 +18,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Assert: Batch 1 - Initial batch started for all compartments
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: multi-compartment-test
 status:

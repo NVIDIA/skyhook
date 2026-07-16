@@ -14,20 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# The mirror controller must have produced a NodeWright carrying the mirror
+# bookkeeping annotation and the spec converted faithfully from the legacy Skyhook.
 apiVersion: nodewright.nvidia.com/v1alpha1
 kind: NodeWright
 metadata:
-  name: downgrade-after-uninstall
+  name: mirror-legacy-skyhook
+  annotations:
+    nodewright.nvidia.com/mirrored-from: mirror-legacy-skyhook
 spec:
-  nodeSelectors:
-    matchLabels:
-      nodewright.nvidia.com/test-node: skyhooke2e
-  interruptionBudget:
-    count: 1
   packages:
-    mypkg:
-      version: "2.1.4"
+    dexter:
+      version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
-      uninstall:
-        enabled: true
-        apply: true

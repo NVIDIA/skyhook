@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 )
 
 func TestUtils(t *testing.T) {
@@ -69,8 +69,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		It("should convert an unstructured object to a Skyhook", func() {
 			u := &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "skyhook.nvidia.com/v1alpha1",
-					"kind":       "Skyhook",
+					"apiVersion": "nodewright.nvidia.com/v1alpha1",
+					"kind":       "NodeWright",
 					"metadata": map[string]interface{}{
 						"name":      "test-skyhook",
 						"namespace": "default",
@@ -86,8 +86,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		It("should handle unstructured with packages", func() {
 			u := &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "skyhook.nvidia.com/v1alpha1",
-					"kind":       "Skyhook",
+					"apiVersion": "nodewright.nvidia.com/v1alpha1",
+					"kind":       "NodeWright",
 					"metadata": map[string]interface{}{
 						"name": "test-skyhook",
 					},
@@ -184,8 +184,8 @@ var _ = Describe("CLI Utility Functions", func() {
 
 	Describe("ResetCompartmentBatchStates (API method)", func() {
 		It("should handle skyhook with nil CompartmentStatuses", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: nil,
 				},
 			}
@@ -195,8 +195,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should handle skyhook with empty CompartmentStatuses", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{},
 				},
 			}
@@ -206,8 +206,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should reset batch state for a single compartment", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"default": {
 							Matched:         10,
@@ -254,8 +254,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should reset batch state for multiple compartments", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"compartment-a": {
 							BatchState: &v1alpha1.BatchProcessingState{
@@ -303,8 +303,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should handle compartment without existing batch state", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"default": {
 							Matched:    10,
@@ -331,11 +331,11 @@ var _ = Describe("CLI Utility Functions", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			value := `{"a":"b\"c","x":"yz","unicode":"café"}`
-			Expect(SetNodeAnnotation(context.Background(), kube, "n1", "skyhook.nvidia.com/nodeState_demo", value)).To(Succeed())
+			Expect(SetNodeAnnotation(context.Background(), kube, "n1", "nodewright.nvidia.com/nodeState_demo", value)).To(Succeed())
 
 			got, err := kube.CoreV1().Nodes().Get(context.Background(), "n1", metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(got.Annotations["skyhook.nvidia.com/nodeState_demo"]).To(Equal(value))
+			Expect(got.Annotations["nodewright.nvidia.com/nodeState_demo"]).To(Equal(value))
 		})
 	})
 
@@ -369,7 +369,7 @@ var _ = Describe("CLI Utility Functions", func() {
 		addNode := func(name, skyhook, annotationJSON string) {
 			ann := map[string]string{}
 			if skyhook != "" {
-				ann["skyhook.nvidia.com/nodeState_"+skyhook] = annotationJSON
+				ann["nodewright.nvidia.com/nodeState_"+skyhook] = annotationJSON
 			}
 			_, err := kube.CoreV1().Nodes().Create(context.Background(),
 				&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Annotations: ann}},
@@ -408,13 +408,13 @@ var _ = Describe("CLI Utility Functions", func() {
 				&corev1.Node{ObjectMeta: metav1.ObjectMeta{
 					Name:        "n1",
 					Labels:      map[string]string{"role": "gpu"},
-					Annotations: map[string]string{"skyhook.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
+					Annotations: map[string]string{"nodewright.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
 				}}, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			_, err = kube.CoreV1().Nodes().Create(context.Background(),
 				&corev1.Node{ObjectMeta: metav1.ObjectMeta{
 					Name:        "n2",
-					Annotations: map[string]string{"skyhook.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
+					Annotations: map[string]string{"nodewright.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
 				}}, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 

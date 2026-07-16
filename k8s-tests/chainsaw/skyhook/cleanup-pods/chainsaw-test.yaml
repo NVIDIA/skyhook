@@ -56,8 +56,8 @@ spec:
     - assert:
         ## wait for muck_up to be processed before resetting the node
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: cleanup-pods
           status:
@@ -65,7 +65,7 @@ spec:
     - script:
         content: |
           ## delete the node annotation on one node to trigger cleanup
-          kubectl annotate node/kind-worker skyhook.nvidia.com/nodeState_cleanup-pods-
+          kubectl annotate node/kind-worker nodewright.nvidia.com/nodeState_cleanup-pods-
     ## assert pods are recreated on kind-worker after reset (sequential: pods get cleaned up between stages)
     - assert:
         ## aa apply pod on kind-worker
@@ -75,10 +75,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: cleanup-pods
-              skyhook.nvidia.com/package: aa-1.2.3
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: aa-1.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "aa",
                   "version": "1.2.3",
@@ -87,8 +87,8 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: skyhook.nvidia.com/v1alpha1
-                kind: Skyhook
+              - apiVersion: nodewright.nvidia.com/v1alpha1
+                kind: NodeWright
                 name: cleanup-pods
           spec:
             nodeName: kind-worker
@@ -112,10 +112,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: cleanup-pods
-              skyhook.nvidia.com/package: aa-1.2.3
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: aa-1.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "aa",
                   "version": "1.2.3",
@@ -124,8 +124,8 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: skyhook.nvidia.com/v1alpha1
-                kind: Skyhook
+              - apiVersion: nodewright.nvidia.com/v1alpha1
+                kind: NodeWright
                 name: cleanup-pods
           spec:
             nodeName: kind-worker
@@ -149,10 +149,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: cleanup-pods
-              skyhook.nvidia.com/package: bb-1.2
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: bb-1.2
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "bb",
                   "version": "1.2",
@@ -161,8 +161,8 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: skyhook.nvidia.com/v1alpha1
-                kind: Skyhook
+              - apiVersion: nodewright.nvidia.com/v1alpha1
+                kind: NodeWright
                 name: cleanup-pods
           spec:
             nodeName: kind-worker
@@ -182,8 +182,8 @@ spec:
     - assert:
         ## skyhook shows erroring on both nodes
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: cleanup-pods
           status:

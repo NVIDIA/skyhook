@@ -17,7 +17,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-apiVersion: skyhook.nvidia.com/v1alpha1
+apiVersion: nodewright.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: test-batch-reset-policy

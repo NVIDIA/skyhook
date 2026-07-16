@@ -20,10 +20,10 @@ kind: Pod
 metadata:
   namespace: skyhook
   labels:
-    skyhook.nvidia.com/name: config-skyhook
-    skyhook.nvidia.com/package: dexter-1.2.3
+    nodewright.nvidia.com/name: config-skyhook
+    nodewright.nvidia.com/package: dexter-1.2.3
   annotations:
-    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+    ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
       {
         "name": "dexter",
         "version": "1.2.3",
@@ -49,10 +49,10 @@ kind: Node
 metadata:
   name: kind-worker
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
-    skyhook.nvidia.com/status_config-skyhook: complete
+    nodewright.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/status_config-skyhook: complete
   annotations:
-    ("skyhook.nvidia.com/nodeState_config-skyhook" && parse_json("skyhook.nvidia.com/nodeState_config-skyhook")):
+    ("nodewright.nvidia.com/nodeState_config-skyhook" && parse_json("nodewright.nvidia.com/nodeState_config-skyhook")):
       {
         "dexter|1.2.3": {
             "name": "dexter",
@@ -62,17 +62,17 @@ metadata:
             "state": "complete"
         }
       }
-    skyhook.nvidia.com/status_config-skyhook: complete
+    nodewright.nvidia.com/status_config-skyhook: complete
 status:
-  (conditions[?type == 'skyhook.nvidia.com/config-skyhook/NotReady']):
+  (conditions[?type == 'nodewright.nvidia.com/config-skyhook/NotReady']):
   - reason: "Complete"
     status: "False"
-  (conditions[?type == 'skyhook.nvidia.com/config-skyhook/Erroring']):
+  (conditions[?type == 'nodewright.nvidia.com/config-skyhook/Erroring']):
   - reason: "Not Erroring"
     status: "False"
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: config-skyhook
 status:
@@ -95,12 +95,12 @@ metadata:
   name: config-skyhook-dexter-1.2.3
   namespace: skyhook
   labels:
-    skyhook.nvidia.com/name: config-skyhook
+    nodewright.nvidia.com/name: config-skyhook
   ownerReferences:
-  - apiVersion: skyhook.nvidia.com/v1alpha1
+  - apiVersion: nodewright.nvidia.com/v1alpha1
     blockOwnerDeletion: true
     controller: true
-    kind: Skyhook
+    kind: NodeWright
     name: config-skyhook
 data:
   game.properties: |

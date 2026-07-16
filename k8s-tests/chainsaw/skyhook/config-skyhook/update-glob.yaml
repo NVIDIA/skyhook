@@ -15,14 +15,14 @@
 # limitations under the License.
 
 # Full spec to avoid strategic merge ambiguity — only dexter remains with glob configInterrupt
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: config-skyhook
 spec:
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      nodewright.nvidia.com/test-node: skyhooke2e
   interruptionBudget:
     count: 1
   packages:

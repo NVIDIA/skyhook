@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: explicit-uninstall
         format: yaml
   steps:
@@ -51,10 +51,10 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_explicit-uninstall: complete
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_explicit-uninstall: complete
             annotations:
-              ("skyhook.nvidia.com/nodeState_explicit-uninstall" && parse_json("skyhook.nvidia.com/nodeState_explicit-uninstall")):
+              ("nodewright.nvidia.com/nodeState_explicit-uninstall" && parse_json("nodewright.nvidia.com/nodeState_explicit-uninstall")):
                 {
                   "mypkg|2.1.4": {
                       "name": "mypkg",
@@ -67,8 +67,8 @@ spec:
     - assert:
         ## skyhook complete
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: explicit-uninstall
           status:
@@ -87,10 +87,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: explicit-uninstall
-              skyhook.nvidia.com/package: mypkg-2.1.4
+              nodewright.nvidia.com/name: explicit-uninstall
+              nodewright.nvidia.com/package: mypkg-2.1.4
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "mypkg",
                   "version": "2.1.4",
@@ -126,9 +126,9 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              ("skyhook.nvidia.com/nodeState_explicit-uninstall" && parse_json("skyhook.nvidia.com/nodeState_explicit-uninstall")):
+              ("nodewright.nvidia.com/nodeState_explicit-uninstall" && parse_json("nodewright.nvidia.com/nodeState_explicit-uninstall")):
                 {
                   "mypkg|2.1.4": {
                       "name": "mypkg",
@@ -150,8 +150,8 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: explicit-uninstall
-              skyhook.nvidia.com/interrupt: "True"
+              nodewright.nvidia.com/name: explicit-uninstall
+              nodewright.nvidia.com/interrupt: "True"
     - assert:
         ## after the full interrupt cycle, package should be absent from node state
         resource:
@@ -159,14 +159,14 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              skyhook.nvidia.com/nodeState_explicit-uninstall: '{}'
+              nodewright.nvidia.com/nodeState_explicit-uninstall: '{}'
     - assert:
         ## skyhook should return to complete after uninstall + interrupt finishes
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: explicit-uninstall
           status:
@@ -181,8 +181,8 @@ spec:
     - assert:
         ## skyhook complete with no packages
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: explicit-uninstall
           status:

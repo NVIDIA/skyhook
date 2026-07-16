@@ -18,8 +18,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Assert: Batch 2 - At least 2 nodes completed (1 + delta 1)
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: linear-strategy-test
 status:

@@ -20,9 +20,9 @@ kind: Node
 metadata:
   name: kind-worker
   labels:
-    skyhook.nvidia.com/status_auto-taint-new-nodes: complete
+    nodewright.nvidia.com/status_auto-taint-new-nodes: complete
   annotations:
-    skyhook.nvidia.com/status_auto-taint-new-nodes: complete
+    nodewright.nvidia.com/status_auto-taint-new-nodes: complete
 spec:
   # Verify the runtime-required taint has been removed after completion
   (!taints || length(taints)==`0` || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true

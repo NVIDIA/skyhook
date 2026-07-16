@@ -35,7 +35,7 @@ spec:
           ../skyhook-cli reset legacy-interruption-budget-test --confirm 2>/dev/null || true
           # Clean up any leftover labels
           chmod +x ../label-nodes.sh
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node 2>/dev/null || true
           echo "✓ State reset complete"
   
   - name: setup-nodes
@@ -44,11 +44,11 @@ spec:
         content: |
           chmod +x ../label-nodes.sh
           # Clean up any existing labels from previous tests
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node
           # Label first 6 worker nodes
-          ../label-nodes.sh add 0-5 skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 0-5 nodewright.nvidia.com/test-node=skyhooke2e
           echo "✓ Node labeling complete"
-          kubectl get nodes -L skyhook.nvidia.com/test-node --sort-by=.metadata.name | head -8
+          kubectl get nodes -L nodewright.nvidia.com/test-node --sort-by=.metadata.name | head -8
 
   - name: apply-skyhook
     try:
@@ -83,4 +83,4 @@ spec:
           # Clean up node annotations
           ../skyhook-cli reset legacy-interruption-budget-test --confirm 2>/dev/null || true
           # Clean up labels
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node

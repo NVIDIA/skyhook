@@ -38,7 +38,7 @@ spec:
           chmod +x ../label-nodes.sh
           ../label-nodes.sh clean-all region 2>/dev/null || true
           ../label-nodes.sh clean-all env 2>/dev/null || true
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node 2>/dev/null || true
           echo "✓ State reset complete"
   
   - name: setup-nodes
@@ -48,16 +48,16 @@ spec:
           chmod +x ../label-nodes.sh
           # Label nodes for overlapping selectors test
           # Nodes 0-1: Only region=us-west
-          ../label-nodes.sh add 0-1 region=us-west skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 0-1 region=us-west nodewright.nvidia.com/test-node=skyhooke2e
           # Nodes 2-3: Only env=production
-          ../label-nodes.sh add 2-3 env=production skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 2-3 env=production nodewright.nvidia.com/test-node=skyhooke2e
           # Nodes 4-5: BOTH region=us-west AND env=production (overlapping)
-          ../label-nodes.sh add 4-5 region=us-west env=production skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 4-5 region=us-west env=production nodewright.nvidia.com/test-node=skyhooke2e
           echo "✓ Node labeling complete"
           echo "  Nodes 0-1: region=us-west only"
           echo "  Nodes 2-3: env=production only"
           echo "  Nodes 4-5: region=us-west + env=production (overlapping)"
-          kubectl get nodes -L region,env,skyhook.nvidia.com/test-node --no-headers | grep skyhooke2e | sort
+          kubectl get nodes -L region,env,nodewright.nvidia.com/test-node --no-headers | grep skyhooke2e | sort
   
   - name: apply-resources
     try:
@@ -144,14 +144,14 @@ spec:
           # Clean up labels
           ../label-nodes.sh clean-all region
           ../label-nodes.sh clean-all env
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           name: overlapping-selectors-test
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
+          apiVersion: nodewright.nvidia.com/v1alpha1
           kind: DeploymentPolicy
           name: overlapping-selector-policy

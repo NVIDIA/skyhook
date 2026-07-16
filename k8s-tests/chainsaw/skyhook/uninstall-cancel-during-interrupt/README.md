@@ -50,7 +50,7 @@ A final `drain-uninstall-before-cleanup` step re-triggers uninstall and
 waits for the package to be absent from `nodeState` before chainsaw's
 built-in CR deletion. With an empty `nodeState`, the finalizer's Phase 2
 scan finds no pending uninstall work and falls straight through to
-Phase 3 cleanup (uncordon, remove `skyhook.nvidia.com/*` labels,
+Phase 3 cleanup (uncordon, remove `nodewright.nvidia.com/*` labels,
 annotations, and conditions from the node) — fast enough for chainsaw's
 default context deadline. Deleting the CR without this drain step would
 kick off the finalizer-driven uninstall + interrupt cycle again and

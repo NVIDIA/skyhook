@@ -19,12 +19,12 @@ kind: Pod
 metadata:
   name: shared-cordon-blocker
   labels:
-    skyhook.nvidia.com/shared-cordon-blocker: "true"
+    nodewright.nvidia.com/shared-cordon-blocker: "true"
 spec:
   terminationGracePeriodSeconds: 5
   restartPolicy: OnFailure
   nodeSelector:
-    skyhook.nvidia.com/shared-cordon-ownership: "true"
+    nodewright.nvidia.com/shared-cordon-ownership: "true"
   tolerations:
   - key: node.kubernetes.io/unschedulable
     operator: Exists

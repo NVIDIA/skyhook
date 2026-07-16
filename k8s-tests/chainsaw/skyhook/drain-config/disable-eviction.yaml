@@ -32,7 +32,7 @@ spec:
     spec:
       terminationGracePeriodSeconds: 5
       nodeSelector:
-        skyhook.nvidia.com/test-node: skyhooke2e
+        nodewright.nvidia.com/test-node: skyhooke2e
       containers:
       - name: workload
         image: ghcr.io/nvidia/skyhook/agentless:3.2.3

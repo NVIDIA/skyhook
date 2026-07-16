@@ -29,7 +29,7 @@ import (
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
@@ -238,7 +238,7 @@ func packageStatusTableConfig() utils.TableConfig[nodePackageStatus] {
 	}
 }
 
-func outputPackageStatusTableOrWide(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackageStatus, wide bool) error {
+func outputPackageStatusTableOrWide(out io.Writer, skyhook *v1alpha1.NodeWright, statuses []nodePackageStatus, wide bool) error {
 	headerLine := fmt.Sprintf("Skyhook: %s\nPackages: %s", skyhook.Name, formatPackageList(skyhook))
 	if wide {
 		return utils.OutputWideWithHeader(out, headerLine, packageStatusTableConfig(), statuses)
@@ -246,7 +246,7 @@ func outputPackageStatusTableOrWide(out io.Writer, skyhook *v1alpha1.Skyhook, st
 	return utils.OutputTableWithHeader(out, headerLine, packageStatusTableConfig(), statuses)
 }
 
-func formatPackageList(skyhook *v1alpha1.Skyhook) string {
+func formatPackageList(skyhook *v1alpha1.NodeWright) string {
 	packages := make([]string, 0, len(skyhook.Spec.Packages))
 	for name, pkg := range skyhook.Spec.Packages {
 		packages = append(packages, fmt.Sprintf("%s:%s", name, pkg.Version))

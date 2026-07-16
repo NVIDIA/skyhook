@@ -26,8 +26,8 @@ spec:
     assert: 240s
   catch:
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: delete-blocked-when-paused
         format: yaml
     - script:
@@ -46,8 +46,8 @@ spec:
         file: skyhook.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: delete-blocked-when-paused
           status:
@@ -64,16 +64,16 @@ spec:
     - script:
         content: |
           kubectl annotate skyhook delete-blocked-when-paused \
-            skyhook.nvidia.com/pause=true --overwrite
+            nodewright.nvidia.com/pause=true --overwrite
     - script:
         content: |
-          kubectl delete skyhook delete-blocked-when-paused --wait=false
+          kubectl delete nodewright delete-blocked-when-paused --wait=false
     - assert:
         ## CR is marked for deletion but still present, with the
         ## DeletionBlocked condition carrying reason=PausedWithPendingUninstall.
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: delete-blocked-when-paused
             (deletionTimestamp != null): true
@@ -111,17 +111,17 @@ spec:
     - script:
         content: |
           kubectl annotate skyhook delete-blocked-when-paused \
-            skyhook.nvidia.com/pause- --overwrite
+            nodewright.nvidia.com/pause- --overwrite
     - script:
         content: |
           for i in $(seq 1 80); do
-            if ! kubectl get skyhook delete-blocked-when-paused 2>/dev/null; then
+            if ! kubectl get nodewright delete-blocked-when-paused 2>/dev/null; then
               echo "CR deleted successfully"
               exit 0
             fi
             sleep 3
           done
           echo "CR still exists after timeout"
-          kubectl get skyhook delete-blocked-when-paused -o yaml || true
+          kubectl get nodewright delete-blocked-when-paused -o yaml || true
           exit 1
         timeout: 240s
