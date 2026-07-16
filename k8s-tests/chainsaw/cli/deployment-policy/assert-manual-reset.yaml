@@ -15,8 +15,8 @@
 # limitations under the License.
 
 # Assert batch state was manually reset via CLI
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: cli-dp-reset-test
 status:

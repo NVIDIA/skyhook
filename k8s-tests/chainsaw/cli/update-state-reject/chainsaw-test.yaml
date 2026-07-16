@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: cli-update-state-reject-test
         format: yaml
     - get:
@@ -47,7 +47,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-update-state-reject-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset cli-update-state-reject-test --confirm 2>/dev/null || true
           echo "State reset complete"
 
   # Step 1: Create a Skyhook and wait for it to complete
@@ -65,7 +65,7 @@ spec:
         timeout: 30s
         content: |
           set -e
-          out=$(../skyhook-cli update-state cli-update-state-reject-test nonexistent-pkg 1.2.3 apply complete --confirm 2>&1) && {
+          out=$(../nodewright-cli update-state cli-update-state-reject-test nonexistent-pkg 1.2.3 apply complete --confirm 2>&1) && {
             echo "expected non-zero exit, got success: $out"
             exit 1
           }
@@ -82,7 +82,7 @@ spec:
         timeout: 30s
         content: |
           set -e
-          out=$(../skyhook-cli update-state cli-update-state-reject-test test-package 1.2.3 bogus-stage complete --confirm 2>&1) && {
+          out=$(../nodewright-cli update-state cli-update-state-reject-test test-package 1.2.3 bogus-stage complete --confirm 2>&1) && {
             echo "expected non-zero exit, got success: $out"
             exit 1
           }
@@ -99,7 +99,7 @@ spec:
         timeout: 30s
         content: |
           set -e
-          out=$(../skyhook-cli update-state cli-update-state-reject-test test-package 1.2.3 apply weird-state --confirm 2>&1) && {
+          out=$(../nodewright-cli update-state cli-update-state-reject-test test-package 1.2.3 apply weird-state --confirm 2>&1) && {
             echo "expected non-zero exit, got success: $out"
             exit 1
           }

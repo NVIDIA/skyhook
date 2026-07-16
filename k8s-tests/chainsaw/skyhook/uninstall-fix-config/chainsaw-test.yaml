@@ -41,7 +41,7 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset uninstall-fix-config --confirm 2>/dev/null || true
+          ../nodewright-cli reset uninstall-fix-config --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:

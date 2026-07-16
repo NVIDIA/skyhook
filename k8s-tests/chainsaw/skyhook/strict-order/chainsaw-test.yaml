@@ -38,19 +38,19 @@ spec:
     try:
     - script:
         content: |
-          ## Verify skyhook-cli binary exists (symlink to operator/bin/skyhook)
-          if [[ ! -x ../skyhook-cli ]]; then
-            echo "ERROR: ../skyhook-cli does not exist or is not executable"
+          ## Verify nodewright-cli binary exists (symlink to operator/bin/skyhook)
+          if [[ ! -x ../nodewright-cli ]]; then
+            echo "ERROR: ../nodewright-cli does not exist or is not executable"
             echo "Run 'make build-cli' in the operator directory first"
             exit 1
           fi
           ## remove annotation/labels from last run
-          ../skyhook-cli reset strict-order-skyhook-zzz --confirm 2>/dev/null || true
-          ../skyhook-cli reset strict-order-skyhook-gate --confirm 2>/dev/null || true
-          ../skyhook-cli reset strict-order-skyhook-aa --confirm 2>/dev/null || true
-          ../skyhook-cli reset strict-order-skyhook-b --confirm 2>/dev/null || true
-          ../skyhook-cli reset strict-order-skyhook-c --confirm 2>/dev/null || true
-          ../skyhook-cli reset strict-order-skyhook-d --confirm 2>/dev/null || true
+          ../nodewright-cli reset strict-order-skyhook-zzz --confirm 2>/dev/null || true
+          ../nodewright-cli reset strict-order-skyhook-gate --confirm 2>/dev/null || true
+          ../nodewright-cli reset strict-order-skyhook-aa --confirm 2>/dev/null || true
+          ../nodewright-cli reset strict-order-skyhook-b --confirm 2>/dev/null || true
+          ../nodewright-cli reset strict-order-skyhook-c --confirm 2>/dev/null || true
+          ../nodewright-cli reset strict-order-skyhook-d --confirm 2>/dev/null || true
           ## Label both worker nodes for this test (multi-node per-node ordering test)
           kubectl label node kind-worker nodewright.nvidia.com/strict-order-test=true --overwrite 2>/dev/null || true
           kubectl label node kind-worker2 nodewright.nvidia.com/strict-order-test=true --overwrite 2>/dev/null || true

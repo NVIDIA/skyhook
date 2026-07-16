@@ -43,7 +43,7 @@ spec:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../skyhook-cli reset config-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset config-skyhook --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     ## sequential: node/skyhook transition through lifecycle stages

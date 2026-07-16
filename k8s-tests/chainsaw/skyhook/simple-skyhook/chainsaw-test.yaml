@@ -50,7 +50,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset simple-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset simple-skyhook --confirm 2>/dev/null || true
     - apply: ## set a limit range in the namespace
         file: limitrange.yaml
     - apply:

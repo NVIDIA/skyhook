@@ -48,8 +48,8 @@ spec:
         content: |
           set -eu
 
-          ../skyhook-cli reset shared-cordon-fast --confirm 2>/dev/null || true
-          ../skyhook-cli reset shared-cordon-slow --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-fast --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-slow --confirm 2>/dev/null || true
 
           node=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
           if [ -z "$node" ]; then
@@ -168,8 +168,8 @@ spec:
           set -eu
 
           kubectl delete pod shared-cordon-blocker --ignore-not-found=true --wait=false 2>/dev/null || true
-          ../skyhook-cli reset shared-cordon-fast --confirm 2>/dev/null || true
-          ../skyhook-cli reset shared-cordon-slow --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-fast --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-slow --confirm 2>/dev/null || true
 
           node=$(kubectl get nodes -l nodewright.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
           if [ -n "$node" ]; then

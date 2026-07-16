@@ -30,10 +30,10 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset skyhook-valid-policy --confirm 2>/dev/null || true
-          ../skyhook-cli reset skyhook-missing-policy --confirm 2>/dev/null || true
-          ../skyhook-cli reset invalid-skyhook --confirm 2>/dev/null || true
-          ../skyhook-cli reset uninstall-webhook-reject --confirm 2>/dev/null || true
+          ../nodewright-cli reset skyhook-valid-policy --confirm 2>/dev/null || true
+          ../nodewright-cli reset skyhook-missing-policy --confirm 2>/dev/null || true
+          ../nodewright-cli reset invalid-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset uninstall-webhook-reject --confirm 2>/dev/null || true
           echo "✓ State reset complete"
   
   - try:

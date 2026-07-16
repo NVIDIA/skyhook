@@ -32,7 +32,7 @@ spec:
     - script:
         content: |
           # Clear node annotations from previous runs using skyhook CLI
-          ../skyhook-cli reset legacy-interruption-budget-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset legacy-interruption-budget-test --confirm 2>/dev/null || true
           # Clean up any leftover labels
           chmod +x ../label-nodes.sh
           ../label-nodes.sh clean-all nodewright.nvidia.com/test-node 2>/dev/null || true
@@ -81,6 +81,6 @@ spec:
     - script:
         content: |
           # Clean up node annotations
-          ../skyhook-cli reset legacy-interruption-budget-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset legacy-interruption-budget-test --confirm 2>/dev/null || true
           # Clean up labels
           ../label-nodes.sh clean-all nodewright.nvidia.com/test-node

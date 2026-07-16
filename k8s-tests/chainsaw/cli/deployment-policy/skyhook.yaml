@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: cli-dp-reset-test
 spec:
@@ -27,7 +27,7 @@ spec:
 
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/dp-reset-test: "true"
+      nodewright.nvidia.com/dp-reset-test: "true"
 
   packages:
     test-package:

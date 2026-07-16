@@ -7,7 +7,7 @@ This directory contains end-to-end tests for the `kubectl-skyhook` CLI plugin. T
 The CLI tests require:
 
 1. A running Kind cluster with the skyhook operator installed
-2. Nodes labeled with `skyhook.nvidia.com/test-node=skyhooke2e`
+2. Nodes labeled with `nodewright.nvidia.com/test-node=skyhooke2e`
 3. The `skyhook` CLI binary built with coverage enabled
 
 ## Tests

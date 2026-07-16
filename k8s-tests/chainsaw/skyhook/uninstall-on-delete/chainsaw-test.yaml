@@ -43,7 +43,7 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset uninstall-on-delete --confirm 2>/dev/null || true
+          ../nodewright-cli reset uninstall-on-delete --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:

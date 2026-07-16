@@ -41,7 +41,7 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset downgrade-after-uninstall --confirm 2>/dev/null || true
+          ../nodewright-cli reset downgrade-after-uninstall --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:

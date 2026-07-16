@@ -32,7 +32,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset skyhook-upgrade --confirm 2>/dev/null || true
+          ../nodewright-cli reset skyhook-upgrade --confirm 2>/dev/null || true
     - script:
         content: |
           ## Set up old format annotation to test migration
