@@ -47,7 +47,7 @@ spec:
             - linux
           - key: node-role.kubernetes.io/control-plane
             operator: DoesNotExist
-          - key: skyhook.nvidia.com/test-node
+          - key: nodewright.nvidia.com/test-node
             operator: In
             values:
             - skyhooke2e
