@@ -26,15 +26,20 @@ import (
 // ExitCode is a process exit status.
 type ExitCode int
 
-// SuccessExitCode indicates that the process exited successfully.
-const SuccessExitCode ExitCode = 0
+const (
+	// SuccessExitCode indicates that the process exited successfully.
+	SuccessExitCode ExitCode = 0
+	// SignalExitCode indicates that a signal terminated the process. Result.Signal
+	// identifies the signal.
+	SignalExitCode ExitCode = -1
+)
 
 // Result reports how a started process completed.
 //
 // A nonzero ExitCode does not by itself cause Runner.Run to return an error.
 type Result struct {
 	// ExitCode uses os.ProcessState.ExitCode semantics. It contains the process
-	// exit status, or -1 when the process was terminated by a signal.
+	// exit status, or SignalExitCode when a signal terminated the process.
 	ExitCode ExitCode
 
 	// Signal identifies the signal that terminated the process. It is nil when

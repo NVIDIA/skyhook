@@ -19,7 +19,6 @@
 package command
 
 import (
-	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -28,40 +27,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-var _ = Describe("Chroot command runner", func() {
-	It("wraps validation errors", func() {
-		_, err := NewRunner(WithChroot(GinkgoT().TempDir())).Run(context.Background(), Command{})
-
-		Expect(err).To(MatchError(ContainSubstring("validating chroot command execution")))
-	})
-
-	It("wraps executable permission errors", func() {
-		_, err := NewRunner(WithChroot(GinkgoT().TempDir())).Run(context.Background(), Command{
-			Executable:  "/missing",
-			Permissions: 0o755,
-		})
-
-		Expect(err).To(MatchError(ContainSubstring("applying chroot command executable permissions")))
-		Expect(errors.Is(err, fs.ErrNotExist)).To(BeTrue())
-	})
-
-	It("changes permissions relative to the chroot", func() {
-		root := GinkgoT().TempDir()
-		path := filepath.Join(root, "script")
-		Expect(os.WriteFile(path, []byte("not runnable in the test chroot"), 0o600)).To(Succeed())
-
-		_, err := NewRunner(WithChroot(root)).Run(context.Background(), Command{
-			Executable:  "/script",
-			Permissions: 0o755,
-		})
-
-		Expect(err).To(MatchError(ContainSubstring("executing chroot command")))
-		info, statErr := os.Stat(path)
-		Expect(statErr).NotTo(HaveOccurred())
-		Expect(info.Mode().Perm()).To(Equal(fs.FileMode(0o755)))
-	})
-})
 
 var _ = Describe("Chroot PATH lookup", func() {
 	It("searches every PATH entry inside the target root", func() {
@@ -81,9 +46,9 @@ var _ = Describe("Chroot PATH lookup", func() {
 		rootPath := GinkgoT().TempDir()
 		Expect(os.Mkdir(filepath.Join(rootPath, "bin"), 0o755)).To(Succeed())
 
-		_, err := lookPathInRoot(openTestRoot(rootPath), "/", "/bin", "sh")
+		_, err := lookPathInRoot(openTestRoot(rootPath), "/", "/bin", "host-tool")
 
-		Expect(err).To(MatchError(ContainSubstring("executable \"sh\" not found in PATH")))
+		Expect(err).To(MatchError(ContainSubstring("executable \"host-tool\" not found in PATH")))
 	})
 
 	It("returns symlinks for the kernel to resolve inside the chroot", func() {

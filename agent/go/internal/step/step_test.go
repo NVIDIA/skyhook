@@ -20,6 +20,7 @@ package step
 
 import (
 	"encoding/json"
+	"io"
 	"testing"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
@@ -91,14 +92,40 @@ var _ = Describe("Step interface", func() {
 	})
 })
 
-var _ = Describe("Idempotence", func() {
-	It("accepts the recognised values", func() {
-		Expect(Auto.Validate()).To(Succeed())
-		Expect(Disabled.Validate()).To(Succeed())
+var _ = Describe("RunConfig", func() {
+	It("requires absolute execution paths", func() {
+		_, err := NewRunConfig(
+			WithRootMount("host"),
+			WithStepRoot("/package/steps"),
+			WithSkyhookDir("/package"),
+		)
+		Expect(err).To(MatchError(ContainSubstring(`root mount "host" is not absolute`)))
+
+		_, err = NewRunConfig(
+			WithRootMount("/host"),
+			WithStepRoot("steps"),
+			WithSkyhookDir("/package"),
+		)
+		Expect(err).To(MatchError(ContainSubstring(`step root "steps" is not absolute`)))
+
+		_, err = NewRunConfig(
+			WithRootMount("/host"),
+			WithStepRoot("/package/steps"),
+			WithSkyhookDir("package"),
+		)
+		Expect(err).To(MatchError(ContainSubstring(`skyhook directory "package" is not absolute`)))
 	})
 
-	It("rejects unrecognised values", func() {
-		Expect(Idempotence("bad").Validate()).To(MatchError("bad is not a valid idempotence value"))
+	It("treats nil output writers as discarded streams", func() {
+		config, err := NewRunConfig(
+			WithRootMount("/host"),
+			WithStepRoot("/package/steps"),
+			WithSkyhookDir("/package"),
+			WithRunOutput(nil, nil),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(config.stdout).To(Equal(io.Discard))
+		Expect(config.stderr).To(Equal(io.Discard))
 	})
 })
 

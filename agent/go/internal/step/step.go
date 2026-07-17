@@ -19,14 +19,23 @@
 package step
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 )
 
 // Step is the interface satisfied by every concrete step type the
 // agent recognises (RegularStep, UpgradeStep). Callers that must
 // distinguish the kinds type-assert on UpgradeStep.
 type Step interface {
+	// Run executes the step using the supplied filesystem and output
+	// composition.
+	Run(context.Context, RunConfig) (Status, error)
+
 	// Encode serializes the step to its JSON wire form. Each concrete
 	// type owns its own discriminator bit and any invariants it
 	// enforces before marshaling.
@@ -44,48 +53,95 @@ type Step interface {
 	Idempotence() Idempotence
 }
 
-// Idempotence controls how the agent treats step re-runs.
-type Idempotence string
+// Status reports whether a step run satisfied its execution policy.
+type Status string
 
 const (
-	// Auto means the agent runs the step once or until success.
-	Auto Idempotence = "auto"
-	// Disabled means the step itself decides; the agent may invoke it
-	// many times.
-	Disabled Idempotence = "disabled"
+	StatusSuccess Status = "success"
+	StatusFailed  Status = "failed"
 )
 
-// Validate reports whether the receiver is a recognised value.
-func (i Idempotence) Validate() error {
-	switch i {
-	case Auto, Disabled:
-		return nil
-	default:
-		return fmt.Errorf("%s is not a valid idempotence value", i)
-	}
+// RunConfig contains the execution policy shared by steps in one agent run.
+// Construct it with NewRunConfig.
+type RunConfig struct {
+	rootMount  string
+	stepRoot   string
+	skyhookDir string
+	stdout     io.Writer
+	stderr     io.Writer
 }
 
-// MarshalJSON encodes idempotence as the wire bool Python uses:
-// true == Disabled (the step manages its own idempotence), false ==
-// Auto. Owning the codec here lets the step structs serialize via
-// stdlib without a custom marshaler.
-func (i Idempotence) MarshalJSON() ([]byte, error) {
-	return json.Marshal(i == Disabled)
-}
-
-// UnmarshalJSON decodes the wire bool back into the enum: true ->
-// Disabled, false (or absent) -> Auto.
-func (i *Idempotence) UnmarshalJSON(data []byte) error {
-	var b bool
-	if err := json.Unmarshal(data, &b); err != nil {
-		return fmt.Errorf("unmarshal idempotence: %w", err)
+func (config RunConfig) validate() error {
+	if !filepath.IsAbs(config.rootMount) {
+		return fmt.Errorf("root mount %q is not absolute", config.rootMount)
 	}
-	if b {
-		*i = Disabled
-	} else {
-		*i = Auto
+	if !filepath.IsAbs(config.stepRoot) {
+		return fmt.Errorf("step root %q is not absolute", config.stepRoot)
+	}
+	if !filepath.IsAbs(config.skyhookDir) {
+		return fmt.Errorf("skyhook directory %q is not absolute", config.skyhookDir)
+	}
+	if config.stdout == nil {
+		return errors.New("stdout writer is nil")
+	}
+	if config.stderr == nil {
+		return errors.New("stderr writer is nil")
 	}
 	return nil
+}
+
+// RunOption configures a RunConfig.
+type RunOption func(*RunConfig)
+
+// NewRunConfig constructs step execution policy.
+func NewRunConfig(options ...RunOption) (RunConfig, error) {
+	config := RunConfig{
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+	}
+	for _, option := range options {
+		option(&config)
+	}
+	if err := config.validate(); err != nil {
+		return RunConfig{}, fmt.Errorf("constructing step run config: %w", err)
+	}
+	return config, nil
+}
+
+// WithRootMount sets the absolute host root used by host-executed steps.
+func WithRootMount(rootMount string) RunOption {
+	return func(config *RunConfig) {
+		config.rootMount = rootMount
+	}
+}
+
+// WithStepRoot sets the child-visible absolute path containing step scripts.
+func WithStepRoot(stepRoot string) RunOption {
+	return func(config *RunConfig) {
+		config.stepRoot = stepRoot
+	}
+}
+
+// WithSkyhookDir sets the child-visible absolute package working directory.
+func WithSkyhookDir(skyhookDir string) RunOption {
+	return func(config *RunConfig) {
+		config.skyhookDir = skyhookDir
+	}
+}
+
+// WithRunOutput sets the parent streams that receive raw command output. A nil
+// writer discards its corresponding stream.
+func WithRunOutput(stdout, stderr io.Writer) RunOption {
+	return func(config *RunConfig) {
+		if stdout == nil {
+			stdout = io.Discard
+		}
+		if stderr == nil {
+			stderr = io.Discard
+		}
+		config.stdout = stdout
+		config.stderr = stderr
+	}
 }
 
 // Decode parses a JSON step payload, returning either a RegularStep or an
