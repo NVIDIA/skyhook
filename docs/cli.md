@@ -367,18 +367,18 @@ Manage Skyhook nodes across the cluster.
 
 ```bash
 # List all nodes targeted by a Skyhook
-kubectl nodewright node list --skyhook my-skyhook
-kubectl nodewright node list --skyhook my-skyhook -o json
+kubectl nodewright node list --nodewright my-nodewright
+kubectl nodewright node list --nodewright my-nodewright -o json
 
 # Show all Skyhook activity on specific node(s)
 kubectl nodewright node status worker-1
 kubectl nodewright node status worker-1 worker-2
 kubectl nodewright node status "worker-.*"  # Regex pattern
-kubectl nodewright node status worker-1 --skyhook my-skyhook  # Filter by Skyhook
+kubectl nodewright node status worker-1 --nodewright my-nodewright  # Filter by NodeWright
 
 # Reset all package state on node(s)
-kubectl nodewright node reset worker-1 --skyhook my-skyhook --confirm
-kubectl nodewright node reset "node-.*" --skyhook my-skyhook --dry-run
+kubectl nodewright node reset worker-1 --nodewright my-nodewright --confirm
+kubectl nodewright node reset "node-.*" --nodewright my-nodewright --dry-run
 
 # Ignore/unignore nodes from processing
 kubectl nodewright node ignore worker-1
@@ -390,9 +390,9 @@ kubectl nodewright node unignore worker-1
 
 | Command | Flag | Description |
 |---------|------|-------------|
-| `list` | `--skyhook` | Skyhook name (required) |
-| `status` | `--skyhook` | Filter by Skyhook name |
-| `reset` | `--skyhook` | Skyhook name (required) |
+| `list` | `--nodewright` | NodeWright name (required) |
+| `status` | `--nodewright` | Filter by NodeWright name |
+| `reset` | `--nodewright` | NodeWright name (required) |
 | `reset` | `--confirm, -y` | Skip confirmation prompt |
 
 ### Package Commands
@@ -401,34 +401,34 @@ Manage Skyhook packages.
 
 ```bash
 # Query package status across nodes
-kubectl nodewright package status my-package --skyhook my-skyhook
-kubectl nodewright package status my-package --skyhook my-skyhook --node worker-1
-kubectl nodewright package status my-package --skyhook my-skyhook -o wide
+kubectl nodewright package status my-package --nodewright my-nodewright
+kubectl nodewright package status my-package --nodewright my-nodewright --node worker-1
+kubectl nodewright package status my-package --nodewright my-nodewright -o wide
 
 # Force package re-run on specific nodes
-kubectl nodewright package rerun my-package --skyhook my-skyhook --node worker-1
-kubectl nodewright package rerun my-package --skyhook my-skyhook --node "worker-.*" --confirm
-kubectl nodewright package rerun my-package --skyhook my-skyhook --node worker-1 --stage config
+kubectl nodewright package rerun my-package --nodewright my-nodewright --node worker-1
+kubectl nodewright package rerun my-package --nodewright my-nodewright --node "worker-.*" --confirm
+kubectl nodewright package rerun my-package --nodewright my-nodewright --node worker-1 --stage config
 
 # Get package logs
-kubectl nodewright package logs my-package --skyhook my-skyhook
-kubectl nodewright package logs my-package --skyhook my-skyhook --node worker-1
-kubectl nodewright package logs my-package --skyhook my-skyhook --stage apply
-kubectl nodewright package logs my-package --skyhook my-skyhook -f  # Follow
-kubectl nodewright package logs my-package --skyhook my-skyhook --tail 100
+kubectl nodewright package logs my-package --nodewright my-nodewright
+kubectl nodewright package logs my-package --nodewright my-nodewright --node worker-1
+kubectl nodewright package logs my-package --nodewright my-nodewright --stage apply
+kubectl nodewright package logs my-package --nodewright my-nodewright -f  # Follow
+kubectl nodewright package logs my-package --nodewright my-nodewright --tail 100
 ```
 
 #### Package Flags
 
 | Command | Flag | Description |
 |---------|------|-------------|
-| `status` | `--skyhook` | Skyhook name (required) |
+| `status` | `--nodewright` | NodeWright name (required) |
 | `status` | `--node` | Filter by node pattern (repeatable) |
-| `rerun` | `--skyhook` | Skyhook name (required) |
+| `rerun` | `--nodewright` | NodeWright name (required) |
 | `rerun` | `--node` | Node pattern (required, repeatable) |
 | `rerun` | `--stage` | Re-run from stage: apply, config, interrupt, post-interrupt |
 | `rerun` | `--confirm, -y` | Skip confirmation prompt |
-| `logs` | `--skyhook` | Skyhook name (required) |
+| `logs` | `--nodewright` | NodeWright name (required) |
 | `logs` | `--node` | Filter by node name |
 | `logs` | `--stage` | Filter by stage |
 | `logs` | `-f, --follow` | Follow log output |
@@ -457,13 +457,13 @@ kubectl nodewright deployment-policy reset --help
 
 ```bash
 # 1. Check package status
-kubectl nodewright package status my-package --skyhook my-skyhook -o wide
+kubectl nodewright package status my-package --nodewright my-nodewright -o wide
 
 # 2. View logs for the failed package
-kubectl nodewright package logs my-package --skyhook my-skyhook --node worker-1
+kubectl nodewright package logs my-package --nodewright my-nodewright --node worker-1
 
 # 3. Fix the issue, then force re-run
-kubectl nodewright package rerun my-package --skyhook my-skyhook --node worker-1 --confirm
+kubectl nodewright package rerun my-package --nodewright my-nodewright --node worker-1 --confirm
 ```
 
 ### Node Maintenance
@@ -476,20 +476,20 @@ kubectl nodewright node ignore worker-1
 
 # 3. Unignore and reset to re-run all packages
 kubectl nodewright node unignore worker-1
-kubectl nodewright node reset worker-1 --skyhook my-skyhook --confirm
+kubectl nodewright node reset worker-1 --nodewright my-nodewright --confirm
 ```
 
 ### Cluster-Wide Status Check
 
 ```bash
 # List all nodes for a Skyhook
-kubectl nodewright node list --skyhook my-skyhook
+kubectl nodewright node list --nodewright my-nodewright
 
 # Check status of all nodes
 kubectl nodewright node status
 
 # Check specific Skyhook across all nodes
-kubectl nodewright node status --skyhook my-skyhook -o json
+kubectl nodewright node status --nodewright my-nodewright -o json
 ```
 
 ### Resetting a Rollout
@@ -549,16 +549,16 @@ All status commands support multiple output formats:
 
 ```bash
 # Table (default) - human-readable
-kubectl nodewright node list --skyhook my-skyhook
+kubectl nodewright node list --nodewright my-nodewright
 
 # Wide - table with additional columns
-kubectl nodewright node list --skyhook my-skyhook -o wide
+kubectl nodewright node list --nodewright my-nodewright -o wide
 
 # JSON - machine-readable
-kubectl nodewright node list --skyhook my-skyhook -o json
+kubectl nodewright node list --nodewright my-nodewright -o json
 
 # YAML - machine-readable
-kubectl nodewright node list --skyhook my-skyhook -o yaml
+kubectl nodewright node list --nodewright my-nodewright -o yaml
 ```
 
 ## Architecture

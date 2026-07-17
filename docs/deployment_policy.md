@@ -1,25 +1,25 @@
 # Deployment Policy and Compartments
 
-Deployment Policy provides fine-grained control over how Skyhook rolls out updates across your cluster by defining **compartments** — groups of nodes selected by labels — with different rollout strategies and budgets.
+Deployment Policy provides fine-grained control over how NodeWright rolls out updates across your cluster by defining **compartments** — groups of nodes selected by labels — with different rollout strategies and budgets.
 
 ---
 
 ## Overview
 
-A **DeploymentPolicy** is a Kubernetes Custom Resource that separates rollout configuration from the Skyhook Custom Resource, allowing you to:
+A **DeploymentPolicy** is a Kubernetes Custom Resource that separates rollout configuration from the NodeWright Custom Resource, allowing you to:
 
-- Reuse the same policy across multiple Skyhooks
+- Reuse the same policy across multiple NodeWrights
 - Apply different strategies to different node groups (e.g., production vs. test)
 - Control rollout speed and safety with configurable thresholds
 
-**Important**: DeploymentPolicy controls **all node updates** in a Skyhook rollout, not just interrupt handling.
+**Important**: DeploymentPolicy controls **all node updates** in a NodeWright rollout, not just interrupt handling.
 
 ---
 
 ## Basic Structure
 
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
+apiVersion: nodewright.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: my-policy
@@ -188,7 +188,7 @@ When strategy parameters are not specified, the operator applies these defaults:
 
 Nodes selected for a batch remain in that batch until every node has reached a definitive outcome — all packages complete, erroring, or blocked. The controller will not select new nodes for the next batch while the current batch has nodes still running between packages.
 
-Batch membership is tracked via `NodePriority` in the Skyhook status. A node stays in `NodePriority` from the time it is picked for a batch until it completes all packages. This state is persisted in the CRD, so it survives controller restarts.
+Batch membership is tracked via `NodePriority` in the NodeWright status. A node stays in `NodePriority` from the time it is picked for a batch until it completes all packages. This state is persisted in the CRD, so it survives controller restarts.
 
 Each package pod also receives a `SKYHOOK_NODE_ORDER` environment variable reflecting the node's monotonic position in the rollout. See [Node Order Within a Rollout](ordering_of_skyhooks.md#node-order-within-a-rollout) for details.
 
@@ -278,8 +278,8 @@ However, when a rollout **completes** or a **spec version changes**, you typical
 
 Batch state is automatically reset when **either** of these events occurs (if configured):
 
-1. **Rollout completion** — When a Skyhook's status transitions to `Complete`
-2. **Spec version change** — When a package version changes in the Skyhook spec
+1. **Rollout completion** — When a NodeWright's status transitions to `Complete`
+2. **Spec version change** — When a package version changes in the NodeWright spec
 
 After reset, the next reconciliation starts from batch 1 with all counters cleared.
 
@@ -289,12 +289,12 @@ Auto-reset is controlled by two fields with a precedence hierarchy:
 
 | Field | Location | Description |
 |-------|----------|-------------|
-| `spec.resetBatchStateOnCompletion` | DeploymentPolicy | Default setting for all Skyhooks using this policy |
-| `spec.deploymentPolicyOptions.resetBatchStateOnCompletion` | Skyhook | Per-Skyhook override (takes precedence) |
+| `spec.resetBatchStateOnCompletion` | DeploymentPolicy | Default setting for all NodeWrights using this policy |
+| `spec.deploymentPolicyOptions.resetBatchStateOnCompletion` | NodeWright | Per-NodeWright override (takes precedence) |
 
 **Precedence order** (highest to lowest):
 
-1. Skyhook's `deploymentPolicyOptions.resetBatchStateOnCompletion`
+1. NodeWright's `deploymentPolicyOptions.resetBatchStateOnCompletion`
 2. DeploymentPolicy's `resetBatchStateOnCompletion`
 3. Default: `true` (safe by default for new resources)
 
@@ -302,7 +302,7 @@ Auto-reset is controlled by two fields with a precedence hierarchy:
 
 **Enable auto-reset (default behavior for new policies)**:
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
+apiVersion: nodewright.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: my-policy
@@ -313,12 +313,12 @@ spec:
       percent: 25
 ```
 
-**Disable auto-reset for a specific Skyhook** (override the policy):
+**Disable auto-reset for a specific NodeWright** (override the policy):
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
-  name: my-skyhook
+  name: my-nodewright
 spec:
   deploymentPolicy: my-policy
   deploymentPolicyOptions:
@@ -327,12 +327,12 @@ spec:
 
 **Disable auto-reset at the policy level**:
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
+apiVersion: nodewright.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: preserve-state-policy
 spec:
-  resetBatchStateOnCompletion: false  # All Skyhooks using this policy keep batch state
+  resetBatchStateOnCompletion: false  # All NodeWrights using this policy keep batch state
 ```
 
 ### Manual Reset
@@ -340,17 +340,17 @@ spec:
 You can also reset batch state manually using the CLI:
 
 ```bash
-# Reset batch state for a specific Skyhook
-kubectl skyhook deployment-policy reset my-skyhook --confirm
+# Reset batch state for a specific NodeWright
+kubectl nodewright deployment-policy reset my-nodewright --confirm
 
 # Preview what would be reset (dry-run)
-kubectl skyhook deployment-policy reset my-skyhook --dry-run
+kubectl nodewright deployment-policy reset my-nodewright --dry-run
 
 # The 'reset' command also resets batch state by default
-kubectl skyhook reset my-skyhook --confirm
+kubectl nodewright reset my-nodewright --confirm
 
 # To reset nodes only without resetting batch state
-kubectl skyhook reset my-skyhook --skip-batch-reset --confirm
+kubectl nodewright reset my-nodewright --skip-batch-reset --confirm
 ```
 
 Both `reset` and `deployment-policy reset` also clear `NodeOrderOffset` and `NodePriority`, so the next rollout starts with fresh node ordering (`SKYHOOK_NODE_ORDER` begins at `0`).
@@ -359,18 +359,18 @@ See [CLI documentation](cli.md) for full command details.
 
 ---
 
-## Using with Skyhooks
+## Using with NodeWrights
 
 Reference a policy by name:
 
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
-  name: my-skyhook
+  name: my-nodewright
 spec:
   deploymentPolicy: my-policy  # References DeploymentPolicy
-  deploymentPolicyOptions:     # Optional per-Skyhook overrides
+  deploymentPolicyOptions:     # Optional per-NodeWright overrides
     resetBatchStateOnCompletion: true
   nodeSelectors:
     matchLabels:
@@ -384,7 +384,7 @@ spec:
 - DeploymentPolicy is **cluster-scoped** (not namespaced)
 - Each node is assigned to a compartment based on selectors
 - Nodes not matching any compartment use the `default` settings
-- `deploymentPolicyOptions` allows per-Skyhook overrides of policy settings
+- `deploymentPolicyOptions` allows per-NodeWright overrides of policy settings
 
 ---
 
@@ -404,7 +404,7 @@ spec:
 
 ```yaml
 # 1. Create DeploymentPolicy
-apiVersion: skyhook.nvidia.com/v1alpha1
+apiVersion: nodewright.nvidia.com/v1alpha1
 kind: DeploymentPolicy
 metadata:
   name: legacy-equivalent
@@ -420,7 +420,7 @@ spec:
 ```
 
 ```yaml
-# 2. Update Skyhook
+# 2. Update NodeWright
 spec:
   deploymentPolicy: legacy-equivalent
   # Remove interruptionBudget field

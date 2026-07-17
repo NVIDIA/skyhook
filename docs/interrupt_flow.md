@@ -1,10 +1,10 @@
 # Interrupt Flow and Ordering
 
-This document explains how Skyhook handles packages that require interrupts and the specific ordering of operations to ensure safe and reliable execution.
+This document explains how NodeWright handles packages that require interrupts and the specific ordering of operations to ensure safe and reliable execution.
 
 ## Overview
 
-When a package requires an interrupt (such as a reboot or service restart), Skyhook follows a specific sequence to ensure that workloads are safely evacuated from the node before any potentially disruptive operations occur.
+When a package requires an interrupt (such as a reboot or service restart), NodeWright follows a specific sequence to ensure that workloads are safely evacuated from the node before any potentially disruptive operations occur.
 
 ## Interrupt Flow Sequence
 
@@ -49,8 +49,8 @@ This ordering is particularly important for scenarios such as:
 Consider a package that needs to unload a kernel module, perform some operations, and then reboot:
 
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: gpu-mode-switch
 spec:
@@ -74,7 +74,7 @@ spec:
 
 ## Technical Implementation
 
-The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyForInterrupt` functions in the Skyhook controller, which:
+The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyForInterrupt` functions in the NodeWright controller, which:
 
 - Check for conflicting workloads using label selectors
 - Coordinate the cordon and drain operations
@@ -83,26 +83,26 @@ The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyFo
 
 ### Shared Cordon Ownership
 
-Each Skyhook that cordons a node records ownership with a `skyhook.nvidia.com/cordon_<skyhook-name>` annotation. When that Skyhook completes, it removes only its own cordon annotation. The node is marked schedulable only after no `skyhook.nvidia.com/cordon_*` annotations remain, so one Skyhook cannot uncordon a node that another Skyhook is still preparing for interrupt work.
+Each NodeWright that cordons a node records ownership with a `nodewright.nvidia.com/cordon_<nodewright-name>` annotation. When that NodeWright completes, it removes only its own cordon annotation. The node is marked schedulable only after no `nodewright.nvidia.com/cordon_*` annotations remain, so one NodeWright cannot uncordon a node that another NodeWright is still preparing for interrupt work.
 
-Other Skyhook annotations, such as `status_*`, `nodeState_*`, and `version_*`, do not keep a node cordoned. Only the `cordon_*` annotation family participates in shared cordon ownership.
+Other NodeWright annotations, such as `status_*`, `nodeState_*`, and `version_*`, do not keep a node cordoned. Only the `cordon_*` annotation family participates in shared cordon ownership.
 
 ### Orphaned Cordon Recovery
 
-If a Skyhook is force-deleted in a way that bypasses finalizer cleanup, or cleanup fails after the node was cordoned, its `cordon_<skyhook-name>` annotation can be left behind. That stale annotation will keep the node unschedulable from the operator's point of view until it is removed.
+If a NodeWright is force-deleted in a way that bypasses finalizer cleanup, or cleanup fails after the node was cordoned, its `cordon_<nodewright-name>` annotation can be left behind. That stale annotation will keep the node unschedulable from the operator's point of view until it is removed.
 
-Use `kubectl skyhook reset <skyhook-name> --confirm` to clear Skyhook metadata for affected nodes that still have `nodeState_<skyhook-name>` annotations, or `kubectl skyhook node reset <node-name> --skyhook <skyhook-name> --confirm` for a specific node. These reset commands remove the matching `cordon_<skyhook-name>` annotation, but they do not clear `spec.unschedulable`. After the stale cordon annotation is removed, if no other `skyhook.nvidia.com/cordon_*` annotations remain and no live Skyhook is expected to uncordon the node, run `kubectl uncordon <node-name>` to make it schedulable again.
+Use `kubectl nodewright reset <nodewright-name> --confirm` to clear NodeWright metadata for affected nodes that still have `nodeState_<nodewright-name>` annotations, or `kubectl nodewright node reset <node-name> --nodewright <nodewright-name> --confirm` for a specific node. These reset commands remove the matching `cordon_<nodewright-name>` annotation, but they do not clear `spec.unschedulable`. After the stale cordon annotation is removed, if no other `nodewright.nvidia.com/cordon_*` annotations remain and no live NodeWright is expected to uncordon the node, run `kubectl uncordon <node-name>` to make it schedulable again.
 
-If the node only has a stale `cordon_<skyhook-name>` annotation and its `nodeState_<skyhook-name>` annotation has already been removed, `kubectl skyhook reset` will not discover the node. In that case, remove the orphaned annotation manually, then uncordon the node as above if no other Skyhook still owns a cordon.
+If the node only has a stale `cordon_<nodewright-name>` annotation and its `nodeState_<nodewright-name>` annotation has already been removed, `kubectl nodewright reset` will not discover the node. In that case, remove the orphaned annotation manually, then uncordon the node as above if no other NodeWright still owns a cordon.
 
 ## Drain Configuration
 
-Interrupt-enabled Skyhooks can tune drain behavior with `spec.drainConfig`.
+Interrupt-enabled NodeWrights can tune drain behavior with `spec.drainConfig`.
 Unset fields preserve the operator's existing behavior:
 
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: gpu-mode-switch
 spec:
@@ -127,7 +127,7 @@ The fields map to Kubernetes drain behavior:
 The operator also skips pods that are already terminating, pods that tolerate
 the `node.kubernetes.io/unschedulable` taint, mirror/static pods, pods in
 `kube-system`, and its own package pods — identified by the
-`skyhook.nvidia.com/name` and `skyhook.nvidia.com/package` labels stamped on
+`nodewright.nvidia.com/name` and `nodewright.nvidia.com/package` labels stamped on
 every package pod, so they remain exempt even if an admission controller
 rewrites or strips their tolerations. The label exemption only applies to
 pods in the operator's own namespace, so workloads elsewhere cannot opt out
@@ -144,7 +144,7 @@ or move away before the operator starts the configurable drain step.
 ### Recovering From a Drain Timeout
 
 When `spec.drainConfig.timeout` expires, the operator records a `DrainTimeout`
-warning event, marks the node and Skyhook `erroring`, and leaves the node
+warning event, marks the node and NodeWright `erroring`, and leaves the node
 cordoned. The operator stops issuing further evict/delete actions while the
 blocking condition remains, so package stages do not proceed on that node.
 
@@ -153,13 +153,13 @@ disruptions, an unmanaged pod when `force: false`, or an `emptyDir` pod when
 `deleteEmptyDirData: false`. Then reset the failed rollout metadata:
 
 ```bash
-kubectl skyhook reset <skyhook-name> --confirm
+kubectl nodewright reset <nodewright-name> --confirm
 ```
 
 For a single node, use:
 
 ```bash
-kubectl skyhook node reset <node-name> --skyhook <skyhook-name> --confirm
+kubectl nodewright node reset <node-name> --nodewright <nodewright-name> --confirm
 ```
 
 If the blocker clears after the timeout without a reset, a later reconcile can
