@@ -1,0 +1,132 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# When main advances, re-checks every open PR targeting main and labels the ones
+# that now conflict with `needs-rebase` (plus a one-time nudge comment), clearing
+# the label once the conflict is resolved.
+
+name: PR Merge Conflict Check
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+
+  conflicts:
+    name: Check Open PRs for Conflicts
+    runs-on: ubuntu-latest
+    permissions:
+      # The label/comment calls go through the Issues API endpoints, so grant
+      # issues:write; pull-requests:write covers listing/reading the PRs.
+      issues: write
+      pull-requests: write
+    timeout-minutes: 10
+    steps:
+      - name: Check Mergeable State
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const label = 'needs-rebase';
+            // Hidden marker identifying our own nudge comment for the current
+            // conflict episode. Scoped per-episode: the comment is deleted when
+            // the PR becomes mergeable again, so a later re-conflict re-nudges.
+            const marker = '<!-- needs-rebase-notice -->';
+            const common = { owner: context.repo.owner, repo: context.repo.repo };
+
+            // Paginate and scope to base main: per_page alone caps at 100, and
+            // PRs targeting other branches must not be labeled as conflicting
+            // with main (their mergeability is evaluated against their own base).
+            const prs = await github.paginate(github.rest.pulls.list, {
+              ...common,
+              state: 'open',
+              base: 'main',
+              per_page: 100,
+            });
+
+            let failed = 0;
+            for (const pr of prs) {
+              try {
+                // GitHub computes `mergeable` asynchronously and returns null
+                // while recomputing (common right after main moves). Retry a
+                // few times with a short backoff so a large open-PR set can't
+                // exhaust the job timeout; stragglers are caught next run.
+                let full;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                  ({ data: full } = await github.rest.pulls.get({ ...common, pull_number: pr.number }));
+                  if (full.mergeable !== null) break;
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                if (full.mergeable === null) {
+                  core.warning(`mergeable state unavailable for PR #${pr.number}; will retry next run`);
+                  continue;
+                }
+
+                const hasLabel = full.labels.some(l => l.name === label);
+                // Nothing to do for a clean, unlabeled PR — skip the comment
+                // fetch entirely so this stays cheap on busy repos.
+                if (full.mergeable === true && !hasLabel) {
+                  continue;
+                }
+
+                // Our own prior nudges for this episode. Restrict to the
+                // github-actions bot so a user pasting the marker can't suppress
+                // (or, via delete, trigger) notifications.
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  ...common, issue_number: pr.number, per_page: 100,
+                });
+                const notices = comments.filter(c =>
+                  c.user && c.user.login === 'github-actions[bot]' && c.body && c.body.includes(marker));
+
+                if (full.mergeable === false) {
+                  if (!hasLabel) {
+                    await github.rest.issues.addLabels({ ...common, issue_number: pr.number, labels: [label] });
+                  }
+                  // Key the nudge off our notice, not the label, so a prior
+                  // label-added-but-comment-failed run still posts it, and never
+                  // double-posts within one episode.
+                  if (notices.length === 0) {
+                    await github.rest.issues.createComment({
+                      ...common,
+                      issue_number: pr.number,
+                      body: `@${pr.user.login} this PR now has merge conflicts with \`main\`. Please rebase to resolve them.\n\n${marker}`,
+                    });
+                  }
+                } else {
+                  // mergeable === true && hasLabel: end the episode.
+                  await github.rest.issues.removeLabel({ ...common, issue_number: pr.number, name: label });
+                  for (const notice of notices) {
+                    await github.rest.issues.deleteComment({ ...common, comment_id: notice.id });
+                  }
+                }
+              } catch (err) {
+                // Don't let one PR (deleted, transient 404, race) abort the rest.
+                failed++;
+                core.warning(`failed to process PR #${pr.number}: ${err.message}`);
+              }
+            }
+            if (failed) {
+              core.setFailed(`${failed} PR(s) could not be processed`);
+            }
