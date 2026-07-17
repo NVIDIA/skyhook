@@ -16,15 +16,25 @@
 
 package interrupts
 
-// ScriptInterrupt delegates interrupt behavior to scripts.
+import (
+	"context"
+
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
+)
+
+// ScriptInterrupt represents an interrupt performed by the package's apply
+// script. Run validates its inputs but does not execute another command.
 type ScriptInterrupt struct{}
 
 var _ Interrupt = ScriptInterrupt{}
 
-func (ScriptInterrupt) Type() string { return "script_interrupt" }
+func (ScriptInterrupt) Type() InterruptType { return ScriptInterruptType }
 
-func (ScriptInterrupt) InterruptCmd() [][]string {
-	return [][]string{}
+func (s ScriptInterrupt) Run(ctx context.Context, config execution.Config) (execution.Status, error) {
+	if err := validateRun(ctx, config, s.Type()); err != nil {
+		return execution.StatusFailed, err
+	}
+	return execution.StatusSuccess, nil
 }
 
 func (s ScriptInterrupt) Serialize() ([]byte, error) {

@@ -29,21 +29,37 @@ on:
       - agent/go/**
       - .github/workflows/agent-go-ci.yaml
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Agent Go Unit Tests
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:latest
     steps:
+      - name: Install test dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends ca-certificates make
       - uses: actions/checkout@v7
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
           go-version-file: agent/go/go.mod
           cache-dependency-path: agent/go/go.sum
-      - name: Run tests
-        run: |
-          cd agent/go
-          go test ./...
+      - name: Run tests with coverage
+        working-directory: agent/go
+        run: CGO_ENABLED=0 make test
+      - name: Upload coverage artifact
+        if: hashFiles('agent/go/reporting/cover.out') != ''
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4  # v5
+        with:
+          name: coverage-agent-go-unit-tests
+          path: agent/go/reporting/cover.out
+          retention-days: 1
+          if-no-files-found: ignore
 
   lint:
     name: Agent Go Lint
