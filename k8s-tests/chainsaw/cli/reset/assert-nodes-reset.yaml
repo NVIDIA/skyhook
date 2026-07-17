@@ -30,10 +30,11 @@ metadata:
     nodewright.nvidia.com/status_cli-reset-test: disabled ## disabled after clearing
     # nodewright.nvidia.com/version_cli-reset-test: .* ## also rest after clearing
 ---
-# Verify node ordering is reset after CLI reset
+# Verify node ordering is reset after CLI reset. nodeOrderOffset is omitempty, so a
+# reset (0) value is absent from status; default it to 0 in the assertion.
 apiVersion: nodewright.nvidia.com/v1alpha1
 kind: NodeWright
 metadata:
   name: cli-reset-test
 status:
-  nodeOrderOffset: 0
+  (nodeOrderOffset || `0`): 0
