@@ -111,3 +111,7 @@
 - name: "needs-rebase"
   color: "b60205"
   description: "PR has merge conflicts with main and needs a rebase"
+
+- name: "dependencies"
+  color: "0366d6"
+  description: "Dependency update (Dependabot)"
