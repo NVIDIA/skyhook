@@ -93,6 +93,24 @@ examples.
     }
     ```
 
+    As a special case where the default value should contain a literal `$`,
+    escape it with a backslash. Unfortunately this requires a double backslash
+    in the struct tag:
+
+    ```go
+    type MyStruct struct {
+      Amount string `env:"AMOUNT, default=\\$5.00"` // Default: $5.00
+    }
+    ```
+
+    To have a literal backslash followed by a `$`, escape the backslash:
+
+    ```go
+    type MyStruct struct {
+      Filepath string `env:"FILEPATH, default=C:\\Personal\\\\$name"` // Default: C:\Personal\$name
+    }
+    ```
+
 -   `prefix` - sets the prefix to use for looking up environment variable keys
     on child structs and fields. This is useful for shared configurations:
 
@@ -104,11 +122,11 @@ examples.
 
     type ServerConfig struct {
       // CacheConfig will process values from $CACHE_REDIS_HOST and
-      // $CACHE_REDIS respectively.
+      // $CACHE_REDIS_USER respectively.
       CacheConfig *RedisConfig `env:", prefix=CACHE_"`
 
       // RateLimitConfig will process values from $RATE_LIMIT_REDIS_HOST and
-      // $RATE_LIMIT_REDIS respectively.
+      // $RATE_LIMIT_REDIS_USER respectively.
       RateLimitConfig *RedisConfig `env:", prefix=RATE_LIMIT_"`
     }
     ```
@@ -272,8 +290,21 @@ the non-nil value. To change this behavior, see
 
 ### Custom Decoders
 
-You can also define your own decoders. See the [godoc][godoc] for more
-information.
+You can also define your own decoders.
+
+```go
+type MyCustomType struct {
+  value string
+}
+
+func (t *MyCustomType) EnvDecode(ctx context.Context, val string) error {
+  resolved := someComplexFunction(val)
+  t.value = resolved
+  return nil
+}
+```
+
+See the [godoc][godoc] for more information.
 
 
 ## Testing
@@ -289,7 +320,8 @@ lookuper := envconfig.MapLookuper(map[string]string{
 })
 
 var config Config
-envconfig.ProcessWith(ctx, &config, &envconfig.Config{
+envconfig.ProcessWith(ctx, &envconfig.Config{
+  Target:   &config,
   Lookuper: lookuper,
 })
 ```
