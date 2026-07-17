@@ -107,3 +107,7 @@
 - name: "do-not-merge"
   color: "b60205"
   description: "PR should not be merged in its current state"
+
+- name: "needs-rebase"
+  color: "b60205"
+  description: "PR has merge conflicts with main and needs a rebase"
