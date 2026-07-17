@@ -42,7 +42,7 @@ var _ = Describe("Node Status Command", func() {
 			cmd := NewStatusCmd(ctx)
 
 			Expect(cmd.Use).To(Equal("status [node-name...]"))
-			Expect(cmd.Short).To(ContainSubstring("Skyhook activity"))
+			Expect(cmd.Short).To(ContainSubstring("NodeWright activity"))
 		})
 
 		It("should have skyhook flag", func() {
@@ -51,7 +51,7 @@ var _ = Describe("Node Status Command", func() {
 
 			skyhookFlag := cmd.Flags().Lookup("skyhook")
 			Expect(skyhookFlag).NotTo(BeNil())
-			Expect(skyhookFlag.Usage).To(ContainSubstring("Filter by Skyhook"))
+			Expect(skyhookFlag.Usage).To(ContainSubstring("Filter by NodeWright"))
 		})
 	})
 
@@ -156,7 +156,7 @@ var _ = Describe("Node Status Command", func() {
 		})
 
 		It("should show no activity when node has no annotations", func() {
-			// Create node without Skyhook annotations
+			// Create node without NodeWright annotations
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "worker-1",
@@ -168,10 +168,10 @@ var _ = Describe("Node Status Command", func() {
 			opts := &nodeStatusOptions{}
 			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output.String()).To(ContainSubstring("No Skyhook activity found"))
+			Expect(output.String()).To(ContainSubstring("No NodeWright activity found"))
 		})
 
-		It("should show status for node with Skyhook annotations", func() {
+		It("should show status for node with NodeWright annotations", func() {
 			nodeState := v1alpha1.NodeState{
 				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
 			}

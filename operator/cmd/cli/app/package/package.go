@@ -27,11 +27,11 @@ func NewPackageCmd(ctx *context.CLIContext) *cobra.Command {
 	// PackageCmd represents the package command that subcommands attach to
 	packageCmd := &cobra.Command{
 		Use:   "package",
-		Short: "Manage Skyhook packages",
+		Short: "Manage NodeWright packages",
 		Long: `The package command group provides functionality to manage, inspect,
-and troubleshoot Skyhook packages across your cluster nodes.
+and troubleshoot NodeWright packages across your cluster nodes.
 
-Packages are the core unit of work in Skyhook, representing containerized
+Packages are the core unit of work in NodeWright, representing containerized
 operations that are applied to nodes matching selector criteria.
 
 Available operations:

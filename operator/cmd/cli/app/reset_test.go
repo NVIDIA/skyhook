@@ -85,7 +85,7 @@ var _ = Describe("Reset Command", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewResetCmd(ctx)
 
-			Expect(cmd.Use).To(Equal("reset <skyhook-name>"))
+			Expect(cmd.Use).To(Equal("reset <nodewright-name>"))
 			Expect(cmd.Short).To(ContainSubstring("Reset all nodes"))
 		})
 

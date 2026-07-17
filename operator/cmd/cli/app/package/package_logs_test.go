@@ -243,7 +243,7 @@ var _ = Describe("Package Logs Command", func() {
 			pod := &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						{Name: "pause"}, // Skyhook always has a pause container but no init containers is invalid
+						{Name: "pause"}, // NodeWright always has a pause container but no init containers is invalid
 					},
 				},
 			}
@@ -498,11 +498,11 @@ var _ = Describe("Package Logs Command", func() {
 		It("should have correct command metadata", func() {
 			Expect(logsCmd.Use).To(Equal("logs <package-name>"))
 			Expect(logsCmd.Short).To(ContainSubstring("Retrieve logs"))
-			Expect(logsCmd.Long).To(ContainSubstring("Skyhook labels"))
+			Expect(logsCmd.Long).To(ContainSubstring("NodeWright labels"))
 		})
 
 		It("should have example usage", func() {
-			Expect(logsCmd.Example).To(ContainSubstring("kubectl skyhook"))
+			Expect(logsCmd.Example).To(ContainSubstring("kubectl nodewright"))
 			Expect(logsCmd.Example).To(ContainSubstring("-f"))
 			Expect(logsCmd.Example).To(ContainSubstring("--tail"))
 		})

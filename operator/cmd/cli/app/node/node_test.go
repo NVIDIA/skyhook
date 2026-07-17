@@ -40,7 +40,7 @@ var _ = Describe("Node Command", func() {
 			cmd := NewNodeCmd(ctx)
 
 			Expect(cmd.Use).To(Equal("node"))
-			Expect(cmd.Short).To(Equal("Manage Skyhook nodes"))
+			Expect(cmd.Short).To(Equal("Manage NodeWright nodes"))
 			Expect(cmd.Long).To(ContainSubstring("node command group"))
 		})
 
@@ -86,8 +86,8 @@ var _ = Describe("Node Command", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewNodeCmd(ctx)
 
-			Expect(cmd.Long).To(ContainSubstring("List all nodes targeted by a Skyhook"))
-			Expect(cmd.Long).To(ContainSubstring("Query all Skyhook activity"))
+			Expect(cmd.Long).To(ContainSubstring("List all nodes targeted by a NodeWright"))
+			Expect(cmd.Long).To(ContainSubstring("Query all NodeWright activity"))
 			Expect(cmd.Long).To(ContainSubstring("Reset all package state"))
 			Expect(cmd.Long).To(ContainSubstring("Ignore/unignore nodes"))
 		})

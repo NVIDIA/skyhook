@@ -39,14 +39,14 @@ func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	// versionCmd represents the version command
 	versionCmd := &cobra.Command{
 		Use:   "version",
-		Short: "Show plugin and Skyhook operator versions",
+		Short: "Show plugin and NodeWright operator versions",
 		Long: `Display version information for the NodeWright plugin and the NodeWright operator running in the cluster.
 
 		The plugin version is always shown. By default, the command also queries the cluster
 		to discover the NodeWright operator version. Use --client-only to skip the cluster query.`,
 		Example: `  # Show both plugin and operator versions
 		skyhook version
-		kubectl skyhook version
+		kubectl nodewright version
 
 		# Show only the plugin version (no cluster query)
 		skyhook version --client-only
@@ -71,11 +71,11 @@ func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 
 			opVersion, err := utils.DiscoverOperatorVersion(cmdCtx, kubeClient.Kubernetes(), ctx.GlobalFlags.Namespace())
 			if err != nil {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook operator:\tunknown (%v)\n", err)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright operator:\tunknown (%v)\n", err)
 				return nil
 			}
 
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook operator:\t%s\n", opVersion)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright operator:\t%s\n", opVersion)
 			return nil
 		},
 	}

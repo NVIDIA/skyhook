@@ -43,9 +43,7 @@ type nodeListOptions struct {
 
 // BindToCmd binds the options to the command flags
 func (o *nodeListOptions) BindToCmd(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
-
-	_ = cmd.MarkFlagRequired("skyhook")
+	utils.RegisterNodeWrightNameFlag(cmd, &o.skyhookName, "Name of the NodeWright CR (required)", true)
 }
 
 // NewListCmd creates the node list command
@@ -54,19 +52,19 @@ func NewListCmd(ctx *cliContext.CLIContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List all nodes targeted by a Skyhook",
-		Long: `List all nodes that have activity for a specific Skyhook.
+		Short: "List all nodes targeted by a NodeWright",
+		Long: `List all nodes that have activity for a specific NodeWright.
 
-This command shows all nodes that have Skyhook state annotations for the
-specified Skyhook CR, along with a summary of package completion status.`,
-		Example: `  # List all nodes targeted by gpu-init Skyhook
-  kubectl skyhook node list --skyhook gpu-init
+This command shows all nodes that have NodeWright state annotations for the
+specified NodeWright CR, along with a summary of package completion status.`,
+		Example: `  # List all nodes targeted by gpu-init NodeWright
+  kubectl nodewright node list --nodewright gpu-init
 
   # Output as JSON
-  kubectl skyhook node list --skyhook gpu-init -o json`,
+  kubectl nodewright node list --nodewright gpu-init -o json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.skyhookName == "" {
-				return fmt.Errorf("--skyhook flag is required")
+				return fmt.Errorf("--nodewright flag is required")
 			}
 
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
@@ -164,7 +162,7 @@ func runNodeList(ctx context.Context, kubeClient *client.Client, opts *nodeListO
 	})
 
 	if len(entries) == 0 {
-		_, _ = fmt.Fprintf(out, "No nodes found for Skyhook %q\n", opts.skyhookName)
+		_, _ = fmt.Fprintf(out, "No nodes found for NodeWright %q\n", opts.skyhookName)
 		return nil
 	}
 
@@ -223,7 +221,7 @@ func formatNodeListSummary(entries []nodeListEntry) string {
 }
 
 func outputNodeListTableOrWide(out io.Writer, skyhookName string, entries []nodeListEntry, wide bool) error {
-	headerLine := fmt.Sprintf("Skyhook: %s\n\n%s", skyhookName, formatNodeListSummary(entries))
+	headerLine := fmt.Sprintf("NodeWright: %s\n\n%s", skyhookName, formatNodeListSummary(entries))
 	if wide {
 		return utils.OutputWideWithHeader(out, headerLine, nodeListTableConfig(), entries)
 	}

@@ -50,6 +50,21 @@ const (
 	OutputFormatWide  = "wide"
 )
 
+// RegisterNodeWrightNameFlag adds the `--nodewright` flag (bound to *dest) that
+// names the target NodeWright CR. It also keeps the legacy `--skyhook` flag
+// working as a deprecated back-compat alias: the CR was renamed Skyhook ->
+// NodeWright, so scripts that still pass `--skyhook` work but print a migration
+// warning. When required is true, exactly one of the two must be supplied.
+func RegisterNodeWrightNameFlag(cmd *cobra.Command, dest *string, usage string, required bool) {
+	cmd.Flags().StringVar(dest, "nodewright", "", usage)
+	cmd.Flags().StringVar(dest, "skyhook", "", usage)
+	_ = cmd.Flags().MarkDeprecated("skyhook", "use --nodewright instead")
+	cmd.MarkFlagsMutuallyExclusive("nodewright", "skyhook")
+	if required {
+		cmd.MarkFlagsOneRequired("nodewright", "skyhook")
+	}
+}
+
 // MatchNodes matches node patterns against a list of available nodes.
 // Patterns can be exact node names or regex patterns.
 func MatchNodes(patterns []string, availableNodes []string) ([]string, error) {
@@ -457,23 +472,27 @@ func DiscoverOperatorVersion(ctx context.Context, kube kubernetes.Interface, nam
 		}
 	}
 
-	return "", fmt.Errorf("unable to determine operator version; no skyhook operator deployment found in namespace %q", namespace)
+	return "", fmt.Errorf("unable to determine operator version; no nodewright operator deployment found in namespace %q", namespace)
 }
 
-// isSkyhookOperatorDeployment checks if a deployment looks like the Skyhook operator
-// by examining container images for "skyhook" (most reliable), then labels as fallback.
+// isSkyhookOperatorDeployment checks if a deployment looks like the operator by
+// examining container images (most reliable), then labels as fallback. It matches
+// both "nodewright" (current) and "skyhook" (legacy): the operator image and names
+// moved from skyhook -> nodewright, and legacy installs may still carry either.
 func isSkyhookOperatorDeployment(deployment *appsv1.Deployment) bool {
-	// Check container images for "skyhook" (most reliable - image name won't change)
+	looksLikeOperator := func(s string) bool {
+		s = strings.ToLower(s)
+		return strings.Contains(s, "nodewright") || strings.Contains(s, "skyhook")
+	}
+
 	for _, container := range deployment.Spec.Template.Spec.Containers {
-		if strings.Contains(strings.ToLower(container.Image), "skyhook") {
+		if looksLikeOperator(container.Image) {
 			return true
 		}
 	}
 
-	// Fallback: check labels for "skyhook"
 	for key, value := range deployment.Labels {
-		if strings.Contains(strings.ToLower(key), "skyhook") ||
-			strings.Contains(strings.ToLower(value), "skyhook") {
+		if looksLikeOperator(key) || looksLikeOperator(value) {
 			return true
 		}
 	}

@@ -33,7 +33,7 @@ var _ = Describe("DeploymentPolicy Reset Command", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewResetCmd(ctx)
 
-			Expect(cmd.Use).To(Equal("reset <skyhook-name>"))
+			Expect(cmd.Use).To(Equal("reset <nodewright-name>"))
 			Expect(cmd.Short).To(ContainSubstring("Reset batch state"))
 		})
 
@@ -64,7 +64,7 @@ var _ = Describe("DeploymentPolicy Reset Command", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewResetCmd(ctx)
 
-			Expect(cmd.Example).To(ContainSubstring("kubectl skyhook deployment-policy reset"))
+			Expect(cmd.Example).To(ContainSubstring("kubectl nodewright deployment-policy reset"))
 			Expect(cmd.Example).To(ContainSubstring("--dry-run"))
 			Expect(cmd.Example).To(ContainSubstring("dp reset"))
 		})

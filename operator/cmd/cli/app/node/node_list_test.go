@@ -74,7 +74,7 @@ var _ = Describe("Node List Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
-			Expect(outputStr).To(ContainSubstring("Skyhook: my-skyhook"))
+			Expect(outputStr).To(ContainSubstring("NodeWright: my-skyhook"))
 			Expect(outputStr).To(ContainSubstring("Summary: 3 nodes"))
 			Expect(outputStr).To(ContainSubstring("1 complete"))
 			Expect(outputStr).To(ContainSubstring("1 erroring"))
@@ -127,7 +127,7 @@ var _ = Describe("Node List Command", func() {
 		})
 
 		It("should show no nodes when none have the skyhook", func() {
-			// Create node without Skyhook annotations
+			// Create node without NodeWright annotations
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "worker-1",
