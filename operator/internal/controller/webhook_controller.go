@@ -298,10 +298,12 @@ func (r *WebhookController) updateValidatingWebhookConfiguration(ctx context.Con
 
 	needUpdate := false
 	for i := range existingValidating.Webhooks {
+		// Every webhook in this config points at the operator's service, so all
+		// need the CA injected. getValidatingWebhookRules returns nil for
+		// webhooks the operator does not own (e.g. the chart-defined
+		// nodewright mirror webhooks); those keep their chart rules and only
+		// have their caBundle reconciled.
 		expectedRules := r.getValidatingWebhookRules(existingValidating.Webhooks[i].Name)
-		if expectedRules == nil {
-			continue // Unknown webhook, skip
-		}
 		if validatingWebhookNeedsUpdate(&existingValidating.Webhooks[i], caBundle, expectedRules) {
 			needUpdate = true
 		}
@@ -329,10 +331,12 @@ func (r *WebhookController) updateMutatingWebhookConfiguration(ctx context.Conte
 
 	needUpdate := false
 	for i := range existingMutating.Webhooks {
+		// Every webhook in this config points at the operator's service, so all
+		// need the CA injected. getMutatingWebhookRules returns nil for webhooks
+		// the operator does not own (e.g. the chart-defined nodewright mirror
+		// webhooks); those keep their chart rules and only have their caBundle
+		// reconciled.
 		expectedRules := r.getMutatingWebhookRules(existingMutating.Webhooks[i].Name)
-		if expectedRules == nil {
-			continue // Unknown webhook, skip
-		}
 		if mutatingWebhookNeedsUpdate(&existingMutating.Webhooks[i], caBundle, expectedRules) {
 			needUpdate = true
 		}
@@ -513,8 +517,9 @@ func validatingWebhookNeedsUpdate(webhook *admissionregistrationv1.ValidatingWeb
 		needUpdate = true
 	}
 
-	// Check if rules need to be updated
-	if !reflect.DeepEqual(webhook.Rules, expectedRules) {
+	// Only reconcile rules for webhooks the operator owns (expectedRules != nil).
+	// Chart-defined mirror webhooks keep their own rules.
+	if expectedRules != nil && !reflect.DeepEqual(webhook.Rules, expectedRules) {
 		webhook.Rules = expectedRules
 		needUpdate = true
 	}
@@ -532,8 +537,9 @@ func mutatingWebhookNeedsUpdate(webhook *admissionregistrationv1.MutatingWebhook
 		needUpdate = true
 	}
 
-	// Check if rules need to be updated
-	if !reflect.DeepEqual(webhook.Rules, expectedRules) {
+	// Only reconcile rules for webhooks the operator owns (expectedRules != nil).
+	// Chart-defined mirror webhooks keep their own rules.
+	if expectedRules != nil && !reflect.DeepEqual(webhook.Rules, expectedRules) {
 		webhook.Rules = expectedRules
 		needUpdate = true
 	}
