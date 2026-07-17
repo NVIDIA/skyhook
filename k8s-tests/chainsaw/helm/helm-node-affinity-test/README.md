@@ -7,12 +7,12 @@ This test validates the node affinity configuration feature for the Skyhook Oper
 The test demonstrates that the `controllerManager.nodeAffinity.matchExpressions` configuration in the Helm chart works correctly by:
 
 1. **Phase 1**: Installing the operator with node affinity expressions that target non-existent labels
-   - Uses `values-no-match.yaml` with expressions targeting `skyhook.nvidia.com/test-node=fooboar` 
+   - Uses `values-no-match.yaml` with expressions targeting `nodewright.nvidia.com/test-node=fooboar` 
    - Verifies that pods remain in `Pending` state and cannot be scheduled
    - Validates the affinity expressions are correctly applied to the pod spec
 
 2. **Phase 2**: Adding the required labels to nodes and updating the configuration
-   - Adds `skyhook.nvidia.com/test-node=skyhooke2e` label to all nodes
+   - Adds `nodewright.nvidia.com/test-node=skyhooke2e` label to all nodes
    - Updates the deployment to use `values-match.yaml` with expressions targeting the existing label
    - Verifies that pods are now scheduled and running successfully
 
@@ -34,7 +34,7 @@ controllerManager:
     matchExpressions:
     - key: node-role.kubernetes.io/control-plane
       operator: DoesNotExist
-    - key: skyhook.nvidia.com/test-node
+    - key: nodewright.nvidia.com/test-node
       operator: In
       values:
       - skyhooke2e
@@ -83,7 +83,7 @@ controllerManager:
     matchExpressions:
     - key: node-role.kubernetes.io/control-plane
       operator: DoesNotExist
-    - key: skyhook.nvidia.com/test-node
+    - key: nodewright.nvidia.com/test-node
       operator: In
       values:
       - skyhooke2e
