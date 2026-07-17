@@ -598,6 +598,18 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			}
 		}
 
+		// After the node annotations are re-keyed, clean up the workloads the
+		// pre-rename operator created under the legacy skyhook.nvidia.com labels.
+		// The reconcile path now only queries the nodewright prefix, so without
+		// this they would be orphaned.
+		workloadsMigrated, err := r.migrateLegacyLabeledWorkloads(ctx, skyhook.GetSkyhook().Name)
+		if err != nil {
+			return false, fmt.Errorf("error migrating legacy-labeled workloads for skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+		}
+		if workloadsMigrated {
+			updates = true
+		}
+
 		if skyhook.GetSkyhook().Updated {
 			// need to do this because SaveNodesAndSkyhook only saves skyhook status, not the main skyhook object where the annotations are
 			// additionally it needs to be an update, a patch nils out the annotations for some reason, which the save function does a patch
@@ -635,6 +647,80 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 	}
 
 	return updates, nil
+}
+
+// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+// rename. Delete everything tagged MIGRATION-SHIM together with the legacy
+// skyhook.nvidia.com group in the removal release (see docs/plans Phase 10).
+//
+// legacyMetadataPrefix is the metadata prefix the pre-rename operator stamped on
+// package pods and per-node metadata ConfigMaps. It is intentionally hardcoded (a
+// one-shot migration constant whose value can never change) so the controller keeps
+// depending only on the new nodewright api group.
+const legacyMetadataPrefix = "skyhook.nvidia.com"
+
+// MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
+// migrateLegacyLabeledWorkloads cleans up the workloads the pre-rename operator
+// created under the legacy skyhook.nvidia.com labels for the named skyhook: package
+// pods are graceful-deleted (the repointed operator respawns any still-needed work
+// under the nodewright labels; completed pods are simply reaped), and the per-node
+// metadata ConfigMaps (reused by name across the rename) are relabeled to the
+// current prefix so label-scoped queries find them again. Level-triggered and
+// idempotent: once nothing legacy-labeled remains it is a cheap no-op.
+func (r *SkyhookReconciler) migrateLegacyLabeledWorkloads(ctx context.Context, skyhookName string) (bool, error) {
+	updated := false
+
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(r.opts.Namespace),
+		client.MatchingLabels{fmt.Sprintf("%s/name", legacyMetadataPrefix): skyhookName}); err != nil {
+		return false, fmt.Errorf("listing legacy-labeled pods for skyhook [%s]: %w", skyhookName, err)
+	}
+	for i := range pods.Items {
+		// Graceful delete: honor the pod's terminationGracePeriodSeconds (no forced
+		// grace=0, no eviction) so a still-running package shuts down cleanly and
+		// single-writer safety holds before the new-labeled pod respawns.
+		if err := r.Delete(ctx, &pods.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("deleting legacy-labeled pod [%s]: %w", pods.Items[i].Name, err)
+		}
+		updated = true
+	}
+
+	cms := &corev1.ConfigMapList{}
+	if err := r.List(ctx, cms, client.InNamespace(r.opts.Namespace),
+		client.MatchingLabels{fmt.Sprintf("%s/skyhook-node-meta", legacyMetadataPrefix): skyhookName}); err != nil {
+		return false, fmt.Errorf("listing legacy-labeled configmaps for skyhook [%s]: %w", skyhookName, err)
+	}
+	for i := range cms.Items {
+		cm := &cms.Items[i]
+		if relabelLegacyMetadataPrefix(cm.Labels) {
+			if err := r.Update(ctx, cm); err != nil {
+				return false, fmt.Errorf("relabeling legacy configmap [%s]: %w", cm.Name, err)
+			}
+			updated = true
+		}
+	}
+
+	return updated, nil
+}
+
+// MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
+// relabelLegacyMetadataPrefix rewrites, in place, any label key under the legacy
+// skyhook.nvidia.com prefix to the current nodewright.nvidia.com prefix, preserving
+// the value. It returns true if it changed anything. Safe to mutate the map during
+// the range: rewritten keys carry the new prefix, so CutPrefix skips them if the
+// iteration happens to visit them.
+func relabelLegacyMetadataPrefix(labels map[string]string) bool {
+	changed := false
+	for k, v := range labels {
+		suffix, ok := strings.CutPrefix(k, legacyMetadataPrefix+"/")
+		if !ok {
+			continue
+		}
+		delete(labels, k)
+		labels[fmt.Sprintf("%s/%s", v1alpha1.METADATA_PREFIX, suffix)] = v
+		changed = true
+	}
+	return changed
 }
 
 // ReportState computes and puts important information into the skyhook status so that monitoring tools such as k9s
