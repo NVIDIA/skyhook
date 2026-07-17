@@ -231,6 +231,35 @@ var _ = Describe("WebhookController", Ordered, func() {
 				Expect(changed).To(Equal(tt.expectChanged), "case: %s", tt.name)
 			}
 		})
+
+		// The chart's webhook configs also carry the nodewright mirror webhooks,
+		// whose names the operator does not own (getXWebhookRules returns nil).
+		// The operator must still inject the caBundle into them (they point at
+		// its service) while leaving their chart-defined rules untouched.
+		It("injects the caBundle into unowned webhooks without clobbering their rules", func() {
+			chartRules := deploymentPolicyMutatingRules()
+
+			validating := &admissionregistrationv1.ValidatingWebhook{
+				Name:         "validate-nodewright.nvidia.com",
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{},
+				Rules:        chartRules,
+			}
+			Expect(validatingWebhookNeedsUpdate(validating, []byte("the-ca"), nil)).To(BeTrue())
+			Expect(validating.ClientConfig.CABundle).To(Equal([]byte("the-ca")))
+			Expect(validating.Rules).To(Equal(chartRules))
+			// Idempotent once the caBundle matches.
+			Expect(validatingWebhookNeedsUpdate(validating, []byte("the-ca"), nil)).To(BeFalse())
+
+			mutating := &admissionregistrationv1.MutatingWebhook{
+				Name:         "mutate-nodewright.nvidia.com",
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{},
+				Rules:        chartRules,
+			}
+			Expect(mutatingWebhookNeedsUpdate(mutating, []byte("the-ca"), nil)).To(BeTrue())
+			Expect(mutating.ClientConfig.CABundle).To(Equal([]byte("the-ca")))
+			Expect(mutating.Rules).To(Equal(chartRules))
+			Expect(mutatingWebhookNeedsUpdate(mutating, []byte("the-ca"), nil)).To(BeFalse())
+		})
 	})
 
 	Describe("webhook rule generation", func() {
