@@ -611,9 +611,12 @@ spec:
           "(contains($stdout, 'name: prometheus'))": true
 
   ## ── Cleanup job scheduling parity ───────────────────────────────────
-  ## These tests render a single Job template with -s (--show-only),
-  ## then use `chainsaw assert` with an inline heredoc to structurally
-  ## match the Job's pod spec.
+  ## These tests render a single Job template with -s (--show-only), then
+  ## assert its pod spec. The maintenance/hook jobs (pre-delete cleanup,
+  ## pre-upgrade selector-migration) only talk to the API server, so they
+  ## inherit the operator's tolerations (to land on tainted nodes) but must
+  ## NOT inherit its nodeSelector/nodeAffinity: pinning them to a restrictive
+  ## placement makes the hooks unschedulable and stall the delete/upgrade.
 
   - name: cleanup-jobs-inherit-tolerations-skyhooks
     try:
@@ -673,7 +676,7 @@ spec:
                   effect: NoSchedule
           EXPECTED
 
-  - name: cleanup-jobs-inherit-selectors-skyhooks
+  - name: cleanup-jobs-omit-selectors-skyhooks
     try:
     - script:
         env:
@@ -682,6 +685,10 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
+          ## The cleanup hook must NOT inherit the operator's nodeSelector, or a
+          ## restrictive placement makes the pre-delete hook unschedulable. The
+          ## job still renders fully (SA + cleanup container); only nodeSelector
+          ## is dropped. (== null asserts the field is absent, not merely empty.)
           helm template test-release ${CHART} -n skyhook \
             --set 'controllerManager.selectors.dedicated=system-workload' \
             -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
@@ -692,11 +699,14 @@ spec:
           spec:
             template:
               spec:
-                nodeSelector:
-                  dedicated: system-workload
+                serviceAccountName: nodewright-controller-manager
+                (nodeSelector == null): true
+                (length(containers)): 1
+                containers:
+                - name: cleanup
           EXPECTED
 
-  - name: cleanup-jobs-inherit-selectors-webhook
+  - name: cleanup-jobs-omit-selectors-webhook
     try:
     - script:
         env:
@@ -715,11 +725,14 @@ spec:
           spec:
             template:
               spec:
-                nodeSelector:
-                  dedicated: system-workload
+                serviceAccountName: nodewright-controller-manager
+                (nodeSelector == null): true
+                (length(containers)): 1
+                containers:
+                - name: cleanup
           EXPECTED
 
-  - name: cleanup-jobs-inherit-node-affinity-skyhooks
+  - name: cleanup-jobs-omit-node-affinity-skyhooks
     try:
     - script:
         env:
@@ -728,6 +741,10 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
+          ## The cleanup hook must NOT inherit the operator's nodeAffinity, or a
+          ## restrictive placement makes the pre-delete hook unschedulable. The
+          ## job still renders fully (SA + cleanup container); only affinity is
+          ## dropped. (== null asserts the field is absent, not merely empty.)
           helm template test-release ${CHART} -n skyhook \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].key=gpu-type' \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].operator=In' \
@@ -740,18 +757,14 @@ spec:
           spec:
             template:
               spec:
-                affinity:
-                  nodeAffinity:
-                    requiredDuringSchedulingIgnoredDuringExecution:
-                      nodeSelectorTerms:
-                      - matchExpressions:
-                        - key: gpu-type
-                          operator: In
-                          values:
-                          - a100
+                serviceAccountName: nodewright-controller-manager
+                (affinity == null): true
+                (length(containers)): 1
+                containers:
+                - name: cleanup
           EXPECTED
 
-  - name: cleanup-jobs-inherit-node-affinity-webhook
+  - name: cleanup-jobs-omit-node-affinity-webhook
     try:
     - script:
         env:
@@ -772,13 +785,9 @@ spec:
           spec:
             template:
               spec:
-                affinity:
-                  nodeAffinity:
-                    requiredDuringSchedulingIgnoredDuringExecution:
-                      nodeSelectorTerms:
-                      - matchExpressions:
-                        - key: gpu-type
-                          operator: In
-                          values:
-                          - a100
+                serviceAccountName: nodewright-controller-manager
+                (affinity == null): true
+                (length(containers)): 1
+                containers:
+                - name: cleanup
           EXPECTED
