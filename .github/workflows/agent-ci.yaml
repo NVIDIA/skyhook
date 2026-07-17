@@ -351,7 +351,7 @@ jobs:
       
       - name: Restore cached Binaries
         id: cached-binaries
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-bin-
@@ -367,7 +367,7 @@ jobs:
       
       - name: Save cached Binaries
         if: steps.cached-binaries.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
