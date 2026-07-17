@@ -49,6 +49,11 @@ const (
 	mutatingWebhookConfigName   = "skyhook-operator-mutating-webhook"
 
 	// Webhook names
+	// MIGRATION-SHIM: the skyhook* names/rules below (and their getMutating/
+	// getValidatingWebhookRules cases + webhook*Configuration entries) manage the
+	// legacy skyhook.nvidia.com webhooks. Drop the skyhook* cases when the legacy
+	// group is removed; the nodewright webhooks are chart-owned (operator only
+	// injects their caBundle).
 	skyhookValidatingWebhookName          = "validate-skyhook.nvidia.com"
 	deploymentPolicyValidatingWebhookName = "validate-deploymentpolicy.nvidia.com"
 	skyhookMutatingWebhookName            = "mutate-skyhook.nvidia.com"

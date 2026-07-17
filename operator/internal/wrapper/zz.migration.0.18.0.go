@@ -34,6 +34,10 @@ import (
 // wrapper otherwise depends only on the new api group.
 const legacySkyhookMetadataPrefix = "skyhook.nvidia.com"
 
+// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+// rename. Delete this whole file (and its call in wrapper/node.go's Migrate) with the
+// legacy skyhook.nvidia.com group in the removal release.
+//
 // migrateNodePrefixToNodeWright re-keys, in place, any node metadata still under the
 // legacy skyhook.nvidia.com prefix to the current nodewright.nvidia.com prefix.
 //

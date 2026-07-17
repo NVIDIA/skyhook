@@ -14,6 +14,7 @@ webhooks:
       port: 443
   failurePolicy: Fail
   matchPolicy: Equivalent
+  {{/* MIGRATION-SHIM: legacy skyhook.nvidia.com webhook entry; remove with the legacy group in the removal release. */}}
   name: validate-skyhook.nvidia.com
   namespaceSelector: {}
   objectSelector: {}
@@ -40,6 +41,7 @@ webhooks:
       port: 443
   failurePolicy: Fail
   matchPolicy: Equivalent
+  {{/* MIGRATION-SHIM: legacy skyhook.nvidia.com webhook entry; remove with the legacy group in the removal release. */}}
   name: validate-deploymentpolicy.nvidia.com
   namespaceSelector: {}
   objectSelector: {}

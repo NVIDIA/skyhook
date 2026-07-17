@@ -16,6 +16,10 @@
  * limitations under the License.
  */
 
+// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+// rename. Delete this whole file (and its wiring in cmd/manager/main.go) together
+// with the legacy skyhook.nvidia.com group in the removal release.
+//
 // The mirror controller is the migration bridge from the legacy
 // skyhook.nvidia.com API group to the new nodewright.nvidia.com group. It
 // watches the legacy Skyhook and DeploymentPolicy objects and, one-way only

@@ -300,6 +300,7 @@ func (node *skyhookNode) Migrate(logger logr.Logger) error {
 		// any legacy node metadata to the nodewright prefix BEFORE we trust
 		// GetVersion()/State() (both read the new prefix), otherwise a renamed node
 		// looks fresh and every package re-runs. No-op on a genuinely fresh node.
+		// MIGRATION-SHIM: remove this block with the legacy skyhook.nvidia.com group.
 		if err := migrateNodePrefixToNodeWright(node, logger); err != nil {
 			return err
 		}
