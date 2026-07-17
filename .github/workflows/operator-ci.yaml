@@ -98,11 +98,13 @@ jobs:
           # Fetch the versions.json file
           VERSIONS_JSON=$(curl -fsSL https://developer.download.nvidia.com/distroless-oss/versions.json)
           
-          # Extract latest Go v4 version (format: "v4.0.1" -> "4.0.1")
+          # Extract latest static v4 version (format: "v4.0.1" -> "4.0.1").
+          # The operator Dockerfile bases on distroless/static, so use the
+          # static channel, not go.
           GO_DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r '.v4.static.static' | sed 's/^v//')
-          
+
           echo "go-version=${GO_DISTROLESS_VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Go v4 Distroless Version: ${GO_DISTROLESS_VERSION}"
+          echo "📦 Static v4 Distroless Version: ${GO_DISTROLESS_VERSION}"
   
   # Test operator across supported Kubernetes versions and test suites
   tests:
@@ -156,6 +158,9 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
+          # Intentionally identical to key (NO prefix fallback): a looser prefix
+          # restore-keys hit stale tool caches that were not rebuilt when deps
+          # changed. Keep exact-match so a deps change forces a cold rebuild.
           restore-keys: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
             ${{ github.workspace }}/operator/bin

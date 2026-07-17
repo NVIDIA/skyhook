@@ -19,20 +19,20 @@ apiVersion: v1
 kind: Node
 metadata:
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
-    skyhook.nvidia.com/status_simple-agent-operator: complete
+    nodewright.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/status_simple-agent-operator: complete
   annotations: 
-    skyhook.nvidia.com/status_simple-agent-operator: complete
+    nodewright.nvidia.com/status_simple-agent-operator: complete
 status:
-  (conditions[?type == 'skyhook.nvidia.com/simple-agent-operator/NotReady']):
+  (conditions[?type == 'nodewright.nvidia.com/simple-agent-operator/NotReady']):
   - reason: "Complete"
     status: "False"
-  (conditions[?type == 'skyhook.nvidia.com/simple-agent-operator/Erroring']):
+  (conditions[?type == 'nodewright.nvidia.com/simple-agent-operator/Erroring']):
   - reason: "Not Erroring"
     status: "False"
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: simple-agent-operator
 status:
