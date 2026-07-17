@@ -37,24 +37,24 @@ const labelValueTrue = "true"
 func NewIgnoreCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ignore <node-name...>",
-		Short: "Ignore node(s) from Skyhook processing",
-		Long: `Ignore node(s) from all Skyhook processing by setting the ignore label.
+		Short: "Ignore node(s) from NodeWright processing",
+		Long: `Ignore node(s) from all NodeWright processing by setting the ignore label.
 
-When a node is ignored, Skyhook will skip it during package execution.
+When a node is ignored, NodeWright will skip it during package execution.
 This is useful for maintenance windows or debugging.
 
 Node names can be exact matches or regex patterns.`,
 		Example: `  # Ignore a single node
-  kubectl skyhook node ignore worker-1
+  kubectl nodewright node ignore worker-1
 
   # Ignore multiple nodes
-  kubectl skyhook node ignore worker-1 worker-2 worker-3
+  kubectl nodewright node ignore worker-1 worker-2 worker-3
 
   # Ignore all nodes matching a pattern
-  kubectl skyhook node ignore "worker-.*"
+  kubectl nodewright node ignore "worker-.*"
 
   # Ignore GPU nodes for maintenance
-  kubectl skyhook node ignore "gpu-node-[0-9]+"`,
+  kubectl nodewright node ignore "gpu-node-[0-9]+"`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
@@ -79,19 +79,19 @@ func NewUnignoreCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "unignore <node-name...>",
 		Short: "Remove ignore label from node(s)",
-		Long: `Remove the ignore label from node(s), re-enabling Skyhook processing.
+		Long: `Remove the ignore label from node(s), re-enabling NodeWright processing.
 
-After unignoring, Skyhook will resume package execution on these nodes.
+After unignoring, NodeWright will resume package execution on these nodes.
 
 Node names can be exact matches or regex patterns.`,
 		Example: `  # Unignore a single node
-  kubectl skyhook node unignore worker-1
+  kubectl nodewright node unignore worker-1
 
   # Unignore multiple nodes
-  kubectl skyhook node unignore worker-1 worker-2 worker-3
+  kubectl nodewright node unignore worker-1 worker-2 worker-3
 
   # Unignore all nodes matching a pattern
-  kubectl skyhook node unignore "gpu-node-[0-9]+"`,
+  kubectl nodewright node unignore "gpu-node-[0-9]+"`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)

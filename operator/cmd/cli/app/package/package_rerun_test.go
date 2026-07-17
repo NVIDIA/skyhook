@@ -130,7 +130,7 @@ var _ = Describe("Package Rerun Command", func() {
 			printRerunSummary(cmd, "pkg1", "v1", opts, []string{"node1"}, nodeStates, "pkg1|v1")
 
 			Expect(output.String()).To(ContainSubstring("Package: pkg1 (version v1)"))
-			Expect(output.String()).To(ContainSubstring("Skyhook: my-skyhook"))
+			Expect(output.String()).To(ContainSubstring("NodeWright: my-skyhook"))
 		})
 
 		It("should print stage when specified", func() {
@@ -580,7 +580,7 @@ var _ = Describe("Package Rerun Command", func() {
 		})
 
 		It("should have example usage", func() {
-			Expect(rerunCmd.Example).To(ContainSubstring("kubectl skyhook"))
+			Expect(rerunCmd.Example).To(ContainSubstring("kubectl nodewright"))
 			Expect(rerunCmd.Example).To(ContainSubstring("--confirm"))
 			Expect(rerunCmd.Example).To(ContainSubstring("--dry-run"))
 		})

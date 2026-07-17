@@ -27,19 +27,19 @@ func NewNodeCmd(ctx *context.CLIContext) *cobra.Command {
 	// NodeCmd represents the node command that subcommands attach to
 	nodeCmd := &cobra.Command{
 		Use:   "node",
-		Short: "Manage Skyhook nodes",
+		Short: "Manage NodeWright nodes",
 		Long: `The node command group provides functionality to manage, inspect,
-and troubleshoot Skyhook nodes across your cluster.
+and troubleshoot NodeWright nodes across your cluster.
 
 Available operations:
-  - List all nodes targeted by a Skyhook
-  - Query all Skyhook activity on specific nodes
+  - List all nodes targeted by a NodeWright
+  - Query all NodeWright activity on specific nodes
   - Reset all package state on a node
-  - Ignore/unignore nodes from Skyhook processing
+  - Ignore/unignore nodes from NodeWright processing
 
 Common use cases:
-  - Viewing all Skyhook CRs affecting a specific node
-  - Listing all nodes in a Skyhook deployment
+  - Viewing all NodeWright CRs affecting a specific node
+  - Listing all nodes in a NodeWright deployment
   - Debugging node failures by examining state
   - Forcing a complete re-run on a node
   - Temporarily excluding nodes for maintenance`,

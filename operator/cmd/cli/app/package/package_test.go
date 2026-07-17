@@ -34,7 +34,7 @@ var _ = Describe("Package Command", func() {
 			cmd := NewPackageCmd(ctx)
 
 			Expect(cmd.Use).To(Equal("package"))
-			Expect(cmd.Short).To(Equal("Manage Skyhook packages"))
+			Expect(cmd.Short).To(Equal("Manage NodeWright packages"))
 			Expect(cmd.Long).To(ContainSubstring("package command group"))
 		})
 

@@ -42,7 +42,7 @@ var skyhookGVR = schema.GroupVersionResource{
 	Resource: "nodewrights",
 }
 
-// validRerunStages lists the package stages that can be targeted by `kubectl skyhook` rerun/logs commands.
+// validRerunStages lists the package stages that can be targeted by `kubectl nodewright` rerun/logs commands.
 // Uninstall-* and upgrade are operator-internal and not user-rerunnable.
 var validRerunStages = map[v1alpha1.Stage]bool{
 	v1alpha1.StageApply:         true,
@@ -66,12 +66,11 @@ type rerunOptions struct {
 
 // BindToCmd binds the rerun options to command flags
 func (o *rerunOptions) BindToCmd(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
+	utils.RegisterNodeWrightNameFlag(cmd, &o.skyhookName, "Name of the NodeWright CR (required)", true)
 	cmd.Flags().StringArrayVar(&o.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times, required)")
 	cmd.Flags().StringVar(&o.stage, "stage", "", "Re-run from specific stage (apply, config, interrupt, post-interrupt)")
 	cmd.Flags().BoolVarP(&o.confirm, "confirm", "y", false, "Skip confirmation prompt")
 
-	_ = cmd.MarkFlagRequired("skyhook")
 	_ = cmd.MarkFlagRequired("node")
 }
 
@@ -83,32 +82,32 @@ func NewRerunCmd(ctx *cliContext.CLIContext) *cobra.Command {
 		Use:   "rerun <package-name>",
 		Short: "Force a package to re-run on specific node(s)",
 		Long: `Force a package to re-run on specific node(s) by removing its state
-from the Skyhook status, causing the operator to re-execute the package.
+from the NodeWright status, causing the operator to re-execute the package.
 
 Nodes can be specified using exact names or regex patterns. Multiple
 --node flags can be combined to target different nodes.`,
 		Example: `  # Re-run the shellscript package on worker-1 (from beginning)
-  kubectl skyhook package rerun shellscript --skyhook gpu-init --node worker-1
+  kubectl nodewright package rerun shellscript --nodewright gpu-init --node worker-1
 
   # Re-run only the config stage
-  kubectl skyhook package rerun shellscript --skyhook gpu-init --node worker-1 --stage config
+  kubectl nodewright package rerun shellscript --nodewright gpu-init --node worker-1 --stage config
 
   # Re-run on all nodes matching a regex pattern
-  kubectl skyhook package rerun shellscript --skyhook gpu-init --node "worker-.*"
+  kubectl nodewright package rerun shellscript --nodewright gpu-init --node "worker-.*"
 
   # Skip confirmation prompt
-  kubectl skyhook package rerun shellscript --skyhook gpu-init --node worker-1 --confirm
+  kubectl nodewright package rerun shellscript --nodewright gpu-init --node worker-1 --confirm
 
   # Preview changes without applying
-  kubectl skyhook package rerun shellscript --skyhook gpu-init --node worker-1 --dry-run`,
+  kubectl nodewright package rerun shellscript --nodewright gpu-init --node worker-1 --dry-run`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.skyhookName = cmd.Flag("skyhook").Value.String()
+			// opts.skyhookName is bound by BindToCmd (--nodewright, or the
+			// deprecated --nodewright alias). MarkFlagsOneRequired enforces presence.
 			packageName := args[0]
 
-			// Validate required flags
 			if opts.skyhookName == "" {
-				return fmt.Errorf("--skyhook flag is required")
+				return fmt.Errorf("--nodewright flag is required")
 			}
 			if len(opts.nodes) == 0 {
 				return fmt.Errorf("at least one --node flag is required")
@@ -142,13 +141,13 @@ Nodes can be specified using exact names or regex patterns. Multiple
 }
 
 func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, packageName string, opts *rerunOptions, cliCtx *cliContext.CLIContext) error {
-	// Get the Skyhook CR to find the package spec
+	// Get the NodeWright CR to find the package spec
 	skyhookUnstructured, err := kubeClient.Dynamic().Resource(skyhookGVR).Get(ctx, opts.skyhookName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("getting skyhook %q: %w", opts.skyhookName, err)
 	}
 
-	// Convert to Skyhook type to access spec
+	// Convert to NodeWright type to access spec
 	skyhook, err := utils.UnstructuredToSkyhook(skyhookUnstructured)
 	if err != nil {
 		return fmt.Errorf("parsing skyhook: %w", err)
@@ -256,7 +255,7 @@ func filterNodesWithPackage(matchedNodes []string, nodeStates map[string]v1alpha
 // printRerunSummary displays what will be changed
 func printRerunSummary(cmd *cobra.Command, packageName, version string, opts *rerunOptions, nodesToUpdate []string, nodeStates map[string]v1alpha1.NodeState, packageKey string) {
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package: %s (version %s)\n", packageName, version)
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", opts.skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", opts.skyhookName)
 	if opts.stage != "" {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Re-run from stage: %s\n", opts.stage)
 	}

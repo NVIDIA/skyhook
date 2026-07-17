@@ -88,27 +88,27 @@ func NewResetCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &resetOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "reset <skyhook-name>",
-		Short: "Reset all nodes for a Skyhook",
-		Long: `Reset all package state on all nodes for a specific Skyhook, forcing a complete re-run.
+		Use:   "reset <nodewright-name>",
+		Short: "Reset all nodes for a NodeWright",
+		Long: `Reset all package state on all nodes for a specific NodeWright, forcing a complete re-run.
 
-This command removes all Skyhook state from all nodes that have state for the
-specified Skyhook, causing the operator to re-execute all packages from the beginning.
+This command removes all NodeWright state from all nodes that have state for the
+specified NodeWright, causing the operator to re-execute all packages from the beginning.
 
 Unlike 'node reset' which resets specific nodes, 'skyhook reset' resets ALL nodes
-that have state for the specified Skyhook.
+that have state for the specified NodeWright.
 
 By default, this command also resets the deployment policy batch state, allowing
 the rollout to start fresh from batch 1. Use --skip-batch-reset to preserve the
 existing batch state.`,
-		Example: `  # Reset all nodes for gpu-init Skyhook
-  kubectl skyhook reset gpu-init --confirm
+		Example: `  # Reset all nodes for gpu-init NodeWright
+  kubectl nodewright reset gpu-init --confirm
 
   # Preview changes without applying (dry-run)
-  kubectl skyhook reset gpu-init --dry-run
+  kubectl nodewright reset gpu-init --dry-run
 
   # Reset nodes only, preserve batch state
-  kubectl skyhook reset gpu-init --skip-batch-reset --confirm`,
+  kubectl nodewright reset gpu-init --skip-batch-reset --confirm`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			skyhookName := args[0]
@@ -183,12 +183,12 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	sort.Strings(nodesToReset)
 
 	if len(nodesToReset) == 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for Skyhook %q\n", skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for NodeWright %q\n", skyhookName)
 		return nil
 	}
 
 	// Print summary
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", skyhookName)
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes to reset (%d):\n", len(nodesToReset))
 	for _, nodeName := range nodesToReset {
 		nodeState := nodeStates[nodeName]
@@ -207,7 +207,7 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	}
 
 	if !opts.confirm {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for Skyhook %q on %d node(s).\n", skyhookName, len(nodesToReset))
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for NodeWright %q on %d node(s).\n", skyhookName, len(nodesToReset))
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "All packages will re-run from the beginning.\n")
 		if !opts.skipBatchReset {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state will be reset to start from batch 1.\n")
@@ -234,7 +234,7 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	}
 
 	if successCount > 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for Skyhook %q\n", successCount, skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for NodeWright %q\n", successCount, skyhookName)
 	}
 
 	// Reset batch state unless --skip-batch-reset is set
@@ -288,7 +288,7 @@ func resetNodeAnnotations(ctx context.Context, cmd *cobra.Command, kubeClient *c
 	return successCount, updateErrors
 }
 
-// resetBatchStateForReset resets the batch state for a Skyhook if dynamic client is available
+// resetBatchStateForReset resets the batch state for a NodeWright if dynamic client is available
 func resetBatchStateForReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string) {
 	if kubeClient.Dynamic() == nil {
 		return
@@ -325,7 +325,7 @@ func resetBatchStateForReset(ctx context.Context, cmd *cobra.Command, kubeClient
 		[]byte(`{"status":{"nodeOrderOffset":0,"nodePriority":null}}`)); err != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to reset node ordering: %v\n", err)
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state reset for Skyhook %q\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state reset for NodeWright %q\n", skyhookName)
 }
 
 func splitPackageRef(s string) (name, version string, hasVersion bool, err error) {
@@ -364,7 +364,7 @@ func runPackageReset(
 
 	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
 	if err != nil {
-		return fmt.Errorf("fetching Skyhook %q: %w", skyhookName, err)
+		return fmt.Errorf("fetching NodeWright %q: %w", skyhookName, err)
 	}
 	if err := utils.CheckNodeStateOperatorVersion(ctx, cmd, kubeClient.Kubernetes(), cliCtx.GlobalFlags.Namespace(), skyhook); err != nil {
 		return err
@@ -409,7 +409,7 @@ func runPackageReset(
 		})
 	}
 
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", skyhookName)
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package filter: %s\n", opts.pkg)
 
 	if len(targets) == 0 {

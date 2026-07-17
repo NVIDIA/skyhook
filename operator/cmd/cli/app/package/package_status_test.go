@@ -102,7 +102,7 @@ var _ = Describe("Package Status Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			result := output.String()
-			Expect(result).To(ContainSubstring("Skyhook: my-skyhook"))
+			Expect(result).To(ContainSubstring("NodeWright: my-skyhook"))
 			Expect(result).To(ContainSubstring("NODE"))
 			Expect(result).To(ContainSubstring("PACKAGE"))
 			Expect(result).To(ContainSubstring("VERSION"))

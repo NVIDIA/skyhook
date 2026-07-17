@@ -74,10 +74,8 @@ func hasResettableMetadata(annotations, labels map[string]string, annotationKeys
 
 // BindToCmd binds the options to the command flags
 func (o *nodeResetOptions) BindToCmd(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
+	utils.RegisterNodeWrightNameFlag(cmd, &o.skyhookName, "Name of the NodeWright CR (required)", true)
 	cmd.Flags().BoolVarP(&o.confirm, "confirm", "y", false, "Skip confirmation prompt")
-
-	_ = cmd.MarkFlagRequired("skyhook")
 }
 
 // NewResetCmd creates the node reset command
@@ -86,31 +84,31 @@ func NewResetCmd(ctx *cliContext.CLIContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "reset <node-name...>",
-		Short: "Reset all package state on node(s) for a Skyhook",
-		Long: `Reset all package state on node(s) for a specific Skyhook, forcing a complete re-run.
+		Short: "Reset all package state on node(s) for a NodeWright",
+		Long: `Reset all package state on node(s) for a specific NodeWright, forcing a complete re-run.
 
-This command removes all Skyhook state from the specified node(s), causing
+This command removes all NodeWright state from the specified node(s), causing
 the operator to re-execute all packages from the beginning.
 
 Unlike 'package rerun' which resets a single package, 'node reset' clears
-ALL package state for a Skyhook on the specified node(s).
+ALL package state for a NodeWright on the specified node(s).
 
 Node names can be exact matches or regex patterns.`,
-		Example: `  # Reset all packages on worker-1 for gpu-init Skyhook
-  kubectl skyhook node reset worker-1 --skyhook gpu-init --confirm
+		Example: `  # Reset all packages on worker-1 for gpu-init NodeWright
+  kubectl nodewright node reset worker-1 --nodewright gpu-init --confirm
 
   # Reset multiple nodes
-  kubectl skyhook node reset worker-1 worker-2 worker-3 --skyhook gpu-init --confirm
+  kubectl nodewright node reset worker-1 worker-2 worker-3 --nodewright gpu-init --confirm
 
   # Reset all nodes matching a pattern
-  kubectl skyhook node reset "gpu-node-.*" --skyhook gpu-init --confirm
+  kubectl nodewright node reset "gpu-node-.*" --nodewright gpu-init --confirm
 
   # Preview changes without applying (dry-run)
-  kubectl skyhook node reset worker-1 --skyhook gpu-init --dry-run`,
+  kubectl nodewright node reset worker-1 --nodewright gpu-init --dry-run`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.skyhookName == "" {
-				return fmt.Errorf("--skyhook flag is required")
+				return fmt.Errorf("--nodewright flag is required")
 			}
 
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
@@ -158,7 +156,7 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 		return nil
 	}
 
-	// Find nodes that have the specified Skyhook annotation
+	// Find nodes that have the specified NodeWright annotation
 	annotationKey := nodeStateAnnotationPrefix + opts.skyhookName
 	annotationKeys := resetAnnotationKeys(opts.skyhookName)
 	labelKeys := resetLabelKeys(opts.skyhookName)
@@ -187,12 +185,12 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	}
 
 	if len(nodesToReset) == 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for Skyhook %q\n", opts.skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for NodeWright %q\n", opts.skyhookName)
 		return nil
 	}
 
 	// Print summary
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", opts.skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", opts.skyhookName)
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes to reset (%d):\n", len(nodesToReset))
 	for _, nodeName := range nodesToReset {
 		nodeState := nodeStates[nodeName]
@@ -207,7 +205,7 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 
 	// Confirmation
 	if !opts.confirm {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for Skyhook %q on these nodes.\n", opts.skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for NodeWright %q on these nodes.\n", opts.skyhookName)
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "All packages will re-run from the beginning.\n")
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Continue? [y/N]: ")
 
@@ -257,7 +255,7 @@ func runNodeReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	}
 
 	if successCount > 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for Skyhook %q\n", successCount, opts.skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for NodeWright %q\n", successCount, opts.skyhookName)
 	}
 
 	return nil

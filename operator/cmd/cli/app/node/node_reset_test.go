@@ -372,7 +372,7 @@ var _ = Describe("Node Reset Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			outputStr := output.String()
-			Expect(outputStr).To(ContainSubstring("Skyhook: my-skyhook"))
+			Expect(outputStr).To(ContainSubstring("NodeWright: my-skyhook"))
 			Expect(outputStr).To(ContainSubstring("Nodes to reset"))
 			Expect(outputStr).To(ContainSubstring("worker-1"))
 			Expect(outputStr).To(ContainSubstring("2 packages"))

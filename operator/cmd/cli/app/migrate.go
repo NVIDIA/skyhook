@@ -79,13 +79,13 @@ Two input modes:
 Documents that are already nodewright.nvidia.com objects, or an unrelated kind,
 are passed through unchanged.`,
 		Example: `  # Convert a file and apply the result
-  kubectl skyhook migrate -f skyhook.yaml | kubectl apply -f -
+  kubectl nodewright migrate -f skyhook.yaml | kubectl apply -f -
 
   # Convert everything piped in on stdin
-  cat skyhooks.yaml | kubectl skyhook migrate -f -
+  cat skyhooks.yaml | kubectl nodewright migrate -f -
 
   # Convert every legacy object in the cluster and save for GitOps
-  kubectl skyhook migrate > nodewright.yaml`,
+  kubectl nodewright migrate > nodewright.yaml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(opts.filenames) > 0 {

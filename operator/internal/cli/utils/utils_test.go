@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -422,6 +423,87 @@ var _ = Describe("CLI Utility Functions", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got).To(HaveLen(1))
 			Expect(got).To(HaveKey("n1"))
+		})
+	})
+
+	Describe("RegisterNodeWrightNameFlag", func() {
+		build := func(required bool) (*cobra.Command, *string) {
+			var v string
+			c := &cobra.Command{
+				Use: "x", SilenceUsage: true, SilenceErrors: true,
+				RunE: func(*cobra.Command, []string) error { return nil },
+			}
+			RegisterNodeWrightNameFlag(c, &v, "Name of the NodeWright CR", required)
+			return c, &v
+		}
+
+		It("binds the --nodewright flag", func() {
+			c, v := build(true)
+			c.SetArgs([]string{"--nodewright", "a"})
+			Expect(c.Execute()).To(Succeed())
+			Expect(*v).To(Equal("a"))
+		})
+
+		It("accepts the deprecated --skyhook alias", func() {
+			c, v := build(true)
+			c.SetArgs([]string{"--skyhook", "b"})
+			Expect(c.Execute()).To(Succeed())
+			Expect(*v).To(Equal("b"))
+		})
+
+		It("requires one of the two when required", func() {
+			c, _ := build(true)
+			c.SetArgs([]string{})
+			Expect(c.Execute()).To(HaveOccurred())
+		})
+
+		It("does not require the flag when optional", func() {
+			c, v := build(false)
+			c.SetArgs([]string{})
+			Expect(c.Execute()).To(Succeed())
+			Expect(*v).To(BeEmpty())
+		})
+
+		It("rejects setting both at once", func() {
+			c, _ := build(true)
+			c.SetArgs([]string{"--nodewright", "a", "--skyhook", "b"})
+			Expect(c.Execute()).To(HaveOccurred())
+		})
+
+		It("hides the deprecated --skyhook alias from help", func() {
+			c, _ := build(true)
+			f := c.Flags().Lookup("skyhook")
+			Expect(f).NotTo(BeNil())
+			Expect(f.Hidden).To(BeTrue())
+		})
+	})
+
+	Describe("isSkyhookOperatorDeployment", func() {
+		dep := func(image string, labels map[string]string) *appsv1.Deployment {
+			return &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: image}}},
+					},
+				},
+			}
+		}
+
+		It("matches the current nodewright operator image", func() {
+			Expect(isSkyhookOperatorDeployment(dep("ghcr.io/nvidia/nodewright/operator:v1", nil))).To(BeTrue())
+		})
+
+		It("matches the legacy skyhook operator image (transition)", func() {
+			Expect(isSkyhookOperatorDeployment(dep("ghcr.io/nvidia/skyhook/operator:v1", nil))).To(BeTrue())
+		})
+
+		It("matches via labels when the image is unrelated", func() {
+			Expect(isSkyhookOperatorDeployment(dep("busybox:latest", map[string]string{"app.kubernetes.io/name": "nodewright"}))).To(BeTrue())
+		})
+
+		It("does not match an unrelated deployment", func() {
+			Expect(isSkyhookOperatorDeployment(dep("busybox:latest", map[string]string{"app": "other"}))).To(BeFalse())
 		})
 	})
 })

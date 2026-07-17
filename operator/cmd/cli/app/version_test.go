@@ -64,8 +64,8 @@ func TestNewVersionCmd_ClientOnly(t *testing.T) {
 	}
 
 	// Should NOT contain operator version (client-only mode)
-	if strings.Contains(output, "Skyhook operator:") {
-		t.Error("output should not contain 'Skyhook operator:' in client-only mode")
+	if strings.Contains(output, "NodeWright operator:") {
+		t.Error("output should not contain 'NodeWright operator:' in client-only mode")
 	}
 }
 

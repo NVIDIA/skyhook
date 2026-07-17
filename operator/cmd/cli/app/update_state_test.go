@@ -47,7 +47,7 @@ var _ = Describe("UpdateState Command", func() {
 		It("creates the command with the expected use string and arg count", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewUpdateStateCmd(ctx)
-			Expect(cmd.Use).To(Equal("update-state <skyhook-name> <package> <version> <stage> <state>"))
+			Expect(cmd.Use).To(Equal("update-state <nodewright-name> <package> <version> <stage> <state>"))
 			Expect(cmd.Args).NotTo(BeNil())
 			Expect(cmd.Args(cmd, []string{"a", "b", "c", "d"})).To(HaveOccurred())
 			Expect(cmd.Args(cmd, []string{"a", "b", "c", "d", "e"})).NotTo(HaveOccurred())
@@ -154,7 +154,7 @@ var _ = Describe("UpdateState Command", func() {
 			Expect(err.Error()).To(ContainSubstring("invalid state"))
 		})
 
-		It("rejects a package not present in the Skyhook spec", func() {
+		It("rejects a package not present in the NodeWright spec", func() {
 			setupSkyhookCR(map[string]string{"other": "9.9"})
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
 			opts := &updateStateOptions{confirm: true}

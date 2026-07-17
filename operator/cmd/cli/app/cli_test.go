@@ -35,7 +35,7 @@ func TestCLISmoke(t *testing.T) {
 	RunSpecs(t, "CLI Test Suite")
 }
 
-var _ = Describe("Skyhook CLI Tests", func() {
+var _ = Describe("NodeWright CLI Tests", func() {
 	var rootCmd *cobra.Command
 	var testCtx *context.CLIContext
 	var output *bytes.Buffer
