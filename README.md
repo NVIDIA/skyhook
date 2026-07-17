@@ -6,7 +6,7 @@
 
 **NodeWright** is a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying host declaratively at scale.
 
-> **Note:** NodeWright is being renamed from Skyhook. The Helm chart and operator image are already published under `nodewright` (see the install command below). CRDs (`skyhook.nvidia.com/v1alpha1`), the CLI (`kubectl skyhook`), and the default install namespace (`skyhook`) still use `skyhook` for now to avoid breaking existing users. The rename will roll out incrementally.
+> **Note:** NodeWright is being renamed from Skyhook, and the rename has now landed for the core surfaces. The Helm chart, operator image, CLI (`kubectl nodewright`), and the CRDs (`nodewright.nvidia.com/v1alpha1`, Kind `NodeWright`; `DeploymentPolicy` moves to the same group) are published under `nodewright`. Existing `skyhook.nvidia.com`/`Skyhook` resources keep working during the transition: the operator auto-imports them to NodeWright and preserves per-node state (no package re-run), and legacy writes emit a deprecation warning. The agent image and the default install namespace (`skyhook`) still use `skyhook` for now. See the [migration guide](docs/nodewright-migration.md).
 >
 > **Distribution change (v0.16.0+):** NodeWright is now distributed exclusively through GitHub Container Registry (`ghcr.io`) — both the container images and the Helm chart (as an OCI artifact). Publication to `nvcr.io` / the NGC Helm repository (`helm.ngc.nvidia.com`) is paused and is planned to return in a future release. **Existing users installing from NGC need to switch to the OCI install below.** See [Distribution: ghcr.io only (for now)](docs/release-process.md#distribution-ghcrio-only-for-now) for the full story.
 
@@ -52,7 +52,7 @@ NodeWright works in any Kubernetes environment (self-managed, on-prem, cloud) an
 - **Package Interrupt:** service (containerd, cron, any thing systemd), or reboot
 - **Additional Tolerations:**  are tolerations added to the packages
 - [**Runtime Required**](docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
-- **Resource Management:** Skyhook uses Kubernetes [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/) to set default CPU and memory requests/limits for all containers in its namespace. You can override these defaults per-package in your Skyhook CR. Strict validation is enforced: if you set any resource override, you must set all four fields (cpuRequest, cpuLimit, memoryRequest, memoryLimit), and limits must be >= requests. See [docs/resource_management.md](docs/resource_management.md) for details and examples.
+- **Resource Management:** NodeWright uses Kubernetes [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/) to set default CPU and memory requests/limits for all containers in its namespace. You can override these defaults per-package in your NodeWright CR. Strict validation is enforced: if you set any resource override, you must set all four fields (cpuRequest, cpuLimit, memoryRequest, memoryLimit), and limits must be >= requests. See [docs/resource_management.md](docs/resource_management.md) for details and examples.
 - [**Explicit Uninstall**](docs/uninstall.md): controlled, explicit uninstall of packages from nodes with `uninstall.enabled` and `uninstall.apply` fields, webhook guards, finalizer-driven cleanup on CR deletion, and cancel support.
 
 ## Pre-built Packages
@@ -95,7 +95,7 @@ kubectl create secret generic node-init-secret \
   --namespace skyhook
 ```
 
-**Note:** Skyhook currently uses a single shared image pull secret for all packages, and agent/operator containers. If you need access to multiple registries, combine the credentials into one `dockerconfigjson` secret with multiple registry auths.
+**Note:** NodeWright currently uses a single shared image pull secret for all packages, and agent/operator containers. If you need access to multiple registries, combine the credentials into one `dockerconfigjson` secret with multiple registry auths.
 
 ### Verify Installation
 
@@ -113,14 +113,14 @@ kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n sk
 kubectl get pods -l control-plane=controller-manager -n skyhook -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}'
 
 # Verify the CRDs are installed
-kubectl get crd | grep skyhook
+kubectl get crd | grep nodewright
 
 # Verify packages are working
 kubectl apply -f - <<EOF
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
-  name: skyhook-sample
+  name: nodewright-sample
 spec:
   nodeSelectors:
     matchExpressions:
@@ -141,7 +141,7 @@ spec:
            sleep 10
 EOF
 
-# Wait for the Skyhook to complete
+# Wait for the NodeWright to complete
 kubectl wait --for=jsonpath='{.status.status}'=complete skyhook/skyhook-sample --timeout=300s
 
 # Check the status
@@ -150,7 +150,7 @@ kubectl describe skyhook skyhook-sample
 
 ### Uninstalling
 
-**Automatic Cleanup (Default):** By default, the Helm chart includes a pre-delete hook that automatically cleans up all Skyhook and DeploymentPolicy resources before uninstalling:
+**Automatic Cleanup (Default):** By default, the Helm chart includes a pre-delete hook that automatically cleans up all NodeWright and DeploymentPolicy resources before uninstalling:
 
 ```bash
 # Uninstall the chart (cleanup happens automatically)
@@ -159,7 +159,7 @@ helm uninstall nodewright --namespace skyhook
 
 The pre-delete hook will:
 
-- Delete all Skyhook resources
+- Delete all NodeWright resources
 - Delete all DeploymentPolicy resources  
 - Complete quickly if no resources exist
 - Wait for finalizers to be processed if resources exist
@@ -185,7 +185,7 @@ helm install nodewright ./chart --namespace skyhook \
 If you disabled automatic cleanup or need to clean up resources manually:
 
 ```bash
-# Delete all Skyhook resources first
+# Delete all NodeWright resources first
 kubectl delete skyhooks --all
 
 # Delete all DeploymentPolicy resources
@@ -195,7 +195,7 @@ kubectl delete deploymentpolicies --all
 helm uninstall nodewright --namespace skyhook
 ```
 
-**Why cleanup matters:** If you uninstall while Skyhook CRs with finalizers still exist, it can leave resources in a broken state that may cause reinstall issues.
+**Why cleanup matters:** If you uninstall while NodeWright CRs with finalizers still exist, it can leave resources in a broken state that may cause reinstall issues.
 
 ## Monitoring and Troubleshooting
 
@@ -212,7 +212,7 @@ There will be a pod for each lifecycle stage (apply, config, etc.) per package p
 # Check overall status
 kubectl get skyhooks
 
-# Get detailed status of a specific Skyhook
+# Get detailed status of a specific NodeWright
 kubectl describe skyhook <skyhook-name>
 ```
 The Status will show the overall package status as well as the status of each node
@@ -220,7 +220,7 @@ The Status will show the overall package status as well as the status of each no
 ### Check node annotations for package state
 
 ```bash
-# View node state annotations for a specific Skyhook
+# View node state annotations for a specific NodeWright
 kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_<skyhook-name>}{"\n"}{end}'
 ```
 
@@ -229,7 +229,7 @@ kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata
 The operator will apply steps in a package throughout different lifecycle stages. This ensures that the right steps are applied in the right situations and in the correct order.
 
 - Upgrade: This stage will be ran whenever a package's version is upgraded in the SCR.
-- Uninstall: This stage runs only when explicitly requested — either by setting `uninstall.apply: true` on a package with `uninstall.enabled: true`, or during Skyhook CR deletion (finalizer-driven) for `uninstall.enabled: true` packages. See [Explicit Uninstall](docs/uninstall.md).
+- Uninstall: This stage runs only when explicitly requested — either by setting `uninstall.apply: true` on a package with `uninstall.enabled: true`, or during NodeWright CR deletion (finalizer-driven) for `uninstall.enabled: true` packages. See [Explicit Uninstall](docs/uninstall.md).
 - Apply: This stage will always be ran at least once.
 - Config: This stage will run when a configmap is changed and on the first SCR application.
 - Interrupt: This stage will run when a package has an interrupt defined or a key's value in a packages configmap changes which has a config interrupt defined.
@@ -274,7 +274,7 @@ Part of how the operator works is the [NodeWright agent](agent/README.md). Packa
 └── config.json
 ```
 
-When a Skyhook's `configMap` is set, the operator projects each key as an individual file at `/skyhook-package/configmaps/<key>`. These files overlay any files the package image baked in under that directory rather than replacing the whole directory: a package can ship default files there and a user's `configMap` overrides only the keys it supplies. (Because the files are mounted via `subPath`, live ConfigMap edits are not propagated into a running pod, but package pods are recreated per stage and on version bumps.)
+When a NodeWright's `configMap` is set, the operator projects each key as an individual file at `/skyhook-package/configmaps/<key>`. These files overlay any files the package image baked in under that directory rather than replacing the whole directory: a package can ship default files there and a user's `configMap` overrides only the keys it supplies. (Because the files are mounted via `subPath`, live ConfigMap edits are not propagated into a running pod, but package pods are recreated per stage and on version bumps.)
 
 ## Examples
 
