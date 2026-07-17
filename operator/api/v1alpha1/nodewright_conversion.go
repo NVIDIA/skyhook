@@ -16,6 +16,10 @@
  * limitations under the License.
  */
 
+// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+// rename. This whole file is deleted with the legacy api/v1alpha1 package in the
+// removal release (which is why the converters live here, not in the new package).
+//
 // This file holds plain, unit-testable converters from the legacy
 // skyhook.nvidia.com API group (this package) to the new nodewright.nvidia.com
 // API group. They live with the legacy types deliberately: the dependency
