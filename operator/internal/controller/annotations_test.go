@@ -110,4 +110,20 @@ var _ = Describe("package annotation helpers", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(invalid).To(BeTrue())
 	})
+
+	It("treats an object without a package annotation as absent, not invalid", func() {
+		obj := &batchv1.Job{} // non-nil, but carries no package annotation
+
+		pkgOut, err := GetPackage(obj)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(pkgOut).To(BeNil())
+
+		invalid, err := IsInvalidPackage(obj)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(invalid).To(BeFalse())
+
+		// must be a no-op rather than a nil-package panic
+		Expect(InvalidatePackage(obj)).To(Succeed())
+		Expect(obj.GetAnnotations()).ToNot(HaveKey(packageAnnotationKey))
+	})
 })

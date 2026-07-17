@@ -112,6 +112,10 @@ func InvalidatePackage(obj metav1.Object) error {
 	if err != nil {
 		return fmt.Errorf("error getting package: %w", err)
 	}
+	// No package annotation to invalidate: GetPackage returns nil when absent.
+	if pkg == nil {
+		return nil
+	}
 
 	pkg.Invalid = true
 
@@ -139,6 +143,10 @@ func IsInvalidPackage(obj metav1.Object) (bool, error) {
 	pkg, err := GetPackage(obj)
 	if err != nil {
 		return false, fmt.Errorf("error getting package: %w", err)
+	}
+	// No package annotation: an object without one is not an invalid package.
+	if pkg == nil {
+		return false, nil
 	}
 	return pkg.Invalid, nil
 }
