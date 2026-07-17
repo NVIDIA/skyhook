@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -96,8 +97,40 @@ var _ = Describe("job controller", func() {
 		})
 
 		It("matches an interrupt Job for the same package", func() {
-			job := createInterruptJobFromPackage(opts, &v1alpha1.Interrupt{Type: v1alpha1.REBOOT}, "args", pkg, skyhook, node, v1alpha1.StageInterrupt)
+			// argEncode is deliberately not part of the match — podMatchesPackage does not
+			// compare init-container Args — so its value here is arbitrary.
+			job := createInterruptJobFromPackage(opts, &v1alpha1.Interrupt{Type: v1alpha1.REBOOT}, "encoded-interrupt-args", pkg, skyhook, node, v1alpha1.StageInterrupt)
 			Expect(jobMatchesPackage(opts, pkg, *job, skyhook, v1alpha1.StageInterrupt)).To(BeTrue())
+		})
+
+		It("does not match an interrupt Job once the package version drifts", func() {
+			// interrupt Jobs run at the uninstall-interrupt stage too, not only interrupt
+			job := createInterruptJobFromPackage(opts, &v1alpha1.Interrupt{Type: v1alpha1.REBOOT}, "", pkg, skyhook, node, v1alpha1.StageUninstallInterrupt)
+			bumped := *pkg
+			bumped.Version = "2.0.0"
+			Expect(jobMatchesPackage(opts, &bumped, *job, skyhook, v1alpha1.StageUninstallInterrupt)).To(BeFalse())
+		})
+
+		It("does not match once the package image changes (same name/version)", func() {
+			job := createJobFromPackage(opts, pkg, skyhook, node, v1alpha1.StageApply)
+			moved := *pkg
+			moved.Image = "ghcr.io/nvidia/skyhook-packages/tuning-relocated"
+			Expect(jobMatchesPackage(opts, &moved, *job, skyhook, v1alpha1.StageApply)).To(BeFalse())
+		})
+
+		It("does not match (and does not panic) when the init-container count differs", func() {
+			job := createJobFromPackage(opts, pkg, skyhook, node, v1alpha1.StageApply)
+
+			// an extra actual init container would index past the expected slice
+			extra := job.DeepCopy()
+			extra.Spec.Template.Spec.InitContainers = append(extra.Spec.Template.Spec.InitContainers, corev1.Container{Name: "rogue"})
+			Expect(jobMatchesPackage(opts, pkg, *extra, skyhook, v1alpha1.StageApply)).To(BeFalse())
+
+			// a missing actual init container must not silently match
+			missing := job.DeepCopy()
+			inits := missing.Spec.Template.Spec.InitContainers
+			missing.Spec.Template.Spec.InitContainers = inits[:len(inits)-1]
+			Expect(jobMatchesPackage(opts, pkg, *missing, skyhook, v1alpha1.StageApply)).To(BeFalse())
 		})
 	})
 })

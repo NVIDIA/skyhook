@@ -50,15 +50,17 @@ func jobHandlerFunc(_ context.Context, o client.Object) []reconcile.Request {
 }
 
 // jobMatchesPackage reports whether an existing stage Job still matches what the operator
-// would build for this package+stage now — same package/version and the same init-container
-// chain and env (ignoring the operator-injected, per-generation resource-id). It is the Job
-// analogue of podMatchesPackage used to decide, on an AlreadyExists race or a validation
-// sweep, whether a Job is stale and must be replaced.
+// would build for this package+stage now. It is the Job analogue of podMatchesPackage, used
+// to decide on an AlreadyExists race or a validation sweep whether a Job is stale and must
+// be replaced.
 //
-// The Job builder wraps the raw pod without touching its initContainers or its package
-// label — the only things podMatchesPackage compares — so the decision is identical to
-// podMatchesPackage evaluated on the Job's pod template. Reuse it rather than duplicate the
-// (env-filtering, resource-comparing) compare and let the two drift.
+// podMatchesPackage compares only the package label, the interrupt label (to pick which
+// expected executor to build), and per-init-container name/image/env/resources — all of
+// which live on parts of the pod the Job builder copies through unchanged (the init-container
+// chain and the template labels). The Job-specific differences (exit-0 main container,
+// restartPolicy, extra tolerations, podFailurePolicy) are pod-level fields podMatchesPackage
+// never reads, so evaluating it on the Job's pod template gives the same answer as on the
+// equivalent raw pod. Reuse it rather than duplicate (and risk drifting) the compare.
 func jobMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, job batchv1.Job, skyhook *wrapper.Skyhook, stage v1alpha1.Stage) bool {
 	templatePod := corev1.Pod{
 		ObjectMeta: job.Spec.Template.ObjectMeta,

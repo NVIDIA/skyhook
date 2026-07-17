@@ -2761,6 +2761,14 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 		return false
 	}
 
+	// A differing init-container count means the stage/shape changed (or the executor
+	// was built by a different operator version): bail before the indexed compare below,
+	// which would otherwise panic on an extra actual container or silently accept a
+	// missing expected one.
+	if len(actualPod.Spec.InitContainers) != len(expectedPod.Spec.InitContainers) {
+		return false
+	}
+
 	// compare initContainers since this is where a lot of the important info lives
 	for i := range actualPod.Spec.InitContainers {
 		expectedContainer := expectedPod.Spec.InitContainers[i]
