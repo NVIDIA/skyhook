@@ -115,12 +115,25 @@ func rekeyPrefix(m map[string]string) map[string]string {
 	oldPrefix := METADATA_PREFIX + "/"
 	newPrefix := nwv1.METADATA_PREFIX + "/"
 	out := make(map[string]string, len(m))
+	// First copy every non-legacy key (including any explicit nodewright.nvidia.com/*
+	// entry). Rewriting a legacy key below must never clobber an explicit new-prefix
+	// value, otherwise a map carrying both skyhook.nvidia.com/foo and
+	// nodewright.nvidia.com/foo would resolve non-deterministically on map iteration
+	// order. Explicit NodeWright metadata always wins.
 	for k, v := range m {
-		if strings.HasPrefix(k, oldPrefix) {
-			out[newPrefix+strings.TrimPrefix(k, oldPrefix)] = v
+		if !strings.HasPrefix(k, oldPrefix) {
+			out[k] = v
+		}
+	}
+	for k, v := range m {
+		if !strings.HasPrefix(k, oldPrefix) {
 			continue
 		}
-		out[k] = v
+		newKey := newPrefix + strings.TrimPrefix(k, oldPrefix)
+		if _, exists := out[newKey]; exists {
+			continue
+		}
+		out[newKey] = v
 	}
 	return out
 }

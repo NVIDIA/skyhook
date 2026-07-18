@@ -42,7 +42,7 @@ var _ = Describe("Mirror controller", func() {
 	})
 	AfterEach(func() {
 		SetDefaultEventuallyTimeout(time.Second)
-		SetDefaultConsistentlyDuration(2 * time.Second)
+		SetDefaultConsistentlyDuration(100 * time.Millisecond)
 	})
 
 	newLegacySkyhook := func(name string, percent int) *v1alpha1.Skyhook {

@@ -30,10 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-var (
-	deploymentPolicylog = logf.Log.WithName("deployment-policy-resource")
-)
-
 // SetupWebhookWithManager will setup the manager to manage the webhooks
 func (r *DeploymentPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	deploymentPolicyWebhook := &DeploymentPolicyWebhook{
@@ -59,7 +55,7 @@ var _ admission.Defaulter[*DeploymentPolicy] = &DeploymentPolicyWebhook{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) Default(ctx context.Context, deploymentPolicy *DeploymentPolicy) error {
 
-	deploymentPolicylog.Info(DefaultCompartmentName, "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info(DefaultCompartmentName, "name", deploymentPolicy.Name)
 
 	// Apply defaults to the default strategy
 	if deploymentPolicy.Spec.Default.Strategy != nil {
@@ -92,7 +88,7 @@ const deploymentPolicyDeprecationWarning = "skyhook.nvidia.com/v1alpha1 Deployme
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateCreate(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicylog.Info("validate create", "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info("validate create", "name", deploymentPolicy.Name)
 
 	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
 }
@@ -100,7 +96,7 @@ func (r *DeploymentPolicyWebhook) ValidateCreate(ctx context.Context, deployment
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldDeploymentPolicy, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicylog.Info("validate update", "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info("validate update", "name", deploymentPolicy.Name)
 
 	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
 }
@@ -108,7 +104,7 @@ func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldDeploym
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateDelete(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicylog.Info("validate delete", "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info("validate delete", "name", deploymentPolicy.Name)
 
 	// Check if any Skyhooks are still referencing this policy
 	skyhooks := &SkyhookList{}

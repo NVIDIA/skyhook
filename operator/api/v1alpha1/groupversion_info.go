@@ -16,10 +16,6 @@
  * limitations under the License.
  */
 
-// MIGRATION-SHIM: this entire package is the legacy skyhook.nvidia.com API group,
-// kept only for the transition (mirror source + deprecation webhooks + converters).
-// Delete the whole api/v1alpha1 package with the legacy group in the removal release.
-//
 // Package v1alpha1 contains API Schema definitions for the skyhook v1alpha1 API group
 // +kubebuilder:object:generate=true
 // +groupName=skyhook.nvidia.com
