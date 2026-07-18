@@ -9,28 +9,29 @@
 > on-node annotation/label/finalizer prefix moves `skyhook.nvidia.com/* -> nodewright.nvidia.com/*`, and
 > the kubectl plugin is renamed `kubectl skyhook -> kubectl nodewright`.
 >
-> **Scope of the current release.** This guide is written against the full migration flow, but not all of
-> it has shipped yet. Available **now**: the `nodewright.nvidia.com` API group and CRDs, the mirror
-> controller that pre-creates a `NodeWright`/`DeploymentPolicy` for each legacy object, new-group admission
-> webhooks, legacy deprecation warnings, the primary reconciler reconciling `NodeWright`, the on-node
-> annotation/label/condition re-keying to the `nodewright.nvidia.com/*` prefix on upgrade, the runtime
-> migration hold that waits while any legacy `Skyhook` is non-complete, and the `migrate` CLI command
-> (`kubectl skyhook migrate`, pending the plugin binary rename). **Not yet available** (planned, do not rely
-> on it today): the Helm chart's `nodewright.nvidia.com` CRDs/RBAC and its pre-upgrade safety hook, the
-> plugin binary rename, and safe-deletion tooling. Sections below flag these inline; where a step depends
-> on an unshipped piece, rewrite the CRs by hand for now.
+> **Scope of the current release.** This guide is written against the full migration flow, and most of it
+> has shipped. Available **now**: the `nodewright.nvidia.com` API group and CRDs, the mirror controller
+> that pre-creates a `NodeWright`/`DeploymentPolicy` for each legacy object, new-group admission webhooks,
+> legacy deprecation warnings, the primary reconciler reconciling `NodeWright`, the on-node
+> annotation/label/condition re-keying to the `nodewright.nvidia.com/*` prefix on upgrade, the cleanup of
+> legacy-labeled package pods and per-node ConfigMaps (so packages are **not** re-run), the runtime
+> migration hold that waits while any legacy `Skyhook` is non-complete, the `kubectl nodewright migrate`
+> CLI command (the plugin binary is renamed to `nodewright`), and the Helm chart shipping both groups'
+> CRDs and RBAC. **Not yet available** (planned for the removal release, do not rely on it today): the
+> chart's pre-upgrade safety hook that refuses to drop the legacy CRD while legacy objects remain. Sections
+> below flag this inline.
 
 ## TL;DR
 
 1. **Upgrade the operator.** It automatically mirrors every existing `Skyhook` into a `NodeWright` (and
    each legacy `DeploymentPolicy` into a new-group `DeploymentPolicy`). You do **not** touch your CRs for
-   this step. **Planned, not yet in this release:** migration of the per-node state (annotations, package
-   pods, ConfigMaps) to the new names. Until that ships, the `NodeWright` starts from a fresh per-node
-   state, so **do not** assume "no package re-runs" yet; treat the current mirror as a way to stand up the
-   new objects, not to hand off live node lifecycle position.
+   this step. On upgrade the operator also re-keys the per-node state (annotations, conditions) to the
+   `nodewright.nvidia.com/*` prefix and cleans up the old `skyhook.nvidia.com/`-labeled package pods and
+   per-node ConfigMaps, so the migrated `NodeWright` picks up live node lifecycle position and **packages
+   are not re-run**.
 2. **Rename your CRs** (in git for GitOps, or by re-applying for Helm/manual): change `apiVersion` and
-   `kind`, keep the same `metadata.name`. (`kubectl nodewright migrate` will generate the new manifests for
-   you once it ships; until then, edit `apiVersion`/`kind` by hand.)
+   `kind`, keep the same `metadata.name`. (`kubectl nodewright migrate` generates the new manifests for
+   you, or edit `apiVersion`/`kind` by hand.)
 3. **Delete the old `Skyhook`/`DeploymentPolicy` CRs**, but only after confirming the corresponding
    `NodeWright` exists and is being reconciled (see [safe deletion](#safe-deletion-ordering)). Delete the
    legacy `DeploymentPolicy` objects too. The mirrored `NodeWright` objects are the real, reconciled
@@ -54,11 +55,12 @@ On upgrade, a one-way, level-triggered **mirror controller** runs:
 
 Legacy `Skyhook`/`DeploymentPolicy` writes return a deprecation warning pointing here.
 
-**Planned, not yet in this release:** separate migration of per-node state to the new prefix
-(`nodeState_`, `status_`, `version_`, `cordon_`, node conditions) and replacement of the old
-`skyhook.nvidia.com/`-labeled package pods and per-node ConfigMaps with new-labeled equivalents owned by
-the `NodeWright`. Until that lands, the mirror creates the `NodeWright` object but does **not** carry over
-node lifecycle position, so a migrated `NodeWright` may re-run package stages on its nodes.
+Alongside the mirror, on upgrade the operator migrates the per-node state to the new prefix (`nodeState_`,
+`status_`, `version_`, `cordon_`, node conditions) and replaces the old `skyhook.nvidia.com/`-labeled
+package pods and per-node ConfigMaps with new-labeled equivalents owned by the `NodeWright` (legacy pods
+are graceful-deleted, legacy ConfigMaps are relabeled in place, preserving their data). The migrated
+`NodeWright` therefore carries over node lifecycle position and does **not** re-run package stages on its
+nodes.
 
 Checking migration status: a `Skyhook` is migrated when a `NodeWright` of the same name with the
 `nodewright.nvidia.com/mirrored-from` stamp exists:
@@ -73,7 +75,10 @@ kubectl get nodewrights.nodewright.nvidia.com -o jsonpath='{range .items[*]}{.me
 
 The key property: because the operator **pre-creates** the `NodeWright`, when your git later declares it,
 Argo finds it already present and **adopts** it (applies its tracking label, shows in-sync) rather than
-creating a duplicate.
+creating a duplicate. This assumes Argo's default `label` resource-tracking method; if you run with
+`annotation` or `annotation+label` tracking (`application.resourceTrackingMethod` in `argocd-cm`), the same
+adoption still applies but via the tracking annotation. Orphaned-resource monitoring on the `AppProject`
+is separate: it only controls warnings about untracked objects and does not affect adoption.
 
 1. **Upgrade the operator** through its own Argo Application (bump the chart/image). The mirror imports
    your existing `Skyhook`s into `NodeWright`s. At this point the `NodeWright`s exist but are not part of
@@ -85,10 +90,10 @@ creating a duplicate.
    - `kind: Skyhook` -> `kind: NodeWright`
    - keep `metadata.name` identical.
 
-   Same for `DeploymentPolicy` (only `apiVersion` changes; `kind` stays `DeploymentPolicy`). Edit
-   `apiVersion`/`kind` by hand for now; `kubectl nodewright migrate -f <old-manifest.yaml>` will generate
-   the new manifests once that command ships. The commit should **remove** the old `Skyhook` manifest and
-   **add** the `NodeWright` manifest so Argo prunes the old and adopts the new in one sync.
+   Same for `DeploymentPolicy` (only `apiVersion` changes; `kind` stays `DeploymentPolicy`). Run
+   `kubectl nodewright migrate -f <old-manifest.yaml>` to generate the new manifests, or edit
+   `apiVersion`/`kind` by hand. The commit should **remove** the old `Skyhook` manifest and **add** the
+   `NodeWright` manifest so Argo prunes the old and adopts the new in one sync.
 
 3. **Sync.** Argo adopts the existing `NodeWright` (in-sync, no re-create) and prunes the `Skyhook`. Once
    the `Skyhook` is gone, the mirror has nothing left to import for it.
@@ -97,11 +102,11 @@ creating a duplicate.
 and Argo write the `NodeWright`, and editing it via git could be stomped by the mirror re-importing the
 stale `Skyhook`. Renaming in one commit avoids this entirely.
 
-If you keep CRDs in a separate Argo Application: during the transition it should track both CRDs. **Note:**
-shipping the `nodewright.nvidia.com` CRDs and RBAC in the operator Helm chart is **not yet done** in this
-release; until it lands, apply the new-group CRDs from `operator/config/crd/bases/` yourself. Do not remove
-the `skyhook.nvidia.com` CRD until every `Skyhook` is migrated and deleted (removing the CRD
-cascade-deletes any remaining `Skyhook`s). See [Removal](#removal-future-release).
+If you keep CRDs in a separate Argo Application: during the transition it should track both CRDs. The
+operator Helm chart ships both groups' CRDs and RBAC, so an operator upgrade installs the
+`nodewright.nvidia.com` CRDs for you. Do not remove the `skyhook.nvidia.com` CRD until every `Skyhook` is
+migrated and deleted (removing the CRD cascade-deletes any remaining `Skyhook`s). See
+[Removal](#removal-future-release).
 
 ---
 
@@ -111,14 +116,14 @@ Helm here refers to installing the **operator** via its chart. Your `Skyhook`/`N
 are usually authored separately (not part of the operator chart); adjust to your setup.
 
 1. **`helm upgrade` the operator chart.** The mirror imports your existing `Skyhook`s into `NodeWright`s.
-   **Not yet in this release:** the chart does **not** yet ship the `nodewright.nvidia.com` CRDs and RBAC
-   for both groups; apply the new-group CRDs from `operator/config/crd/bases/` yourself until that lands.
-   Per-node state migration is likewise not yet implemented (see above).
+   The chart ships the CRDs and RBAC for **both** groups, so the upgrade installs the
+   `nodewright.nvidia.com` CRDs for you. Per-node state is migrated on upgrade (see above), so packages are
+   not re-run.
 
-2. **Update your CR manifests to `NodeWright`** wherever you keep them, and apply. Edit `apiVersion`/`kind`
-   by hand for now; the `kubectl nodewright migrate` helper below is not yet available:
+2. **Update your CR manifests to `NodeWright`** wherever you keep them, and apply. Run
+   `kubectl nodewright migrate` to generate the new manifests, or edit `apiVersion`/`kind` by hand:
    ```bash
-   # once shipped: kubectl nodewright migrate -f my-skyhook.yaml > my-nodewright.yaml
+   kubectl nodewright migrate -f my-skyhook.yaml > my-nodewright.yaml
    kubectl apply -f my-nodewright.yaml
    ```
    Because the operator already created the `NodeWright` via the mirror, this apply is a no-op adoption of
@@ -142,14 +147,14 @@ legacy objects remain before removing the legacy CRD.
 
 ## Manual / kubectl
 
-1. Upgrade the operator (apply the new manifests / image). The mirror imports your `Skyhook`s. Apply the
-   `nodewright.nvidia.com` CRDs from `operator/config/crd/bases/` yourself: the chart does not ship them
-   yet.
-2. Write the new CRs by hand (change `apiVersion`/`kind`, keep `metadata.name`) and apply them. The
-   `kubectl nodewright migrate` generator is planned but not yet available:
+1. Upgrade the operator (apply the new manifests / image, or `helm upgrade` the chart, which ships both
+   groups' CRDs and RBAC). The mirror imports your `Skyhook`s and the per-node state is migrated on
+   upgrade.
+2. Generate the new CRs with `kubectl nodewright migrate` (or write them by hand: change `apiVersion`/`kind`,
+   keep `metadata.name`) and apply them:
    ```bash
-   # once shipped: kubectl nodewright migrate > nodewrights.yaml   # reads legacy CRs from the cluster
-   kubectl apply -f nodewrights.yaml                                # adopts the mirrored objects
+   kubectl nodewright migrate > nodewrights.yaml   # reads legacy CRs from the cluster
+   kubectl apply -f nodewrights.yaml               # adopts the mirrored objects
    ```
 3. Delete the old CRs only after confirming the `NodeWright` reconciles (see
    [safe deletion](#safe-deletion-ordering)); delete legacy `DeploymentPolicy` objects too:
@@ -175,15 +180,20 @@ Delete legacy `DeploymentPolicy` objects as part of the same pass: they move gro
 `DeploymentPolicy` left behind will keep emitting deprecation warnings and block eventual removal of the
 `skyhook.nvidia.com` CRD.
 
+**Ordering within the pass matters:** the legacy `DeploymentPolicy` admission webhook rejects deletion
+while any legacy `Skyhook` still references it. Delete the referencing `Skyhook`s **first**, then the
+`DeploymentPolicy`. The Helm and Manual command sequences above already delete `skyhooks` before
+`deploymentpolicies` for this reason.
+
 ---
 
 ## Prerequisite: all Skyhooks must be complete
 
 **Perform the operator upgrade only when every `Skyhook` is `complete` with no nodes in progress**, i.e.
-no package is mid-rollout. This is a **requirement**, not just a recommendation: once the per-node state
-migration ships it will rename the operator's package pods and per-node ConfigMaps, and the flow assumes
-there is no in-flight package work to disrupt. Even in this release, where node state is not yet migrated,
-upgrading against idle Skyhooks avoids a migrated `NodeWright` re-running a stage that was mid-rollout.
+no package is mid-rollout. This is a **requirement**, not just a recommendation: the per-node state
+migration renames the operator's package pods and per-node ConfigMaps, and the flow assumes there is no
+in-flight package work to disrupt. Upgrading against idle Skyhooks avoids handing a migrated `NodeWright`
+a stage that was mid-rollout.
 
 Check before upgrading:
 
@@ -221,8 +231,8 @@ These land as a **companion PR in the consumer repo**, timed with (or shortly af
 ## Verification checklist
 
 - `kubectl get nodewrights.nodewright.nvidia.com` lists a `NodeWright` for each former `Skyhook`.
-- (Planned, once per-node state migration ships) node state carried over: a node's annotations are re-keyed
-  under `nodewright.nvidia.com/` and no package re-ran. This does **not** hold in the current release.
+- Node state carried over: a node's annotations are re-keyed under `nodewright.nvidia.com/` and no package
+  re-ran.
 - No drift reported by Argo on your (soon-to-be-deleted) `Skyhook` objects during the transition.
 - After you delete the old CRs, the `NodeWright` objects remain and reconcile normally.
 - Legacy `Skyhook`/`DeploymentPolicy` writes emit the deprecation warning.
@@ -240,10 +250,10 @@ releases, adoption-gated - not a fixed release number). In the removal release:
 
 ## FAQ
 
-**Will my nodes reboot during the upgrade?** Once per-node state migration ships, no (unless a package
-interrupt was mid-flight, and even then the agent skips an already-completed interrupt). In the current
-release node state is **not** migrated, so a mirrored `NodeWright` can re-run package stages on its nodes;
-upgrade against idle, `complete` Skyhooks to minimize this.
+**Will my nodes reboot during the upgrade?** No (unless a package interrupt was mid-flight, and even then
+the agent skips an already-completed interrupt). Per-node state is migrated and legacy workloads are
+cleaned up, so packages are not re-run; still upgrade against idle, `complete` Skyhooks as required by the
+prerequisite above.
 
 **Does the operator write to my `Skyhook` objects?** No. The mirror is read-only on the source, so GitOps
 tools see no drift. "Migrated" is derived from the existence of the stamped `NodeWright`.

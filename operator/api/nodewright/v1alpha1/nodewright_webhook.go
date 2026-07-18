@@ -38,10 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// log is for logging in this package.
 var (
-	skyhooklog       = logf.Log.WithName("skyhook-resource")
-	validPackageName = regexp.MustCompile(`(?m)^[a-z][-a-z0-9]{0,41}[a-z]$`)
+	validPackageName = regexp.MustCompile(`^[a-z][-a-z0-9]{0,41}[a-z]$`)
 )
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
@@ -71,7 +69,7 @@ var _ admission.Defaulter[*NodeWright] = &NodeWrightWebhook{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *NodeWrightWebhook) Default(ctx context.Context, skyhook *NodeWright) error {
 
-	skyhooklog.Info("default", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("default", "name", skyhook.Name)
 
 	// TODO(user): fill in your defaulting logic.
 	// Things we might want to default:
@@ -87,12 +85,12 @@ var _ admission.Validator[*NodeWright] = &NodeWrightWebhook{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeWrightWebhook) ValidateCreate(ctx context.Context, skyhook *NodeWright) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate create", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("validate create", "name", skyhook.Name)
 
 	var warnings admission.Warnings
 
 	if err := skyhook.Validate(); err != nil {
-		return warnings, err
+		return warnings, fmt.Errorf("validating skyhook %q: %w", skyhook.Name, err)
 	}
 
 	return warnings, r.validateDeploymentPolicyExists(ctx, skyhook)
@@ -101,12 +99,12 @@ func (r *NodeWrightWebhook) ValidateCreate(ctx context.Context, skyhook *NodeWri
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeWrightWebhook) ValidateUpdate(ctx context.Context, oldNodeWright, newNodeWright *NodeWright) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate update", "name", newNodeWright.Name)
+	logf.FromContext(ctx).Info("validate update", "name", newNodeWright.Name)
 
 	var warnings admission.Warnings
 
 	if err := newNodeWright.Validate(); err != nil {
-		return warnings, err
+		return warnings, fmt.Errorf("validating skyhook %q: %w", newNodeWright.Name, err)
 	}
 
 	// Uninstall-specific validations require the old object
@@ -203,7 +201,7 @@ func isPackageFullyUninstalled(skyhook *NodeWright, packageName string) bool {
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *NodeWrightWebhook) ValidateDelete(ctx context.Context, skyhook *NodeWright) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate delete", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("validate delete", "name", skyhook.Name)
 
 	// I do yet know if we need to do any valuations on delete,
 	// if so guessing they would be different than update and create anyways
@@ -236,11 +234,11 @@ func validateResourceOverrides(name string, res *ResourceRequirements) error {
 func (r *NodeWright) Validate() error {
 
 	if err := r.Spec.InterruptionBudget.Validate(); err != nil {
-		return err
+		return fmt.Errorf("interruption budget: %w", err)
 	}
 
 	if err := r.Spec.DrainConfig.Validate(); err != nil {
-		return err
+		return fmt.Errorf("drain config: %w", err)
 	}
 
 	// DeploymentPolicy and InterruptionBudget are mutually exclusive
@@ -342,12 +340,12 @@ func (r *NodeWright) Validate() error {
 	var err error
 	graph, err = r.Spec.BuildGraph()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec building graph: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec building graph: %w", err)
 	}
 
 	err = graph.Valid()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %w", err)
 	}
 
 	return nil

@@ -36,10 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// log is for logging in this package.
 var (
-	skyhooklog       = logf.Log.WithName("skyhook-resource")
-	validPackageName = regexp.MustCompile(`(?m)^[a-z][-a-z0-9]{0,41}[a-z]$`)
+	validPackageName = regexp.MustCompile(`^[a-z][-a-z0-9]{0,41}[a-z]$`)
 )
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
@@ -69,7 +67,7 @@ var _ admission.Defaulter[*Skyhook] = &SkyhookWebhook{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *SkyhookWebhook) Default(ctx context.Context, skyhook *Skyhook) error {
 
-	skyhooklog.Info("default", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("default", "name", skyhook.Name)
 
 	// TODO(user): fill in your defaulting logic.
 	// Things we might want to default:
@@ -92,12 +90,12 @@ const skyhookDeprecationWarning = "skyhook.nvidia.com/v1alpha1 Skyhook is deprec
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate create", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("validate create", "name", skyhook.Name)
 
 	warnings := admission.Warnings{skyhookDeprecationWarning}
 
 	if err := skyhook.Validate(); err != nil {
-		return warnings, err
+		return warnings, fmt.Errorf("validating skyhook %q: %w", skyhook.Name, err)
 	}
 
 	return warnings, r.validateDeploymentPolicyExists(ctx, skyhook)
@@ -106,12 +104,12 @@ func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, skyhook *Skyhook) (
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldSkyhook, newSkyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate update", "name", newSkyhook.Name)
+	logf.FromContext(ctx).Info("validate update", "name", newSkyhook.Name)
 
 	warnings := admission.Warnings{skyhookDeprecationWarning}
 
 	if err := newSkyhook.Validate(); err != nil {
-		return warnings, err
+		return warnings, fmt.Errorf("validating skyhook %q: %w", newSkyhook.Name, err)
 	}
 
 	// Uninstall-specific validations require the old object
@@ -208,7 +206,7 @@ func isPackageFullyUninstalled(skyhook *Skyhook, packageName string) bool {
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *SkyhookWebhook) ValidateDelete(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate delete", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("validate delete", "name", skyhook.Name)
 
 	// I do yet know if we need to do any valuations on delete,
 	// if so guessing they would be different than update and create anyways
@@ -241,11 +239,11 @@ func validateResourceOverrides(name string, res *ResourceRequirements) error {
 func (r *Skyhook) Validate() error {
 
 	if err := r.Spec.InterruptionBudget.Validate(); err != nil {
-		return err
+		return fmt.Errorf("interruption budget: %w", err)
 	}
 
 	if err := r.Spec.DrainConfig.Validate(); err != nil {
-		return err
+		return fmt.Errorf("drain config: %w", err)
 	}
 
 	// DeploymentPolicy and InterruptionBudget are mutually exclusive
@@ -347,12 +345,12 @@ func (r *Skyhook) Validate() error {
 	var err error
 	graph, err = r.Spec.BuildGraph()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec building graph: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec building graph: %w", err)
 	}
 
 	err = graph.Valid()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %w", err)
 	}
 
 	return nil
