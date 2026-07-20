@@ -2,6 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -36,7 +37,7 @@ import (
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 )
 
-var _ = Describe("migrateLegacyLabeledWorkloads", func() {
+var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 	const (
 		shName = "legacy-sh"
 		ns     = "skyhook"
@@ -74,7 +75,48 @@ var _ = Describe("migrateLegacyLabeledWorkloads", func() {
 		}
 	}
 
-	It("graceful-deletes legacy-labeled pods, relabels legacy ConfigMaps, and leaves new-labeled objects untouched", func() {
+	legacyCM := func() *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "legacy-cm",
+				Namespace: ns,
+				Labels: map[string]string{
+					"skyhook.nvidia.com/skyhook-node-meta": shName,
+					"skyhook.nvidia.com/name":              shName,
+				},
+			},
+			Data: map[string]string{"k": "v"},
+		}
+	}
+
+	It("converge: adds the nodewright ConfigMap label but keeps the legacy label and the legacy pods", func() {
+		c := buildClient(legacyPod("legacy-pod", "node-a"), legacyCM())
+		r, err := NewSkyhookReconciler(c.Scheme(), c, events.NewFakeRecorder(10), opts)
+		Expect(err).ToNot(HaveOccurred())
+
+		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, false)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hadLegacy).To(BeTrue())
+		Expect(changed).To(BeTrue())
+
+		By("leaving the legacy pod in place for a possible rollback")
+		Expect(c.Get(ctx, types.NamespacedName{Namespace: ns, Name: "legacy-pod"}, &corev1.Pod{})).To(Succeed())
+
+		By("adding the nodewright labels while keeping the legacy ones")
+		gotCM := &corev1.ConfigMap{}
+		Expect(c.Get(ctx, types.NamespacedName{Namespace: ns, Name: "legacy-cm"}, gotCM)).To(Succeed())
+		Expect(gotCM.Labels).To(HaveKeyWithValue("nodewright.nvidia.com/skyhook-node-meta", shName))
+		Expect(gotCM.Labels).To(HaveKeyWithValue("skyhook.nvidia.com/skyhook-node-meta", shName))
+		Expect(gotCM.Data).To(HaveKeyWithValue("k", "v"))
+
+		By("being idempotent (the nodewright label is already present)")
+		hadLegacy2, changed2, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, false)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hadLegacy2).To(BeTrue())
+		Expect(changed2).To(BeFalse())
+	})
+
+	It("prune: graceful-deletes legacy pods, drops the legacy ConfigMap label, and leaves other objects untouched", func() {
 		newPod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "new-pod",
@@ -86,25 +128,19 @@ var _ = Describe("migrateLegacyLabeledWorkloads", func() {
 		otherPod := legacyPod("other-pod", "node-a")
 		otherPod.Labels["skyhook.nvidia.com/name"] = "some-other-skyhook"
 
-		legacyCM := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "legacy-cm",
-				Namespace: ns,
-				Labels: map[string]string{
-					"skyhook.nvidia.com/skyhook-node-meta": shName,
-					"skyhook.nvidia.com/name":              shName,
-				},
-			},
-			Data: map[string]string{"k": "v"},
-		}
+		// A converged ConfigMap carries both prefixes.
+		cm := legacyCM()
+		cm.Labels["nodewright.nvidia.com/skyhook-node-meta"] = shName
+		cm.Labels["nodewright.nvidia.com/name"] = shName
 
-		c := buildClient(legacyPod("legacy-pod", "node-a"), newPod, otherPod, legacyCM)
+		c := buildClient(legacyPod("legacy-pod", "node-a"), newPod, otherPod, cm)
 		r, err := NewSkyhookReconciler(c.Scheme(), c, events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
-		updated, err := r.migrateLegacyLabeledWorkloads(ctx, shName)
+		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, true)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(updated).To(BeTrue())
+		Expect(hadLegacy).To(BeTrue())
+		Expect(changed).To(BeTrue())
 
 		By("deleting the legacy-labeled pod for this skyhook")
 		Expect(apierrors.IsNotFound(
@@ -117,20 +153,20 @@ var _ = Describe("migrateLegacyLabeledWorkloads", func() {
 		By("leaving another skyhook's legacy pod untouched (scoped by name)")
 		Expect(c.Get(ctx, types.NamespacedName{Namespace: ns, Name: "other-pod"}, &corev1.Pod{})).To(Succeed())
 
-		By("relabeling the ConfigMap to the nodewright prefix while preserving data")
+		By("dropping the legacy ConfigMap label while preserving the nodewright label and data")
 		gotCM := &corev1.ConfigMap{}
 		Expect(c.Get(ctx, types.NamespacedName{Namespace: ns, Name: "legacy-cm"}, gotCM)).To(Succeed())
 		Expect(gotCM.Labels).To(HaveKeyWithValue("nodewright.nvidia.com/skyhook-node-meta", shName))
-		Expect(gotCM.Labels).To(HaveKeyWithValue("nodewright.nvidia.com/name", shName))
 		for k := range gotCM.Labels {
 			Expect(k).ToNot(HavePrefix("skyhook.nvidia.com/"))
 		}
 		Expect(gotCM.Data).To(HaveKeyWithValue("k", "v"))
 
-		By("being idempotent on a second pass")
-		updated2, err := r.migrateLegacyLabeledWorkloads(ctx, shName)
+		By("reporting nothing legacy remains on a second prune pass")
+		hadLegacy2, changed2, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, true)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(updated2).To(BeFalse())
+		Expect(hadLegacy2).To(BeFalse())
+		Expect(changed2).To(BeFalse())
 	})
 
 	It("is a cheap no-op when there is nothing legacy-labeled", func() {
@@ -138,8 +174,9 @@ var _ = Describe("migrateLegacyLabeledWorkloads", func() {
 		r, err := NewSkyhookReconciler(c.Scheme(), c, events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
-		updated, err := r.migrateLegacyLabeledWorkloads(ctx, shName)
+		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, false)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(updated).To(BeFalse())
+		Expect(hadLegacy).To(BeFalse())
+		Expect(changed).To(BeFalse())
 	})
 })

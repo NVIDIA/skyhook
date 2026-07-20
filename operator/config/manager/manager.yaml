@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -103,6 +103,11 @@ spec:
             value: /var/lib/skyhook
           - name: REAPPLY_ON_REBOOT
             value: "false"
+          # MIGRATION-SHIM: rollback window before pruning legacy skyhook.nvidia.com
+          # node state / pods / ConfigMap labels after a Skyhook migrates. 0 prunes
+          # immediately. Remove with the legacy group at the removal release.
+          - name: LEGACY_CLEANUP_DELAY
+            value: "24h"
           - name: RUNTIME_REQUIRED_TAINT_KEY
             value: skyhook.nvidia.com=runtime-required:NoSchedule
           - name: PAUSE_IMAGE

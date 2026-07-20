@@ -76,6 +76,11 @@ controllerManager:
       probePort: :8081
       ## reapplyOnReboot: "true" will reapply the packages on reboot. This is useful for systems that are read-only.
       reapplyOnReboot: "false"
+      ## MIGRATION-SHIM (skyhook.nvidia.com -> nodewright.nvidia.com rename):
+      ## legacyCleanupDelay is how long after a Skyhook finishes migrating the operator keeps its
+      ## legacy skyhook.nvidia.com node state, pods, and ConfigMap labels around (a rollback window)
+      ## before pruning them. "0" prunes immediately (no rollback window). Removed at the removal release.
+      legacyCleanupDelay: "24h"
       ## runtimeRequiredTaint: This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag.
       ## This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete.
       ## NOTE: If your systems nodes have this taint make sure to add the toleration to the controllerManager.tolerations

@@ -83,6 +83,11 @@ type SkyhookNodeOnly interface {
 	GetVersion() string
 	// Migrate updates stored node state/annotations to the current schema when the operator version changes.
 	Migrate(logger logr.Logger) error
+	// PruneLegacyMetadata removes any remaining legacy skyhook.nvidia.com-prefixed node
+	// metadata (annotations, labels, conditions) after the rollback window elapses, and
+	// marks the node changed if it removed anything. MIGRATION-SHIM: remove with the
+	// legacy skyhook.nvidia.com group.
+	PruneLegacyMetadata() bool
 	// State returns the persisted NodeState for this node (from memory or annotations).
 	State() (v1alpha1.NodeState, error)
 	// SetState persists the given NodeState to the node's annotations and in-memory state.
@@ -326,6 +331,11 @@ func (node *skyhookNode) Migrate(logger logr.Logger) error {
 	}
 
 	return nil
+}
+
+// MIGRATION-SHIM: remove with the legacy skyhook.nvidia.com group.
+func (node *skyhookNode) PruneLegacyMetadata() bool {
+	return pruneLegacyNodePrefix(node)
 }
 
 // SetState persists the given NodeState to the node's annotations and in-memory state.

@@ -39,7 +39,15 @@ var _ = Describe("migrateNodePrefixToNodeWright", func() {
 		return fmt.Sprintf("%s/%s", legacySkyhookMetadataPrefix, suffix)
 	}
 
-	It("re-keys legacy annotations, labels, and conditions to the nodewright prefix", func() {
+	conditionTypes := func(node *skyhookNode) []string {
+		var out []string
+		for _, c := range node.GetNode().Status.Conditions {
+			out = append(out, string(c.Type))
+		}
+		return out
+	}
+
+	It("copies legacy annotations, labels, and conditions to the nodewright prefix, keeping the legacy keys", func() {
 		node := &skyhookNode{
 			skyhookName: "myskyhook",
 			Node: &corev1.Node{
@@ -66,18 +74,19 @@ var _ = Describe("migrateNodePrefixToNodeWright", func() {
 
 		Expect(migrateNodePrefixToNodeWright(node, logr.Discard())).To(Succeed())
 
+		// New-prefix copies exist so the new operator adopts the node...
 		Expect(node.Annotations).To(HaveKeyWithValue(newKey("nodeState_myskyhook"), `{"pkg":"state"}`))
 		Expect(node.Annotations).To(HaveKeyWithValue(newKey("version_myskyhook"), "v0.17.0"))
-		Expect(node.Annotations).To(HaveKeyWithValue("kubernetes.io/arch", "amd64"))
-		Expect(node.Annotations).ToNot(HaveKey(oldKey("nodeState_myskyhook")))
-		Expect(node.Annotations).ToNot(HaveKey(oldKey("version_myskyhook")))
-
 		Expect(node.Labels).To(HaveKeyWithValue(newKey("status_myskyhook"), "complete"))
+		// ...and the legacy keys are KEPT so a rolled-back pre-rename operator still reads them.
+		Expect(node.Annotations).To(HaveKeyWithValue(oldKey("nodeState_myskyhook"), `{"pkg":"state"}`))
+		Expect(node.Annotations).To(HaveKeyWithValue(oldKey("version_myskyhook"), "v0.17.0"))
+		Expect(node.Labels).To(HaveKeyWithValue(oldKey("status_myskyhook"), "complete"))
+		Expect(node.Annotations).To(HaveKeyWithValue("kubernetes.io/arch", "amd64"))
 		Expect(node.Labels).To(HaveKeyWithValue("topology/zone", "a"))
-		Expect(node.Labels).ToNot(HaveKey(oldKey("status_myskyhook")))
 
-		Expect(string(node.GetNode().Status.Conditions[0].Type)).To(Equal(newKey("myskyhook/NotReady")))
-		Expect(node.GetNode().Status.Conditions[1].Type).To(Equal(corev1.NodeReady))
+		Expect(conditionTypes(node)).To(ContainElements(
+			newKey("myskyhook/NotReady"), oldKey("myskyhook/NotReady"), string(corev1.NodeReady)))
 		Expect(node.Changed()).To(BeTrue())
 	})
 
@@ -98,7 +107,7 @@ var _ = Describe("migrateNodePrefixToNodeWright", func() {
 		Expect(node.Changed()).To(BeFalse())
 	})
 
-	It("keeps the new-prefix value and drops the legacy duplicate on collision", func() {
+	It("keeps the explicit new-prefix value and retains the legacy duplicate on collision", func() {
 		node := &skyhookNode{
 			skyhookName: "myskyhook",
 			Node: &corev1.Node{
@@ -114,8 +123,9 @@ var _ = Describe("migrateNodePrefixToNodeWright", func() {
 
 		Expect(migrateNodePrefixToNodeWright(node, logr.Discard())).To(Succeed())
 
+		// Explicit nodewright value wins deterministically; the legacy key is retained.
 		Expect(node.Annotations).To(HaveKeyWithValue(newKey("version_myskyhook"), "new"))
-		Expect(node.Annotations).ToNot(HaveKey(oldKey("version_myskyhook")))
+		Expect(node.Annotations).To(HaveKeyWithValue(oldKey("version_myskyhook"), "legacy"))
 	})
 
 	It("adopts a pre-rename node during Migrate so it is not treated as fresh", func() {
@@ -132,8 +142,62 @@ var _ = Describe("migrateNodePrefixToNodeWright", func() {
 		Expect(node.Migrate(logr.Discard())).To(Succeed())
 
 		// The legacy version annotation is adopted under the new prefix, so the node
-		// reports the stored version rather than "" (which would read as fresh).
+		// reports the stored version rather than "" (which would read as fresh). The
+		// legacy key is kept until the rollback window elapses.
 		Expect(node.GetVersion()).ToNot(BeEmpty())
+		Expect(node.Annotations).To(HaveKey(oldKey("version_myskyhook")))
+	})
+
+	It("PruneLegacyMetadata drops the legacy keys/labels/conditions and keeps the nodewright copies", func() {
+		node := &skyhookNode{
+			skyhookName: "myskyhook",
+			Node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+					Annotations: map[string]string{
+						oldKey("version_myskyhook"): "v0.17.0",
+						newKey("version_myskyhook"): "v0.17.0",
+						"kubernetes.io/arch":        "amd64",
+					},
+					Labels: map[string]string{
+						oldKey("status_myskyhook"): "complete",
+						newKey("status_myskyhook"): "complete",
+					},
+				},
+				Status: corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{
+						{Type: corev1.NodeConditionType(oldKey("myskyhook/NotReady"))},
+						{Type: corev1.NodeConditionType(newKey("myskyhook/NotReady"))},
+						{Type: corev1.NodeReady},
+					},
+				},
+			},
+		}
+
+		Expect(node.PruneLegacyMetadata()).To(BeTrue())
+
 		Expect(node.Annotations).ToNot(HaveKey(oldKey("version_myskyhook")))
+		Expect(node.Annotations).To(HaveKeyWithValue(newKey("version_myskyhook"), "v0.17.0"))
+		Expect(node.Annotations).To(HaveKeyWithValue("kubernetes.io/arch", "amd64"))
+		Expect(node.Labels).ToNot(HaveKey(oldKey("status_myskyhook")))
+		Expect(node.Labels).To(HaveKeyWithValue(newKey("status_myskyhook"), "complete"))
+
+		Expect(conditionTypes(node)).To(ContainElements(newKey("myskyhook/NotReady"), string(corev1.NodeReady)))
+		Expect(conditionTypes(node)).ToNot(ContainElement(oldKey("myskyhook/NotReady")))
+	})
+
+	It("PruneLegacyMetadata is a no-op when no legacy keys remain", func() {
+		node := &skyhookNode{
+			skyhookName: "myskyhook",
+			Node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "worker",
+					Annotations: map[string]string{newKey("version_myskyhook"): "v0.17.0"},
+				},
+			},
+		}
+
+		Expect(node.PruneLegacyMetadata()).To(BeFalse())
+		Expect(node.Annotations).To(HaveKeyWithValue(newKey("version_myskyhook"), "v0.17.0"))
 	})
 })

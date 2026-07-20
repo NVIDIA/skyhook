@@ -119,6 +119,12 @@ type SkyhookOperatorOptions struct {
 	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
 	AgentImage           string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/skyhook/agent:latest"` // TODO: this needs to be updated with a working default
 	AgentLogRoot         string        `env:"AGENT_LOG_ROOT, default=/var/log/skyhook"`
+	// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+	// rename. LegacyCleanupDelay is how long after a Skyhook finishes migrating the
+	// operator keeps its legacy skyhook.nvidia.com node state / pods / ConfigMap labels
+	// around (a rollback window) before pruning them. 0 or less prunes immediately (no
+	// rollback window). Remove with the legacy group at the removal release.
+	LegacyCleanupDelay time.Duration `env:"LEGACY_CLEANUP_DELAY, default=24h"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {
@@ -583,6 +589,20 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			return false, fmt.Errorf("error validating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
+		// MIGRATION-SHIM: rollback-safe legacy cleanup. skyhook.Migrate above adopts
+		// legacy node state ADDITIVELY (keeps the skyhook.nvidia.com keys). We only
+		// prune those legacy keys/pods/labels once the rollback window has elapsed,
+		// tracked by the legacy-migrated-at stamp on the NodeWright. See
+		// docs/plans/2026-07-20-legacy-cleanup-ttl-design.md.
+		nw := skyhook.GetSkyhook().NodeWright
+		prune := legacyCleanupShouldPrune(nw.GetAnnotations()[legacyMigratedAtAnnotation], r.opts.LegacyCleanupDelay, time.Now())
+
+		if prune {
+			for _, node := range skyhook.GetNodes() {
+				node.PruneLegacyMetadata()
+			}
+		}
+
 		for _, node := range skyhook.GetNodes() {
 			if node.Changed() {
 				err := r.Status().Patch(ctx, node.GetNode(), client.MergeFrom(clusterState.tracker.GetOriginal(node.GetNode())))
@@ -598,15 +618,14 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			}
 		}
 
-		// After the node annotations are re-keyed, clean up the workloads the
-		// pre-rename operator created under the legacy skyhook.nvidia.com labels.
-		// The reconcile path now only queries the nodewright prefix, so without
-		// this they would be orphaned.
-		workloadsMigrated, err := r.migrateLegacyLabeledWorkloads(ctx, skyhook.GetSkyhook().Name)
+		// Converge (add nodewright labels, keep legacy pods) or prune (delete legacy
+		// pods, drop legacy labels) the workloads the pre-rename operator created under
+		// the legacy skyhook.nvidia.com labels.
+		hadLegacyWorkloads, workloadsChanged, err := r.reconcileLegacyLabeledWorkloads(ctx, skyhook.GetSkyhook().Name, prune)
 		if err != nil {
-			return false, fmt.Errorf("error migrating legacy-labeled workloads for skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+			return false, fmt.Errorf("error reconciling legacy-labeled workloads for skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
-		if workloadsMigrated {
+		if workloadsChanged {
 			updates = true
 		}
 
@@ -640,6 +659,17 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 
 			updates = true
 		}
+
+		// Manage the rollback-window stamp LAST: it re-gets and patches the NodeWright,
+		// bumping its resourceVersion. Running it after the status/version writes above
+		// (which submit the in-memory copy) avoids a stale-RV 409 on the first migration
+		// reconcile. Set the stamp on the first converge that finds legacy artifacts
+		// (unless pruning immediately); clear it once a prune has removed everything.
+		if stampChanged, err := r.reconcileLegacyMigratedStamp(ctx, skyhook, prune, hadLegacyWorkloads); err != nil {
+			return false, err
+		} else if stampChanged {
+			updates = true
+		}
 	}
 
 	if len(errors) > 0 {
@@ -659,48 +689,183 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 // depending only on the new nodewright api group.
 const legacyMetadataPrefix = "skyhook.nvidia.com"
 
+// legacyMigratedAtAnnotation is stamped on a NodeWright (RFC3339) the first time its
+// legacy skyhook.nvidia.com artifacts are adopted. The prune of those artifacts is
+// deferred until LegacyCleanupDelay has elapsed since this time, giving a rollback
+// window. MIGRATION-SHIM: remove with the legacy group.
+const legacyMigratedAtAnnotation = v1alpha1.METADATA_PREFIX + "/legacy-migrated-at"
+
+// legacyCleanupShouldPrune reports whether the legacy skyhook.nvidia.com artifacts for
+// a NodeWright may be pruned yet. delay <= 0 prunes immediately (no rollback window).
+// Otherwise a NodeWright is prunable only once delay has elapsed since its stamp; an
+// absent stamp means "not yet adopted, converge first", and an unparseable stamp fails
+// toward prune so a corrupt value cannot pin legacy state forever.
+func legacyCleanupShouldPrune(stamp string, delay time.Duration, now time.Time) bool {
+	if delay <= 0 {
+		return true
+	}
+	if stamp == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return true
+	}
+	return !now.Before(t.Add(delay))
+}
+
 // MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
-// migrateLegacyLabeledWorkloads cleans up the workloads the pre-rename operator
-// created under the legacy skyhook.nvidia.com labels for the named skyhook: package
-// pods are graceful-deleted (the repointed operator respawns any still-needed work
-// under the nodewright labels; completed pods are simply reaped), and the per-node
-// metadata ConfigMaps (reused by name across the rename) are relabeled to the
-// current prefix so label-scoped queries find them again. Level-triggered and
-// idempotent: once nothing legacy-labeled remains it is a cheap no-op.
-func (r *SkyhookReconciler) migrateLegacyLabeledWorkloads(ctx context.Context, skyhookName string) (bool, error) {
-	updated := false
+// reconcileLegacyLabeledWorkloads converges or prunes the workloads the pre-rename
+// operator created under the legacy skyhook.nvidia.com labels for the named skyhook.
+// Converge (prune=false) adds the nodewright label to the per-node metadata ConfigMaps
+// alongside the legacy one and leaves the legacy package pods in place, so a rolled-back
+// pre-rename operator still owns its workloads. Prune (prune=true) graceful-deletes the
+// legacy package pods and drops the legacy ConfigMap label. Returns whether any legacy
+// artifact was found and whether anything was written. Level-triggered and idempotent.
+func (r *SkyhookReconciler) reconcileLegacyLabeledWorkloads(ctx context.Context, skyhookName string, prune bool) (bool, bool, error) {
+	hadLegacy := false
+	changed := false
 
 	pods := &corev1.PodList{}
 	if err := r.List(ctx, pods, client.InNamespace(r.opts.Namespace),
 		client.MatchingLabels{fmt.Sprintf("%s/name", legacyMetadataPrefix): skyhookName}); err != nil {
-		return false, fmt.Errorf("listing legacy-labeled pods for skyhook [%s]: %w", skyhookName, err)
+		return false, false, fmt.Errorf("listing legacy-labeled pods for skyhook [%s]: %w", skyhookName, err)
 	}
-	for i := range pods.Items {
-		// Graceful delete: honor the pod's terminationGracePeriodSeconds (no forced
-		// grace=0, no eviction) so a still-running package shuts down cleanly and
-		// single-writer safety holds before the new-labeled pod respawns.
-		if err := r.Delete(ctx, &pods.Items[i]); err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("deleting legacy-labeled pod [%s]: %w", pods.Items[i].Name, err)
+	if len(pods.Items) > 0 {
+		hadLegacy = true
+	}
+	if prune {
+		for i := range pods.Items {
+			// Graceful delete: honor the pod's terminationGracePeriodSeconds. Single-writer
+			// safety comes from the migration hold (the legacy Skyhook is complete, so its
+			// pods are no longer mutating the host), not from the grace period.
+			if err := r.Delete(ctx, &pods.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+				return false, false, fmt.Errorf("deleting legacy-labeled pod [%s]: %w", pods.Items[i].Name, err)
+			}
+			changed = true
 		}
-		updated = true
 	}
 
 	cms := &corev1.ConfigMapList{}
 	if err := r.List(ctx, cms, client.InNamespace(r.opts.Namespace),
 		client.MatchingLabels{fmt.Sprintf("%s/skyhook-node-meta", legacyMetadataPrefix): skyhookName}); err != nil {
-		return false, fmt.Errorf("listing legacy-labeled configmaps for skyhook [%s]: %w", skyhookName, err)
+		return false, false, fmt.Errorf("listing legacy-labeled configmaps for skyhook [%s]: %w", skyhookName, err)
+	}
+	if len(cms.Items) > 0 {
+		hadLegacy = true
 	}
 	for i := range cms.Items {
 		cm := &cms.Items[i]
-		if relabelLegacyMetadataPrefix(cm.Labels) {
+		var mutated bool
+		if prune {
+			mutated = relabelLegacyMetadataPrefix(cm.Labels)
+		} else {
+			mutated = addNodeWrightMetaLabel(cm.Labels)
+		}
+		if mutated {
 			if err := r.Update(ctx, cm); err != nil {
-				return false, fmt.Errorf("relabeling legacy configmap [%s]: %w", cm.Name, err)
+				return false, false, fmt.Errorf("updating legacy configmap labels [%s]: %w", cm.Name, err)
 			}
-			updated = true
+			changed = true
 		}
 	}
 
-	return updated, nil
+	return hadLegacy, changed, nil
+}
+
+// MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
+// reconcileLegacyMigratedStamp stamps the NodeWright's legacy-migrated-at annotation
+// the first time a converge finds legacy artifacts (starting the rollback window), and
+// clears it once a prune has removed everything legacy. Returns whether it wrote.
+func (r *SkyhookReconciler) reconcileLegacyMigratedStamp(ctx context.Context, skyhook SkyhookNodes, prune, hadLegacyWorkloads bool) (bool, error) {
+	nw := skyhook.GetSkyhook().NodeWright
+	stamp := nw.GetAnnotations()[legacyMigratedAtAnnotation]
+	name := skyhook.GetSkyhook().Name
+
+	if prune {
+		if stamp != "" && !hadLegacyWorkloads && !anyNodeHasLegacyMetadata(skyhook.GetNodes()) {
+			return true, r.patchLegacyMigratedStamp(ctx, name, "", true)
+		}
+		return false, nil
+	}
+
+	if stamp == "" && (hadLegacyWorkloads || anyNodeHasLegacyMetadata(skyhook.GetNodes())) {
+		return true, r.patchLegacyMigratedStamp(ctx, name, time.Now().Format(time.RFC3339), false)
+	}
+	return false, nil
+}
+
+// patchLegacyMigratedStamp sets or removes the legacy-migrated-at annotation on the
+// NodeWright with a focused merge patch (re-read then patch, to avoid clobbering other
+// concurrent writers and the annotation-nilling gotcha of a full update).
+func (r *SkyhookReconciler) patchLegacyMigratedStamp(ctx context.Context, name, value string, remove bool) error {
+	nw, err := r.dal.GetSkyhook(ctx, name)
+	if err != nil {
+		return fmt.Errorf("getting nodewright to update legacy-migrated-at stamp [%s]: %w", name, err)
+	}
+	before := nw.DeepCopy()
+	annotations := nw.GetAnnotations()
+	if remove {
+		if annotations == nil {
+			return nil
+		}
+		delete(annotations, legacyMigratedAtAnnotation)
+	} else {
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		annotations[legacyMigratedAtAnnotation] = value
+	}
+	nw.SetAnnotations(annotations)
+	if err := r.Patch(ctx, nw, client.MergeFrom(before)); err != nil {
+		return fmt.Errorf("patching legacy-migrated-at stamp on [%s]: %w", name, err)
+	}
+	return nil
+}
+
+// anyNodeHasLegacyMetadata reports whether any node still carries a legacy
+// skyhook.nvidia.com-prefixed annotation, label, or condition.
+func anyNodeHasLegacyMetadata(nodes []wrapper.SkyhookNode) bool {
+	for _, node := range nodes {
+		n := node.GetNode()
+		for k := range n.Annotations {
+			if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
+				return true
+			}
+		}
+		for k := range n.Labels {
+			if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
+				return true
+			}
+		}
+		for _, c := range n.Status.Conditions {
+			if strings.HasPrefix(string(c.Type), legacyMetadataPrefix+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// addNodeWrightMetaLabel adds a nodewright.nvidia.com-prefixed copy of each legacy
+// skyhook.nvidia.com label, keeping the legacy label. Returns true if it added any.
+func addNodeWrightMetaLabel(labels map[string]string) bool {
+	changed := false
+	var legacy []string
+	for k := range labels {
+		if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
+			legacy = append(legacy, k)
+		}
+	}
+	for _, k := range legacy {
+		suffix := strings.TrimPrefix(k, legacyMetadataPrefix+"/")
+		newKey := fmt.Sprintf("%s/%s", v1alpha1.METADATA_PREFIX, suffix)
+		if _, exists := labels[newKey]; !exists {
+			labels[newKey] = labels[k]
+			changed = true
+		}
+	}
+	return changed
 }
 
 // MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
