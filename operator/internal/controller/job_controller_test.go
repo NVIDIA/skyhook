@@ -19,6 +19,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 var _ = Describe("JobReconcile", func() {
@@ -415,5 +417,33 @@ var _ = Describe("JobReconcile", func() {
 		_, err := r.JobReconcile(ctx, job)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(getJob(r, job.Name).Annotations).ToNot(HaveKey(annotationLastLogs))
+	})
+
+	It("returns an error (for a backoff retry) when stale-FailureTarget recording fails", func() {
+		node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageConfig)
+		job := packageJob(v1alpha1.StageConfig, false)
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type: batchv1.JobFailureTarget, Status: corev1.ConditionTrue,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-10 * time.Minute)),
+		}}
+
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+		// Fail the node patch so recordStaleFailureTarget errors — on an unreachable node
+		// nothing else would retry the erroring write, so JobReconcile must surface the error.
+		c := interceptor.NewClient(
+			fake.NewClientBuilder().WithScheme(scheme).WithObjects(node, job).Build(),
+			interceptor.Funcs{
+				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+					return fmt.Errorf("simulated node patch conflict")
+				},
+			})
+		r, err := NewSkyhookReconciler(scheme, c, k8sfake.NewClientset(), events.NewFakeRecorder(50), validOpts())
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = r.JobReconcile(ctx, job)
+		Expect(err).To(HaveOccurred())
 	})
 })
