@@ -97,8 +97,8 @@ var _ = Describe("job controller", func() {
 		})
 
 		It("matches an interrupt Job for the same package", func() {
-			// argEncode is deliberately not part of the match — podMatchesPackage does not
-			// compare init-container Args — so its value here is arbitrary.
+			// argEncode is deliberately not part of the match: podMatchesPackage does not
+			// compare init-container Args, so its value here is arbitrary.
 			job := createInterruptJobFromPackage(opts, &v1alpha1.Interrupt{Type: v1alpha1.REBOOT}, "encoded-interrupt-args", pkg, skyhook, node, v1alpha1.StageInterrupt)
 			Expect(jobMatchesPackage(opts, pkg, *job, skyhook, v1alpha1.StageInterrupt)).To(BeTrue())
 		})

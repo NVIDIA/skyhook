@@ -55,7 +55,7 @@ func jobHandlerFunc(_ context.Context, o client.Object) []reconcile.Request {
 // be replaced.
 //
 // podMatchesPackage compares only the package label, the interrupt label (to pick which
-// expected executor to build), and per-init-container name/image/env/resources — all of
+// expected executor to build), and per-init-container name/image/env/resources, all of
 // which live on parts of the pod the Job builder copies through unchanged (the init-container
 // chain and the template labels). The Job-specific differences (exit-0 main container,
 // restartPolicy, extra tolerations, podFailurePolicy) are pod-level fields podMatchesPackage
