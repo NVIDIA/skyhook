@@ -500,7 +500,7 @@ var _ = Describe("JobReconcile", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// disruption casualty untouched (no failure verdict, not counted); only the middle
-		// genuine failure is pruned — first and newest remain.
+		// genuine failure is pruned; first and newest remain.
 		Expect(exists(r, "attempt-disrupted")).To(BeTrue())
 		Expect(exists(r, "attempt-first")).To(BeTrue())
 		Expect(exists(r, "attempt-middle")).To(BeFalse())
@@ -535,7 +535,7 @@ var _ = Describe("JobReconcile", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
 		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
-		// Fail the node patch so recordStaleFailureTarget errors — on an unreachable node
+		// Fail the node patch so recordStaleFailureTarget errors; on an unreachable node
 		// nothing else would retry the erroring write, so JobReconcile must surface the error.
 		c := interceptor.NewClient(
 			fake.NewClientBuilder().WithScheme(scheme).WithObjects(node, job).Build(),
