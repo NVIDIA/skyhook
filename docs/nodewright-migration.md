@@ -42,8 +42,8 @@
 including no `disabled`/`paused`/`blocked` ones, and no lifecycle changes in flight) -> **upgrade** the
 operator -> **rename** the CRs atomically (steps 2 and 3 as one change: a rename = delete old + add new
 together) -> **delete** the legacy CRs promptly. The sharp edges this guide warns about (a wedged migration
-hold, non-propagated `pause`/`disable`, a GitOps fight during a non-atomic rename) all come from deviating
-from that steady state.
+hold if a `Skyhook` is not `complete`, and rejected writes once the legacy CRs go read-only) all come from
+deviating from that steady state.
 
 ## What the operator does automatically
 
@@ -60,12 +60,14 @@ On upgrade, a one-way, level-triggered **mirror controller** runs:
 
 Legacy `Skyhook`/`DeploymentPolicy` writes return a deprecation warning pointing here.
 
-**Operate the `NodeWright`, not the legacy `Skyhook`, during the bridge.** The mirror propagates only spec
-changes (it reacts to a legacy object's `metadata.generation` advancing). The annotation-driven controls
-`pause` and `disable` do **not** bump the generation, so toggling them on a legacy `Skyhook` will **not**
-reach its `NodeWright`. Run every lifecycle operation (`pause`, `disable`, `resume`, `enable`) against the
-`NodeWright` with `kubectl nodewright …`. Editing a legacy object's spec still works during the transition
-but is discouraged (it re-syncs onto the `NodeWright` and can fight GitOps; see [Argo CD](#argo-cd-gitops)).
+**The legacy `Skyhook`/`DeploymentPolicy` is read-only once migrated; operate the `NodeWright`.** The
+post-rename operator's admission webhook **rejects** any spec or `pause`/`disable` change to a legacy
+object. Deletions, finalizer edits, and identical re-applies are still allowed, so a steady-state GitOps
+sync does not break; only a real edit is rejected. Run every spec and lifecycle change (`pause`, `disable`,
+`resume`, `enable`) against the new object with `kubectl nodewright …` or by editing the `NodeWright` /
+nodewright `DeploymentPolicy` directly. A divergent edit to a legacy CR (including via Argo) surfacing as a
+rejection is deliberate: it forces the rename rather than letting the legacy object drift from the object
+the operator actually reconciles.
 
 Alongside the mirror, the operator adopts the per-node state under the new prefix. It **copies** the legacy
 per-node metadata (`nodeState_`, `status_`, `version_`, `cordon_` annotations, status labels, and node
@@ -221,25 +223,24 @@ Check before upgrading:
 kubectl get skyhooks.skyhook.nvidia.com -o custom-columns=NAME:.metadata.name,STATUS:.status.status,INPROGRESS:.status.nodesInProgress
 ```
 
-Proceed only when `STATUS` is `complete` and `INPROGRESS` is `0` for **all** Skyhooks.
+Proceed only when no Skyhook is actively rolling out. **`paused` and `disabled` Skyhooks are fine to leave
+as-is** and do **not** need to be enabled or unpaused first: the mirror carries their `paused`/`disabled`
+state onto the `NodeWright`, which then does not roll out, so they migrate in that state. The runtime hold
+only waits on Skyhooks whose rollout is genuinely in flight (`in_progress`, `erroring`, `blocked`,
+`waiting`, `unknown`). Finish, roll back, or delete those before upgrading (they show up in the `STATUS`
+column above). If you have already upgraded and one is wedging the migration, **delete** the offending
+legacy `Skyhook` (its status cannot advance without the old operator, and it is read-only) or roll back to
+the pre-rename operator; the hold clears once it is gone or complete.
 
-**This includes `disabled`, `paused`, and `blocked` Skyhooks.** The runtime hold treats *any* non-`complete`
-status as in-flight work, and after the upgrade the pre-rename operator is gone, so a frozen `disabled` or
-`paused` status never advances on its own. A single such legacy `Skyhook` wedges the **entire** NodeWright
-migration indefinitely, and the only symptom is a log line: the NodeWrights simply sit idle. Before
-upgrading, enable-and-complete or delete any `disabled`/`paused`/`blocked` Skyhook (they show up in the
-`STATUS` column above). If you have already upgraded and a migration is wedged, **delete** the offending
-legacy `Skyhook` (its status cannot advance without the old operator) to clear the hold.
-
-The operator enforces this at runtime as a fail-safe. On startup, while any legacy `Skyhook` reports a
-status that is set and not `complete` (i.e. a rollout was in flight when you upgraded), the operator
+The operator enforces this at runtime as a fail-safe. On startup, while any legacy `Skyhook` is still
+actively rolling out (see the statuses above), the operator
 **holds**: it does not take over any node, requeues every 20 seconds, and logs a warning naming the
-non-complete Skyhooks. This prevents the new operator from double-driving a node the pre-rename operator
-may still be mutating. It is a stop, not an auto-resume: because a legacy `Skyhook`'s status is frozen
-once the operator stops reconciling that kind, the hold clears only when the legacy Skyhooks genuinely
-read `complete`. If you upgraded mid-rollout, roll back to the pre-rename operator, let the rollout
-finish, then upgrade again. A legacy `Skyhook` created *after* the upgrade (with no status, mirrored into
-a `NodeWright`) does not trigger the hold.
+in-flight Skyhooks. This prevents the new operator from double-driving a node the pre-rename operator may
+still be mutating. It is a stop, not an auto-resume: because a legacy `Skyhook`'s status is frozen once the
+operator stops reconciling that kind, an in-flight hold clears only when those Skyhooks are finished (roll
+back to the pre-rename operator, let the rollout complete, then upgrade again) or deleted. A `complete`,
+`paused`, or `disabled` Skyhook, and a legacy `Skyhook` created *after* the upgrade (with no status,
+mirrored into a `NodeWright`), do not trigger the hold.
 
 ## Rollback window (`LEGACY_CLEANUP_DELAY`)
 

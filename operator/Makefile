@@ -105,17 +105,22 @@ confirm:
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen generate-nodewright ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	$(MAKE) license-fmt ## fix up license headers
 
 .PHONY: generate
-generate: controller-gen generate-nodewright ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object paths="./..."
 	$(MAKE) license-fmt ## fix up license headers
 
+# NOTE: intentionally NOT wired into `generate`. The nodewright.nvidia.com group is now
+# hand-maintained (the migration schemas have converged and the legacy group is frozen),
+# so NodeWright can evolve independently. This regenerator is kept for the rare case of
+# re-deriving the nodewright types from the legacy ones, but running it will overwrite any
+# hand edits to api/nodewright (e.g. the legacy-only read-only webhook divergence).
 .PHONY: generate-nodewright
-generate-nodewright: ## Re-derive the nodewright.nvidia.com API group from the legacy skyhook types (kills copy drift).
+generate-nodewright: ## (manual, off by default) Re-derive the nodewright.nvidia.com API group from the legacy skyhook types.
 	../scripts/gen_nodewright.sh
 
 .PHONY: verify-nodewright-gen

@@ -106,6 +106,12 @@ func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldSkyhook, newSkyh
 
 	logf.FromContext(ctx).Info("validate update", "name", newSkyhook.Name)
 
+	// MIGRATION-SHIM: the legacy Skyhook is read-only once migrated; edits go to the
+	// NodeWright. See legacy_readonly_webhook.go (not mirrored into the nodewright group).
+	if err := legacyReadOnlyError(oldSkyhook, newSkyhook); err != nil {
+		return nil, err
+	}
+
 	warnings := admission.Warnings{skyhookDeprecationWarning}
 
 	if err := newSkyhook.Validate(); err != nil {
