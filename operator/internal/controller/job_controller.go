@@ -43,7 +43,7 @@ const (
 	annotationValueTrue     = "true"
 
 	// annotationLastLogs holds a best-effort tail of a deadline-killed stage's stuck
-	// container — or, when the container never started, its waiting reason — so a parked
+	// container, or its waiting reason when the container never started, so a parked
 	// tombstone still names the problem after the kubelet garbage-collects the pod's logs.
 	annotationLastLogs = v1alpha1.METADATA_PREFIX + "/last-logs"
 
@@ -57,7 +57,7 @@ const (
 	lastLogsMaxBytes = 16 * 1024
 
 	// failureTargetGrace bounds how long a Job may sit at FailureTarget without going
-	// terminal before its stuck stage is treated as erroring evidence — the unreachable-node
+	// terminal before its stuck stage is treated as erroring evidence: the unreachable-node
 	// case, where the Job controller cannot delete the pod to finalize the failure.
 	failureTargetGrace = 5 * time.Minute
 )
@@ -66,7 +66,7 @@ const (
 // exactly once, and manages the finished Job's failure archive and deadline snapshot.
 // It is the Job analogue of PodReconcile and the completion authority for the Jobs
 // execution path (the Pod watch keeps reporting only in-flight erroring for Job-owned
-// pods). Not wired into Reconcile yet — the swap lands in #303.
+// pods). Not wired into Reconcile yet; the swap lands in #303.
 func (r *SkyhookReconciler) JobReconcile(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
 	// A package invalidated mid-flight (spec drift) is torn down, mirroring
 	// HandleInvalidPackage for raw pods. Foreground so the deterministic name frees only
@@ -77,7 +77,7 @@ func (r *SkyhookReconciler) JobReconcile(ctx context.Context, job *batchv1.Job) 
 		return ctrl.Result{}, r.deleteJobForeground(ctx, job)
 	}
 
-	// Already processed: a persisted marker — not pod deletion — is the processed-once
+	// Already processed: a persisted marker, not pod deletion, is the processed-once
 	// guard now that completed pods linger, so a re-served terminal event is harmless.
 	if jobProcessed(job) {
 		return ctrl.Result{}, nil
@@ -104,7 +104,7 @@ func (r *SkyhookReconciler) handleCompleteJob(ctx context.Context, job *batchv1.
 	if pkg == nil {
 		// A Job we own with no package annotation cannot be recorded; mark it so it TTLs out
 		// instead of re-serving forever. Once #303 wires creation the annotation is always set,
-		// so log it — this surfaces a wiring regression rather than silently losing completions.
+		// so log it; this surfaces a wiring regression rather than silently losing completions.
 		log.FromContext(ctx).WithName("job-reconcile").Info("completed job has no package annotation; marking without recording", "job", job.Name)
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLSucceeded)
 	}
@@ -133,7 +133,7 @@ func (r *SkyhookReconciler) handleCompleteJob(ctx context.Context, job *batchv1.
 }
 
 // shouldRecordCompletion is the re-serve guard. It records a completion only when the
-// package's node-state entry is still at this Job's stage and not yet complete — a valid
+// package's node-state entry is still at this Job's stage and not yet complete: a valid
 // forward transition. An absent entry (uninstalled or node reset), an already-complete
 // entry, or an entry that has advanced past this stage all mean recording would resurrect,
 // duplicate, or regress state; the marker alone suffices. Interrupt completions also promote
@@ -150,7 +150,7 @@ func (r *SkyhookReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *Packag
 
 	if isInterruptJob(job) {
 		// ProgressSkipped promotes only StageInterrupt-skipped packages, so re-run the record
-		// only while such a package remains — matching what the promotion can actually advance.
+		// only while such a package remains, matching what the promotion can actually advance.
 		for _, s := range state {
 			if s.Stage == v1alpha1.StageInterrupt && s.State == v1alpha1.StateSkipped {
 				return true, nil
@@ -174,7 +174,7 @@ func (r *SkyhookReconciler) recordJobCompletion(ctx context.Context, job *batchv
 	}
 
 	// HandleCompletePod only compares containerName against InterruptContainerName, so the
-	// Job's interrupt label determines it — no child pod needed. For non-interrupt stages the
+	// Job's interrupt label determines it; no child pod needed. For non-interrupt stages the
 	// exact name is cosmetic; read it from the succeeded pod when present, else leave it empty.
 	containerName := ""
 	if isInterruptJob(job) {
@@ -207,7 +207,7 @@ func (r *SkyhookReconciler) recordJobCompletion(ctx context.Context, job *batchv
 // record erroring, mark with the failure TTL, and leave the Job in place as the park marker
 // so the main pass does not recreate the stage until a rerun/reset/config-change/TTL clears
 // it. Any other reason is a backstop that unlimited backoff plus the deadline should make
-// unreachable — no node-state write (a vanished pod self-heals invisibly, as today), just
+// unreachable: no node-state write (a vanished pod self-heals invisibly, as today), just
 // the marker and failure TTL.
 func (r *SkyhookReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, reason string) (ctrl.Result, error) {
 	if reason != batchv1.JobReasonDeadlineExceeded {
@@ -240,7 +240,7 @@ func (r *SkyhookReconciler) handleFailedJob(ctx context.Context, job *batchv1.Jo
 // recordJobErroring parks the stage at (stage, erroring). It is guarded like the completion
 // path: only the stage the Job actually ran is touched, and never regressed to a later stage
 // or resurrected onto a removed package. This is also the state-only write for a stale
-// FailureTarget on an unreachable node (no marker/TTL there — those wait for terminal Failed).
+// FailureTarget on an unreachable node (no marker/TTL there; those wait for terminal Failed).
 func (r *SkyhookReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook, node *corev1.Node) error {
 	patch := client.StrategicMergeFrom(node.DeepCopy())
 
@@ -308,7 +308,7 @@ func (r *SkyhookReconciler) handleActiveJob(ctx context.Context, job *batchv1.Jo
 
 // recordStaleFailureTarget records erroring (state only) for a Job stuck at FailureTarget on
 // an unreachable node, where the Job controller can never delete the pod to reach terminal
-// Failed. Terminal handling — marker, TTL, park — still waits for Failed.
+// Failed. Terminal handling (marker, TTL, park) still waits for Failed.
 func (r *SkyhookReconciler) recordStaleFailureTarget(ctx context.Context, job *batchv1.Job) error {
 	pkg, err := GetPackage(job)
 	if err != nil || pkg == nil {
@@ -325,7 +325,7 @@ func (r *SkyhookReconciler) recordStaleFailureTarget(ctx context.Context, job *b
 // deleted. It is skipped when a failed-attempt archive already exists (that pod carries full
 // logs and survives the deadline) or when the snapshot is already taken. A never-started
 // container has no logs, so its waiting reason/message is recorded instead. Any error is
-// swallowed by the caller — this must never delay the erroring/park path.
+// swallowed by the caller; this must never delay the erroring/park path.
 func (r *SkyhookReconciler) snapshotFailureLogs(ctx context.Context, job *batchv1.Job) error {
 	if _, ok := job.Annotations[annotationLastLogs]; ok {
 		return nil
@@ -338,7 +338,7 @@ func (r *SkyhookReconciler) snapshotFailureLogs(ctx context.Context, job *batchv
 
 	var target *corev1.Pod
 	for i := range pods {
-		// A genuine failed archive already holds full logs — nothing to snapshot.
+		// A genuine failed archive already holds full logs; nothing to snapshot.
 		if pods[i].Status.Phase == corev1.PodFailed && !hasDisruptionTarget(&pods[i]) {
 			return nil
 		}
@@ -376,8 +376,8 @@ func (r *SkyhookReconciler) snapshotFailureLogs(ctx context.Context, job *batchv
 	return nil
 }
 
-// pruneFailedAttempts keeps two archives — the first genuine failure (most likely the root
-// cause, before cascading errors obscure it) and the most recent — and deletes the genuine
+// pruneFailedAttempts keeps two archives: the first genuine failure (most likely the root
+// cause, before cascading errors obscure it) and the most recent, and deletes the genuine
 // failures in between. Only genuinely-Failed pods count: a disruption casualty (carrying
 // DisruptionTarget) has no failure verdict and must neither be kept nor deleted, so it must
 // not shadow a real one. Normal deletion only: the Job-tracking finalizer guarantees a failure
@@ -509,7 +509,7 @@ func jobFailure(job *batchv1.Job) (bool, string) {
 }
 
 // failureTargetStale reports whether the Job has sat at FailureTarget past the grace window
-// without going terminal — the unreachable-node case.
+// without going terminal; the unreachable-node case.
 func failureTargetStale(job *batchv1.Job) bool {
 	for _, c := range job.Status.Conditions {
 		if c.Type == batchv1.JobFailureTarget && c.Status == corev1.ConditionTrue {
@@ -519,7 +519,7 @@ func failureTargetStale(job *batchv1.Job) bool {
 	return false
 }
 
-// hasDisruptionTarget reports whether the pod carries the DisruptionTarget condition — a pod
+// hasDisruptionTarget reports whether the pod carries the DisruptionTarget condition: a pod
 // lost to eviction/preemption/PodGC rather than a genuine step failure.
 func hasDisruptionTarget(pod *corev1.Pod) bool {
 	for _, c := range pod.Status.Conditions {
@@ -530,7 +530,7 @@ func hasDisruptionTarget(pod *corev1.Pod) bool {
 	return false
 }
 
-// stuckInitContainer returns the first init container that has not exited 0 — the one that hung
+// stuckInitContainer returns the first init container that has not exited 0: the one that hung
 // or crashed under the deadline. When that container never started (unpullable image, missing
 // configmap) its waiting reason and message are returned instead, since there are no logs.
 func stuckInitContainer(pod *corev1.Pod) (name, waitingReason, waitingMessage string) {

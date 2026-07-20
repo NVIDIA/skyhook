@@ -163,7 +163,7 @@ func TestTailAndSanitize(t *testing.T) {
 		})
 	}
 
-	// Invalid bytes — including a multibyte rune the tail cut in half — must come
+	// Invalid bytes, including a multibyte rune the tail cut in half, must come
 	// back as valid UTF-8.
 	t.Run("output is always valid UTF-8", func(t *testing.T) {
 		got, err := tailAndSanitize(strings.NewReader(string([]byte{0xff, 0xfe})+"ok"), 1024)

@@ -42,7 +42,7 @@ import (
 const podLogStreamTimeout = 10 * time.Second
 
 // New builds the DAL over the controller-runtime client used for every typed
-// get/list, plus a client-go clientset used only by GetPodLogTail — pod logs are
+// get/list, plus a client-go clientset used only by GetPodLogTail; pod logs are
 // a subresource stream the controller-runtime client cannot read. clientset may
 // be nil in contexts that never read logs (e.g. the event handler's DAL); GetPodLogTail
 // returns an error rather than panicking in that case.
@@ -193,7 +193,7 @@ func (e *dal) GetJobs(ctx context.Context, opts ...client.ListOption) (*batchv1.
 
 // GetPodLogTail streams a container's logs and returns at most maxBytes from the tail,
 // sanitized to valid UTF-8. It is best-effort evidence capture for a stage about to be
-// killed by its deadline, so the caller treats any error as "no logs" — the byte cap
+// killed by its deadline, so the caller treats any error as "no logs"; the byte cap
 // keeps the result inside the object's metadata budget when it lands in an annotation.
 func (e *dal) GetPodLogTail(ctx context.Context, namespace, pod, container string, maxBytes int64) (string, error) {
 	if e.clientset == nil {
@@ -220,7 +220,7 @@ func (e *dal) GetPodLogTail(ctx context.Context, namespace, pod, container strin
 }
 
 // tailAndSanitize reads r to EOF, keeping only the last maxBytes, and returns them
-// as valid UTF-8 (invalid byte sequences — including a rune the tail cut in half —
+// as valid UTF-8 (invalid byte sequences, including a rune the tail cut in half,
 // become U+FFFD). It holds at most maxBytes plus one chunk in memory, so an arbitrarily
 // large log stream stays bounded.
 func tailAndSanitize(r io.Reader, maxBytes int64) (string, error) {
