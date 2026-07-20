@@ -686,28 +686,6 @@ var _ = Describe("Skyhook Webhook", func() {
 			Expect(mkSkyhook(res5).Validate()).NotTo(Succeed())
 		})
 
-		It("should validate package stageTimeout", func() {
-			mkSkyhook := func(d *metav1.Duration) *Skyhook {
-				return &Skyhook{
-					ObjectMeta: metav1.ObjectMeta{Name: "test"},
-					Spec: SkyhookSpec{
-						Packages: Packages{
-							"foo": {
-								PackageRef:   PackageRef{Name: "foo", Version: "1.0.0"},
-								Image:        "alpine",
-								StageTimeout: d,
-							},
-						},
-					},
-				}
-			}
-
-			Expect(mkSkyhook(nil).Validate()).To(Succeed())                           // unset: operator default
-			Expect(mkSkyhook(&metav1.Duration{Duration: 0}).Validate()).To(Succeed()) // 0: deadline disabled
-			Expect(mkSkyhook(&metav1.Duration{Duration: 2 * time.Hour}).Validate()).To(Succeed())
-			Expect(mkSkyhook(&metav1.Duration{Duration: -time.Second}).Validate()).NotTo(Succeed()) // negative rejected
-		})
-
 		It("should validate drain config durations", func() {
 			skyhook := &Skyhook{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},

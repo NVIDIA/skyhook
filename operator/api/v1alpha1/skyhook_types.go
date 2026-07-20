@@ -365,13 +365,6 @@ type Package struct {
 	//+optional
 	GracefulShutdown *metav1.Duration `json:"gracefulShutdown,omitempty"`
 
-	// StageTimeout bounds the wall-clock runtime of each of this package's stage Jobs
-	// (mapped to the Job's activeDeadlineSeconds), all retries and reboot time included.
-	// A stage that runs past it is failed and surfaced as erroring. Unset uses the
-	// operator default (JOB_STAGE_TIMEOUT); "0" disables the deadline for this package.
-	//+optional
-	StageTimeout *metav1.Duration `json:"stageTimeout,omitempty"`
-
 	// Uninstall configures explicit uninstall support for this package.
 	// +optional
 	Uninstall *Uninstall `json:"uninstall,omitempty"`

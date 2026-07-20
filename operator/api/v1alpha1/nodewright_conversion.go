@@ -259,7 +259,6 @@ func convertPackage(in Package) nwv1.Package {
 	out.Env = convertEnvVars(in.Env)
 	out.Resources = convertResourceRequirements(in.Resources)
 	out.GracefulShutdown = convertDurationPtr(in.GracefulShutdown)
-	out.StageTimeout = convertDurationPtr(in.StageTimeout)
 	out.Uninstall = convertUninstall(in.Uninstall)
 
 	return out

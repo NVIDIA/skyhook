@@ -71,7 +71,7 @@ func createJobFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 // createInterruptJobFromPackage builds the interrupt Job. Interrupt Jobs keep
 // restartPolicy OnFailure (a reboot interrupt kills its own pod by design; in-place
 // restart after the node returns is the proven recovery) and therefore no
-// podFailurePolicy — the API forbids combining them.
+// podFailurePolicy: the API forbids combining them.
 func createInterruptJobFromPackage(opts SkyhookOperatorOptions, _interrupt *v1alpha1.Interrupt, argEncode string, _package *v1alpha1.Package, skyhook *wrapper.Skyhook, nodeName string, stage v1alpha1.Stage) *batchv1.Job {
 	pod := createInterruptPodForPackage(opts, _interrupt, argEncode, _package, skyhook, nodeName, stage)
 	return jobFromPod(opts, pod, skyhook, _package, stage, nodeName, true)
@@ -93,7 +93,7 @@ func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.S
 
 	// Without these, DefaultTolerationSeconds admission adds 300s variants and the taint
 	// manager evicts a node-pinned pod once a reboot-class interrupt keeps the node
-	// NotReady past the default timeout — a pointless replacement + hostPath re-copy for a
+	// NotReady past the default timeout: a pointless replacement + hostPath re-copy for a
 	// node that is coming back. Deliberately unbounded (no tolerationSeconds): these pods
 	// are node-bound host agents, so eviction elsewhere is never useful.
 	pod.Spec.Tolerations = append(pod.Spec.Tolerations,
@@ -139,7 +139,7 @@ func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.S
 	// From the package's stageTimeout, else the operator default. A value of 0 disables
 	// the deadline: the field is omitted, because a literal 0 would insta-fail every Job.
 	// Round up so a positive sub-second timeout can't truncate to 0 (which would also
-	// insta-fail) — any positive value yields at least a 1s deadline.
+	// insta-fail); any positive value yields at least a 1s deadline.
 	if timeout := effectiveStageTimeout(opts, _package); timeout > 0 {
 		spec.ActiveDeadlineSeconds = ptr(int64(math.Ceil(timeout.Seconds())))
 	}
