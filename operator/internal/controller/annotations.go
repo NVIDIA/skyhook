@@ -28,7 +28,7 @@ import (
 )
 
 // packageAnnotationKey is the annotation every package executor carries to round-trip
-// the package it runs — a Pod today, and a batch/v1 Job plus its pod template once
+// the package it runs: a Pod today, and a batch/v1 Job plus its pod template once
 // stages run as Jobs.
 const packageAnnotationKey = v1alpha1.METADATA_PREFIX + "/package"
 
@@ -54,7 +54,7 @@ type PackageSkyhook struct {
 
 // GetPackage returns the package from the object's annotations. These helpers take
 // metav1.Object rather than client.Object because they only touch metadata and must
-// also accept a *corev1.PodTemplateSpec (the Job pod template) — which satisfies
+// also accept a *corev1.PodTemplateSpec (the Job pod template), which satisfies
 // metav1.Object but not client.Object (it has no runtime.Object methods).
 func GetPackage(obj metav1.Object) (*PackageSkyhook, error) {
 	if isNil(obj) {
