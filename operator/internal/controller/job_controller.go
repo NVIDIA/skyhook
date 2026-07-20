@@ -33,7 +33,7 @@ import (
 // jobHandlerFunc maps Job events into the single reconcile queue as "job---<name>"
 // requests, mirroring podHandlerFunc's "pod---<name>" routing so package-stage Jobs are
 // serialized through the same SkyhookReconciler pass (the pseudo-controller pattern,
-// issue #223 option A). Only Jobs this operator owns — carrying the skyhook name label —
+// issue #223 option A). Only Jobs this operator owns, carrying the skyhook name label,
 // are enqueued; anything else in the namespace (e.g. a CronJob's Jobs) is ignored.
 func jobHandlerFunc(_ context.Context, o client.Object) []reconcile.Request {
 	job := o.(*batchv1.Job)
