@@ -367,6 +367,24 @@ var _ = Describe("Convert_Skyhook_To_NodeWright", func() {
 		Expect(out.Annotations).To(Equal(map[string]string{"nodewright.nvidia.com/pause": "true"}))
 	})
 
+	It("lets explicit nodewright.nvidia.com metadata win on a prefix collision (deterministic)", func() {
+		// If both prefixes carry the same suffix, the rekey must not depend on Go map
+		// iteration order: the explicit nodewright.nvidia.com value always wins.
+		in.Annotations = map[string]string{
+			"skyhook.nvidia.com/pause":    "true",
+			"nodewright.nvidia.com/pause": "false",
+		}
+		in.Labels = map[string]string{
+			"skyhook.nvidia.com/team":    "legacy",
+			"nodewright.nvidia.com/team": "infra",
+		}
+		out := &nwv1.NodeWright{}
+		Expect(Convert_Skyhook_To_NodeWright(in, out)).To(Succeed())
+
+		Expect(out.Annotations).To(HaveKeyWithValue("nodewright.nvidia.com/pause", "false"))
+		Expect(out.Labels).To(HaveKeyWithValue("nodewright.nvidia.com/team", "infra"))
+	})
+
 	It("clears the legacy finalizer (the new reconciler manages its own)", func() {
 		in.Finalizers = []string{"skyhook.nvidia.com/skyhook"}
 		out := &nwv1.NodeWright{}

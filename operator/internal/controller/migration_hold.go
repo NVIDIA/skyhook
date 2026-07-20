@@ -24,6 +24,8 @@ import (
 	"time"
 
 	skyhookv1 "github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -42,6 +44,14 @@ const legacyMigrationHoldRequeue = 20 * time.Second
 func incompleteLegacySkyhooks(ctx context.Context, reader client.Reader) ([]string, error) {
 	list := &skyhookv1.SkyhookList{}
 	if err := reader.List(ctx, list); err != nil {
+		// The legacy skyhook.nvidia.com CRD not being installed (a nodewright-only
+		// topology, or the migration's own end state once the legacy CRD is removed)
+		// definitively means there are no legacy objects to wait on. Treat it as "no
+		// hold" rather than wedging the operator forever; only genuine transient list
+		// errors should hold.
+		if meta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("listing legacy skyhooks for migration hold: %w", err)
 	}
 
@@ -65,8 +75,10 @@ func incompleteLegacySkyhooks(ctx context.Context, reader client.Reader) ([]stri
 // telling the operator to finish or roll back those rollouts on the pre-rename version
 // before upgrading. This is a fail-safe stop, not an auto-resume: a legacy Skyhook's
 // status is frozen once we stop reconciling that kind, so the hold clears only when
-// the legacy Skyhooks genuinely read complete (i.e. the prerequisite was met). A list
-// error is also treated as a hold (requeue) so we never take over on unknown state.
+// the legacy Skyhooks genuinely read complete (i.e. the prerequisite was met). A
+// genuine (transient) list error is also treated as a hold (requeue) so we never take
+// over on unknown state; a missing legacy CRD is not unknown state (no legacy objects
+// exist) and does not hold.
 func (r *SkyhookReconciler) legacyMigrationHold(ctx context.Context) *ctrl.Result {
 	incomplete, err := incompleteLegacySkyhooks(ctx, r.Client)
 	if err != nil {

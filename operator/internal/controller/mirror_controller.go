@@ -54,6 +54,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -70,7 +72,45 @@ const (
 	// the current legacy generation to decide whether a spec re-sync is needed, so
 	// steady-state informer resyncs do no writes.
 	MirroredGenerationAnnotation = nwv1.METADATA_PREFIX + "/mirrored-generation"
+
+	// legacySkyhookFinalizer is the finalizer the pre-rename operator stamped on
+	// every skyhook.nvidia.com Skyhook. The post-rename operator only manages a
+	// finalizer on NodeWright objects, so without the mirror stripping this one a
+	// `kubectl delete skyhook` would block forever on a finalizer nothing owns.
+	// Hardcoded (a frozen historical value) so the controller keeps no dependency
+	// on the legacy api package's constants.
+	legacySkyhookFinalizer = "skyhook.nvidia.com/skyhook"
 )
+
+// preservedTargetAnnotations are NodeWright-native operational annotations that a
+// mirror re-sync must NOT clobber. They express operator/CLI intent that lives only
+// on the target and is never mirrored from the legacy source; overwriting them from
+// the converted legacy annotations would silently un-pause or re-enable a rollout
+// when someone edits the legacy spec.
+var preservedTargetAnnotations = []string{
+	nwv1.METADATA_PREFIX + "/pause",
+	nwv1.METADATA_PREFIX + "/disable",
+	// The rollback-window stamp is operator-managed target state (like pause); a
+	// re-sync must not reset it or the legacy-cleanup window would restart.
+	legacyMigratedAtAnnotation,
+}
+
+// mirrorTriggerPredicate fires the mirror on create, spec (generation) changes, and
+// the transition into deletion. GenerationChangedPredicate alone swallows the
+// deletionTimestamp-setting update (that update does not bump generation), which
+// would leave the deletion branch unreachable and strand the legacy finalizer the
+// mirror must remove.
+func mirrorTriggerPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectOld == nil || e.ObjectNew == nil {
+				return false
+			}
+			return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() ||
+				!e.ObjectNew.GetDeletionTimestamp().IsZero()
+		},
+	}
+}
 
 //+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights/status,verbs=get;update;patch
@@ -87,7 +127,7 @@ func (r *SkyhookMirrorReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	legacy := &skyhookv1.Skyhook{}
 	target := &nwv1.NodeWright{}
 
-	return reconcileMirror(ctx, r.Client, req.NamespacedName, "Skyhook", "NodeWright", legacy, target,
+	return reconcileMirror(ctx, r.Client, req.NamespacedName, "Skyhook", "NodeWright", legacySkyhookFinalizer, legacy, target,
 		func() error { return skyhookv1.Convert_Skyhook_To_NodeWright(legacy, target) },
 		func() { target.Spec = nwv1.NodeWrightSpec{} },
 	)
@@ -99,7 +139,7 @@ func (r *SkyhookMirrorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("skyhook-mirror").
-		For(&skyhookv1.Skyhook{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&skyhookv1.Skyhook{}, builder.WithPredicates(mirrorTriggerPredicate())).
 		Complete(r)
 }
 
@@ -113,7 +153,9 @@ func (r *DeploymentPolicyMirrorReconciler) Reconcile(ctx context.Context, req ct
 	legacy := &skyhookv1.DeploymentPolicy{}
 	target := &nwv1.DeploymentPolicy{}
 
-	return reconcileMirror(ctx, r.Client, req.NamespacedName, "DeploymentPolicy", "DeploymentPolicy", legacy, target,
+	// The pre-rename operator never put a finalizer on DeploymentPolicy, so there is
+	// nothing to strip on deletion (empty legacyFinalizer).
+	return reconcileMirror(ctx, r.Client, req.NamespacedName, "DeploymentPolicy", "DeploymentPolicy", "", legacy, target,
 		func() error { return skyhookv1.Convert_DeploymentPolicy_To_NodeWright(legacy, target) },
 		func() { target.Spec = nwv1.DeploymentPolicySpec{} },
 	)
@@ -125,7 +167,7 @@ func (r *DeploymentPolicyMirrorReconciler) SetupWithManager(mgr ctrl.Manager) er
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("deploymentpolicy-mirror").
-		For(&skyhookv1.DeploymentPolicy{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&skyhookv1.DeploymentPolicy{}, builder.WithPredicates(mirrorTriggerPredicate())).
 		Complete(r)
 }
 
@@ -138,7 +180,7 @@ func reconcileMirror(
 	ctx context.Context,
 	c client.Client,
 	key types.NamespacedName,
-	legacyKind, targetKind string,
+	legacyKind, targetKind, legacyFinalizer string,
 	legacy, target client.Object,
 	convert func() error,
 	resetTargetSpec func(),
@@ -153,12 +195,22 @@ func reconcileMirror(
 		return ctrl.Result{}, fmt.Errorf("getting legacy %s %s: %w", legacyKind, key.Name, err)
 	}
 
-	// 2. Legacy object being deleted: do nothing. The mirror must NEVER delete the
-	// target. Once mirrored, the NodeWright object is the real, reconciled source
-	// of truth carrying live workload state (node annotations, in-flight
-	// interrupts); deleting it because the legacy object went away would destroy
-	// that state. Deleting a legacy object simply stops further mirroring.
+	// 2. Legacy object being deleted: the mirror must NEVER delete the target. Once
+	// mirrored, the NodeWright object is the real, reconciled source of truth
+	// carrying live workload state (node annotations, in-flight interrupts); deleting
+	// it because the legacy object went away would destroy that state. But we DO strip
+	// the pre-rename finalizer the post-rename operator no longer manages, otherwise
+	// the legacy object's deletion would block on it forever. Writing to an
+	// already-terminating object creates no GitOps drift and never touches the target.
 	if !legacy.GetDeletionTimestamp().IsZero() {
+		if legacyFinalizer != "" && controllerutil.ContainsFinalizer(legacy, legacyFinalizer) {
+			controllerutil.RemoveFinalizer(legacy, legacyFinalizer)
+			if err := c.Update(ctx, legacy); err != nil {
+				return ctrl.Result{}, fmt.Errorf("removing legacy finalizer from %s %s: %w", legacyKind, key.Name, err)
+			}
+			logger.Info("removed stranded legacy finalizer so deletion can complete", "finalizer", legacyFinalizer)
+			return ctrl.Result{}, nil
+		}
 		logger.Info("legacy object is being deleted; leaving mirrored target untouched")
 		return ctrl.Result{}, nil
 	}
@@ -234,10 +286,22 @@ func stampMirror(target client.Object, legacyName string, legacyGeneration int64
 
 // syncMirrorOntoExisting copies the converted desired spec/labels/annotations
 // onto the live target, leaving server-managed fields (resourceVersion, UID,
-// status) intact so the Update is a minimal spec/metadata patch.
+// status) intact so the Update is a minimal spec/metadata patch. Target-only
+// operational annotations (see preservedTargetAnnotations) are carried over from
+// the live object so a re-sync does not silently drop them.
 func syncMirrorOntoExisting(existing, desired client.Object, legacyName string, legacyGeneration int64) {
+	ann := desired.GetAnnotations()
+	for _, k := range preservedTargetAnnotations {
+		if v, ok := existing.GetAnnotations()[k]; ok {
+			if ann == nil {
+				ann = map[string]string{}
+			}
+			ann[k] = v
+		}
+	}
+
 	existing.SetLabels(desired.GetLabels())
-	existing.SetAnnotations(desired.GetAnnotations())
+	existing.SetAnnotations(ann)
 	stampMirror(existing, legacyName, legacyGeneration)
 
 	switch e := existing.(type) {

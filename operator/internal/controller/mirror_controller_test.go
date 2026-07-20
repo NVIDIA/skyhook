@@ -192,6 +192,71 @@ var _ = Describe("Mirror controller", func() {
 				return k8sClient.Get(ctx, types.NamespacedName{Name: name}, &nwv1.NodeWright{})
 			}).Should(Succeed())
 		})
+
+		It("strips the stranded legacy finalizer so a deleted legacy Skyhook can be reaped", func() {
+			name := "mirror-finalizer"
+			legacy := newLegacySkyhook(name, 25)
+			// The pre-rename operator stamped this finalizer; the post-rename operator
+			// only manages a finalizer on NodeWright, so without the mirror removing it
+			// the delete would block forever.
+			legacy.Finalizers = []string{legacySkyhookFinalizer}
+			Expect(k8sClient.Create(ctx, legacy)).To(Succeed())
+
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: name}, &nwv1.NodeWright{})
+			}).Should(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, &nwv1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: name}})
+			})
+
+			// The finalizer holds the object in Terminating; the mirror must strip it
+			// (which also proves the watch predicate delivers the deletion transition).
+			Expect(k8sClient.Delete(ctx, legacy)).To(Succeed())
+			Eventually(func() bool {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: name}, &v1alpha1.Skyhook{}) != nil
+			}).Should(BeTrue())
+		})
+
+		It("preserves target-only control annotations (pause) across a re-sync", func() {
+			name := "mirror-pause"
+			legacy := newLegacySkyhook(name, 25)
+			Expect(k8sClient.Create(ctx, legacy)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, legacy) })
+
+			nw := &nwv1.NodeWright{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: name}, nw)
+			}).Should(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, &nwv1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: name}})
+			})
+
+			// Operator/CLI pauses the NodeWright directly: this annotation lives only on
+			// the target and is never mirrored from the legacy source.
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, nw)).To(Succeed())
+				if nw.Annotations == nil {
+					nw.Annotations = map[string]string{}
+				}
+				nw.Annotations[nwv1.METADATA_PREFIX+"/pause"] = "true"
+				g.Expect(k8sClient.Update(ctx, nw)).To(Succeed())
+			}).Should(Succeed())
+
+			// Editing the legacy spec bumps its generation and forces a mirror re-sync.
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, legacy)).To(Succeed())
+				legacy.Spec.InterruptionBudget.Percent = ptr[int](50)
+				g.Expect(k8sClient.Update(ctx, legacy)).To(Succeed())
+			}).Should(Succeed())
+
+			// The re-sync must propagate the spec AND keep the pause annotation.
+			Eventually(func(g Gomega) {
+				got := &nwv1.NodeWright{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, got)).To(Succeed())
+				g.Expect(got.Spec.InterruptionBudget.Percent).To(Equal(ptr[int](50)))
+				g.Expect(got.Annotations).To(HaveKeyWithValue(nwv1.METADATA_PREFIX+"/pause", "true"))
+			}).Should(Succeed())
+		})
 	})
 
 	Context("DeploymentPolicy -> DeploymentPolicy", func() {

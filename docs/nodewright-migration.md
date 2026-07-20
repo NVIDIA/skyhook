@@ -13,9 +13,10 @@
 > has shipped. Available **now**: the `nodewright.nvidia.com` API group and CRDs, the mirror controller
 > that pre-creates a `NodeWright`/`DeploymentPolicy` for each legacy object, new-group admission webhooks,
 > legacy deprecation warnings, the primary reconciler reconciling `NodeWright`, the on-node
-> annotation/label/condition re-keying to the `nodewright.nvidia.com/*` prefix on upgrade, the cleanup of
-> legacy-labeled package pods and per-node ConfigMaps (so packages are **not** re-run), the runtime
-> migration hold that waits while any legacy `Skyhook` is non-complete, the `kubectl nodewright migrate`
+> annotation/label/condition **copy** to the `nodewright.nvidia.com/*` prefix on upgrade (so packages are
+> **not** re-run), the deferred rollback-safe cleanup of the legacy-labeled package pods and per-node
+> ConfigMaps (gated by `LEGACY_CLEANUP_DELAY`), the runtime migration hold that waits while any legacy
+> `Skyhook` is non-complete, the `kubectl nodewright migrate`
 > CLI command (the plugin binary is renamed to `nodewright`), and the Helm chart shipping both groups'
 > CRDs and RBAC. **Not yet available** (planned for the removal release, do not rely on it today): the
 > chart's pre-upgrade safety hook that refuses to drop the legacy CRD while legacy objects remain. Sections
@@ -25,10 +26,10 @@
 
 1. **Upgrade the operator.** It automatically mirrors every existing `Skyhook` into a `NodeWright` (and
    each legacy `DeploymentPolicy` into a new-group `DeploymentPolicy`). You do **not** touch your CRs for
-   this step. On upgrade the operator also re-keys the per-node state (annotations, conditions) to the
-   `nodewright.nvidia.com/*` prefix and cleans up the old `skyhook.nvidia.com/`-labeled package pods and
-   per-node ConfigMaps, so the migrated `NodeWright` picks up live node lifecycle position and **packages
-   are not re-run**.
+   this step. On upgrade the operator copies the per-node state (annotations, conditions) to the
+   `nodewright.nvidia.com/*` prefix, so the migrated `NodeWright` picks up live node lifecycle position and
+   **packages are not re-run**. The old `skyhook.nvidia.com/*` state is kept for a rollback window and
+   pruned later (see [Rollback window](#rollback-window-legacy_cleanup_delay)).
 2. **Rename your CRs** (in git for GitOps, or by re-applying for Helm/manual): change `apiVersion` and
    `kind`, keep the same `metadata.name`. (`kubectl nodewright migrate` generates the new manifests for
    you, or edit `apiVersion`/`kind` by hand.)
@@ -37,8 +38,12 @@
    legacy `DeploymentPolicy` objects too. The mirrored `NodeWright` objects are the real, reconciled
    resources and are never deleted by this step.
 
-Do steps 2 and 3 **as one change** (a rename = delete old + add new together). **Perform the operator
-upgrade during a quiet window** with no active package rollout (see [the prerequisite](#prerequisite-all-skyhooks-must-be-complete)).
+**Recommended runbook: migrate on a quiesced cluster.** In order: **quiesce** (every `Skyhook` `complete`,
+including no `disabled`/`paused`/`blocked` ones, and no lifecycle changes in flight) -> **upgrade** the
+operator -> **rename** the CRs atomically (steps 2 and 3 as one change: a rename = delete old + add new
+together) -> **delete** the legacy CRs promptly. The sharp edges this guide warns about (a wedged migration
+hold, non-propagated `pause`/`disable`, a GitOps fight during a non-atomic rename) all come from deviating
+from that steady state.
 
 ## What the operator does automatically
 
@@ -55,12 +60,20 @@ On upgrade, a one-way, level-triggered **mirror controller** runs:
 
 Legacy `Skyhook`/`DeploymentPolicy` writes return a deprecation warning pointing here.
 
-Alongside the mirror, on upgrade the operator migrates the per-node state to the new prefix (`nodeState_`,
-`status_`, `version_`, `cordon_`, node conditions) and replaces the old `skyhook.nvidia.com/`-labeled
-package pods and per-node ConfigMaps with new-labeled equivalents owned by the `NodeWright` (legacy pods
-are graceful-deleted, legacy ConfigMaps are relabeled in place, preserving their data). The migrated
-`NodeWright` therefore carries over node lifecycle position and does **not** re-run package stages on its
-nodes.
+**Operate the `NodeWright`, not the legacy `Skyhook`, during the bridge.** The mirror propagates only spec
+changes (it reacts to a legacy object's `metadata.generation` advancing). The annotation-driven controls
+`pause` and `disable` do **not** bump the generation, so toggling them on a legacy `Skyhook` will **not**
+reach its `NodeWright`. Run every lifecycle operation (`pause`, `disable`, `resume`, `enable`) against the
+`NodeWright` with `kubectl nodewright …`. Editing a legacy object's spec still works during the transition
+but is discouraged (it re-syncs onto the `NodeWright` and can fight GitOps; see [Argo CD](#argo-cd-gitops)).
+
+Alongside the mirror, the operator adopts the per-node state under the new prefix. It **copies** the legacy
+per-node metadata (`nodeState_`, `status_`, `version_`, `cordon_` annotations, status labels, and node
+conditions) to the `nodewright.nvidia.com/*` prefix and adds a `nodewright.nvidia.com` label to the
+per-node ConfigMaps, so the migrated `NodeWright` picks up live lifecycle position and does **not** re-run
+package stages. It does this **additively**: the legacy `skyhook.nvidia.com/*` copies, the pre-rename
+package pods, and the legacy ConfigMap labels are **kept** so a rollback stays possible, and are pruned
+later, not on upgrade (see [Rollback window](#rollback-window-legacy_cleanup_delay)).
 
 Checking migration status: a `Skyhook` is migrated when a `NodeWright` of the same name with the
 `nodewright.nvidia.com/mirrored-from` stamp exists:
@@ -176,6 +189,13 @@ legacy object before the new one is live loses your intent. For each object:
 2. Confirm it is reconciling (its `.status` is populated and it is not erroring).
 3. Then delete the legacy `Skyhook`/`DeploymentPolicy`.
 
+A legacy `Skyhook` created by the pre-rename operator carries the old `skyhook.nvidia.com/skyhook`
+finalizer, so `kubectl delete` briefly parks the object in `Terminating` until the mirror strips that
+finalizer (the post-rename operator manages a finalizer only on `NodeWright`). This is automatic and
+usually completes in seconds; you do not need to remove the finalizer by hand. It also means deletion
+only completes while the operator is running, so delete legacy objects **before** you scale the operator
+down for the final removal step.
+
 Delete legacy `DeploymentPolicy` objects as part of the same pass: they move group too, and a stale legacy
 `DeploymentPolicy` left behind will keep emitting deprecation warnings and block eventual removal of the
 `skyhook.nvidia.com` CRD.
@@ -203,6 +223,14 @@ kubectl get skyhooks.skyhook.nvidia.com -o custom-columns=NAME:.metadata.name,ST
 
 Proceed only when `STATUS` is `complete` and `INPROGRESS` is `0` for **all** Skyhooks.
 
+**This includes `disabled`, `paused`, and `blocked` Skyhooks.** The runtime hold treats *any* non-`complete`
+status as in-flight work, and after the upgrade the pre-rename operator is gone, so a frozen `disabled` or
+`paused` status never advances on its own. A single such legacy `Skyhook` wedges the **entire** NodeWright
+migration indefinitely, and the only symptom is a log line: the NodeWrights simply sit idle. Before
+upgrading, enable-and-complete or delete any `disabled`/`paused`/`blocked` Skyhook (they show up in the
+`STATUS` column above). If you have already upgraded and a migration is wedged, **delete** the offending
+legacy `Skyhook` (its status cannot advance without the old operator) to clear the hold.
+
 The operator enforces this at runtime as a fail-safe. On startup, while any legacy `Skyhook` reports a
 status that is set and not `complete` (i.e. a rollout was in flight when you upgraded), the operator
 **holds**: it does not take over any node, requeues every 20 seconds, and logs a warning naming the
@@ -212,6 +240,25 @@ once the operator stops reconciling that kind, the hold clears only when the leg
 read `complete`. If you upgraded mid-rollout, roll back to the pre-rename operator, let the rollout
 finish, then upgrade again. A legacy `Skyhook` created *after* the upgrade (with no status, mirrored into
 a `NodeWright`) does not trigger the hold.
+
+## Rollback window (`LEGACY_CLEANUP_DELAY`)
+
+The migration hold above keeps rollback safe while a rollout was *in flight* at upgrade; the rollback
+window keeps it safe *after* a Skyhook has finished migrating. When the operator adopts a node it
+**copies** the legacy `skyhook.nvidia.com/*` annotations, labels, and conditions to the
+`nodewright.nvidia.com/*` prefix but **keeps the legacy copies**, and it leaves the pre-rename package pods
+in place. So a rolled-back pre-rename operator still finds its state and resumes cleanly, and a bad upgrade
+stays recoverable even after migration completes.
+
+The legacy copies (and the old package pods, and the legacy ConfigMap labels) are pruned only once
+`LEGACY_CLEANUP_DELAY` has elapsed since the Skyhook was adopted, tracked by a
+`nodewright.nvidia.com/legacy-migrated-at` timestamp on the `NodeWright`. The delay defaults to **24h**
+(`controllerManager.manager.env.legacyCleanupDelay` in the chart). Set it to `0` to prune immediately (no
+rollback window), or longer to keep the door open longer. Pruning is the **point of no return**: after it
+runs, rolling back to the pre-rename operator would re-apply every package from scratch.
+
+This is transition-only behavior and is removed together with the `skyhook.nvidia.com` group at the
+removal release.
 
 ## Downstream consumers (e.g. aicr)
 
@@ -231,8 +278,8 @@ These land as a **companion PR in the consumer repo**, timed with (or shortly af
 ## Verification checklist
 
 - `kubectl get nodewrights.nodewright.nvidia.com` lists a `NodeWright` for each former `Skyhook`.
-- Node state carried over: a node's annotations are re-keyed under `nodewright.nvidia.com/` and no package
-  re-ran.
+- Node state carried over: a node's annotations are copied under `nodewright.nvidia.com/` (the legacy
+  `skyhook.nvidia.com/` keys remain during the rollback window) and no package re-ran.
 - No drift reported by Argo on your (soon-to-be-deleted) `Skyhook` objects during the transition.
 - After you delete the old CRs, the `NodeWright` objects remain and reconcile normally.
 - Legacy `Skyhook`/`DeploymentPolicy` writes emit the deprecation warning.
@@ -262,7 +309,9 @@ tools see no drift. "Migrated" is derived from the existence of the stamped `Nod
 transition) and gets mirrored, but you will get a deprecation warning. Prefer creating `NodeWright`
 directly.
 
-**Can I roll the operator back?** During the transition release both groups are served, so a rollback to a
-version that still reconciles `Skyhook` is possible while the `Skyhook` objects still exist. Once you have
-deleted the `Skyhook`s and are on `NodeWright` only, rolling back to a Skyhook-only operator would strand
-the `NodeWright`s. Keep the `Skyhook`s until you are confident.
+**Can I roll the operator back?** Yes, within the rollback window. The operator keeps the legacy node
+state, package pods, and `Skyhook` CRs during the transition, so rolling back to a version that reconciles
+`Skyhook` resumes cleanly. Two things close the door: the per-node prune after `LEGACY_CLEANUP_DELAY`
+(default 24h; see [Rollback window](#rollback-window-legacy_cleanup_delay)), after which a rolled-back
+operator sees fresh nodes and re-applies packages; and deleting the `Skyhook`s, which strands the
+`NodeWright`s. Keep the `Skyhook`s (and raise `LEGACY_CLEANUP_DELAY`) until you are confident.
