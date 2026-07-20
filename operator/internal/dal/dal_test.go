@@ -21,12 +21,19 @@ package dal
 import (
 	"context"
 	"errors"
+	"strings"
+	"testing"
+	"unicode/utf8"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	// two packages named "fake" collide here: the controller-runtime one builds the
+	// client.Client the DAL wraps, the client-go one the clientset GetPodLogTail needs.
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -52,7 +59,7 @@ var _ = Describe("Job accessors", func() {
 	}
 
 	build := func(objs ...client.Object) DAL {
-		return New(fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build())
+		return New(fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build(), nil)
 	}
 
 	Describe("GetJob", func() {
@@ -77,7 +84,7 @@ var _ = Describe("Job accessors", func() {
 				Get: func(_ context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
 					return errors.New("boom")
 				},
-			}).Build())
+			}).Build(), nil)
 
 			job, err := d.GetJob(ctx, namespace, "apply-worker-1")
 			Expect(err).To(MatchError(ContainSubstring("error getting job [skyhook|apply-worker-1]")))
@@ -114,7 +121,7 @@ var _ = Describe("Job accessors", func() {
 				List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
 					return errors.New("boom")
 				},
-			}).Build())
+			}).Build(), nil)
 
 			jobs, err := d.GetJobs(ctx)
 			Expect(err).To(MatchError(ContainSubstring("error getting jobs")))
@@ -123,3 +130,81 @@ var _ = Describe("Job accessors", func() {
 		})
 	})
 })
+
+func TestTailAndSanitize(t *testing.T) {
+	// A rune whose UTF-8 encoding is longer than one byte, used to build inputs
+	// that a byte-boundary cut would split.
+	multibyte := strings.Repeat("é", 100) // 2 bytes each → 200 bytes
+
+	cases := []struct {
+		name     string
+		input    string
+		maxBytes int64
+		want     string
+		wantErr  bool
+	}{
+		{name: "shorter than cap returns whole", input: "hello", maxBytes: 1024, want: "hello"},
+		{name: "longer than cap keeps the tail", input: "abcdef", maxBytes: 3, want: "def"},
+		{name: "zero cap returns empty", input: "abc", maxBytes: 0, want: ""},
+		{name: "negative cap returns empty", input: "abc", maxBytes: -1, want: ""},
+		{name: "exact cap returns whole", input: "abc", maxBytes: 3, want: "abc"},
+		{name: "spans multiple read chunks", input: strings.Repeat("x", 100*1024) + "TAIL", maxBytes: 4, want: "TAIL"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tailAndSanitize(strings.NewReader(tc.input), tc.maxBytes)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	// Invalid bytes — including a multibyte rune the tail cut in half — must come
+	// back as valid UTF-8.
+	t.Run("output is always valid UTF-8", func(t *testing.T) {
+		got, err := tailAndSanitize(strings.NewReader(string([]byte{0xff, 0xfe})+"ok"), 1024)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !utf8.ValidString(got) {
+			t.Fatalf("result is not valid UTF-8: %q", got)
+		}
+		if !strings.HasSuffix(got, "ok") {
+			t.Fatalf("expected trailing %q in %q", "ok", got)
+		}
+
+		// Cut a 2-byte rune in half by capping to an odd tail length.
+		cut, err := tailAndSanitize(strings.NewReader(multibyte), 3)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !utf8.ValidString(cut) {
+			t.Fatalf("split-rune result is not valid UTF-8: %q", cut)
+		}
+	})
+}
+
+func TestGetPodLogTail(t *testing.T) {
+	t.Run("returns the container logs from the clientset", func(t *testing.T) {
+		d := New(nil, k8sfake.NewClientset())
+		got, err := d.GetPodLogTail(context.Background(), "skyhook", "pod-1", "step", 1024)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// The fake clientset serves a canned "fake logs" body for GetLogs.
+		if !strings.Contains(got, "fake logs") {
+			t.Fatalf("got %q, want it to contain %q", got, "fake logs")
+		}
+	})
+
+	t.Run("errors when no clientset is configured", func(t *testing.T) {
+		d := New(nil, nil)
+		if _, err := d.GetPodLogTail(context.Background(), "skyhook", "pod-1", "step", 1024); err == nil {
+			t.Fatal("expected an error when clientset is nil, got nil")
+		}
+	})
+}

@@ -47,6 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/kubernetes/pkg/util/taints"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -233,7 +234,7 @@ func (o *SkyhookOperatorOptions) GetRuntimeRequiredToleration() corev1.Toleratio
 // force type checking against this interface
 var _ reconcile.Reconciler = &SkyhookReconciler{}
 
-func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, recorder events.EventRecorder, opts SkyhookOperatorOptions) (*SkyhookReconciler, error) {
+func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, clientset kubernetes.Interface, recorder events.EventRecorder, opts SkyhookOperatorOptions) (*SkyhookReconciler, error) {
 
 	err := opts.Validate()
 	if err != nil {
@@ -241,21 +242,23 @@ func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, recorder even
 	}
 
 	return &SkyhookReconciler{
-		Client:   c,
-		scheme:   schema,
-		recorder: recorder,
-		opts:     opts,
-		dal:      dal.New(c),
+		Client:    c,
+		scheme:    schema,
+		recorder:  recorder,
+		opts:      opts,
+		clientset: clientset,
+		dal:       dal.New(c, clientset),
 	}, nil
 }
 
 // SkyhookReconciler reconciles a Skyhook object
 type SkyhookReconciler struct {
 	client.Client
-	scheme   *runtime.Scheme
-	recorder events.EventRecorder
-	opts     SkyhookOperatorOptions
-	dal      dal.DAL
+	scheme    *runtime.Scheme
+	recorder  events.EventRecorder
+	opts      SkyhookOperatorOptions
+	clientset kubernetes.Interface
+	dal       dal.DAL
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -278,7 +281,7 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	globalHandler := &globalDelayHandler{
 		logger: mgr.GetLogger(),
-		dal:    dal.New(r.Client),
+		dal:    dal.New(r.Client, r.clientset),
 		delay:  globalReconcileDelay,
 	}
 
