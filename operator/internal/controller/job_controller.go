@@ -326,8 +326,11 @@ func (r *SkyhookReconciler) handleActiveJob(ctx context.Context, job *batchv1.Jo
 			logger.Error(err, "error snapshotting failure logs", "job", job.Name)
 		}
 		if failureTargetStale(job) {
+			// A real state write. On an unreachable node no further Job event retries it, so
+			// let the error escape to the work queue for a backoff retry rather than deferring
+			// the erroring evidence to the next informer resync.
 			if err := r.recordStaleFailureTarget(ctx, job); err != nil {
-				logger.Error(err, "error recording erroring for stale failure target", "job", job.Name)
+				return ctrl.Result{}, fmt.Errorf("recording erroring for stale failure target on job %s: %w", job.Name, err)
 			}
 		} else {
 			// An unreachable node emits no further Job event to drive the stale→erroring
