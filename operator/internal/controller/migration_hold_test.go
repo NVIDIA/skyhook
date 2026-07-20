@@ -65,9 +65,9 @@ var _ = Describe("Migration hold", func() {
 	It("holds while a legacy Skyhook is mid-rollout", func() {
 		c := build(mkSkyhook("done", skyhookv1.StatusComplete), mkSkyhook("rolling", skyhookv1.StatusInProgress))
 
-		incomplete, err := incompleteLegacySkyhooks(ctx, c)
+		inFlight, err := inFlightLegacySkyhooks(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(incomplete).To(ConsistOf("rolling"))
+		Expect(inFlight).To(ConsistOf("rolling"))
 
 		r := &SkyhookReconciler{Client: c}
 		hold := r.legacyMigrationHold(ctx)
@@ -78,9 +78,9 @@ var _ = Describe("Migration hold", func() {
 	It("does not hold when every legacy Skyhook is complete", func() {
 		c := build(mkSkyhook("a", skyhookv1.StatusComplete), mkSkyhook("b", skyhookv1.StatusComplete))
 
-		incomplete, err := incompleteLegacySkyhooks(ctx, c)
+		inFlight, err := inFlightLegacySkyhooks(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(incomplete).To(BeEmpty())
+		Expect(inFlight).To(BeEmpty())
 
 		r := &SkyhookReconciler{Client: c}
 		Expect(r.legacyMigrationHold(ctx)).To(BeNil())
@@ -91,9 +91,9 @@ var _ = Describe("Migration hold", func() {
 		// it must not wedge the hold open forever.
 		c := build(mkSkyhook("fresh", ""))
 
-		incomplete, err := incompleteLegacySkyhooks(ctx, c)
+		inFlight, err := inFlightLegacySkyhooks(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(incomplete).To(BeEmpty())
+		Expect(inFlight).To(BeEmpty())
 	})
 
 	It("does not hold on a fresh cluster with no legacy Skyhooks", func() {
@@ -105,9 +105,9 @@ var _ = Describe("Migration hold", func() {
 		// The migration's own end state (legacy CRD removed) and nodewright-only
 		// topologies both surface a NoKindMatchError; that means no legacy objects
 		// exist, not unknown state, so the operator must not wedge itself.
-		incomplete, err := incompleteLegacySkyhooks(ctx, noMatchReader{})
+		inFlight, err := inFlightLegacySkyhooks(ctx, noMatchReader{})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(incomplete).To(BeEmpty())
+		Expect(inFlight).To(BeEmpty())
 	})
 
 	It("reports every mid-rollout legacy Skyhook by name", func() {
@@ -117,8 +117,39 @@ var _ = Describe("Migration hold", func() {
 			mkSkyhook("done", skyhookv1.StatusComplete),
 		)
 
-		incomplete, err := incompleteLegacySkyhooks(ctx, c)
+		inFlight, err := inFlightLegacySkyhooks(ctx, c)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(incomplete).To(ConsistOf("erroring", "progress"))
+		Expect(inFlight).To(ConsistOf("erroring", "progress"))
+	})
+
+	It("does not hold on paused or disabled Skyhooks (they migrate in that state)", func() {
+		// A user must not be forced to unpause/enable a Skyhook to migrate it: the
+		// mirror carries the paused/disabled state onto the NodeWright, which then does
+		// not roll out, so there is no in-flight work to double-drive.
+		c := build(
+			mkSkyhook("paused", skyhookv1.StatusPaused),
+			mkSkyhook("disabled", skyhookv1.StatusDisabled),
+			mkSkyhook("done", skyhookv1.StatusComplete),
+		)
+
+		inFlight, err := inFlightLegacySkyhooks(ctx, c)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(inFlight).To(BeEmpty())
+
+		r := &SkyhookReconciler{Client: c}
+		Expect(r.legacyMigrationHold(ctx)).To(BeNil())
+	})
+
+	It("holds on blocked and waiting Skyhooks (rollout still in flight)", func() {
+		c := build(
+			mkSkyhook("blocked", skyhookv1.StatusBlocked),
+			mkSkyhook("waiting", skyhookv1.StatusWaiting),
+			mkSkyhook("paused", skyhookv1.StatusPaused),
+			mkSkyhook("done", skyhookv1.StatusComplete),
+		)
+
+		inFlight, err := inFlightLegacySkyhooks(ctx, c)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(inFlight).To(ConsistOf("blocked", "waiting"))
 	})
 })

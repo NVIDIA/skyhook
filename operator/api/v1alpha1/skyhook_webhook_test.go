@@ -823,7 +823,7 @@ var _ = Describe("Skyhook Webhook", func() {
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 	})
 
-	It("should reject skyhook update to reference non-existent deployment policy", func() {
+	It("rejects a legacy skyhook spec update (read-only once migrated)", func() {
 		// Create a Skyhook without deployment policy
 		skyhook := &Skyhook{
 			ObjectMeta: metav1.ObjectMeta{
@@ -843,19 +843,19 @@ var _ = Describe("Skyhook Webhook", func() {
 		}
 		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-		// Try to update it to reference a non-existent policy
+		// A legacy Skyhook is read-only after migration: the spec change (here the
+		// deployment policy reference) is rejected before the policy-existence check.
 		updatedSkyhook := skyhook.DeepCopy()
 		updatedSkyhook.Spec.DeploymentPolicy = "does-not-exist"
 
 		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("deploymentPolicy \"does-not-exist\" not found"))
+		Expect(err).To(MatchError(ContainSubstring("read-only")))
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
 	})
 
-	It("should allow skyhook update to reference valid deployment policy", func() {
+	It("rejects a legacy skyhook spec update even to a valid deployment policy (read-only)", func() {
 		// Create a deployment policy
 		policy := &DeploymentPolicy{
 			ObjectMeta: metav1.ObjectMeta{
@@ -893,12 +893,12 @@ var _ = Describe("Skyhook Webhook", func() {
 		}
 		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-		// Update it to reference the valid policy - should succeed
+		// Read-only rejects the spec change even though the referenced policy is valid.
 		updatedSkyhook := skyhook.DeepCopy()
 		updatedSkyhook.Spec.DeploymentPolicy = "valid-policy-for-update"
 
 		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).To(MatchError(ContainSubstring("read-only")))
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())

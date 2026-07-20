@@ -70,6 +70,29 @@ var _ = Describe("NodeWright Webhook", func() {
 			Expect(err).ToNot(BeNil())
 
 		})
+		It("stays writable during the migration bridge (no legacy read-only rejection)", func() {
+			// Regression guard: the legacy Skyhook/DeploymentPolicy are read-only during the
+			// bridge, but NodeWright is the writable source of truth. The read-only check
+			// (legacyReadOnlyError) lives only in the legacy api/v1alpha1 package and must
+			// never be mirrored here, so a plain spec-changing update must be accepted.
+			old := &NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "writable"},
+				Spec: NodeWrightSpec{
+					InterruptionBudget: InterruptionBudget{Percent: ptr.To(25)},
+					Packages: Packages{
+						"foobar": {
+							PackageRef: PackageRef{Name: "foobar", Version: "1.0.0"},
+							Image:      "ghcr.io/org/pkg",
+						},
+					},
+				},
+			}
+			updated := old.DeepCopy()
+			updated.Spec.InterruptionBudget.Percent = ptr.To(50)
+
+			_, err := nodewrightWebhook.ValidateUpdate(ctx, old, updated)
+			Expect(err).To(BeNil())
+		})
 		It("Should deny if duplicate packages", func() {
 
 			nodewright := &NodeWright{

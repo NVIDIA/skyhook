@@ -98,6 +98,12 @@ func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldDeploym
 
 	logf.FromContext(ctx).Info("validate update", "name", deploymentPolicy.Name)
 
+	// MIGRATION-SHIM: the legacy DeploymentPolicy is read-only once migrated; edits go to
+	// the nodewright.nvidia.com DeploymentPolicy. See legacy_readonly_webhook.go.
+	if err := legacyDeploymentPolicyReadOnlyError(oldDeploymentPolicy, deploymentPolicy); err != nil {
+		return nil, err
+	}
+
 	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
 }
 

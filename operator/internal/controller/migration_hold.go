@@ -35,13 +35,22 @@ import (
 // whether the legacy Skyhooks have drained during a migration hold.
 const legacyMigrationHoldRequeue = 20 * time.Second
 
-// incompleteLegacySkyhooks lists legacy skyhook.nvidia.com Skyhooks that are still
-// mid-rollout: their status is set (the pre-rename operator reconciled them at least
-// once) and is not complete. A Skyhook with an EMPTY status is intentionally
-// excluded: it was never reconciled by the old operator (either brand new, or created
-// after the upgrade and mirrored into a NodeWright), so it is not in-flight host work
-// to wait on and must not wedge the hold open forever.
-func incompleteLegacySkyhooks(ctx context.Context, reader client.Reader) ([]string, error) {
+// inFlightLegacySkyhooks lists legacy skyhook.nvidia.com Skyhooks whose rollout is
+// still actively in flight, so taking over their nodes from the new operator could
+// double-drive a package pod the pre-rename operator left mutating the host.
+//
+// A Skyhook is NOT in-flight (safe to migrate in place, no hold) when its status is:
+//   - empty: never reconciled by the old operator (brand new, or created post-upgrade
+//     and mirrored), so there is no host work to wait on;
+//   - complete: nothing is running;
+//   - paused or disabled: an explicit, annotation-driven state that the mirror carries
+//     onto the NodeWright, which then does not roll out. We deliberately do NOT force a
+//     user to unpause/enable a Skyhook to migrate it: it migrates in that state and the
+//     NodeWright stays paused/disabled.
+//
+// Every other status (in_progress, erroring, blocked, waiting, unknown) is treated as
+// in-flight and holds the migration until it is finished, rolled back, or deleted.
+func inFlightLegacySkyhooks(ctx context.Context, reader client.Reader) ([]string, error) {
 	list := &skyhookv1.SkyhookList{}
 	if err := reader.List(ctx, list); err != nil {
 		// The legacy skyhook.nvidia.com CRD not being installed (a nodewright-only
@@ -55,14 +64,16 @@ func incompleteLegacySkyhooks(ctx context.Context, reader client.Reader) ([]stri
 		return nil, fmt.Errorf("listing legacy skyhooks for migration hold: %w", err)
 	}
 
-	var incomplete []string
+	var inFlight []string
 	for i := range list.Items {
-		status := list.Items[i].Status.Status
-		if status != "" && status != skyhookv1.StatusComplete {
-			incomplete = append(incomplete, list.Items[i].Name)
+		switch list.Items[i].Status.Status {
+		case "", skyhookv1.StatusComplete, skyhookv1.StatusPaused, skyhookv1.StatusDisabled:
+			// safe to migrate in place; no hold
+		default:
+			inFlight = append(inFlight, list.Items[i].Name)
 		}
 	}
-	return incomplete, nil
+	return inFlight, nil
 }
 
 // legacyMigrationHold returns a non-nil requeue result while the NodeWright reconcile
@@ -71,25 +82,26 @@ func incompleteLegacySkyhooks(ctx context.Context, reader client.Reader) ([]stri
 // WHY: on an upgrade from the pre-rename operator, a legacy Skyhook that was still
 // rolling out may have left an in-flight package pod doing host mutation. Taking over
 // that node from the new (NodeWright) reconcile could double-drive it. So while any
-// legacy Skyhook reads non-complete we do nothing and requeue, and surface a loud log
-// telling the operator to finish or roll back those rollouts on the pre-rename version
-// before upgrading. This is a fail-safe stop, not an auto-resume: a legacy Skyhook's
-// status is frozen once we stop reconciling that kind, so the hold clears only when
-// the legacy Skyhooks genuinely read complete (i.e. the prerequisite was met). A
-// genuine (transient) list error is also treated as a hold (requeue) so we never take
+// legacy Skyhook is still actively in flight we do nothing and requeue, and surface a
+// loud log telling the operator to finish or roll back those rollouts on the pre-rename
+// version before upgrading. Paused/disabled Skyhooks are NOT in-flight and migrate as
+// they are (see inFlightLegacySkyhooks). This is a fail-safe stop, not an auto-resume:
+// a legacy Skyhook's status is frozen once we stop reconciling that kind, so an
+// in-flight hold clears only when those Skyhooks are finished, rolled back, or deleted.
+// A genuine (transient) list error is also treated as a hold (requeue) so we never take
 // over on unknown state; a missing legacy CRD is not unknown state (no legacy objects
 // exist) and does not hold.
 func (r *SkyhookReconciler) legacyMigrationHold(ctx context.Context) *ctrl.Result {
-	incomplete, err := incompleteLegacySkyhooks(ctx, r.Client)
+	inFlight, err := inFlightLegacySkyhooks(ctx, r.Client)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "could not check legacy Skyhooks for migration hold; requeueing before taking over")
 		return &ctrl.Result{RequeueAfter: legacyMigrationHoldRequeue}
 	}
-	if len(incomplete) == 0 {
+	if len(inFlight) == 0 {
 		return nil
 	}
 
-	log.FromContext(ctx).Info("holding NodeWright reconcile: legacy Skyhooks are not complete; finish or roll back in-flight rollouts on the pre-rename operator before upgrading",
-		"incompleteSkyhooks", incomplete)
+	log.FromContext(ctx).Info("holding NodeWright reconcile: legacy Skyhooks are still rolling out; finish, roll back, or delete them on the pre-rename operator before upgrading",
+		"inFlightSkyhooks", inFlight)
 	return &ctrl.Result{RequeueAfter: legacyMigrationHoldRequeue}
 }
