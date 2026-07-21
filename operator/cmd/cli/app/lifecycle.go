@@ -85,20 +85,23 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 				}
 			}
 
-			// Check dry-run before making changes
-			if ctx.GlobalFlags.DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] Would %s NodeWright %q\n", cfg.confirmVerb, skyhookName)
-				return nil
-			}
-
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
 			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
+			// Preflight before the dry-run short-circuit (matching node/package/reset): a
+			// dry-run against a legacy-only operator would otherwise print "Would ..." for a
+			// NodeWright that the cluster cannot serve.
 			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
 				return err
+			}
+
+			// Check dry-run before making changes
+			if ctx.GlobalFlags.DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] Would %s NodeWright %q\n", cfg.confirmVerb, skyhookName)
+				return nil
 			}
 
 			// Fetch the NodeWright to check operator version from its annotation

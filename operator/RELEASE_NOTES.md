@@ -20,9 +20,10 @@ For the full commit-level log see CHANGELOG.md.
     rollouts keep their position.
   - **Legacy `Skyhook`/`DeploymentPolicy` objects become read-only once migrated:**
     the admission webhook rejects spec and `pause`/`disable` edits (deletions and
-    identical re-applies are still allowed) and emits a deprecation warning
-    pointing at `kubectl nodewright migrate`. Operate the mirrored `NodeWright`
-    instead; `kubectl nodewright migrate` emits applyable NodeWright YAML.
+    identical re-applies are still allowed) and emits a deprecation warning.
+    Operate the mirrored `NodeWright` instead; to move your manifests forward,
+    change `apiVersion` to `nodewright.nvidia.com/v1alpha1` (and, for `Skyhook`,
+    `kind` to `NodeWright`) and re-apply.
   - **Upgrade during a quiet window:** perform the upgrade only when every Skyhook
     is `complete` with no nodes in progress. In-flight stages resume idempotently
     (no double reboot), but upgrading idle avoids even the benign package-pod

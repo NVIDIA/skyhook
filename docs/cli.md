@@ -21,9 +21,7 @@ Every cluster-backed command runs a preflight check on the served API groups.
 If the cluster serves only the legacy `skyhook.nvidia.com` group and not
 `nodewright.nvidia.com`, the command fails fast with a clear, actionable error
 naming both groups and telling you to upgrade to a NodeWright-capable operator,
-rather than a confusing `NotFound`. The one exception is `migrate`, which reads
-legacy objects on purpose and therefore works against a legacy-only operator
-(and offline, from files).
+rather than a confusing `NotFound`.
 
 ### Minimum Operator Version
 
@@ -45,7 +43,6 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `reset --package` | ✅ Full (v0.7.5+) | ✅ Full |
 | `update-state` | ✅ Full (v0.7.5+) — see note | ✅ Full — see note |
 | `deployment-policy reset` | ❌ Not supported | ✅ Full |
-| `migrate` | ✅ Reads legacy objects (offline or cluster) | ✅ Full |
 | `pause` | ❌ Not supported | ✅ Full |
 | `resume` | ❌ Not supported | ✅ Full |
 | `disable` | ❌ Not supported | ✅ Full |
@@ -283,46 +280,25 @@ If a targeted node already has an entry for `<package>@<version>`, `--add`
 warns and skips that node (use `update-state` without `--add` if you intend
 to overwrite the existing entry).
 
-### Migrate Command
+### Migrating manifests to NodeWright
 
-Convert legacy `skyhook.nvidia.com` objects (`Skyhook`, `DeploymentPolicy`) into
-the equivalent `nodewright.nvidia.com` objects and print them as YAML to stdout.
-The output is a multi-document stream (`---` separated) suitable for `kubectl
-apply -f -`, committing to git, or handing to a GitOps tool such as Argo CD.
-Server-managed fields (`status`, `resourceVersion`, `uid`, `creationTimestamp`)
-are stripped, the legacy finalizer is dropped, and `skyhook.nvidia.com/*`
-annotation and label keys are rewritten to the `nodewright.nvidia.com/*` prefix,
-so the result is a clean, apply-able manifest.
+There is no dedicated migrate command: the conversion is a mechanical group and
+kind swap with no change to the spec body. Both `Skyhook` and `DeploymentPolicy`
+change API group to `nodewright.nvidia.com/v1alpha1`; `Skyhook` additionally
+changes its kind to `NodeWright`, while `DeploymentPolicy` keeps its kind. Any
+`skyhook.nvidia.com/*` annotation or label keys become `nodewright.nvidia.com/*`.
 
-`migrate` has two input modes:
-
-- **File / stdin (offline):** with `-f, --filename`, objects are read from one
-  or more YAML files (or `-` for stdin) and converted without contacting a
-  cluster. Documents that are already `nodewright.nvidia.com` objects, or an
-  unrelated kind, are passed through unchanged.
-- **Cluster:** without `-f`, the legacy `Skyhook` and `DeploymentPolicy` objects
-  are listed from the current cluster and converted. Because it reads the legacy
-  group on purpose, `migrate` is exempt from the NodeWright preflight and works
-  against a legacy-only operator (this is the intended migration path).
+For a source manifest, that is:
 
 ```bash
-# Convert a file and apply the result
-kubectl nodewright migrate -f skyhook.yaml | kubectl apply -f -
-
-# Convert everything piped in on stdin
-cat skyhooks.yaml | kubectl nodewright migrate -f -
-
-# Convert every legacy object in the cluster and save for GitOps
-kubectl nodewright migrate > nodewright.yaml
+sed -e 's|skyhook\.nvidia\.com/|nodewright.nvidia.com/|g' \
+    -e 's|kind: Skyhook|kind: NodeWright|' skyhook.yaml > nodewright.yaml
 ```
 
-| Flag | Description |
-|------|-------------|
-| `--filename, -f` | Path to a YAML file with legacy objects (repeatable, comma-separated, or `-` for stdin). Offline; no cluster needed. |
-
-Both `Skyhook` and `DeploymentPolicy` change API group to
-`nodewright.nvidia.com/v1alpha1`; `Skyhook` additionally changes its kind to
-`NodeWright`, while `DeploymentPolicy` keeps its kind.
+The operator's mirror controller already converts the live objects in the
+cluster automatically; the edit above is only for the manifests in your source
+of truth (git / GitOps). See
+[docs/nodewright-migration.md](nodewright-migration.md) for the full flow.
 
 ### Deployment Policy Commands
 

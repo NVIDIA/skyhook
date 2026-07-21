@@ -16,8 +16,7 @@
 > annotation/label/condition **copy** to the `nodewright.nvidia.com/*` prefix on upgrade (so packages are
 > **not** re-run), the deferred rollback-safe cleanup of the legacy-labeled package pods and per-node
 > ConfigMaps (gated by `LEGACY_CLEANUP_DELAY`), the runtime migration hold that waits while any legacy
-> `Skyhook` is non-complete, the `kubectl nodewright migrate`
-> CLI command (the plugin binary is renamed to `nodewright`), and the Helm chart shipping both groups'
+> `Skyhook` is non-complete, the renamed CLI plugin (binary `kubectl-nodewright`), and the Helm chart shipping both groups'
 > CRDs and RBAC. **Not yet available** (planned for the removal release, do not rely on it today): the
 > chart's pre-upgrade safety hook that refuses to drop the legacy CRD while legacy objects remain. Sections
 > below flag this inline.
@@ -31,8 +30,8 @@
    **packages are not re-run**. The old `skyhook.nvidia.com/*` state is kept for a rollback window and
    pruned later (see [Rollback window](#rollback-window-legacy_cleanup_delay)).
 2. **Rename your CRs** (in git for GitOps, or by re-applying for Helm/manual): change `apiVersion` and
-   `kind`, keep the same `metadata.name`. (`kubectl nodewright migrate` generates the new manifests for
-   you, or edit `apiVersion`/`kind` by hand.)
+   `kind`, keep the same `metadata.name`. This is a mechanical group/kind swap with no change to the spec
+   body; see the sed one-liner in [the CLI reference](cli.md#migrating-manifests-to-nodewright).
 3. **Delete the old `Skyhook`/`DeploymentPolicy` CRs**, but only after confirming the corresponding
    `NodeWright` exists and is being reconciled (see [safe deletion](#safe-deletion-ordering)). Delete the
    legacy `DeploymentPolicy` objects too. The mirrored `NodeWright` objects are the real, reconciled
@@ -106,10 +105,11 @@ is separate: it only controls warnings about untracked objects and does not affe
    - `kind: Skyhook` -> `kind: NodeWright`
    - keep `metadata.name` identical.
 
-   Same for `DeploymentPolicy` (only `apiVersion` changes; `kind` stays `DeploymentPolicy`). Run
-   `kubectl nodewright migrate -f <old-manifest.yaml>` to generate the new manifests, or edit
-   `apiVersion`/`kind` by hand. The commit should **remove** the old `Skyhook` manifest and **add** the
-   `NodeWright` manifest so Argo prunes the old and adopts the new in one sync.
+   Same for `DeploymentPolicy` (only `apiVersion` changes; `kind` stays `DeploymentPolicy`). This is a
+   mechanical group/kind swap; see the sed one-liner in
+   [the CLI reference](cli.md#migrating-manifests-to-nodewright). The commit should **remove** the old
+   `Skyhook` manifest and **add** the `NodeWright` manifest so Argo prunes the old and adopts the new in
+   one sync.
 
 3. **Sync.** Argo adopts the existing `NodeWright` (in-sync, no re-create) and prunes the `Skyhook`. Once
    the `Skyhook` is gone, the mirror has nothing left to import for it.
@@ -136,10 +136,11 @@ are usually authored separately (not part of the operator chart); adjust to your
    `nodewright.nvidia.com` CRDs for you. Per-node state is migrated on upgrade (see above), so packages are
    not re-run.
 
-2. **Update your CR manifests to `NodeWright`** wherever you keep them, and apply. Run
-   `kubectl nodewright migrate` to generate the new manifests, or edit `apiVersion`/`kind` by hand:
+2. **Update your CR manifests to `NodeWright`** wherever you keep them, and apply. This is a mechanical
+   group/kind swap with no change to the spec body:
    ```bash
-   kubectl nodewright migrate -f my-skyhook.yaml > my-nodewright.yaml
+   sed -e 's|skyhook\.nvidia\.com/|nodewright.nvidia.com/|g' \
+       -e 's|kind: Skyhook|kind: NodeWright|' my-skyhook.yaml > my-nodewright.yaml
    kubectl apply -f my-nodewright.yaml
    ```
    Because the operator already created the `NodeWright` via the mirror, this apply is a no-op adoption of
@@ -166,11 +167,12 @@ legacy objects remain before removing the legacy CRD.
 1. Upgrade the operator (apply the new manifests / image, or `helm upgrade` the chart, which ships both
    groups' CRDs and RBAC). The mirror imports your `Skyhook`s and the per-node state is migrated on
    upgrade.
-2. Generate the new CRs with `kubectl nodewright migrate` (or write them by hand: change `apiVersion`/`kind`,
-   keep `metadata.name`) and apply them:
+2. Convert your CR manifests by hand (change `apiVersion`/`kind`, keep `metadata.name`) and apply them.
+   The mirror has already created the `NodeWright` objects, so this apply is a no-op adoption:
    ```bash
-   kubectl nodewright migrate > nodewrights.yaml   # reads legacy CRs from the cluster
-   kubectl apply -f nodewrights.yaml               # adopts the mirrored objects
+   sed -e 's|skyhook\.nvidia\.com/|nodewright.nvidia.com/|g' \
+       -e 's|kind: Skyhook|kind: NodeWright|' my-skyhook.yaml > my-nodewright.yaml
+   kubectl apply -f my-nodewright.yaml             # adopts the mirrored object
    ```
 3. Delete the old CRs only after confirming the `NodeWright` reconciles (see
    [safe deletion](#safe-deletion-ordering)); delete legacy `DeploymentPolicy` objects too:

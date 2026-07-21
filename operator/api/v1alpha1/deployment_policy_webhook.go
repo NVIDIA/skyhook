@@ -82,8 +82,8 @@ var _ admission.Validator[*DeploymentPolicy] = &DeploymentPolicyWebhook{}
 // deploymentPolicyDeprecationWarning is surfaced on every create/update of a legacy
 // DeploymentPolicy during the migration bridge. It does not name a specific removal release.
 const deploymentPolicyDeprecationWarning = "skyhook.nvidia.com/v1alpha1 DeploymentPolicy is deprecated; " +
-	"migrate to nodewright.nvidia.com/v1alpha1 DeploymentPolicy (kubectl nodewright migrate). The " +
-	"skyhook.nvidia.com group will be removed in a future release."
+	"migrate to nodewright.nvidia.com/v1alpha1 DeploymentPolicy (change apiVersion to " +
+	"nodewright.nvidia.com/v1alpha1). The skyhook.nvidia.com group will be removed in a future release."
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateCreate(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {

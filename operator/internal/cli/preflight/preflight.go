@@ -21,6 +21,7 @@
 package preflight
 
 import (
+	"errors"
 	"fmt"
 
 	"k8s.io/client-go/discovery"
@@ -61,6 +62,13 @@ func EnsureNodeWrightServed(disco discovery.DiscoveryInterface) error {
 	if nodewrightServed {
 		return nil
 	}
+	// If the nodewright group itself was the casualty of a partial discovery failure, it
+	// is absent from groups.Groups even though the operator may well be serving it. Do not
+	// mistake that for a legacy-only cluster and tell the user to "upgrade"; surface the
+	// real discovery error instead.
+	if groupDiscoveryFailedFor(err, nwv1.GroupVersion.Group) {
+		return fmt.Errorf("discovering served API groups: %w", err)
+	}
 	if skyhookServed {
 		return fmt.Errorf(
 			"this CLI targets the %s API group, but the cluster's operator only serves the legacy %s group; "+
@@ -68,4 +76,20 @@ func EnsureNodeWrightServed(disco discovery.DiscoveryInterface) error {
 			nwv1.GroupVersion.Group, skyhookv1.GroupVersion.Group)
 	}
 	return nil
+}
+
+// groupDiscoveryFailedFor reports whether err is a partial group-discovery failure that
+// includes the given API group, meaning that group's served state is unknown rather than
+// confirmed absent.
+func groupDiscoveryFailedFor(err error, group string) bool {
+	var failed *discovery.ErrGroupDiscoveryFailed
+	if !errors.As(err, &failed) {
+		return false
+	}
+	for gv := range failed.Groups {
+		if gv.Group == group {
+			return true
+		}
+	}
+	return false
 }

@@ -19,13 +19,19 @@
 package preflight
 
 import (
+	"errors"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	clienttesting "k8s.io/client-go/testing"
+
+	nwv1 "github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
+	skyhookv1 "github.com/NVIDIA/nodewright/operator/api/v1alpha1"
 )
 
 func TestPreflight(t *testing.T) {
@@ -65,4 +71,53 @@ var _ = Describe("EnsureNodeWrightServed", func() {
 		disco := discoveryWithGroups("v1")
 		Expect(EnsureNodeWrightServed(disco)).To(Succeed())
 	})
+
+	It("propagates a non-partial discovery error", func() {
+		disco := &stubGroupsDiscovery{err: errors.New("connection refused")}
+		err := EnsureNodeWrightServed(disco)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("connection refused"))
+	})
+
+	It("returns the discovery error when the nodewright group itself failed partial discovery", func() {
+		partial := &discovery.ErrGroupDiscoveryFailed{Groups: map[schema.GroupVersion]error{
+			nwv1.GroupVersion: errors.New("stale aggregated apiservice"),
+		}}
+		disco := &stubGroupsDiscovery{groups: groupList("v1", skyhookv1.GroupVersion.Group), err: partial}
+		err := EnsureNodeWrightServed(disco)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("stale aggregated apiservice"))
+		// Must not mistake the failed target group for a legacy-only cluster.
+		Expect(err.Error()).ToNot(ContainSubstring("upgrade"))
+	})
+
+	It("still reports legacy-only when a partial failure does not involve the nodewright group", func() {
+		partial := &discovery.ErrGroupDiscoveryFailed{Groups: map[schema.GroupVersion]error{
+			{Group: "metrics.k8s.io", Version: "v1beta1"}: errors.New("boom"),
+		}}
+		disco := &stubGroupsDiscovery{groups: groupList("v1", skyhookv1.GroupVersion.Group), err: partial}
+		err := EnsureNodeWrightServed(disco)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("upgrade"))
+	})
 })
+
+// stubGroupsDiscovery overrides only ServerGroups so tests can inject the partial and
+// non-partial discovery errors the fake discovery client cannot produce on its own.
+type stubGroupsDiscovery struct {
+	discovery.DiscoveryInterface
+	groups *metav1.APIGroupList
+	err    error
+}
+
+func (s *stubGroupsDiscovery) ServerGroups() (*metav1.APIGroupList, error) {
+	return s.groups, s.err
+}
+
+func groupList(names ...string) *metav1.APIGroupList {
+	gl := &metav1.APIGroupList{}
+	for _, n := range names {
+		gl.Groups = append(gl.Groups, metav1.APIGroup{Name: n})
+	}
+	return gl
+}

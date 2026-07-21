@@ -17,26 +17,14 @@ For the full commit-level log see CHANGELOG.md.
   NodeWright-capable version before using this CLI; an older Skyhook-only
   operator is unsupported.
 
-### Added
-
-- New `migrate` command converts legacy `skyhook.nvidia.com` objects (`Skyhook`,
-  `DeploymentPolicy`) into their `nodewright.nvidia.com` equivalents and prints
-  them as a multi-document YAML stream on stdout, suitable for `kubectl apply -f`
-  or GitOps. It reads from files or stdin with `-f/--filename` (offline, no
-  cluster required) or, with no `-f`, lists the legacy objects from the current
-  cluster. Server-managed fields (`status`, `resourceVersion`, `uid`,
-  `creationTimestamp`) are stripped so the output is a clean, apply-able
-  manifest.
-
 ### Changed
 
 - Commands that read or write `NodeWright` resources now run a preflight check on
   the served API groups. When the cluster serves only the legacy
   `skyhook.nvidia.com` group and not `nodewright.nvidia.com`, they fail fast with
   a clear, actionable error naming both groups and telling you to upgrade to a
-  NodeWright-capable operator, instead of a confusing `NotFound`. The `migrate`
-  command is exempt (it reads legacy objects by design), and `version` does not
-  run the preflight.
+  NodeWright-capable operator, instead of a confusing `NotFound`. `version` does
+  not run the preflight.
 
 - `reset` and `node reset` now select nodes with any resettable Skyhook
   metadata, including status, cordon, and drain-start metadata. Nodes with a

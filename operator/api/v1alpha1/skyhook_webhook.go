@@ -84,8 +84,8 @@ var _ admission.Validator[*Skyhook] = &SkyhookWebhook{}
 // operators are nudged toward the new group during the migration bridge. It deliberately
 // does not name a specific removal release; the bridge is kept for a multi-release window.
 const skyhookDeprecationWarning = "skyhook.nvidia.com/v1alpha1 Skyhook is deprecated; migrate to " +
-	"nodewright.nvidia.com/v1alpha1 NodeWright (kubectl nodewright migrate). The Skyhook kind will be " +
-	"removed in a future release."
+	"nodewright.nvidia.com/v1alpha1 NodeWright (change apiVersion to nodewright.nvidia.com/v1alpha1 and " +
+	"kind to NodeWright). The Skyhook kind will be removed in a future release."
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
