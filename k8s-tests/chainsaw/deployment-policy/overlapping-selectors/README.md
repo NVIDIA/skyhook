@@ -26,7 +26,7 @@ Validates deployment policy with overlapping compartment selectors, verifying th
 
 - `chainsaw-test.yaml` - Main test configuration
 - `deployment-policy.yaml` - Policy with overlapping selectors
-- `skyhook.yaml` - Skyhook using the policy
+- `nodewright.yaml` - Skyhook using the policy
 - `assert-compartments.yaml` - Compartment assignment assertions
 - `assert-batch-*.yaml` - Batch progression assertions
 - `assert-complete.yaml` - Final completion assertions

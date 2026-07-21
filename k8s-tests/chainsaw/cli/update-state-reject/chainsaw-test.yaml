@@ -54,9 +54,9 @@ spec:
   - name: setup-skyhook
     try:
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
-        file: assert-skyhook-complete.yaml
+        file: assert-nodewright-complete.yaml
 
   # Step 2: update-state must reject a package that is not in the Skyhook spec
   - name: reject-unknown-package

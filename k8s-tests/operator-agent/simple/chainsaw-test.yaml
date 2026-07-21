@@ -39,7 +39,7 @@ spec:
           ../check_node.sh kind-worker "rm -rf /var/log/skyhook/simple-agent-operator || true" ".*" 2
           ../check_node.sh kind-worker "rm -rf /var/lib/skyhook/simple-agent-operator || true" ".*" 2
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
         file: assert.yaml
     - script:
@@ -51,4 +51,4 @@ spec:
           ../check_node.sh kind-worker "ls /var/lib/skyhook/simple-agent-operator/history" "shellscript.json"
   - finally:
     - delete:
-        file: skyhook.yaml
+        file: nodewright.yaml

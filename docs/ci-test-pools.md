@@ -1,10 +1,10 @@
 # CI test pools
 
-The skyhook chainsaw e2e suite (`k8s-tests/chainsaw/skyhook/`) is split into labeled pools that run as parallel CI jobs to keep wall-clock per matrix row under ~18 min.
+The nodewright chainsaw e2e suite (`k8s-tests/chainsaw/nodewright/`) is split into labeled pools that run as parallel CI jobs to keep wall-clock per matrix row under ~18 min.
 
 ## Pools
 
-Every test under `k8s-tests/chainsaw/skyhook/*/chainsaw-test.yaml` has a top-level `metadata.labels.pool: <name>`:
+Every test under `k8s-tests/chainsaw/nodewright/*/chainsaw-test.yaml` has a top-level `metadata.labels.pool: <name>`:
 
 - `core` — fast smoke and feature tests; **also the fallback for any
   test missing a `pool:` label**.

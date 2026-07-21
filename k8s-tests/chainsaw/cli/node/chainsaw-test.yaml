@@ -37,7 +37,7 @@ spec:
   - name: setup-skyhook
     try:
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
 
   # Step 2: Test node list (table format)
   - name: test-node-list

@@ -59,9 +59,9 @@ spec:
     - apply:
         file: deployment-policy.yaml
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
-        file: assert-skyhook-complete.yaml
+        file: assert-nodewright-complete.yaml
     - script:
         content: |
           ## Remove helm chart (pre-delete hook should clean up Skyhooks/DeploymentPolicies)

@@ -54,9 +54,9 @@ spec:
   - name: setup-skyhook
     try:
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
-        file: assert-skyhook-complete.yaml
+        file: assert-nodewright-complete.yaml
 
   # Step 2: Disable the Skyhook so the operator won't immediately re-apply pkg-one
   # after we remove its state.
@@ -67,7 +67,7 @@ spec:
         content: |
           ../nodewright-cli disable cli-reset-package-test --confirm
     - assert:
-        file: assert-skyhook-disabled.yaml
+        file: assert-nodewright-disabled.yaml
 
   # Step 3: Selectively reset only pkg-one. --skip-batch-reset matches the
   # implementation contract for --package (batch state is not reset for a
