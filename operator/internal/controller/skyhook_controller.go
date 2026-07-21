@@ -443,6 +443,9 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		if skyhook.IsPaused() {
+			if err := r.suspendUnfinishedJobs(ctx, skyhook); err != nil {
+				return ctrl.Result{RequeueAfter: time.Second * 2}, fmt.Errorf("suspending jobs for paused skyhook %s: %w", skyhook.GetSkyhook().Name, err)
+			}
 			if yes, result, err := shouldReturn(r.UpdatePauseStatus(ctx, clusterState, skyhook)); yes {
 				return result, err
 			}
@@ -453,6 +456,12 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return result, err
 		} else if pendingSync {
 			configSyncPending = true
+		}
+
+		// Resume: validation above invalidated any Job whose spec changed while paused; now clear
+		// suspend on the survivors. Ordered after validation so no stale-spec attempt launches first.
+		if err := r.resumeSuspendedJobs(ctx, skyhook); err != nil {
+			return ctrl.Result{RequeueAfter: time.Second * 2}, fmt.Errorf("resuming suspended jobs for skyhook %s: %w", skyhook.GetSkyhook().Name, err)
 		}
 
 		changed := IntrospectSkyhook(skyhook, clusterState.skyhooks, logger)
@@ -967,6 +976,68 @@ func (r *SkyhookReconciler) UpdatePauseStatus(ctx context.Context, clusterState 
 	}
 
 	return false, nil
+}
+
+// suspendUnfinishedJobs gives the Emergency Stop teeth: while a Skyhook is paused every one of its
+// unfinished Jobs is set spec.suspend=true, so the Job controller SIGTERMs the running pod (honoring
+// terminationGracePeriodSeconds) and starts nothing until resume. Idempotent; already-suspended Jobs
+// and invalid ones (mid-reap) are skipped. The killed pod carries a DeletionTimestamp, so
+// erroring-evidence guard (c) keeps node state at in_progress. Legacy raw pods have no Job to suspend
+// and keep today's let-finish semantics until the migration window closes.
+func (r *SkyhookReconciler) suspendUnfinishedJobs(ctx context.Context, skyhook SkyhookNodes) error {
+	return r.setSuspendOnUnfinishedJobs(ctx, skyhook, true)
+}
+
+// resumeSuspendedJobs clears spec.suspend on a non-paused Skyhook's surviving unfinished Jobs. It
+// must run AFTER validation (ValidateRunningPackages), which invalidates any Job whose spec changed
+// while paused — clearing suspend first could launch one stale-spec attempt before validation caught
+// it. On resume the Job controller starts a fresh pod that re-runs the interrupted stage (the same
+// recovery shape as an eviction mid-stage), and because suspension cleared the Job's start time the
+// stage deadline restarts from full.
+func (r *SkyhookReconciler) resumeSuspendedJobs(ctx context.Context, skyhook SkyhookNodes) error {
+	return r.setSuspendOnUnfinishedJobs(ctx, skyhook, false)
+}
+
+// setSuspendOnUnfinishedJobs sets spec.suspend to the given value on every unfinished, valid Job of
+// the Skyhook, skipping Jobs already in the desired state. suspend is a mutable Job field, so an
+// Update touching only it is accepted where a full spec Update would be rejected as immutable.
+func (r *SkyhookReconciler) setSuspendOnUnfinishedJobs(ctx context.Context, skyhook SkyhookNodes, suspend bool) error {
+	jobs, err := r.dal.GetJobs(ctx,
+		client.InNamespace(r.opts.Namespace),
+		client.MatchingLabels{
+			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.GetSkyhook().Name,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("listing jobs to set suspend=%t for skyhook %s: %w", suspend, skyhook.GetSkyhook().Name, err)
+	}
+	if jobs == nil {
+		return nil
+	}
+
+	for i := range jobs.Items {
+		job := &jobs.Items[i]
+		if jobFinished(job) {
+			continue
+		}
+		// An invalid Job is already being foreground-deleted; neither suspend nor resume it.
+		invalid, err := IsInvalidPackage(job)
+		if err != nil {
+			return fmt.Errorf("checking invalid marker on job %s: %w", job.Name, err)
+		}
+		if invalid {
+			continue
+		}
+		current := job.Spec.Suspend != nil && *job.Spec.Suspend
+		if current == suspend {
+			continue
+		}
+		job.Spec.Suspend = ptr(suspend)
+		if err := r.Update(ctx, job); err != nil {
+			return fmt.Errorf("setting suspend=%t on job %s: %w", suspend, job.Name, err)
+		}
+	}
+	return nil
 }
 
 func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clusterState) (bool, error) {
