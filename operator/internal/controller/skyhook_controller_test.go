@@ -27,6 +27,7 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/nodewright/operator/internal/controller/mock"
+	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	dalMock "github.com/NVIDIA/nodewright/operator/internal/dal/mock"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	wrapperMock "github.com/NVIDIA/nodewright/operator/internal/wrapper/mock"
@@ -4093,6 +4094,7 @@ var _ = Describe("TrackReboots reapply-on-reboot on a busy node", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts:     SkyhookOperatorOptions{ReapplyOnReboot: true},
 		}
@@ -4246,6 +4248,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				ReapplyOnReboot:      true,
@@ -4312,6 +4315,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				ReapplyOnReboot:      true,

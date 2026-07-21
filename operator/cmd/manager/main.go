@@ -36,11 +36,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	kzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -115,6 +118,18 @@ func main() {
 		HealthProbeBindAddress: options.ProbePort,
 		LeaderElection:         options.LeaderElection,
 		LeaderElectionID:       reconcileLeaseID,
+		// Package-stage Jobs only ever live in the operator namespace, so scope that informer to it
+		// rather than caching every Job in the cluster (CronJobs, user Jobs, etc.). Other kinds stay
+		// cluster-wide (the operator reads workload pods on any node for drain).
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&batchv1.Job{}: {
+					Namespaces: map[string]cache.Config{
+						options.Namespace: {},
+					},
+				},
+			},
+		},
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:       9443,
 			CertDir:    certDir,
