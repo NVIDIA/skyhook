@@ -54,9 +54,9 @@ spec:
   - name: setup-skyhook
     try:
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
-        file: assert-skyhook-complete.yaml
+        file: assert-nodewright-complete.yaml
 
   # Step 2: Disable the Skyhook so the operator won't reconcile away our manual
   # edit before we can assert it.
@@ -67,7 +67,7 @@ spec:
         content: |
           ../nodewright-cli disable cli-update-state-test --confirm
     - assert:
-        file: assert-skyhook-disabled.yaml
+        file: assert-nodewright-disabled.yaml
 
   # Step 3: Run update-state to flip the package to stage=apply, state=erroring
   - name: test-update-state

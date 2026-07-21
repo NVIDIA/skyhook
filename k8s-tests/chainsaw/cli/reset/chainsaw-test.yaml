@@ -37,9 +37,9 @@ spec:
   - name: setup-skyhook
     try:
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
-        file: assert-skyhook-complete.yaml
+        file: assert-nodewright-complete.yaml
 
   # Step 2: Disable the skyhook so it doesn't restart processing after reset
   - name: disable-skyhook
@@ -49,7 +49,7 @@ spec:
         content: |
           ../nodewright-cli disable cli-reset-test --confirm
     - assert:
-        file: assert-skyhook-disabled.yaml
+        file: assert-nodewright-disabled.yaml
 
   # Step 3: Test reset command
   - name: test-reset

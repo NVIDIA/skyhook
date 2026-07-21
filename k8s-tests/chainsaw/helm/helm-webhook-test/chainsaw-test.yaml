@@ -50,7 +50,7 @@ spec:
     - script:
         content: |
           ## Create invalid skyhook
-          kubectl apply -f invalid-skyhook.yaml 2>err.txt
+          kubectl apply -f invalid-nodewright.yaml 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -82,7 +82,7 @@ spec:
     - script:
         content: |
           echo "Testing: Create Skyhook with non-existent DeploymentPolicy..."
-          kubectl apply -f skyhook-missing-policy.yaml 2>err.txt
+          kubectl apply -f nodewright-missing-policy.yaml 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -102,7 +102,7 @@ spec:
     
     # Test: Create Skyhook with existing DeploymentPolicy (should succeed)
     - apply:
-        file: skyhook-valid-policy.yaml
+        file: nodewright-valid-policy.yaml
     
     # Test: Update Skyhook to reference non-existent policy (should fail)
     - script:
@@ -153,7 +153,7 @@ spec:
     - script:
         content: |
           echo "Testing: Reject uninstall.apply=true with enabled=false..."
-          kubectl apply -f skyhook-apply-without-enabled.yaml 2>err.txt
+          kubectl apply -f nodewright-apply-without-enabled.yaml 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -169,7 +169,7 @@ spec:
 
     # Test: Create valid uninstall-enabled Skyhook, then reject removal before uninstall
     - apply:
-        file: skyhook-uninstall-valid.yaml
+        file: nodewright-uninstall-valid.yaml
     - assert:
         resource:
           apiVersion: nodewright.nvidia.com/v1alpha1

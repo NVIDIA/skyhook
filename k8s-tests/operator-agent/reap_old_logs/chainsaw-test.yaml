@@ -39,7 +39,7 @@ spec:
           ../check_node.sh kind-worker "rm -rf /var/log/skyhook/reap-old-logs-agent-operator || true" ".*" 2
           ../check_node.sh kind-worker "rm -rf /var/lib/skyhook/reap-old-logs-agent-operator || true" ".*" 2
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
         file: assert.yaml
     - script:
@@ -47,4 +47,4 @@ spec:
           ../check_node.sh kind-worker "ls /var/log/skyhook/reap-old-logs-agent-operator/shellscript/1.1.1/*.log | wc -l" "5" 2
   - finally:
     - delete:
-        file: skyhook.yaml
+        file: nodewright.yaml

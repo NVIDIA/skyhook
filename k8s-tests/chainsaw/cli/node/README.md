@@ -35,7 +35,7 @@ Validates all CLI node commands for managing node state within a Skyhook.
 ## Files
 
 - `chainsaw-test.yaml` - Main test configuration
-- `skyhook.yaml` - Test skyhook
+- `nodewright.yaml` - Test skyhook
 - `assert-node-ignored.yaml` - Ignored state assertion
 - `assert-node-unignored.yaml` - Unignored state assertion
 - `assert-node-reset.yaml` - Reset state assertion

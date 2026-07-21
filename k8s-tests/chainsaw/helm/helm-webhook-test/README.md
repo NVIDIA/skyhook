@@ -30,9 +30,9 @@ Validates that the admission webhooks correctly validate Skyhook and DeploymentP
 
 - `chainsaw-test.yaml` - Main test configuration
 - `values.yaml` - Helm values for webhook configuration
-- `invalid-skyhook.yaml` - Skyhook with invalid dependencies
+- `invalid-nodewright.yaml` - Skyhook with invalid dependencies
 - `invalid-deploymentpolicy.yaml` - Invalid DeploymentPolicy
 - `valid-deploymentpolicy.yaml` - Valid DeploymentPolicy
-- `skyhook-valid-policy.yaml` - Skyhook with valid policy reference
-- `skyhook-missing-policy.yaml` - Skyhook with missing policy reference
+- `nodewright-valid-policy.yaml` - Skyhook with valid policy reference
+- `nodewright-missing-policy.yaml` - Skyhook with missing policy reference
 - `assert-*.yaml` - State assertions

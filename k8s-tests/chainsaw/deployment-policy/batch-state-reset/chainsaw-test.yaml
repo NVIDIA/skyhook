@@ -69,7 +69,7 @@ spec:
     description: Test auto-reset on completion (config enabled)
     try:
     - apply:
-        file: skyhook-auto-reset.yaml
+        file: nodewright-auto-reset.yaml
     - sleep:
         duration: 5s
     - assert:
@@ -92,7 +92,7 @@ spec:
     description: Test Skyhook override disables auto-reset (precedence)
     try:
     - apply:
-        file: skyhook-override-disabled.yaml
+        file: nodewright-override-disabled.yaml
     - sleep:
         duration: 5s
     - assert:

@@ -27,7 +27,7 @@ Validates deployment policy with linear ramp-up strategy, verifying incremental 
 
 - `chainsaw-test.yaml` - Main test configuration
 - `deployment-policy.yaml` - Policy with linear strategy
-- `skyhook.yaml` - Skyhook using the policy
+- `nodewright.yaml` - Skyhook using the policy
 - `assert-batch-*.yaml` - Batch progression assertions
 - `assert-compartment.yaml` - Compartment state assertions
 - `assert-complete.yaml` - Final completion assertions

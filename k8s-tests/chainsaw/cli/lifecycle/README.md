@@ -40,7 +40,7 @@ Validates all CLI lifecycle commands for controlling Skyhook processing state.
 ## Files
 
 - `chainsaw-test.yaml` - Main test configuration
-- `skyhook.yaml` - Test skyhook
+- `nodewright.yaml` - Test skyhook
 - `assert-paused.yaml` - Paused state assertion
 - `assert-resumed.yaml` - Resumed state assertion
 - `assert-disabled.yaml` - Disabled state assertion

@@ -8,7 +8,7 @@ There are four classifications of E2E tests in this project:
 
 | Suite | Directory | Description |
 |-------|-----------|-------------|
-| **Skyhook** | [chainsaw/skyhook/](./chainsaw/skyhook/) | Core operator functionality tests |
+| **NodeWright** | [chainsaw/nodewright/](./chainsaw/nodewright/) | Core operator functionality tests |
 | **Helm** | [chainsaw/helm/](./chainsaw/helm/) | Helm chart deployment and configuration tests |
 | **Deployment Policy** | [chainsaw/deployment-policy/](./chainsaw/deployment-policy/) | Deployment policy and rollout strategy tests |
 | **CLI** | [chainsaw/cli/](./chainsaw/cli/) | kubectl-skyhook CLI command tests |
@@ -61,7 +61,7 @@ Brief description of what this test validates.
 
 ## Files
 - `chainsaw-test.yaml` - Main test configuration
-- `skyhook.yaml` - Skyhook resource definition
+- `nodewright.yaml` - NodeWright resource definition
 - `assert.yaml` - State assertions
 
 ## Notes
@@ -82,7 +82,7 @@ Due to some limitations it can be hard to test circumstances where a node will b
 1. Run `make create-kind-cluster` and wait for local cluster to be brought up
 2. Run `make install` to install the skyhook CRD into the cluster
 3. Use VSCode's debugger to run the operator with your local cluster
-4. Use `kubectl apply -f k8s-tests/chainsaw/skyhook/simple-skyhook/skyhook.yaml` to define a skyhook
+4. Use `kubectl apply -f k8s-tests/chainsaw/nodewright/simple-nodewright/nodewright.yaml` to define a skyhook
 5. Use `kubectl` or `k9s` to overview the state of the skyhook and its resources. Look for the configmap named `{skyhook.Name}-{node.Name}-metadata`
 6. Remove the node with `kubectl delete node {node.Name}`
 7. Verify the configmap `{skyhook.Name}-{node.Name}-metadata` no longer exists

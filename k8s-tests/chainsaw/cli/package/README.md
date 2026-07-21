@@ -27,6 +27,6 @@ Validates all CLI package commands for inspecting and managing package state.
 ## Files
 
 - `chainsaw-test.yaml` - Main test configuration
-- `skyhook.yaml` - Test skyhook
+- `nodewright.yaml` - Test skyhook
 - `assert-complete.yaml` - Initial completion assertion
 - `assert-package-rerun.yaml` - Rerun state assertion

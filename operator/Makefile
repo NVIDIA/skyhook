@@ -238,11 +238,11 @@ e2e-tests: chainsaw install run build-cli ensure-test-symlinks ## Run end to end
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
 ifeq ($(POOL),core)
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook --selector '$(POOL_NOTIN_SELECTOR)' $(CHAINSAW_ARGS)
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector '$(POOL_NOTIN_SELECTOR)' $(CHAINSAW_ARGS)
 else ifneq ($(POOL),)
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook --selector 'pool=$(POOL)' $(CHAINSAW_ARGS)
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector 'pool=$(POOL)' $(CHAINSAW_ARGS)
 else
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook $(CHAINSAW_ARGS)
+	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright $(CHAINSAW_ARGS)
 endif
 	$(MAKE) kill
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
@@ -449,7 +449,7 @@ ensure-test-symlinks:  ## Ensure symlinks exist in test directories (idempotent)
 	@# Create symlinks in test directories for easy access
 	@# This target is idempotent and can be called even if binaries are cached
 	@# Note: symlinks will be created even if bin/nodewright doesn't exist yet (it will be created by build targets)
-	@for dir in cli deployment-policy skyhook helm; do \
+	@for dir in cli deployment-policy nodewright helm; do \
 		ln -sf ../../../operator/bin/nodewright ../k8s-tests/chainsaw/$$dir/nodewright-cli 2>/dev/null || true; \
 	done
 

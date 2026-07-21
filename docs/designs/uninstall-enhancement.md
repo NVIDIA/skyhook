@@ -162,7 +162,7 @@ sequenceDiagram
 ## Migration and testing
 
 - **Breaking change**: Clusters that rely on “remove package from spec → uninstall” must move to **`uninstall.apply: true`** (with **`uninstall.enabled: true`**) before removing keys, subject to admission rules.
-- **Chainsaw**: [`k8s-tests/chainsaw/skyhook/`](../../k8s-tests/chainsaw/skyhook/) currently documents removal-driven uninstall scenarios; update them for `uninstall.apply`, explicit `uninstall.enabled`, and admission.
+- **Chainsaw**: [`k8s-tests/chainsaw/nodewright/`](../../k8s-tests/chainsaw/nodewright/) currently documents removal-driven uninstall scenarios; update them for `uninstall.apply`, explicit `uninstall.enabled`, and admission.
 - **Docs**: User-facing README / operator docs should describe uninstall and the requirement to set **`uninstall.enabled: true`** for packages that support uninstall.
 
 ---

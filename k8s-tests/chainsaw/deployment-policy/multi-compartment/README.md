@@ -27,7 +27,7 @@ Validates deployment policy with multiple compartments using exponential strateg
 
 - `chainsaw-test.yaml` - Main test configuration
 - `deployment-policy.yaml` - Policy with multiple compartments
-- `skyhook.yaml` - Skyhook using the policy
+- `nodewright.yaml` - Skyhook using the policy
 - `assert-compartments.yaml` - Compartment assignment assertions
 - `assert-batch-*.yaml` - Batch progression assertions
 - `assert-complete.yaml` - Final completion assertions

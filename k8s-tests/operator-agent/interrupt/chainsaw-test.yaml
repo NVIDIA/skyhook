@@ -39,7 +39,7 @@ spec:
           ../check_node.sh kind-worker "rm -rf /var/log/skyhook/interrupt-agent-operator || true" ".*" 2
           ../check_node.sh kind-worker "rm -rf /var/lib/skyhook/interrupt-agent-operator || true" ".*" 2
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - script:
         content: |
           set -e
@@ -48,4 +48,4 @@ spec:
         file: assert.yaml
   - finally:
     - delete:
-        file: skyhook.yaml
+        file: nodewright.yaml

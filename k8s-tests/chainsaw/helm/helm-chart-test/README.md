@@ -28,6 +28,6 @@ Validates that the Helm chart deploys correctly with custom configurations, incl
 
 - `chainsaw-test.yaml` - Main test configuration
 - `values.yaml` - Helm values with custom configuration
-- `skyhook.yaml` - Test skyhook
+- `nodewright.yaml` - Test skyhook
 - `deployment-policy.yaml` - Test deployment policy
 - `assert-*.yaml` - State assertions

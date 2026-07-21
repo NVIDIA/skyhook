@@ -22,7 +22,7 @@ Validates the skyhook reset command for resetting all nodes in a Skyhook.
 ## Files
 
 - `chainsaw-test.yaml` - Main test configuration
-- `skyhook.yaml` - Test skyhook
-- `assert-skyhook-complete.yaml` - Initial completion assertion
-- `assert-skyhook-disabled.yaml` - Disabled state assertion
+- `nodewright.yaml` - Test skyhook
+- `assert-nodewright-complete.yaml` - Initial completion assertion
+- `assert-nodewright-disabled.yaml` - Disabled state assertion
 - `assert-nodes-reset.yaml` - Reset state assertion

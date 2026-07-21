@@ -57,7 +57,7 @@ spec:
     - apply:
         file: deployment-policy.yaml
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - sleep:
         duration: 10s
   

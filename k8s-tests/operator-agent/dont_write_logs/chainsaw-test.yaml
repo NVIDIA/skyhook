@@ -39,7 +39,7 @@ spec:
           ../check_node.sh kind-worker "rm -rf /var/log/skyhook/dont-write-logs-agent-operator || true" ".*" 2
           ../check_node.sh kind-worker "rm -rf /var/lib/skyhook/dont-write-logs-agent-operator || true" ".*" 2
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
         file: assert.yaml
     - script:
@@ -49,4 +49,4 @@ spec:
           ../check_node.sh kind-worker "ls /var/log/skyhook/" "dont-write-logs-agent-operator" 2 true
   - finally:
     - delete:
-        file: skyhook.yaml
+        file: nodewright.yaml
