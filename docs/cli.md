@@ -519,6 +519,16 @@ kubectl nodewright pause my-skyhook --confirm
 kubectl nodewright disable my-skyhook --confirm
 ```
 
+> **How hard pause stops depends on the operator version.** On operators that run
+> package stages as Jobs, pause suspends the stage that is *currently executing* —
+> its pod is signaled to stop and nothing new starts until you `resume`, at which
+> point the stage re-runs from the start of its current phase (the agent skips
+> already-completed steps). On earlier operators — and, briefly, for a stage still
+> running as a pre-upgrade pod during an operator upgrade — a stage already in
+> flight finishes its current run before pause takes hold; pause still blocks all
+> *new* stage scheduling. If you need a running stage to stop immediately, confirm
+> the operator executes packages as Jobs.
+
 ## Output Formats
 
 All status commands support multiple output formats:
