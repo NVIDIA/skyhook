@@ -41,9 +41,11 @@ jobs:
     name: Assign author to their PR
     runs-on: ubuntu-latest
     permissions:
-      # Assigning goes through the Issues API (issues.addAssignees), so issues
-      # write is all this job needs.
+      # Assigning a PR needs pull-requests: write — the assignee endpoint
+      # returns 403 "Resource not accessible by integration" with issues:write
+      # alone. issues: write covers the pre-assignment issues.get read.
       issues: write
+      pull-requests: write
     timeout-minutes: 5
     steps:
       - name: Assign the author
