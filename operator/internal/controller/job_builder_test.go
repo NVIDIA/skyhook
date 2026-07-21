@@ -110,11 +110,14 @@ var _ = Describe("job builders", func() {
 			Expect(rule.OnPodConditions[0].Type).To(Equal(corev1.DisruptionTarget))
 		})
 
-		It("replaces the pause container with an exit-0 container on the agent image", func() {
+		It("replaces the pause container with an exit-0 container on the package image", func() {
+			// The package image (not the agent image): the init-copy container already runs
+			// /bin/sh from it, so the package image is guaranteed to have a shell; a minimal
+			// agent image may not, which would StartError the exit-0 container and hang the Job.
 			containers := job.Spec.Template.Spec.Containers
 			Expect(containers).To(HaveLen(1))
 			Expect(containers[0].Name).To(Equal("done"))
-			Expect(containers[0].Image).To(Equal("ghcr.io/nvidia/skyhook/agent:1.2.3"))
+			Expect(containers[0].Image).To(Equal("ghcr.io/nvidia/skyhook-packages/tuning:1.0.0"))
 			Expect(containers[0].Command).To(Equal([]string{"/bin/sh", "-c", "exit 0"}))
 		})
 

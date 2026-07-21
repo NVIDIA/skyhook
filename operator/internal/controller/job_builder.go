@@ -99,12 +99,14 @@ func createInterruptJobFromPackage(opts SkyhookOperatorOptions, _interrupt *v1al
 // the source of the pod spec (shared until they are removed with the legacy path), so this
 // only expresses the Job-specific differences.
 func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.Skyhook, _package *v1alpha1.Package, stage v1alpha1.Stage, nodeName string, interrupt bool) *batchv1.Job {
-	// The main container exits 0 so the pod can reach Succeeded; the agent image is
-	// already pulled for the init containers, so this adds no new image.
+	// The main container exits 0 so the pod can reach Succeeded. It reuses the package image
+	// (already pulled by the init-copy container, so no new image) rather than the agent image:
+	// the init-copy step already runs shellBinary from the package image, so the package image is
+	// guaranteed to have a shell, whereas a minimal agent image may not.
 	for i := range pod.Spec.Containers {
 		if pod.Spec.Containers[i].Name == pauseContainerName {
 			pod.Spec.Containers[i].Name = doneContainerName
-			pod.Spec.Containers[i].Image = getAgentImage(opts, _package)
+			pod.Spec.Containers[i].Image = getPackageImage(_package)
 			pod.Spec.Containers[i].Command = []string{shellBinary, "-c", "exit 0"}
 		}
 	}
