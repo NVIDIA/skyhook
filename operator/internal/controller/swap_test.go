@@ -20,6 +20,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
@@ -389,6 +390,68 @@ var _ = Describe("Jobs execution swap", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(invalid).To(BeTrue())                     // validation marked it invalid...
 			Expect(got.Spec.Suspend).To(HaveValue(BeTrue())) // ...and left suspend untouched
+		})
+	})
+
+	Describe("executor metric classification", func() {
+		It("maps a Job to its executor_state", func() {
+			running := stageJob(v1alpha1.StageApply)
+			Expect(executorState(running)).To(Equal(executorStateRunning))
+
+			suspended := stageJob(v1alpha1.StageApply)
+			suspended.Spec.Suspend = ptr(true)
+			Expect(executorState(suspended)).To(Equal(executorStateSuspended))
+
+			parked := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: batchv1.JobReasonDeadlineExceeded})
+			Expect(executorState(parked)).To(Equal(executorStateParked))
+
+			// finished-but-not-parked Jobs are not active executors
+			complete := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})
+			Expect(executorState(complete)).To(BeEmpty())
+			failed := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "BackoffLimitExceeded"})
+			Expect(executorState(failed)).To(BeEmpty())
+		})
+	})
+
+	Describe("executor metric counting", func() {
+		fooPkg := func(version string) *v1alpha1.Package {
+			return &v1alpha1.Package{PackageRef: v1alpha1.PackageRef{Name: "foo", Version: version}, Image: "ghcr.io/nvidia/skyhook-packages/foo"}
+		}
+		// executorJob builds a Job carrying foo/<version>'s package annotation + name label.
+		executorJob := func(version string, mutate func(*batchv1.Job)) batchv1.Job {
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "foo-" + strings.ReplaceAll(version, ".", "-") + "-apply", Namespace: namespace,
+					Labels: map[string]string{nameLabel: skyhookName},
+				},
+				Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{NodeName: nodeName}}},
+			}
+			Expect(SetPackages(job, &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName}}, image, v1alpha1.StageApply, fooPkg(version))).To(Succeed())
+			if mutate != nil {
+				mutate(job)
+			}
+			return *job
+		}
+
+		It("tallies executors per package version (keyed off the Job's annotation), skipping finished Jobs", func() {
+			suspend := func(j *batchv1.Job) { j.Spec.Suspend = ptr(true) }
+			complete := func(j *batchv1.Job) {
+				j.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}}
+			}
+
+			// Two versions coexist during an in-place upgrade — they must count under distinct
+			// versions, and a Complete Job is not an active executor.
+			counts := executorCounts([]batchv1.Job{
+				executorJob("1.0.0", nil),
+				executorJob("1.0.0", suspend),
+				executorJob("2.0.0", nil),
+				executorJob("2.0.0", complete),
+			})
+
+			Expect(counts["foo"]["1.0.0"][executorStateRunning]).To(Equal(1.0))
+			Expect(counts["foo"]["1.0.0"][executorStateSuspended]).To(Equal(1.0))
+			Expect(counts["foo"]["2.0.0"][executorStateRunning]).To(Equal(1.0))
+			Expect(counts["foo"]["2.0.0"]).To(HaveLen(1)) // the Complete Job contributed nothing
 		})
 	})
 })

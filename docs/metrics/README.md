@@ -32,6 +32,11 @@ The current metrics supplied by the Operator are intended to be sufficient to de
     * `skyhook_name` : The name of the CR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
+ * `skyhook_package_executor_count`: Number of a package's `batch/v1` Job executors by executor state. This surfaces Job-level states that node `state` cannot distinguish — a suspended executor still reports `state=in_progress`, and a parked one `state=erroring`. Tags:
+    * `skyhook_name` : The name of the SCR the package belongs to
+    * `package_name` : The name of the package
+    * `package_version`: The version of the package
+    * `executor_state` : One of `running` (an unfinished, unsuspended Job), `suspended` (a Job paused by the Emergency Stop), `parked` (a Job that exceeded its stage deadline and is held as the erroring marker)
 
 ## Rollout Metrics (Deployment Policy)
 

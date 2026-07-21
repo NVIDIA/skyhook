@@ -36,7 +36,18 @@ const (
 	labelPolicyName      = "policy_name"
 	labelCompartmentName = "compartment_name"
 	labelStrategy        = "strategy"
+
+	// Executor states for skyhook_package_executor_count — the Job-level states a package's
+	// executor can be in, which node State never distinguishes (a suspended Job still reads
+	// in_progress, a parked Job reads erroring). "running" is an unfinished, unsuspended Job;
+	// "suspended" is a paused Job; "parked" is a DeadlineExceeded failure held in place.
+	executorStateRunning   = "running"
+	executorStateSuspended = "suspended"
+	executorStateParked    = "parked"
 )
+
+// executorStates enumerates the executor_state label values, used to zero stale series.
+var executorStates = []string{executorStateRunning, executorStateSuspended, executorStateParked}
 
 var (
 	// skyhook metrics
@@ -88,6 +99,14 @@ var (
 			Help: "Number of restarts for this package on this node",
 		},
 		[]string{labelSkyhookName, labelPackageName, labelPackageVersion},
+	)
+
+	skyhook_package_executor_count = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "skyhook_package_executor_count",
+			Help: "Number of a package's batch/v1 Job executors by executor_state (running, suspended, parked)",
+		},
+		[]string{labelSkyhookName, labelPackageName, labelPackageVersion, "executor_state"},
 	)
 
 	// rollout metrics (per-compartment)
@@ -190,6 +209,10 @@ func zeroOutSkyhookPackageMetrics(skyhookName, packageName, packageVersion strin
 	for _, stage := range v1alpha1.Stages {
 		skyhook_package_stage_count.DeleteLabelValues(skyhookName, packageName, packageVersion, string(stage))
 	}
+
+	for _, es := range executorStates {
+		skyhook_package_executor_count.DeleteLabelValues(skyhookName, packageName, packageVersion, es)
+	}
 }
 
 func ResetSkyhookMetricsToZero(skyhook SkyhookNodes) {
@@ -238,6 +261,18 @@ func SetPackageStageMetrics(skyhookName, packageName, packageVersion string, sta
 
 func SetPackageRestartsMetrics(skyhookName, packageName, packageVersion string, restarts int32) {
 	skyhook_package_restarts_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(float64(restarts))
+}
+
+func SetPackageExecutorMetrics(skyhookName, packageName, packageVersion, executorState string, count float64) {
+	skyhook_package_executor_count.WithLabelValues(skyhookName, packageName, packageVersion, executorState).Set(count)
+}
+
+// ClearPackageExecutorMetrics drops every executor series for a skyhook (all packages, versions,
+// states). recordExecutorMetrics calls it before re-emitting so a (package, version) that no longer
+// runs any Job — an in-place upgrade's old version, or a package removed from spec — is cleared
+// rather than frozen at its last value (the spec-keyed zero loop cannot reach an out-of-spec version).
+func ClearPackageExecutorMetrics(skyhookName string) {
+	skyhook_package_executor_count.DeletePartialMatch(prometheus.Labels{labelSkyhookName: skyhookName})
 }
 
 func SetNodeTargetCountMetrics(skyhookName string, count float64) {
@@ -345,6 +380,7 @@ func init() {
 		skyhook_package_state_count,
 		skyhook_package_stage_count,
 		skyhook_package_restarts_count,
+		skyhook_package_executor_count,
 		skyhook_rollout_matched_nodes,
 		skyhook_rollout_ceiling,
 		skyhook_rollout_in_progress,

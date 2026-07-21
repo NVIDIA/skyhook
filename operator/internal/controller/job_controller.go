@@ -754,6 +754,30 @@ func jobFinished(job *batchv1.Job) bool {
 	return failed
 }
 
+// executorState classifies a Job into its executor_state metric label, or "" if it is not an active
+// executor (a finished non-parked Job — Complete, or a Failed-non-deadline backstop). Parked is
+// checked before jobFinished because a parked Job is terminally Failed but is deliberately held in
+// place as the erroring marker, so it counts as an active executor.
+func executorState(job *batchv1.Job) string {
+	switch {
+	case isParkedJob(job):
+		return executorStateParked
+	case jobFinished(job):
+		return ""
+	case job.Spec.Suspend != nil && *job.Spec.Suspend:
+		return executorStateSuspended
+	default:
+		return executorStateRunning
+	}
+}
+
+// isJobOwnedPod reports whether a pod is a Job's child (carries the batch job-name label),
+// distinguishing it from a legacy pre-upgrade raw package pod during the migration window.
+func isJobOwnedPod(pod *corev1.Pod) bool {
+	_, ok := pod.Labels[batchJobNameLabel]
+	return ok
+}
+
 // failureTargetStale reports whether the Job has sat at FailureTarget past the grace window
 // without going terminal; the unreachable-node case.
 func failureTargetStale(job *batchv1.Job) bool {

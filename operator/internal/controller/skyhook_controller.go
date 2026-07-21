@@ -953,6 +953,13 @@ func (r *SkyhookReconciler) ReportState(ctx context.Context, clusterState *clust
 	// save updated state to skyhook status
 	skyhook.ReportState()
 
+	// The Job-level executor metrics (running/suspended/parked) can't be derived from node state,
+	// so publish them here from the Skyhook's Jobs. Best-effort: a listing hiccup must not preempt
+	// the reconcile, so log and continue.
+	if err := r.recordExecutorMetrics(ctx, skyhook); err != nil {
+		log.FromContext(ctx).Error(err, "recording executor metrics", "skyhook", skyhook.GetSkyhook().Name)
+	}
+
 	if skyhook.GetSkyhook().Updated {
 		_, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook)
 		if len(errs) > 0 {
@@ -962,6 +969,73 @@ func (r *SkyhookReconciler) ReportState(ctx context.Context, clusterState *clust
 	}
 
 	return false, nil
+}
+
+// recordExecutorMetrics publishes skyhook_package_executor_count from the Skyhook's Jobs. The
+// executor states (running/suspended/parked) are Job-level and invisible to node State — a suspended
+// Job still reads in_progress, a parked one erroring — so this lists Jobs directly rather than
+// deriving from node state like the other package metrics. Every package's series are zeroed first
+// so a state that emptied since the last pass reads 0 rather than a stale value.
+func (r *SkyhookReconciler) recordExecutorMetrics(ctx context.Context, skyhook SkyhookNodes) error {
+	skyhookName := skyhook.GetSkyhook().Name
+
+	// List first: on a transient list error, leave the previous values in place rather than zeroing
+	// them, which would flash a false "0 executors" for a Skyhook that has running work.
+	jobs, err := r.dal.GetJobs(ctx,
+		client.InNamespace(r.opts.Namespace),
+		client.MatchingLabels{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhookName},
+	)
+	if err != nil {
+		return fmt.Errorf("listing jobs for executor metrics on skyhook %s: %w", skyhookName, err)
+	}
+
+	// Drop every one of this skyhook's executor series so a (package, version) that no longer runs
+	// any Job disappears instead of freezing. Counts key off the Job's annotation version, which
+	// diverges from spec during an in-place upgrade, so a spec-keyed zero loop alone would leak the
+	// old version's series. Re-establish 0 for current spec packages so an idle package reads 0.
+	ClearPackageExecutorMetrics(skyhookName)
+	for _, pkg := range skyhook.GetSkyhook().Spec.Packages {
+		for _, es := range executorStates {
+			SetPackageExecutorMetrics(skyhookName, pkg.Name, pkg.Version, es, 0)
+		}
+	}
+
+	if jobs == nil {
+		return nil
+	}
+	for pkgName, versions := range executorCounts(jobs.Items) {
+		for version, states := range versions {
+			for state, count := range states {
+				SetPackageExecutorMetrics(skyhookName, pkgName, version, state, count)
+			}
+		}
+	}
+	return nil
+}
+
+// executorCounts tallies Jobs into counts[packageName][version][executorState], keyed off each
+// Job's own package annotation. Finished non-parked Jobs (not active executors) and Jobs without a
+// readable package annotation (legacy raw pods have no Job) are skipped.
+func executorCounts(jobs []batchv1.Job) map[string]map[string]map[string]float64 {
+	counts := map[string]map[string]map[string]float64{}
+	for i := range jobs {
+		state := executorState(&jobs[i])
+		if state == "" {
+			continue
+		}
+		pkg, err := GetPackage(&jobs[i])
+		if err != nil || pkg == nil {
+			continue
+		}
+		if counts[pkg.Name] == nil {
+			counts[pkg.Name] = map[string]map[string]float64{}
+		}
+		if counts[pkg.Name][pkg.Version] == nil {
+			counts[pkg.Name][pkg.Version] = map[string]float64{}
+		}
+		counts[pkg.Name][pkg.Version][state]++
+	}
+	return counts
 }
 
 func (r *SkyhookReconciler) UpdatePauseStatus(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes) (bool, error) {
