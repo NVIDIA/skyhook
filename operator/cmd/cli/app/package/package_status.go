@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -124,7 +124,7 @@ func runStatus(ctx context.Context, kubeClient *client.Client, opts *statusOptio
 	// Get the NodeWright CR to validate it exists and get package info
 	skyhookUnstructured, err := kubeClient.Dynamic().Resource(skyhookGVR).Get(ctx, opts.skyhookName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("getting skyhook %q: %w", opts.skyhookName, err)
+		return fmt.Errorf("getting NodeWright %q: %w", opts.skyhookName, err)
 	}
 
 	skyhook, err := utils.UnstructuredToSkyhook(skyhookUnstructured)

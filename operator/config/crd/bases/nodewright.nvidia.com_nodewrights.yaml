@@ -55,7 +55,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: NodeWright is the Schema for the skyhooks API
+        description: NodeWright is the Schema for the nodewrights API
         properties:
           apiVersion:
             description: |-
@@ -619,28 +619,28 @@ spec:
                 x-kubernetes-map-type: atomic
               priority:
                 default: 200
-                description: Priority determines the order in which skyhooks are applied.
-                  Lower values are applied first.
+                description: Priority determines the order in which NodeWrights are
+                  applied. Lower values are applied first.
                 minimum: 1
                 type: integer
               runtimeRequired:
                 default: false
-                description: This skyhook is required to have been completed before
+                description: This NodeWright is required to have been completed before
                   any workloads can start
                 type: boolean
               sequencing:
                 default: node
                 description: |-
                   Sequencing controls whether priority ordering is enforced globally or per-node.
-                  "node" (default): a node can proceed past this skyhook independently once it completes on that node.
-                  "all": all nodes must complete this skyhook before any node starts the next priority.
+                  "node" (default): a node can proceed past this NodeWright independently once it completes on that node.
+                  "all": all nodes must complete this NodeWright before any node starts the next priority.
                 enum:
                 - all
                 - node
                 type: string
               serial:
                 default: false
-                description: Serial tells skyhook if it allowed to run in packages
+                description: Serial tells the operator if it allowed to run in packages
                   in parallel. If true, the operator will run one package at a time.
                 type: boolean
             type: object
@@ -715,13 +715,13 @@ spec:
                 default: 0/0
                 description: |-
                   CompleteNodes is a string that displays the amount of nodes that are complete
-                  out of the total nodes the skyhook is being applied to and is only used for
+                  out of the total nodes the NodeWright is being applied to and is only used for
                   a printer column.
                 example: 3/5
                 type: string
               conditions:
                 description: |-
-                  Represents the observations of a skyhook's current state.
+                  Represents the observations of a NodeWright's current state.
                   Known .status.conditions.type are: "Available", "Progressing", and "Degraded" // TODO
                 items:
                   description: Condition contains details for one aspect of the current
@@ -882,13 +882,13 @@ spec:
               packageList:
                 default: ""
                 description: |-
-                  PackageList is a comma separated list of package names from the skyhook spec and
+                  PackageList is a comma separated list of package names from the NodeWright spec and
                   is only used for a printer column.
                 example: dexter,spencer,foobar
                 type: string
               status:
-                description: Status is the roll of this instance of skyhook and all
-                  nodes status.
+                description: Status is the roll of this instance of NodeWright and
+                  all nodes status.
                 enum:
                 - unknown
                 - complete

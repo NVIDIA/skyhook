@@ -17,7 +17,11 @@ spec:
       # Maintenance job: only talks to the API server, so it must be schedulable
       # anywhere and must NOT inherit the controller-manager's nodeSelector/nodeAffinity
       # (that would make this hook unschedulable, and stall, whenever the operator's
-      # placement is restrictive). Tolerations are kept so it can land on tainted nodes.
+      # placement is restrictive). Only a bare os=linux selector is kept (the job image
+      # is Linux-only) so it cannot land on a Windows node in a mixed-OS cluster.
+      # Tolerations are kept so it can land on tainted nodes.
+      nodeSelector:
+        kubernetes.io/os: linux
       {{- with .Values.controllerManager.tolerations }}
       tolerations:
         {{- toYaml . | nindent 6 }}

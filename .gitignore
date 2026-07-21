@@ -19,3 +19,4 @@ agent/.notices-venv/
 __pycache__/
 
 .triage
+.cr-review/

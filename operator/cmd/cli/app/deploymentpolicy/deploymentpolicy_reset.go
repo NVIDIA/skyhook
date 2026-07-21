@@ -94,7 +94,7 @@ func runDeploymentPolicyReset(ctx context.Context, cmd *cobra.Command, kubeClien
 	// Get the NodeWright
 	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
 	if err != nil {
-		return fmt.Errorf("getting skyhook %q: %w", skyhookName, err)
+		return fmt.Errorf("getting NodeWright %q: %w", skyhookName, err)
 	}
 
 	// Check if there's any batch state to reset
@@ -162,7 +162,7 @@ func runDeploymentPolicyReset(ctx context.Context, cmd *cobra.Command, kubeClien
 
 	// Patch the status
 	if err := utils.PatchSkyhookStatus(ctx, kubeClient.Dynamic(), skyhookName, skyhook.Status); err != nil {
-		return fmt.Errorf("patching skyhook status: %w", err)
+		return fmt.Errorf("patching NodeWright status: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset batch state for NodeWright %q\n", skyhookName)
@@ -174,7 +174,7 @@ func runDeploymentPolicyReset(ctx context.Context, cmd *cobra.Command, kubeClien
 func ResetBatchStateForSkyhook(ctx context.Context, dynamicClient client.Client, skyhookName string) error {
 	skyhook, err := utils.GetSkyhook(ctx, dynamicClient.Dynamic(), skyhookName)
 	if err != nil {
-		return fmt.Errorf("getting skyhook %q: %w", skyhookName, err)
+		return fmt.Errorf("getting NodeWright %q: %w", skyhookName, err)
 	}
 
 	// Reset batch state
@@ -182,7 +182,7 @@ func ResetBatchStateForSkyhook(ctx context.Context, dynamicClient client.Client,
 
 	// Patch the status
 	if err := utils.PatchSkyhookStatus(ctx, dynamicClient.Dynamic(), skyhookName, skyhook.Status); err != nil {
-		return fmt.Errorf("patching skyhook status: %w", err)
+		return fmt.Errorf("patching NodeWright status: %w", err)
 	}
 
 	return nil

@@ -103,7 +103,7 @@ Nodes can be specified using exact names or regex patterns. Multiple
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// opts.skyhookName is bound by BindToCmd (--nodewright, or the
-			// deprecated --nodewright alias). MarkFlagsOneRequired enforces presence.
+			// deprecated --skyhook alias). MarkFlagsOneRequired enforces presence.
 			packageName := args[0]
 
 			if opts.skyhookName == "" {
@@ -144,7 +144,7 @@ func rerunPackage(ctx context.Context, cmd *cobra.Command, kubeClient *client.Cl
 	// Get the NodeWright CR to find the package spec
 	skyhookUnstructured, err := kubeClient.Dynamic().Resource(skyhookGVR).Get(ctx, opts.skyhookName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("getting skyhook %q: %w", opts.skyhookName, err)
+		return fmt.Errorf("getting NodeWright %q: %w", opts.skyhookName, err)
 	}
 
 	// Convert to NodeWright type to access spec

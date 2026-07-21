@@ -90,7 +90,7 @@ func (r *NodeWrightWebhook) ValidateCreate(ctx context.Context, skyhook *NodeWri
 	var warnings admission.Warnings
 
 	if err := skyhook.Validate(); err != nil {
-		return warnings, fmt.Errorf("validating skyhook %q: %w", skyhook.Name, err)
+		return warnings, fmt.Errorf("validating NodeWright %q: %w", skyhook.Name, err)
 	}
 
 	return warnings, r.validateDeploymentPolicyExists(ctx, skyhook)
@@ -104,7 +104,7 @@ func (r *NodeWrightWebhook) ValidateUpdate(ctx context.Context, oldNodeWright, n
 	var warnings admission.Warnings
 
 	if err := newNodeWright.Validate(); err != nil {
-		return warnings, fmt.Errorf("validating skyhook %q: %w", newNodeWright.Name, err)
+		return warnings, fmt.Errorf("validating NodeWright %q: %w", newNodeWright.Name, err)
 	}
 
 	// Uninstall-specific validations require the old object
@@ -246,6 +246,10 @@ func (r *NodeWright) Validate() error {
 		return fmt.Errorf("deploymentPolicy and interruptionBudget are mutually exclusive")
 	}
 
+	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.PodNonInterruptLabels); err != nil {
+		return fmt.Errorf("pod non-interrupt labels are not valid: %w", err)
+	}
+
 	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.NodeSelector); err != nil {
 		return fmt.Errorf("node selectors are not valid: %w", err)
 	}
@@ -340,12 +344,12 @@ func (r *NodeWright) Validate() error {
 	var err error
 	graph, err = r.Spec.BuildGraph()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec building graph: %w", err)
+		return fmt.Errorf("error trying to validate NodeWright spec building graph: %w", err)
 	}
 
 	err = graph.Valid()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %w", err)
+		return fmt.Errorf("error trying to validate NodeWright spec graph is invalid: %w", err)
 	}
 
 	return nil

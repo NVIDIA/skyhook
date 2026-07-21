@@ -124,7 +124,7 @@ generate-nodewright: ## (manual, off by default) Re-derive the nodewright.nvidia
 	../scripts/gen_nodewright.sh
 
 .PHONY: verify-nodewright-gen
-verify-nodewright-gen: manifests generate ## Fail if any generated output (nodewright types, deepcopy, CRDs, RBAC, webhooks) is stale vs the source.
+verify-nodewright-gen: manifests generate ## Fail if controller-gen output (deepcopy, CRDs, RBAC, webhook manifests) is stale vs source. The nodewright api types/webhooks are hand-maintained (gen_nodewright unhooked from make) so are not re-derived here.
 	@git diff --exit-code -- api/nodewright config/crd/bases config/rbac/role.yaml config/webhook/manifests.yaml || { echo "ERROR: generated outputs are stale; run 'make manifests generate' and commit."; exit 1; }
 
 .PHONY: generate-mocks 
@@ -274,10 +274,15 @@ cli-e2e-tests: chainsaw install run build-cli-with-coverage ensure-test-symlinks
 	@chmod +x bin/nodewright
 	@# Update symlinks to point to the new wrapper script
 	@$(MAKE) ensure-test-symlinks
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS)
-	$(MAKE) kill
-	@# Restore original CLI binary
-	@mv bin/nodewright.orig bin/nodewright 2>/dev/null || true
+	@# Run the CLI e2e tests, then ALWAYS stop the operator and restore the real CLI
+	@# binary even when chainsaw fails: otherwise a failed run leaves bin/nodewright as
+	@# the coverage wrapper and the operator still running. The chainsaw exit status is
+	@# preserved so the target still fails.
+	@status=0; \
+		$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS) || status=$$?; \
+		$(MAKE) kill; \
+		mv bin/nodewright.orig bin/nodewright 2>/dev/null || true; \
+		exit $$status
 	@# Extract coverage from operator running in cluster
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/cli-int.coverprofile
 	@# Extract coverage from CLI binary if any was generated
@@ -467,19 +472,19 @@ cli-release-build: ## Build CLI binaries for all platforms (used by CI release w
 				-o $(CLI_DIST_DIR)/nodewright_$(CLI_VERSION)_$${os}_$${arch}$${ext} cmd/cli/main.go; \
 		done; \
 	done
-	@# Create archives (rename binary to just "skyhook" inside archive)
+	@# Create archives (rename binary to just "nodewright" inside archive)
 	@echo "Creating archives..."
 	@cd $(CLI_DIST_DIR) && for os in linux darwin; do \
 		for arch in amd64 arm64; do \
-			cp skyhook_$(CLI_VERSION)_$${os}_$${arch} skyhook && \
-			tar -czf skyhook_$(CLI_VERSION)_$${os}_$${arch}.tar.gz skyhook && \
-			rm skyhook; \
+			cp nodewright_$(CLI_VERSION)_$${os}_$${arch} nodewright && \
+			tar -czf nodewright_$(CLI_VERSION)_$${os}_$${arch}.tar.gz nodewright && \
+			rm nodewright; \
 		done; \
 	done
 	@cd $(CLI_DIST_DIR) && for arch in amd64 arm64; do \
-		cp skyhook_$(CLI_VERSION)_windows_$${arch}.exe skyhook.exe && \
-		zip -q skyhook_$(CLI_VERSION)_windows_$${arch}.zip skyhook.exe && \
-		rm skyhook.exe; \
+		cp nodewright_$(CLI_VERSION)_windows_$${arch}.exe nodewright.exe && \
+		zip -q nodewright_$(CLI_VERSION)_windows_$${arch}.zip nodewright.exe && \
+		rm nodewright.exe; \
 	done
 	@# Generate checksums
 	@echo "Generating checksums..."

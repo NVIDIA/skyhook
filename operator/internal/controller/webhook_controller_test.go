@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -238,26 +238,33 @@ var _ = Describe("WebhookController", Ordered, func() {
 		// its service) while leaving their chart-defined rules untouched.
 		It("injects the caBundle into unowned webhooks without clobbering their rules", func() {
 			chartRules := deploymentPolicyMutatingRules()
+			// Keep an independent copy of the expected rules and give each webhook its own
+			// slice, so an accidental in-place mutation by the update helpers is caught
+			// (a shared reference would compare equal to itself and hide the bug).
+			expectedRules := make([]admissionregistrationv1.RuleWithOperations, len(chartRules))
+			for i := range chartRules {
+				chartRules[i].DeepCopyInto(&expectedRules[i])
+			}
 
 			validating := &admissionregistrationv1.ValidatingWebhook{
 				Name:         "validate-nodewright.nvidia.com",
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{},
-				Rules:        chartRules,
+				Rules:        append([]admissionregistrationv1.RuleWithOperations(nil), chartRules...),
 			}
 			Expect(validatingWebhookNeedsUpdate(validating, []byte("the-ca"), nil)).To(BeTrue())
 			Expect(validating.ClientConfig.CABundle).To(Equal([]byte("the-ca")))
-			Expect(validating.Rules).To(Equal(chartRules))
+			Expect(validating.Rules).To(Equal(expectedRules))
 			// Idempotent once the caBundle matches.
 			Expect(validatingWebhookNeedsUpdate(validating, []byte("the-ca"), nil)).To(BeFalse())
 
 			mutating := &admissionregistrationv1.MutatingWebhook{
 				Name:         "mutate-nodewright.nvidia.com",
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{},
-				Rules:        chartRules,
+				Rules:        append([]admissionregistrationv1.RuleWithOperations(nil), chartRules...),
 			}
 			Expect(mutatingWebhookNeedsUpdate(mutating, []byte("the-ca"), nil)).To(BeTrue())
 			Expect(mutating.ClientConfig.CABundle).To(Equal([]byte("the-ca")))
-			Expect(mutating.Rules).To(Equal(chartRules))
+			Expect(mutating.Rules).To(Equal(expectedRules))
 			Expect(mutatingWebhookNeedsUpdate(mutating, []byte("the-ca"), nil)).To(BeFalse())
 		})
 	})

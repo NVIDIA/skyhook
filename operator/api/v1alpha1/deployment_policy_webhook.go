@@ -98,13 +98,21 @@ func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldDeploym
 
 	logf.FromContext(ctx).Info("validate update", "name", deploymentPolicy.Name)
 
-	// MIGRATION-SHIM: the legacy DeploymentPolicy is read-only once migrated; edits go to
-	// the nodewright.nvidia.com DeploymentPolicy. See legacy_readonly_webhook.go.
-	if err := legacyDeploymentPolicyReadOnlyError(oldDeploymentPolicy, deploymentPolicy); err != nil {
-		return nil, err
+	warnings := admission.Warnings{deploymentPolicyDeprecationWarning}
+
+	// MIGRATION-SHIM: a migrated legacy DeploymentPolicy is frozen read-only; real edits go
+	// to the nodewright.nvidia.com DeploymentPolicy (see legacy_readonly_webhook.go).
+	// legacyDeploymentPolicyReadOnlyError rejects every meaningful edit and allows only
+	// no-ops, finalizer edits, and deletions. Those must NOT be re-validated, or a frozen
+	// object that no longer satisfies a newer rule could no longer be re-applied or
+	// finalized. Real validation runs on the writable nodewright.nvidia.com object.
+	if oldDeploymentPolicy != nil {
+		return warnings, legacyDeploymentPolicyReadOnlyError(oldDeploymentPolicy, deploymentPolicy)
 	}
 
-	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
+	// oldDeploymentPolicy == nil is only reached by unit tests exercising create-style
+	// validation through this entrypoint; validate the spec as on create.
+	return warnings, deploymentPolicy.Validate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type

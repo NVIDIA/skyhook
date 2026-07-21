@@ -31,8 +31,11 @@ spec:
       # must be schedulable anywhere and must NOT inherit the controller-manager's
       # nodeSelector/nodeAffinity: pinning it to the operator's placement makes the
       # pre-upgrade hook unschedulable (and time out) whenever that placement is
-      # restrictive or in flux (e.g. the node-affinity e2e test). Tolerations are
-      # kept so it can still land on tainted nodes.
+      # restrictive or in flux (e.g. the node-affinity e2e test). Only a bare os=linux
+      # selector is kept (the job image is Linux-only) so it cannot land on a Windows
+      # node in a mixed-OS cluster. Tolerations are kept so it can still land on tainted nodes.
+      nodeSelector:
+        kubernetes.io/os: linux
       {{- with .Values.controllerManager.tolerations }}
       tolerations:
         {{- toYaml . | nindent 6 }}

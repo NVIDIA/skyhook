@@ -700,7 +700,12 @@ spec:
             template:
               spec:
                 serviceAccountName: nodewright-controller-manager
-                (nodeSelector == null): true
+                # Only the bare os=linux selector is kept; the operator's own
+                # nodeSelector (dedicated=system-workload here) must NOT be inherited,
+                # so nodeSelector has exactly one key.
+                nodeSelector:
+                  kubernetes.io/os: linux
+                (length(nodeSelector)): 1
                 (length(containers)): 1
                 containers:
                 - name: cleanup
@@ -726,7 +731,12 @@ spec:
             template:
               spec:
                 serviceAccountName: nodewright-controller-manager
-                (nodeSelector == null): true
+                # Only the bare os=linux selector is kept; the operator's own
+                # nodeSelector (dedicated=system-workload here) must NOT be inherited,
+                # so nodeSelector has exactly one key.
+                nodeSelector:
+                  kubernetes.io/os: linux
+                (length(nodeSelector)): 1
                 (length(containers)): 1
                 containers:
                 - name: cleanup

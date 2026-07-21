@@ -665,26 +665,27 @@ var _ = Describe("NodeWright Webhook", func() {
 			}
 			Expect(mkNodeWright(res).Validate()).To(Succeed())
 
-			// 3. Only some set (invalid)
-			res3 := res
+			// 3. Only some set (invalid). Use value copies (*res) per case so a mutation
+			// does not leak into `res` and the later sub-cases.
+			res3 := *res
 			res3.CPULimit = resource.Quantity{} // unset
-			Expect(mkNodeWright(res3).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(&res3).Validate()).NotTo(Succeed())
 
 			// 4. Limit < request (invalid)
-			res4 := res
+			res4 := *res
 			res4.CPULimit = resource.MustParse("50m")
-			Expect(mkNodeWright(res4).Validate()).NotTo(Succeed())
-			res4 = res
+			Expect(mkNodeWright(&res4).Validate()).NotTo(Succeed())
+			res4 = *res
 			res4.MemoryLimit = resource.MustParse("64Mi")
-			Expect(mkNodeWright(res4).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(&res4).Validate()).NotTo(Succeed())
 
 			// 5. Negative or zero values (invalid)
-			res5 := res
+			res5 := *res
 			res5.CPURequest = resource.MustParse("0")
-			Expect(mkNodeWright(res5).Validate()).NotTo(Succeed())
-			res5 = res
+			Expect(mkNodeWright(&res5).Validate()).NotTo(Succeed())
+			res5 = *res
 			res5.MemoryLimit = resource.MustParse("-1Mi")
-			Expect(mkNodeWright(res5).Validate()).NotTo(Succeed())
+			Expect(mkNodeWright(&res5).Validate()).NotTo(Succeed())
 		})
 
 		It("should validate drain config durations", func() {

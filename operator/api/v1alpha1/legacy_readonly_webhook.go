@@ -20,7 +20,8 @@ package v1alpha1
 
 import (
 	"fmt"
-	"reflect"
+
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 )
 
 // MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
@@ -49,7 +50,10 @@ func legacyReadOnlyError(oldSkyhook, newSkyhook *Skyhook) error {
 	}
 	pauseKey := fmt.Sprintf("%s/pause", METADATA_PREFIX)
 	disableKey := fmt.Sprintf("%s/disable", METADATA_PREFIX)
-	unchanged := reflect.DeepEqual(oldSkyhook.Spec, newSkyhook.Spec) &&
+	// Semantic (not reflect) equality: the spec carries resource.Quantity fields, which
+	// reflect.DeepEqual compares by internal representation and so can report a
+	// re-serialized-but-equal quantity as changed, falsely rejecting a GitOps no-op.
+	unchanged := apiequality.Semantic.DeepEqual(oldSkyhook.Spec, newSkyhook.Spec) &&
 		oldSkyhook.Annotations[pauseKey] == newSkyhook.Annotations[pauseKey] &&
 		oldSkyhook.Annotations[disableKey] == newSkyhook.Annotations[disableKey]
 	if unchanged {
@@ -67,7 +71,7 @@ func legacyDeploymentPolicyReadOnlyError(oldDeploymentPolicy, newDeploymentPolic
 	if oldDeploymentPolicy == nil || !newDeploymentPolicy.GetDeletionTimestamp().IsZero() {
 		return nil
 	}
-	if reflect.DeepEqual(oldDeploymentPolicy.Spec, newDeploymentPolicy.Spec) {
+	if apiequality.Semantic.DeepEqual(oldDeploymentPolicy.Spec, newDeploymentPolicy.Spec) {
 		return nil
 	}
 	return fmt.Errorf(

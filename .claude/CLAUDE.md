@@ -8,7 +8,7 @@ The canonical file lives at `.claude/CLAUDE.md`. The root-level `AGENTS.md` is a
 
 Skyhook (being renamed to NodeWright) is a Kubernetes-aware package manager for safely modifying host infrastructure at scale. It coordinates the node lifecycle (cordon → drain → apply package → interrupt/reboot → uncordon) as controlled rollouts gated by interruption budgets and deployment policies.
 
-Rename status: the project is transitioning from Skyhook → NodeWright. Most public names (CRDs `skyhook.nvidia.com/v1alpha1`, CLI `kubectl skyhook`, namespace `skyhook`) still use `skyhook`. Components already moved to `nodewright`: the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), and the operator image (`ghcr.io/nvidia/nodewright/operator`). The agent image is still at `ghcr.io/nvidia/skyhook/agent` pending its migration. Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
+Rename status: the project is transitioning from Skyhook → NodeWright. The namespace (`skyhook`) and the agent image (`ghcr.io/nvidia/skyhook/agent`) still use `skyhook` pending their migration. Components already moved to `nodewright`: the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), the operator image (`ghcr.io/nvidia/nodewright/operator`), the primary CRD group (`nodewright.nvidia.com/v1alpha1 NodeWright`; the legacy `skyhook.nvidia.com` group is kept read-only for a migration window), and the CLI plugin (`kubectl nodewright`, binary `kubectl-nodewright`). Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
 
 ## Required reading: `docs/` (load every session)
 
@@ -54,7 +54,7 @@ All operator commands run from `operator/`:
 ```bash
 make build              # build manager + CLI (also runs manifests/generate/fmt/vet/lint)
 make build-manager      # operator binary only → bin/manager
-make build-cli          # kubectl-skyhook → bin/skyhook
+make build-cli          # kubectl-nodewright → bin/nodewright
 
 make unit-tests         # ginkgo unit tests + envtest (fake apiserver), writes to reporting/
 make test               # full suite: manifests, generate, fmt, vet, lint, unit + e2e + cli-e2e + helm + operator-agent
@@ -150,7 +150,7 @@ Relevant env vars are documented in `agent/README.md`.
 
 ### CLI (`operator/cmd/cli/`)
 
-kubectl plugin (`kubectl skyhook …`). Subcommands under `app/`: `node`, `package`, `deploymentpolicy`, plus `reset`, `lifecycle` (pause/resume/disable/enable), `version`. Commands go through `operator/internal/cli/client` rather than talking to the apiserver directly. Recent (v0.8.0+) operators use annotations (`skyhook.nvidia.com/pause`, `…/disable`) for pause/disable — not spec fields.
+kubectl plugin (`kubectl nodewright …`). Subcommands under `app/`: `node`, `package`, `deploymentpolicy`, plus `reset`, `lifecycle` (pause/resume/disable/enable), `version`, `migrate`. Commands go through `operator/internal/cli/client` rather than talking to the apiserver directly. Recent operators use annotations (`nodewright.nvidia.com/pause`, `nodewright.nvidia.com/disable`) for pause/disable — not spec fields (the legacy Skyhook uses the `skyhook.nvidia.com/*` equivalents).
 
 ## Code style (Go)
 

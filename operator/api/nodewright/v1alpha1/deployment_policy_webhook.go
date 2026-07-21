@@ -105,7 +105,7 @@ func (r *DeploymentPolicyWebhook) ValidateDelete(ctx context.Context, deployment
 	// Check if any NodeWrights are still referencing this policy
 	skyhooks := &NodeWrightList{}
 	if err := r.Client.List(ctx, skyhooks); err != nil {
-		return nil, fmt.Errorf("failed to list skyhooks to check for references: %w", err)
+		return nil, fmt.Errorf("failed to list NodeWrights to check for references: %w", err)
 	}
 
 	referencingNodeWrights := []string{}

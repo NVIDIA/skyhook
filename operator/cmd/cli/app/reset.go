@@ -95,7 +95,7 @@ func NewResetCmd(ctx *cliContext.CLIContext) *cobra.Command {
 This command removes all NodeWright state from all nodes that have state for the
 specified NodeWright, causing the operator to re-execute all packages from the beginning.
 
-Unlike 'node reset' which resets specific nodes, 'skyhook reset' resets ALL nodes
+Unlike 'node reset' which resets specific nodes, 'nodewright reset' resets ALL nodes
 that have state for the specified NodeWright.
 
 By default, this command also resets the deployment policy batch state, allowing

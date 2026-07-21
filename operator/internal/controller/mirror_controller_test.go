@@ -193,6 +193,37 @@ var _ = Describe("Mirror controller", func() {
 			}).Should(Succeed())
 		})
 
+		It("recreates a mirror-owned target deleted out-of-band (target watch)", func() {
+			name := "mirror-target-readd"
+			legacy := newLegacySkyhook(name, 25)
+			Expect(k8sClient.Create(ctx, legacy)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, legacy) })
+
+			nw := &nwv1.NodeWright{}
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, nw)).To(Succeed())
+				g.Expect(nw.Annotations).To(HaveKeyWithValue(MirroredFromAnnotation, name))
+			}).Should(Succeed())
+			origUID := nw.UID
+
+			// Delete the mirror-owned target out-of-band while the legacy source stays
+			// put. Post-migration the legacy spec is frozen read-only, so its generation
+			// never changes again and the source watch cannot re-fire: only the target
+			// watch can re-enqueue and rebuild the bridge (a fresh object, new UID).
+			Expect(k8sClient.Delete(ctx, nw)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, &nwv1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: name}})
+			})
+
+			Eventually(func(g Gomega) {
+				got := &nwv1.NodeWright{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, got)).To(Succeed())
+				g.Expect(got.DeletionTimestamp.IsZero()).To(BeTrue())
+				g.Expect(got.Annotations).To(HaveKeyWithValue(MirroredFromAnnotation, name))
+				g.Expect(got.UID).NotTo(Equal(origUID))
+			}).Should(Succeed())
+		})
+
 		It("strips the stranded legacy finalizer so a deleted legacy Skyhook can be reaped", func() {
 			name := "mirror-finalizer"
 			legacy := newLegacySkyhook(name, 25)

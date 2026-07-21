@@ -30,12 +30,13 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Changed
 
-- Cluster-backed commands now run a preflight check on the served API groups.
-  When the cluster serves only the legacy `skyhook.nvidia.com` group and not
-  `nodewright.nvidia.com`, they fail fast with a clear, actionable error naming
-  both groups and telling you to upgrade to a NodeWright-capable operator,
-  instead of a confusing `NotFound`. The `migrate` command is exempt: it reads
-  legacy objects by design.
+- Commands that read or write `NodeWright` resources now run a preflight check on
+  the served API groups. When the cluster serves only the legacy
+  `skyhook.nvidia.com` group and not `nodewright.nvidia.com`, they fail fast with
+  a clear, actionable error naming both groups and telling you to upgrade to a
+  NodeWright-capable operator, instead of a confusing `NotFound`. The `migrate`
+  command is exempt (it reads legacy objects by design), and `version` does not
+  run the preflight.
 
 - `reset` and `node reset` now select nodes with any resettable Skyhook
   metadata, including status, cordon, and drain-start metadata. Nodes with a

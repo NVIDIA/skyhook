@@ -38,8 +38,9 @@
    legacy `DeploymentPolicy` objects too. The mirrored `NodeWright` objects are the real, reconciled
    resources and are never deleted by this step.
 
-**Recommended runbook: migrate on a quiesced cluster.** In order: **quiesce** (every `Skyhook` `complete`,
-including no `disabled`/`paused`/`blocked` ones, and no lifecycle changes in flight) -> **upgrade** the
+**Recommended runbook: migrate on a quiesced cluster.** In order: **quiesce** (no `Skyhook` mid-rollout:
+none `in_progress`/`erroring`/`blocked`/`waiting`; `complete`, `paused`, and `disabled` are fine to leave
+as-is) -> **upgrade** the
 operator -> **rename** the CRs atomically (steps 2 and 3 as one change: a rename = delete old + add new
 together) -> **delete** the legacy CRs promptly. The sharp edges this guide warns about (a wedged migration
 hold if a `Skyhook` is not `complete`, and rejected writes once the legacy CRs go read-only) all come from

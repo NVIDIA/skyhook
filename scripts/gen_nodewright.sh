@@ -16,7 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#
+
 # gen_nodewright.sh re-derives the nodewright.nvidia.com API group
 # (api/nodewright/v1alpha1) from the legacy skyhook.nvidia.com API group
 # (api/v1alpha1) by applying a deterministic rename transform.
@@ -26,9 +26,10 @@
 # copy let it silently drift from upstream (e.g. a DrainConfig field and an
 # image-parsing rewrite landed in the legacy types but not the copy). Generating
 # the copy from the legacy files makes drift impossible: change the legacy
-# schema and re-run this script (wired into `make generate`), and the mirror
-# tracks it. A verify target (`make verify-nodewright-gen`) fails CI if the
-# checked-in copy is stale.
+# schema and re-run this script. NOTE: it is intentionally NOT wired into
+# `make generate` anymore (the schemas have converged and the legacy group is
+# frozen, so the nodewright group is now hand-maintained); run it manually with
+# `make generate-nodewright` only when re-deriving from the legacy types.
 #
 # The transform is a pure, deterministic textual rename (see RULES below). It is
 # NOT a semantic rewrite: everything the legacy files say is carried through with

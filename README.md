@@ -142,10 +142,10 @@ spec:
 EOF
 
 # Wait for the NodeWright to complete
-kubectl wait --for=jsonpath='{.status.status}'=complete skyhook/skyhook-sample --timeout=300s
+kubectl wait --for=jsonpath='{.status.status}'=complete nodewright/nodewright-sample --timeout=300s
 
 # Check the status
-kubectl describe skyhook skyhook-sample
+kubectl describe nodewright nodewright-sample
 ```
 
 ### Uninstalling
@@ -186,7 +186,8 @@ If you disabled automatic cleanup or need to clean up resources manually:
 
 ```bash
 # Delete all NodeWright resources first
-kubectl delete skyhooks --all
+kubectl delete nodewrights.nodewright.nvidia.com --all
+kubectl delete deploymentpolicies.nodewright.nvidia.com --all
 
 # Delete all DeploymentPolicy resources
 kubectl delete deploymentpolicies --all
@@ -210,10 +211,10 @@ There will be a pod for each lifecycle stage (apply, config, etc.) per package p
 
 ```bash
 # Check overall status
-kubectl get skyhooks
+kubectl get nodewrights
 
 # Get detailed status of a specific NodeWright
-kubectl describe skyhook <skyhook-name>
+kubectl describe nodewright <nodewright-name>
 ```
 The Status will show the overall package status as well as the status of each node
 
@@ -221,14 +222,14 @@ The Status will show the overall package status as well as the status of each no
 
 ```bash
 # View node state annotations for a specific NodeWright
-kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata.annotations.skyhook\.nvidia\.com/nodeState_<skyhook-name>}{"\n"}{end}'
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata.annotations.nodewright\.nvidia\.com/nodeState_<nodewright-name>}{"\n"}{end}'
 ```
 
 ### Stages
 
 The operator will apply steps in a package throughout different lifecycle stages. This ensures that the right steps are applied in the right situations and in the correct order.
 
-- Upgrade: This stage will be ran whenever a package's version is upgraded in the SCR.
+- Upgrade: This stage runs whenever a package's version is upgraded in the NodeWright CR.
 - Uninstall: This stage runs only when explicitly requested — either by setting `uninstall.apply: true` on a package with `uninstall.enabled: true`, or during NodeWright CR deletion (finalizer-driven) for `uninstall.enabled: true` packages. See [Explicit Uninstall](docs/uninstall.md).
 - Apply: This stage will always be ran at least once.
 - Config: This stage will run when a configmap is changed and on the first SCR application.

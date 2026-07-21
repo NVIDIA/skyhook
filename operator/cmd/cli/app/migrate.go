@@ -164,20 +164,22 @@ func runMigrateFromFiles(cmd *cobra.Command, filenames []string, cliCtx *cliCont
 	emitter := &yamlEmitter{w: cmd.OutOrStdout()}
 
 	for _, filename := range filenames {
-		var reader io.Reader
 		if filename == "-" {
-			reader = cmd.InOrStdin()
-		} else {
-			f, err := os.Open(filename)
-			if err != nil {
-				return fmt.Errorf("opening %q: %w", filename, err)
+			if err := migrateStream(cmd.InOrStdin(), emitter, cmd, cliCtx); err != nil {
+				return fmt.Errorf("migrating %q: %w", filename, err)
 			}
-			// read-only handle: close error is not load-bearing
-			defer func() { _ = f.Close() }()
-			reader = f
+			continue
 		}
 
-		if err := migrateStream(reader, emitter, cmd, cliCtx); err != nil {
+		f, err := os.Open(filename)
+		if err != nil {
+			return fmt.Errorf("opening %q: %w", filename, err)
+		}
+		err = migrateStream(f, emitter, cmd, cliCtx)
+		// read-only handle: close error is not load-bearing. Close per iteration rather
+		// than deferring, so a large -f set does not hold every fd open until return.
+		_ = f.Close()
+		if err != nil {
 			return fmt.Errorf("migrating %q: %w", filename, err)
 		}
 	}

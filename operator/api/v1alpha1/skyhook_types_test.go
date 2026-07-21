@@ -751,43 +751,6 @@ var _ = Describe("Skyhook Types", func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	It("Should detect isPackageFullyUninstalled correctly", func() {
-		skyhook := &Skyhook{
-			Spec: SkyhookSpec{
-				Packages: Packages{
-					"my-pkg": Package{
-						PackageRef: PackageRef{Name: "my-pkg", Version: "1.0.0"},
-						Uninstall:  &Uninstall{Enabled: true, Apply: true},
-					},
-				},
-			},
-			Status: SkyhookStatus{
-				NodeState: map[string]NodeState{
-					"node-1": {
-						"my-pkg|1.0.0": PackageStatus{
-							Name: "my-pkg", Version: "1.0.0",
-							Stage: StageUninstall, State: StateInProgress,
-						},
-					},
-				},
-			},
-		}
-		// Still present on node-1
-		Expect(isPackageFullyUninstalled(skyhook, "my-pkg")).To(BeFalse())
-
-		// Remove from node state (uninstall completed)
-		delete(skyhook.Status.NodeState["node-1"], "my-pkg|1.0.0")
-		Expect(isPackageFullyUninstalled(skyhook, "my-pkg")).To(BeTrue())
-
-		// Zero tracked nodes (empty map) — nothing to uninstall, so treat as done.
-		skyhook.Status.NodeState = map[string]NodeState{}
-		Expect(isPackageFullyUninstalled(skyhook, "my-pkg")).To(BeTrue())
-
-		// Nil NodeState — same semantics.
-		skyhook.Status.NodeState = nil
-		Expect(isPackageFullyUninstalled(skyhook, "my-pkg")).To(BeTrue())
-	})
-
 	It("Should detect IsDisabled correctly", func() {
 		s := &Skyhook{
 			ObjectMeta: metav1.ObjectMeta{},

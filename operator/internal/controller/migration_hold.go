@@ -66,11 +66,20 @@ func inFlightLegacySkyhooks(ctx context.Context, reader client.Reader) ([]string
 
 	var inFlight []string
 	for i := range list.Items {
-		switch list.Items[i].Status.Status {
+		sh := &list.Items[i]
+		// Pause/disable is annotation-driven and authoritative here: a Skyhook stopped
+		// just before the upgrade may still carry a stale in_progress/waiting status
+		// (the old operator never got to write "paused"/"disabled"), but the mirror
+		// copies the pause/disable annotation onto the NodeWright, which then does not
+		// roll out. Trust the annotation rather than waiting for the status to catch up.
+		if sh.IsPaused() || sh.IsDisabled() {
+			continue
+		}
+		switch sh.Status.Status {
 		case "", skyhookv1.StatusComplete, skyhookv1.StatusPaused, skyhookv1.StatusDisabled:
 			// safe to migrate in place; no hold
 		default:
-			inFlight = append(inFlight, list.Items[i].Name)
+			inFlight = append(inFlight, sh.Name)
 		}
 	}
 	return inFlight, nil

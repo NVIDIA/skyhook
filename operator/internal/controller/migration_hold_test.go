@@ -152,4 +152,20 @@ var _ = Describe("Migration hold", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(inFlight).To(ConsistOf("blocked", "waiting"))
 	})
+
+	It("does not hold on a paused Skyhook whose status is stale (annotation is authoritative)", func() {
+		// Pausing just before the upgrade can leave a stale in_progress status because
+		// the old operator never wrote "paused". The pause annotation carries onto the
+		// NodeWright (which then does not roll out), so it is safe and must not wedge.
+		stale := mkSkyhook("stale-paused", skyhookv1.StatusInProgress)
+		stale.Annotations = map[string]string{skyhookv1.METADATA_PREFIX + "/pause": "true"}
+		c := build(stale, mkSkyhook("done", skyhookv1.StatusComplete))
+
+		inFlight, err := inFlightLegacySkyhooks(ctx, c)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(inFlight).To(BeEmpty())
+
+		r := &SkyhookReconciler{Client: c}
+		Expect(r.legacyMigrationHold(ctx)).To(BeNil())
+	})
 })

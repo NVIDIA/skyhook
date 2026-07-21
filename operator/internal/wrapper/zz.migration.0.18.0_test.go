@@ -144,7 +144,7 @@ var _ = Describe("migrateNodePrefixToNodeWright", func() {
 		// The legacy version annotation is adopted under the new prefix, so the node
 		// reports the stored version rather than "" (which would read as fresh). The
 		// legacy key is kept until the rollback window elapses.
-		Expect(node.GetVersion()).ToNot(BeEmpty())
+		Expect(node.GetVersion()).To(Equal("v0.17.0"))
 		Expect(node.Annotations).To(HaveKey(oldKey("version_myskyhook")))
 	})
 

@@ -1,10 +1,10 @@
-# Skyhook CLI
+# NodeWright CLI
 
-kubectl plugin for managing Skyhook deployments, packages, and nodes.
+kubectl plugin for managing NodeWright deployments, packages, and nodes.
 
 ## Overview
 
-The Skyhook CLI (`kubectl nodewright`) provides SRE tooling for managing Skyhook operators and their packages across Kubernetes cluster nodes. It supports inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
+The NodeWright CLI (`kubectl nodewright`) provides SRE tooling for managing NodeWright deployments and their packages across Kubernetes cluster nodes. It supports inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
 
 ## Compatibility
 
@@ -52,7 +52,7 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `enable` | ❌ Not supported | ✅ Full |
 
 > **Note on `update-state` and `reset --package`:** These commands edit the
-> `nodewright.nvidia.com/nodeState_<skyhook>` annotation in-place. The
+> `nodewright.nvidia.com/nodeState_<nodewright>` annotation in-place. The
 > annotation's `map[string]PackageStatus` shape has been stable since
 > **operator v0.7.5**, and the CLI refuses to run against anything older.
 > What *has* evolved across operator releases is the set of recognised
@@ -90,7 +90,7 @@ cd operator
 make build-cli
 
 # Install as kubectl plugin
-cp bin/skyhook /usr/local/bin/kubectl-nodewright # other another directory in $PATH with write access
+cp bin/nodewright /usr/local/bin/kubectl-nodewright # or another directory in $PATH with write access
 
 # Verify installation
 kubectl nodewright version
@@ -205,9 +205,9 @@ each node's `nodeState` annotation instead of removing the whole annotation:
 
 ### Update-State Command
 
-Edit the recorded state of a single package on Skyhook-managed nodes.
+Edit the recorded state of a single package on NodeWright-managed nodes.
 `update-state` performs a surgical edit to the per-node
-`nodewright.nvidia.com/nodeState_<skyhook>` annotation — replacing (or, with
+`nodewright.nvidia.com/nodeState_<nodewright>` annotation — replacing (or, with
 `--add`, inserting) one entry in the `map[string]PackageStatus` value. It is
 an **administrator escape hatch** for recovering from stuck rollouts and
 deliberately does *not* validate that the requested `(stage, state)`

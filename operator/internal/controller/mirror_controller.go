@@ -56,6 +56,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -112,6 +113,33 @@ func mirrorTriggerPredicate() predicate.Predicate {
 	}
 }
 
+// targetDeletionPredicate re-enqueues only when a mirrored target is deleted. The
+// mirror also watches its target kind because the legacy source watch alone cannot
+// recover from an out-of-band target deletion: once migrated, the legacy object is
+// frozen read-only, so its generation never changes again and the source watch would
+// never re-fire, leaving only a controller restart to rebuild the bridge. Target
+// creates and updates are ignored: they are either the mirror's own writes or
+// intentional edits to the writable NodeWright source of truth, and reconcileMirror's
+// generation short-circuit already leaves those untouched.
+func targetDeletionPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return false },
+		UpdateFunc:  func(event.UpdateEvent) bool { return false },
+		DeleteFunc:  func(event.DeleteEvent) bool { return true },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	}
+}
+
+// enqueueMirrorSourceForTarget maps a mirrored target object back to the reconcile
+// request keyed by its own NamespacedName. The mirror keeps target and source under
+// the same name (and namespace), so the request routes straight to the reconciler
+// that owns the bridge for that object.
+func enqueueMirrorSourceForTarget(_ context.Context, obj client.Object) []reconcile.Request {
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: obj.GetName()},
+	}}
+}
+
 //+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=nodewright.nvidia.com,resources=nodewrights/finalizers,verbs=update
@@ -140,6 +168,8 @@ func (r *SkyhookMirrorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("skyhook-mirror").
 		For(&skyhookv1.Skyhook{}, builder.WithPredicates(mirrorTriggerPredicate())).
+		Watches(&nwv1.NodeWright{}, handler.EnqueueRequestsFromMapFunc(enqueueMirrorSourceForTarget),
+			builder.WithPredicates(targetDeletionPredicate())).
 		Complete(r)
 }
 
@@ -168,6 +198,8 @@ func (r *DeploymentPolicyMirrorReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("deploymentpolicy-mirror").
 		For(&skyhookv1.DeploymentPolicy{}, builder.WithPredicates(mirrorTriggerPredicate())).
+		Watches(&nwv1.DeploymentPolicy{}, handler.EnqueueRequestsFromMapFunc(enqueueMirrorSourceForTarget),
+			builder.WithPredicates(targetDeletionPredicate())).
 		Complete(r)
 }
 

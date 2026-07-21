@@ -16,7 +16,7 @@ What we **CI-test and officially support is the latest four Kubernetes minor ver
 
 ## Support Policy
 
-**Latest-four rolling window:** we test and support the **four most recent Kubernetes minor versions**. As a new minor releases and [kind](https://kind.sigs.k8s.io/) stops publishing a `kindest/node` image for the oldest one, we drop the oldest and add the newest. The exact tested patch versions live in `operator/versions.yaml` (`ci.kindNodeImages`), and the CI matrix is bounded by the node images the pinned kind (`kind.binary`) actually publishes.
+**Latest-four rolling window:** we test and support the **four most recent Kubernetes minor versions**. As a new minor release arrives and [kind](https://kind.sigs.k8s.io/) stops publishing a `kindest/node` image for the oldest one, we drop the oldest and add the newest. The exact tested patch versions live in `operator/versions.yaml` (`ci.kindNodeImages`), and the CI matrix is bounded by the node images the pinned kind (`kind.binary`) actually publishes.
 
 Currently tested: **1.36, 1.35, 1.34, 1.33** (kind v0.32.0). 1.32 and older dropped when kind v0.32.0 stopped publishing their node images.
 

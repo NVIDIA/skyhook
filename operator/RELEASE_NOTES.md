@@ -18,10 +18,11 @@ For the full commit-level log see CHANGELOG.md.
     re-keyed in place (`skyhook.nvidia.com/*` node annotations become
     `nodewright.nvidia.com/*`), so **packages are not re-run** and in-progress
     rollouts keep their position.
-  - **Writing a legacy `Skyhook`/`DeploymentPolicy` still works but emits a
-    deprecation warning** pointing at `kubectl nodewright migrate`. GitOps users
-    should migrate their manifests to the new group; `kubectl nodewright migrate`
-    emits applyable NodeWright YAML.
+  - **Legacy `Skyhook`/`DeploymentPolicy` objects become read-only once migrated:**
+    the admission webhook rejects spec and `pause`/`disable` edits (deletions and
+    identical re-applies are still allowed) and emits a deprecation warning
+    pointing at `kubectl nodewright migrate`. Operate the mirrored `NodeWright`
+    instead; `kubectl nodewright migrate` emits applyable NodeWright YAML.
   - **Upgrade during a quiet window:** perform the upgrade only when every Skyhook
     is `complete` with no nodes in progress. In-flight stages resume idempotently
     (no double reboot), but upgrading idle avoids even the benign package-pod

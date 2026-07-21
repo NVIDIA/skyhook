@@ -1939,15 +1939,19 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 				return false, utilerrors.NewAggregate(errs)
 			}
 
+			// Bump ObservedGeneration and write status BEFORE removing the finalizer:
+			// removing the last finalizer lets the apiserver delete the object
+			// immediately, so a status update afterward would race that deletion into a
+			// spurious NotFound. (The bump keeps the finalizer-removal Update below from
+			// re-triggering add-finalizer logic.)
+			skyhook.GetSkyhook().Status.ObservedGeneration = skyhook.GetSkyhook().Status.ObservedGeneration + 1
+			if err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
+				return false, fmt.Errorf("error updating skyhook status: %w", err)
+			}
+
 			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
 			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating skyhook removing finalizer: %w", err)
-			}
-			// should be 1, and now 2. we want to set ObservedGeneration up to not trigger an logic from this update adding the finalizer
-			skyhook.GetSkyhook().Status.ObservedGeneration = skyhook.GetSkyhook().Status.ObservedGeneration + 1
-
-			if err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
-				return false, fmt.Errorf("error updating skyhook status: %w", err)
 			}
 
 			return true, nil

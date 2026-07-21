@@ -38,8 +38,14 @@ import (
 // group means this is not the legacy-only case this preflight exists to catch.
 func EnsureNodeWrightServed(disco discovery.DiscoveryInterface) error {
 	groups, err := disco.ServerGroups()
-	if err != nil {
+	// ServerGroups can return usable partial results alongside a group-discovery error
+	// (e.g. one broken aggregated APIService). Only fail on a non-partial error so a
+	// single unhealthy group does not block the CLI against an otherwise-valid cluster.
+	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
 		return fmt.Errorf("discovering served API groups: %w", err)
+	}
+	if groups == nil {
+		return nil
 	}
 
 	var nodewrightServed, skyhookServed bool

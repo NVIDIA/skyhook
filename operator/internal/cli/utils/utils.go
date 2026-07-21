@@ -400,7 +400,7 @@ func GetSkyhook(ctx context.Context, dynamicClient dynamic.Interface, name strin
 	gvr := v1alpha1.GroupVersion.WithResource("nodewrights")
 	obj, err := dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("getting skyhook %q: %w", name, err)
+		return nil, fmt.Errorf("getting NodeWright %q: %w", name, err)
 	}
 	return UnstructuredToSkyhook(obj)
 }

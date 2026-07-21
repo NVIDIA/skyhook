@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -50,6 +51,25 @@ var _ = Describe("legacy read-only webhook", func() {
 
 	It("allows a no-op update (identical spec and control annotations)", func() {
 		Expect(legacyReadOnlyError(base(), base())).To(Succeed())
+	})
+
+	It("treats a re-serialized-but-equal resource.Quantity as unchanged (semantic equality)", func() {
+		// reflect.DeepEqual sees "1" and "1000m" as different; the read-only no-op check
+		// uses apiequality.Semantic.DeepEqual, which treats them as equal, so a GitOps
+		// re-apply that re-serializes a quantity is not falsely rejected as an edit.
+		oldSH := base()
+		oldSH.Spec.Packages["p"] = Package{
+			PackageRef: PackageRef{Name: "p", Version: "1.0.0"},
+			Image:      "alpine:3.21.0",
+			Resources:  &ResourceRequirements{CPURequest: resource.MustParse("1")},
+		}
+		newSH := base()
+		newSH.Spec.Packages["p"] = Package{
+			PackageRef: PackageRef{Name: "p", Version: "1.0.0"},
+			Image:      "alpine:3.21.0",
+			Resources:  &ResourceRequirements{CPURequest: resource.MustParse("1000m")},
+		}
+		Expect(legacyReadOnlyError(oldSH, newSH)).To(Succeed())
 	})
 
 	It("rejects a spec change", func() {

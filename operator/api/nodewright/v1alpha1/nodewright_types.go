@@ -43,7 +43,7 @@ type NodeWrightSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Serial tells skyhook if it allowed to run in packages in parallel. If true, the operator will run one package at a time.
+	// Serial tells the operator if it allowed to run in packages in parallel. If true, the operator will run one package at a time.
 	//+kubebuilder:default=false
 	Serial bool `json:"serial,omitempty"`
 
@@ -75,7 +75,7 @@ type NodeWrightSpec struct {
 	// AdditionalTolerations adds tolerations to all packages
 	AdditionalTolerations []corev1.Toleration `json:"additionalTolerations,omitempty"`
 
-	// This skyhook is required to have been completed before any workloads can start
+	// This NodeWright is required to have been completed before any workloads can start
 	//+kubebuilder:default=false
 	RuntimeRequired bool `json:"runtimeRequired,omitempty"`
 
@@ -85,14 +85,14 @@ type NodeWrightSpec struct {
 	//+kubebuilder:default=false
 	AutoTaintNewNodes bool `json:"autoTaintNewNodes,omitempty"`
 
-	// Priority determines the order in which skyhooks are applied. Lower values are applied first.
+	// Priority determines the order in which NodeWrights are applied. Lower values are applied first.
 	//+kubebuilder:validation:Minimum=1
 	//+kubebuilder:default=200
 	Priority int `json:"priority,omitempty"`
 
 	// Sequencing controls whether priority ordering is enforced globally or per-node.
-	// "node" (default): a node can proceed past this skyhook independently once it completes on that node.
-	// "all": all nodes must complete this skyhook before any node starts the next priority.
+	// "node" (default): a node can proceed past this NodeWright independently once it completes on that node.
+	// "all": all nodes must complete this NodeWright before any node starts the next priority.
 	//+kubebuilder:validation:Enum=all;node
 	//+kubebuilder:default="node"
 	Sequencing SequencingMode `json:"sequencing,omitempty"`
@@ -102,15 +102,15 @@ type NodeWrightSpec struct {
 type SequencingMode string
 
 const (
-	// SequencingNode allows each node to progress past this skyhook independently
+	// SequencingNode allows each node to progress past this NodeWright independently
 	// as soon as it completes on that node (per-node ordering)
 	SequencingNode SequencingMode = "node"
-	// SequencingAll requires all nodes to complete this skyhook before any node
+	// SequencingAll requires all nodes to complete this NodeWright before any node
 	// starts the next priority level (global ordering)
 	SequencingAll SequencingMode = "all"
 )
 
-// IsPerNodeSequencing returns true if this skyhook uses per-node priority ordering
+// IsPerNodeSequencing returns true if this NodeWright uses per-node priority ordering
 func (spec *NodeWrightSpec) IsPerNodeSequencing() bool {
 	return spec.Sequencing != SequencingAll
 }
@@ -466,11 +466,11 @@ type NodeWrightStatus struct {
 	// NodeStatus tracks by node the status of the node
 	NodeStatus map[string]Status `json:"nodeStatus,omitempty"`
 
-	//Status is the roll of this instance of skyhook and all nodes status.
+	//Status is the roll of this instance of NodeWright and all nodes status.
 	//+kubebuilder:validation:Enum=unknown;complete;blocked;waiting;disabled;paused;in_progress;erroring
 	Status Status `json:"status,omitempty"`
 
-	// Represents the observations of a skyhook's current state.
+	// Represents the observations of a NodeWright's current state.
 	// Known .status.conditions.type are: "Available", "Progressing", and "Degraded" // TODO
 	// +patchMergeKey=type
 	// +patchStrategy=merge
@@ -504,13 +504,13 @@ type NodeWrightStatus struct {
 	// +kubebuilder:example="3/5"
 	// +kubebuilder:default="0/0"
 	// CompleteNodes is a string that displays the amount of nodes that are complete
-	// out of the total nodes the skyhook is being applied to and is only used for
+	// out of the total nodes the NodeWright is being applied to and is only used for
 	// a printer column.
 	CompleteNodes string `json:"completeNodes,omitempty"`
 
 	// +kubebuilder:example="dexter,spencer,foobar"
 	// +kubebuilder:default=""
-	// PackageList is a comma separated list of package names from the skyhook spec and
+	// PackageList is a comma separated list of package names from the NodeWright spec and
 	// is only used for a printer column.
 	PackageList string `json:"packageList,omitempty"`
 }
@@ -952,7 +952,7 @@ func StateToStatus(s State) Status {
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Cluster
 
-// NodeWright is the Schema for the skyhooks API
+// NodeWright is the Schema for the nodewrights API
 type NodeWright struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -974,7 +974,7 @@ func init() {
 	SchemeBuilder.Register(&NodeWright{}, &NodeWrightList{})
 }
 
-// WasUpdated returns true if this instance of skyhook has been updated
+// WasUpdated returns true if this instance of NodeWright has been updated
 func (s *NodeWright) WasUpdated() bool {
 	return s.Generation > 1 && s.Generation > s.Status.ObservedGeneration
 }
