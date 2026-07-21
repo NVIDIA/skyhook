@@ -32,9 +32,8 @@ metadata:
         "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
-    - apiVersion: nodewright.nvidia.com/v1alpha1
-      kind: NodeWright
-      name: cleanup-pods
+    - apiVersion: batch/v1
+      kind: Job
 spec:
   terminationGracePeriodSeconds: 46
   initContainers:
