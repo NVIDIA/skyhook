@@ -45,21 +45,39 @@ const doneContainerName = "done"
 // falls back to a bounded safe name when the node name exceeds the 63-char label-value
 // limit; the pod template's nodeName stays authoritative for the full name.
 func jobLabels(skyhook *wrapper.Skyhook, _package *v1alpha1.Package, stage v1alpha1.Stage, nodeName string, interrupt bool) map[string]string {
-	nodeLabel := nodeName
-	if len(nodeLabel) > 63 {
-		nodeLabel = generateSafeName(63, nodeName)
-	}
 	labels := map[string]string{
 		fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):       skyhook.Name,
 		fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX):    fmt.Sprintf("%s-%s", _package.Name, _package.Version),
 		fmt.Sprintf("%s/stage", v1alpha1.METADATA_PREFIX):      string(stage),
-		fmt.Sprintf("%s/node", v1alpha1.METADATA_PREFIX):       nodeLabel,
+		fmt.Sprintf("%s/node", v1alpha1.METADATA_PREFIX):       nodeLabelValue(nodeName),
 		fmt.Sprintf("%s/generation", v1alpha1.METADATA_PREFIX): strconv.FormatInt(skyhook.Generation, 10),
 	}
 	if interrupt {
 		labels[fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX)] = interruptLabelValue
 	}
 	return labels
+}
+
+// nodeLabelValue is the value the "<prefix>/node" label carries: the node name, or a bounded
+// safe name when it exceeds the 63-char label-value limit. JobExists and jobLabels must agree
+// on this transform so node-scoped label queries resolve; the pod template's nodeName stays
+// authoritative for the full name.
+func nodeLabelValue(nodeName string) string {
+	if len(nodeName) > 63 {
+		return generateSafeName(63, nodeName)
+	}
+	return nodeName
+}
+
+// setJobPackage stamps the package annotation on both the Job and its pod template. The template
+// copy is load-bearing: the in-flight erroring path (pod_controller.go) reads the package off the
+// child pod, which inherits only the template's metadata — without it, GetPackage(childPod) is nil
+// and pod-evidence erroring is silently lost.
+func setJobPackage(job *batchv1.Job, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
+	if err := SetPackages(job, skyhook, image, stage, _package); err != nil {
+		return err
+	}
+	return SetPackages(&job.Spec.Template, skyhook, image, stage, _package)
 }
 
 // createJobFromPackage builds the batch/v1 Job that runs a package stage on a node. It

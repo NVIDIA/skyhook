@@ -52,6 +52,10 @@ const (
 	// the controller UID is the only unambiguous parent link (job-name alone is not).
 	batchControllerUIDLabel = "batch.kubernetes.io/controller-uid"
 
+	// batchJobNameLabel is stamped by the Job controller on every child pod. Its presence
+	// distinguishes a Job-owned pod from a legacy pre-upgrade raw pod during the migration window.
+	batchJobNameLabel = "batch.kubernetes.io/job-name"
+
 	// lastLogsMaxBytes caps the deadline log snapshot. Annotations share a per-object
 	// metadata budget, so the tail stays small.
 	lastLogsMaxBytes = 16 * 1024
@@ -68,6 +72,12 @@ const (
 // execution path (the Pod watch keeps reporting only in-flight erroring for Job-owned
 // pods). Not wired into Reconcile yet; the swap lands in #303.
 func (r *SkyhookReconciler) JobReconcile(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
+	// A terminating Job is already being reaped (foreground delete keeps it visible until its
+	// children are gone); never record its completion onto node state that a sweep just reset.
+	if job.DeletionTimestamp != nil {
+		return ctrl.Result{}, nil
+	}
+
 	// A package invalidated mid-flight (spec drift) is torn down, mirroring
 	// HandleInvalidPackage for raw pods. Foreground so the deterministic name frees only
 	// once the child pods are gone.
@@ -514,6 +524,31 @@ func jobFailure(job *batchv1.Job) (bool, string) {
 		}
 	}
 	return false, ""
+}
+
+// isParkedJob reports whether a Job is a parked deadline failure — a genuine step failure that
+// the finished-Job rules deliberately leave in place while its stage sits erroring, so nothing
+// recreates the stage until a rerun/reset/config-change/TTL clears it.
+func isParkedJob(job *batchv1.Job) bool {
+	failed, reason := jobFailure(job)
+	return failed && reason == batchv1.JobReasonDeadlineExceeded
+}
+
+// jobFinished reports whether the Job has reached a terminal state (Complete or Failed).
+// An unfinished Job is what gates re-creating a stage; a finished one no longer does.
+func jobFinished(job *batchv1.Job) bool {
+	if hasJobCondition(job, batchv1.JobComplete) {
+		return true
+	}
+	failed, _ := jobFailure(job)
+	return failed
+}
+
+// isJobOwnedPod reports whether a pod is a Job's child (carries the batch job-name label),
+// distinguishing it from a legacy pre-upgrade raw package pod during the migration window.
+func isJobOwnedPod(pod *corev1.Pod) bool {
+	_, ok := pod.Labels[batchJobNameLabel]
+	return ok
 }
 
 // failureTargetStale reports whether the Job has sat at FailureTarget past the grace window

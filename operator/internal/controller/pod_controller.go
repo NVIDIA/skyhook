@@ -69,6 +69,14 @@ func podHandlerFunc(ctx context.Context, o client.Object) []reconcile.Request {
 func (r *SkyhookReconciler) PodReconcile(ctx context.Context, pod *corev1.Pod) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("pod-reconcile")
 
+	// Dual path during the migration window: a Job-owned child pod's completion and lifecycle are
+	// owned by JobReconcile (and the Job controller), so here we only surface in-flight erroring —
+	// no delete-on-success, no complete write. Legacy raw pods (no job-name label) keep the full
+	// path below. This branch is removed together with the legacy path one minor after the swap.
+	if isJobOwnedPod(pod) {
+		return r.jobPodReconcile(ctx, pod)
+	}
+
 	// check if the package is invalid, if it is then delete the pod and return
 	if invalid, err := r.HandleInvalidPackage(ctx, pod); invalid || err != nil {
 		if err != nil {
@@ -112,6 +120,48 @@ func (r *SkyhookReconciler) PodReconcile(ctx context.Context, pod *corev1.Pod) (
 		// logger.Info("nothing to do yet", "state", state, "pod", pod.Name)
 	}
 	return ctrl.Result{}, nil
+}
+
+// jobPodReconcile handles a Job-owned child pod during the migration window. JobReconcile and the
+// Job controller own completion and cleanup, so this only surfaces in-flight erroring from a
+// genuine step failure — it never deletes the pod or records completion. Erroring is guarded: a
+// terminating pod (pause suspend, a sweep, a manual delete) or a disruption casualty
+// (eviction/preemption/PodGC) stays silent, and only a real terminal step failure marks erroring.
+func (r *SkyhookReconciler) jobPodReconcile(ctx context.Context, pod *corev1.Pod) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithName("pod-reconcile")
+
+	if pod.DeletionTimestamp != nil || hasDisruptionTarget(pod) {
+		return ctrl.Result{}, nil
+	}
+
+	containerName, state, restarts := containerExitedSuccessfully(pod)
+	if state == containerStateFailed && podFailureIsGenuine(pod) {
+		if _, err := r.UpdateNodeState(ctx, pod, v1alpha1.StateErroring, containerName, restarts); err != nil {
+			logger.Error(err, "error updating node state for job pod failure", "pod", pod.Name)
+		}
+	}
+	// Success or in-flight: JobReconcile records completion; nothing to do here.
+	return ctrl.Result{}, nil
+}
+
+// podFailureIsGenuine reports whether the pod's first failing init container is a real terminal
+// step failure — a nonzero exit (including OOMKilled), or an interrupt Job's CrashLoopBackOff —
+// rather than a kubelet-couldn't-tell node-crash artifact (ContainerStatusUnknown) or an
+// admission rejection (no container statuses).
+func podFailureIsGenuine(pod *corev1.Pod) bool {
+	for _, s := range pod.Status.InitContainerStatuses {
+		switch {
+		case s.State.Terminated != nil && s.State.Terminated.ExitCode == 0:
+			continue // succeeded step, keep looking down the chain
+		case s.State.Terminated != nil:
+			return s.State.Terminated.Reason != "ContainerStatusUnknown"
+		case s.State.Waiting != nil && s.State.Waiting.Reason == "CrashLoopBackOff":
+			return true
+		default:
+			return false // an init container still running/pending: no terminal failure yet
+		}
+	}
+	return false
 }
 
 // HandleInvalidPackage deletes invalid packages

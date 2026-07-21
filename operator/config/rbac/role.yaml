@@ -61,6 +61,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods/log
   - pods/status
   verbs:
   - get
@@ -77,6 +78,18 @@ rules:
   resources:
   - mutatingwebhookconfigurations
   - validatingwebhookconfigurations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
   verbs:
   - create
   - delete
