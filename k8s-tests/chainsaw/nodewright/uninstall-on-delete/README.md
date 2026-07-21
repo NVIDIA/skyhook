@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Covers finalizer-driven uninstall: when a Skyhook CR is deleted, the
+Covers finalizer-driven uninstall: when a NodeWright CR is deleted, the
 finalizer runs an uninstall pod on every node for every
 `uninstall.enabled: true` package, waits for completion, and only then
 cleans up labels/annotations/conditions. Packages with
@@ -10,12 +10,12 @@ cleans up labels/annotations/conditions. Packages with
 `nodeState` entry is preserved** after the CR is gone, because no
 `uninstall.sh` ran so the files remain on the host (D2 semantic:
 non-absent = files still on host). This preservation is what the fix in
-`CleanupSCRMetadata` guarantees: the `nodeState_<skyhook>` annotation is
+`CleanupSCRMetadata` guarantees: the `nodeState_<nodewright>` annotation is
 not deleted if it still contains entries.
 
 ## Test Scenario
 
-1. Install a Skyhook with one `uninstall.enabled: true` package
+1. Install a NodeWright with one `uninstall.enabled: true` package
    (`enabled-pkg`) and one `uninstall.enabled: false` package
    (`disabled-pkg`), wait for complete.
 2. `kubectl delete nodewright --wait=false`. Assert:
@@ -40,4 +40,4 @@ not deleted if it still contains entries.
 ## Files
 
 - `chainsaw-test.yaml` — Main test: install → delete CR → assert disabled-pkg state remains after CR is gone
-- `nodewright.yaml` — Skyhook with `enabled-pkg` (uninstall.enabled: true) and `disabled-pkg` (uninstall.enabled: false)
+- `nodewright.yaml` — NodeWright with `enabled-pkg` (uninstall.enabled: true) and `disabled-pkg` (uninstall.enabled: false)

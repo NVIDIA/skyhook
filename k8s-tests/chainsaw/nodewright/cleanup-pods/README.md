@@ -6,8 +6,8 @@ Validates that the operator correctly cleans up pods when a node's state is rese
 
 ## Test Scenario
 
-1. Create a skyhook with package dependencies (A depends on B)
-2. Wait for the skyhook to complete
+1. Create a nodewright with package dependencies (A depends on B)
+2. Wait for the nodewright to complete
 3. Trigger an update to force a config cycle on package B
 4. Once config is complete, update again to make the package error
 5. Clear out the node annotation to trigger cleanup
@@ -22,8 +22,8 @@ Validates that the operator correctly cleans up pods when a node's state is rese
 
 ## Files
 
-- `chainsaw-test.yaml` - Main test configuration with lifecycle assertions inline (pods, nodes, skyhook status) for sequential ordering
-- `setup.yaml` - Skyhook resource definition with package dependencies
+- `chainsaw-test.yaml` - Main test configuration with lifecycle assertions inline (pods, nodes, nodewright status) for sequential ordering
+- `setup.yaml` - NodeWright resource definition with package dependencies
 - `assert-setup-complete.yaml` - Assertion for initial setup completion
 - `assert-config-complete.yaml` - Assertion for config cycle completion
 - `force-config.yaml` - Update to trigger a config cycle

@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Verifies the Skyhook finalizer refuses to proceed with cleanup when the CR is
+Verifies the NodeWright finalizer refuses to proceed with cleanup when the CR is
 paused and at least one `uninstall.enabled: true` package is still tracked in
-`nodeState`. `processSkyhooksPerNode` skips paused Skyhooks, so uninstall pods
+`nodeState`. `processSkyhooksPerNode` skips paused NodeWrights, so uninstall pods
 never get created; without this guard, the finalizer would silently drop
 on-host state the user explicitly asked to be cleaned.
 
@@ -13,15 +13,15 @@ The symmetric disabled-with-pending case is covered in
 
 ## Test Scenario
 
-1. Install a Skyhook with one `uninstall.enabled: true` package, wait for
+1. Install a NodeWright with one `uninstall.enabled: true` package, wait for
    `status: complete`.
-2. Annotate the Skyhook with `nodewright.nvidia.com/pause=true`.
+2. Annotate the NodeWright with `nodewright.nvidia.com/pause=true`.
 3. Issue `kubectl delete nodewright --wait=false`.
 4. Assert the CR is still present (`deletionTimestamp != null`) with a
    `DeletionBlocked` condition
    (`status=True`, `reason=PausedWithPendingUninstall`).
-5. Assert a Warning event was recorded on the Skyhook with
-   `reason=DeletionBlocked`. Because Skyhook is cluster-scoped, events can
+5. Assert a Warning event was recorded on the NodeWright with
+   `reason=DeletionBlocked`. Because NodeWright is cluster-scoped, events can
    land in a non-`default` namespace — a polling script checks events across
    all namespaces rather than a single-namespace resource assert.
 6. Remove the pause annotation. The finalizer now drives uninstall to

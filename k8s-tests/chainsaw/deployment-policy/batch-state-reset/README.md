@@ -10,7 +10,7 @@ When a deployment policy uses exponential or linear strategies, the batch size g
 
 ### 1. Auto-Reset on Completion
 
-When a Skyhook rollout completes (Status→Complete), batch state is automatically reset if `resetBatchStateOnCompletion` is enabled.
+When a NodeWright rollout completes (Status→Complete), batch state is automatically reset if `resetBatchStateOnCompletion` is enabled.
 
 **Expected behavior:**
 
@@ -20,27 +20,27 @@ When a Skyhook rollout completes (Status→Complete), batch state is automatical
 
 ### 2. Configuration Precedence
 
-Tests that Skyhook-level configuration overrides DeploymentPolicy-level configuration.
+Tests that NodeWright-level configuration overrides DeploymentPolicy-level configuration.
 
 **Precedence order:**
 
-1. `Skyhook.spec.deploymentPolicyOptions.resetBatchStateOnCompletion` (highest)
+1. `NodeWright.spec.deploymentPolicyOptions.resetBatchStateOnCompletion` (highest)
 2. `DeploymentPolicy.spec.resetBatchStateOnCompletion`
 3. Default: `true` (safe by default)
 
 **Test scenario:**
 
 - DeploymentPolicy has `resetBatchStateOnCompletion: true`
-- Skyhook overrides with `resetBatchStateOnCompletion: false`
-- Result: Batch state is NOT reset (Skyhook override takes precedence)
+- NodeWright overrides with `resetBatchStateOnCompletion: false`
+- Result: Batch state is NOT reset (NodeWright override takes precedence)
 
 ## Test Architecture
 
-The test uses a single deployment policy with multiple Skyhooks to validate different scenarios:
+The test uses a single deployment policy with multiple NodeWrights to validate different scenarios:
 
 - **test-batch-reset-policy**: DeploymentPolicy with auto-reset enabled
-- **test-auto-reset-enabled**: Skyhook that inherits policy config (tests auto-reset)
-- **test-override-disabled**: Skyhook that overrides to disable reset (tests precedence)
+- **test-auto-reset-enabled**: NodeWright that inherits policy config (tests auto-reset)
+- **test-override-disabled**: NodeWright that overrides to disable reset (tests precedence)
 
 Each scenario validates:
 
@@ -60,8 +60,8 @@ The test requires 8 nodes labeled with:
 ## Test Flow
 
 1. **Setup**: Label nodes and apply deployment policy
-2. **Test Auto-Reset**: Deploy skyhook with reset enabled, verify batch state resets on completion
-3. **Test Precedence**: Deploy skyhook with reset disabled (override), verify batch state preserved
+2. **Test Auto-Reset**: Deploy nodewright with reset enabled, verify batch state resets on completion
+3. **Test Precedence**: Deploy nodewright with reset disabled (override), verify batch state preserved
 4. **Cleanup**: Remove resources and node labels
 
 ## Expected Results

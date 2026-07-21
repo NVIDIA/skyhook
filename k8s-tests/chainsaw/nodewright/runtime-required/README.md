@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Validates per-node runtime-required behavior where each node's taint is removed independently when that node completes all runtime-required skyhooks.
+Validates per-node runtime-required behavior where each node's taint is removed independently when that node completes all runtime-required nodewrights.
 
 ## Test Scenario
 
@@ -13,7 +13,7 @@ The test explicitly validates node isolation by blocking one node while the othe
 1. Label both worker nodes with the test label (`nodewright.nvidia.com/runtime-required-test=true`)
 2. Add runtime-required taints to both nodes
 3. **Add blocking taint to kind-worker2** only (`test-block=true:NoSchedule`)
-4. Apply a runtime-required skyhook (does NOT tolerate the blocking taint)
+4. Apply a runtime-required nodewright (does NOT tolerate the blocking taint)
 5. Result: Only kind-worker can run; kind-worker2 is blocked
 
 ### Phase 2: Assert Node Isolation (Sequential Assertions)
@@ -36,14 +36,14 @@ The test explicitly validates node isolation by blocking one node while the othe
 
 ## Key Features Tested
 
-- Per-node taint removal for runtime-required skyhooks
+- Per-node taint removal for runtime-required nodewrights
 - Node isolation (one slow node doesn't block others)
 - Multi-node runtime-required behavior
-- Taint is removed based on individual node completion, not global skyhook completion
+- Taint is removed based on individual node completion, not global nodewright completion
 
 ## Files
 
-- `chainsaw-test.yaml` - Main test configuration with all assertions inline (pods, nodes, skyhook status) for sequential ordering through the multi-phase flow; the skyhook resource is also defined inline
+- `chainsaw-test.yaml` - Main test configuration with all assertions inline (pods, nodes, nodewright status) for sequential ordering through the multi-phase flow; the nodewright resource is also defined inline
 
 ## Notes
 

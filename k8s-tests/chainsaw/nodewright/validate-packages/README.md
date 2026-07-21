@@ -10,9 +10,9 @@ Validates that the operator correctly validates pods against the package spec an
    - Bogus image that doesn't exist
    - Too many resources requested
    - Environment variable that causes the container to hang
-2. Apply the skyhook with these invalid packages
+2. Apply the nodewright with these invalid packages
 3. Verify the operator detects the spec mismatches
-4. Update the skyhook with corrected specifications
+4. Update the nodewright with corrected specifications
 5. Assert that:
    - Invalid pods are killed
    - New pods with correct spec are created
@@ -30,6 +30,6 @@ Validates that the operator correctly validates pods against the package spec an
 ## Files
 
 - `chainsaw-test.yaml` - Main test configuration
-- `nodewright.yaml` - Initial skyhook with invalid packages
-- `update.yaml` - Corrected skyhook configuration
+- `nodewright.yaml` - Initial nodewright with invalid packages
+- `update.yaml` - Corrected nodewright configuration
 - `assert.yaml` - State assertions
