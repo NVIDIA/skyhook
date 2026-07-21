@@ -99,13 +99,13 @@ spec:
       - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute }
       containers:
       - name: done                                # replaces the forever-running `pause` container
-        image: <agent image>
+        image: <package image>                    # already pulled by init-copy, and guaranteed to have /bin/sh
         command: ["/bin/sh", "-c", "exit 0"]
 ```
 
 Three things about this shape are non-obvious:
 
-- **The main container changes** because a Job records completion only when its pod reaches `Succeeded`, which needs every container to terminate. The init-container chain stays — it is the only native run-to-completion sequencing primitive, and per-step container names are load-bearing for state reporting. The `pause` container's *other* job, being the in-flight marker, is taken over by the Job object, which outlives its pods.
+- **The main container changes** because a Job records completion only when its pod reaches `Succeeded`, which needs every container to terminate. It runs on the **package image**, not the agent image: the init-copy container already invokes `/bin/sh` from the package image, so that image is guaranteed to have a shell, whereas a minimal agent image may not — and an exit-0 container whose `/bin/sh` is missing `StartError`s, so the pod never succeeds and the Job hangs forever. The init-container chain stays — it is the only native run-to-completion sequencing primitive, and per-step container names are load-bearing for state reporting. The `pause` container's *other* job, being the in-flight marker, is taken over by the Job object, which outlives its pods.
 - **`restartPolicy: Never` on package Jobs** makes each attempt a fresh pod, so a failure survives as a full-log archive pod instead of being destroyed by an in-place restart. Interrupt Jobs are the exception — they keep `OnFailure`, because a reboot interrupt kills its own pod by design; under `Never` every successful reboot would mint a spurious failed attempt, whereas in-place restart after the node returns is the proven recovery shape (the agent skips the already-done interrupt via its resource-id flag file).
 - **The unbounded not-ready/unreachable tolerations** stop the taint manager from evicting a node-pinned pod when a reboot-class interrupt keeps the node NotReady past the default eviction timeout. These pods are node-bound host agents — running them anywhere else is meaningless, so eviction is never useful. A node that stays NotReady forever holds the Job Active exactly as today's raw pod would; a *removed* node is handled by the orphaned-node sweep.
 
