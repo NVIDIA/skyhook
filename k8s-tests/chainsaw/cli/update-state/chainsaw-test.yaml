@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: cli-update-state-test
         format: yaml
     - get:
@@ -47,7 +47,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-update-state-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset cli-update-state-test --confirm 2>/dev/null || true
           echo "State reset complete"
 
   # Step 1: Create a Skyhook and wait for it to complete
@@ -65,7 +65,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli disable cli-update-state-test --confirm
+          ../nodewright-cli disable cli-update-state-test --confirm
     - assert:
         file: assert-skyhook-disabled.yaml
 
@@ -75,7 +75,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli update-state cli-update-state-test test-package 1.2.3 apply erroring --confirm
+          ../nodewright-cli update-state cli-update-state-test test-package 1.2.3 apply erroring --confirm
 
   # Step 4: Assert the per-node annotation reflects the manual edit. The
   # nodeState annotation is JSON-as-string, so we use jq rather than a native
@@ -86,14 +86,14 @@ spec:
         timeout: 30s
         content: |
           set -eu
-          nodes=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}')
+          nodes=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}')
           if [ -z "$nodes" ]; then
             echo "no test nodes found"
             exit 1
           fi
           fail=0
           for node in $nodes; do
-            raw=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/nodeState_cli-update-state-test}')
+            raw=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.nodewright\.nvidia\.com/nodeState_cli-update-state-test}')
             if [ -z "$raw" ]; then
               echo "node $node: nodeState annotation missing"
               fail=1

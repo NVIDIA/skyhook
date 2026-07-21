@@ -30,10 +30,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-var (
-	deploymentPolicylog = logf.Log.WithName("deployment-policy-resource")
-)
-
 // SetupWebhookWithManager will setup the manager to manage the webhooks
 func (r *DeploymentPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	deploymentPolicyWebhook := &DeploymentPolicyWebhook{
@@ -59,7 +55,7 @@ var _ admission.Defaulter[*DeploymentPolicy] = &DeploymentPolicyWebhook{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) Default(ctx context.Context, deploymentPolicy *DeploymentPolicy) error {
 
-	deploymentPolicylog.Info(DefaultCompartmentName, "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info(DefaultCompartmentName, "name", deploymentPolicy.Name)
 
 	// Apply defaults to the default strategy
 	if deploymentPolicy.Spec.Default.Strategy != nil {
@@ -83,26 +79,46 @@ func (r *DeploymentPolicyWebhook) Default(ctx context.Context, deploymentPolicy 
 
 var _ admission.Validator[*DeploymentPolicy] = &DeploymentPolicyWebhook{}
 
+// deploymentPolicyDeprecationWarning is surfaced on every create/update of a legacy
+// DeploymentPolicy during the migration bridge. It does not name a specific removal release.
+const deploymentPolicyDeprecationWarning = "skyhook.nvidia.com/v1alpha1 DeploymentPolicy is deprecated; " +
+	"migrate to nodewright.nvidia.com/v1alpha1 DeploymentPolicy (change apiVersion to " +
+	"nodewright.nvidia.com/v1alpha1). The skyhook.nvidia.com group will be removed in a future release."
+
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateCreate(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicylog.Info("validate create", "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info("validate create", "name", deploymentPolicy.Name)
 
-	return nil, deploymentPolicy.Validate()
+	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldDeploymentPolicy, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicylog.Info("validate update", "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info("validate update", "name", deploymentPolicy.Name)
 
-	return nil, deploymentPolicy.Validate()
+	warnings := admission.Warnings{deploymentPolicyDeprecationWarning}
+
+	// MIGRATION-SHIM: a migrated legacy DeploymentPolicy is frozen read-only; real edits go
+	// to the nodewright.nvidia.com DeploymentPolicy (see legacy_readonly_webhook.go).
+	// legacyDeploymentPolicyReadOnlyError rejects every meaningful edit and allows only
+	// no-ops, finalizer edits, and deletions. Those must NOT be re-validated, or a frozen
+	// object that no longer satisfies a newer rule could no longer be re-applied or
+	// finalized. Real validation runs on the writable nodewright.nvidia.com object.
+	if oldDeploymentPolicy != nil {
+		return warnings, legacyDeploymentPolicyReadOnlyError(oldDeploymentPolicy, deploymentPolicy)
+	}
+
+	// oldDeploymentPolicy == nil is only reached by unit tests exercising create-style
+	// validation through this entrypoint; validate the spec as on create.
+	return warnings, deploymentPolicy.Validate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *DeploymentPolicyWebhook) ValidateDelete(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicylog.Info("validate delete", "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info("validate delete", "name", deploymentPolicy.Name)
 
 	// Check if any Skyhooks are still referencing this policy
 	skyhooks := &SkyhookList{}
@@ -156,7 +172,7 @@ func (r *DeploymentPolicy) Validate() error {
 
 		// Validate the compartment itself
 		if err := compartment.Validate(); err != nil {
-			return err
+			return fmt.Errorf("compartment %q: %w", compartment.Name, err)
 		}
 
 		// Check for identical selectors

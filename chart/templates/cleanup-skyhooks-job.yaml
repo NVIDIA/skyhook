@@ -15,30 +15,17 @@ spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      # Maintenance job: only talks to the API server, so it must be schedulable
+      # anywhere and must NOT inherit the controller-manager's nodeSelector/nodeAffinity
+      # (that would make this hook unschedulable, and stall, whenever the operator's
+      # placement is restrictive). Only a bare os=linux selector is kept (the job image
+      # is Linux-only) so it cannot land on a Windows node in a mixed-OS cluster.
+      # Tolerations are kept so it can land on tainted nodes.
+      nodeSelector:
+        kubernetes.io/os: linux
       {{- with .Values.controllerManager.tolerations }}
       tolerations:
         {{- toYaml . | nindent 6 }}
-      {{- end }}
-      {{- with .Values.controllerManager.selectors }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- if .Values.controllerManager.nodeAffinity.matchExpressions }}
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              {{- range .Values.controllerManager.nodeAffinity.matchExpressions }}
-              - key: {{ .key }}
-                operator: {{ .operator }}
-                {{- if .values }}
-                values:
-                {{- range .values }}
-                - {{ . }}
-                {{- end }}
-                {{- end }}
-              {{- end }}
       {{- end }}
       securityContext:
         runAsNonRoot: true
@@ -110,10 +97,16 @@ spec:
         - /bin/sh
         - -c
         - |
-          # Delete all Skyhook resources (cluster-scoped)
-          # Using || true to ensure job succeeds even if delete times out
+          # Delete all Skyhook/NodeWright resources (cluster-scoped) so the
+          # operator can strip finalizers before it is torn down; otherwise the
+          # CRD deletion during helm uninstall hangs on the finalizer.
+          # Using || true to ensure job succeeds even if delete times out.
           kubectl delete skyhooks --all --ignore-not-found || true
-          # Delete all DeploymentPolicy resources (cluster-scoped)
-          kubectl delete deploymentpolicies --all --ignore-not-found || true
+          kubectl delete nodewrights --all --ignore-not-found || true
+          # Delete all DeploymentPolicy resources (cluster-scoped). The plural
+          # "deploymentpolicies" exists in both groups during the migration, so
+          # fully qualify each to avoid an ambiguous short-name lookup.
+          kubectl delete deploymentpolicies.skyhook.nvidia.com --all --ignore-not-found || true
+          kubectl delete deploymentpolicies.nodewright.nvidia.com --all --ignore-not-found || true
           echo "Cleanup completed"
 {{- end }}

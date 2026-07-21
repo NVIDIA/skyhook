@@ -94,6 +94,26 @@ var _ = Describe("DeploymentPolicy", func() {
 	})
 
 	Context("When creating DeploymentPolicy under Validation Webhook", func() {
+		It("should return a migration deprecation warning on create and update", func() {
+			deploymentPolicy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "foobar"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget:   DeploymentBudget{Percent: ptr.To(25)},
+						Strategy: &DeploymentStrategy{Fixed: &FixedStrategy{}},
+					},
+				},
+			}
+
+			warnings, err := deploymentPolicyWebhook.ValidateCreate(ctx, deploymentPolicy)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
+
+			warnings, err = deploymentPolicyWebhook.ValidateUpdate(ctx, deploymentPolicy, deploymentPolicy)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(ContainElement(ContainSubstring("nodewright.nvidia.com")))
+		})
+
 		It("should require exactly one of fixed, linear, or exponential", func() {
 			// No strategy set: should fail
 			deploymentPolicy := &DeploymentPolicy{

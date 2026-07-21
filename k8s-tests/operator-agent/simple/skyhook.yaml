@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator
@@ -24,7 +24,7 @@ metadata:
 spec:
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      nodewright.nvidia.com/test-node: skyhooke2e
   packages:
     simple-agent-operator:
       version: "1.1.1"

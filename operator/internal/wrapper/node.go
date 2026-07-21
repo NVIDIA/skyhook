@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/graph"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"github.com/go-logr/logr"
@@ -83,6 +83,11 @@ type SkyhookNodeOnly interface {
 	GetVersion() string
 	// Migrate updates stored node state/annotations to the current schema when the operator version changes.
 	Migrate(logger logr.Logger) error
+	// PruneLegacyMetadata removes any remaining legacy skyhook.nvidia.com-prefixed node
+	// metadata (annotations, labels, conditions) after the rollback window elapses, and
+	// marks the node changed if it removed anything. MIGRATION-SHIM: remove with the
+	// legacy skyhook.nvidia.com group.
+	PruneLegacyMetadata() bool
 	// State returns the persisted NodeState for this node (from memory or annotations).
 	State() (v1alpha1.NodeState, error)
 	// SetState persists the given NodeState to the node's annotations and in-memory state.
@@ -144,9 +149,9 @@ func NewSkyhookNodeOnly(node *corev1.Node, skyhookName string) (SkyhookNodeOnly,
 }
 
 // Convert upgrades a SkyhookNodeOnly to a full SkyhookNode when a Skyhook object is available.
-func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.Skyhook) (SkyhookNode, error) {
+func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.NodeWright) (SkyhookNode, error) {
 	ret := node.(*skyhookNode)
-	ret.skyhook = &Skyhook{Skyhook: skyhook}
+	ret.skyhook = &Skyhook{NodeWright: skyhook}
 
 	graph, err := skyhook.Spec.BuildGraph()
 	if err != nil {
@@ -159,7 +164,7 @@ func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.Skyhook) (SkyhookNode, erro
 }
 
 // NewSkyhookNode creates a full SkyhookNode from a Node and a Skyhook (node + graph + name).
-func NewSkyhookNode(node *corev1.Node, skyhook *v1alpha1.Skyhook) (SkyhookNode, error) {
+func NewSkyhookNode(node *corev1.Node, skyhook *v1alpha1.NodeWright) (SkyhookNode, error) {
 
 	t, err := NewSkyhookNodeOnly(node, skyhook.Name)
 	if err != nil {
@@ -294,6 +299,18 @@ func (node *skyhookNode) GetVersion() string {
 func (node *skyhookNode) Migrate(logger logr.Logger) error {
 
 	from := node.GetVersion()
+	if from == "" {
+		// A node with no new-prefix version annotation is either brand new or was
+		// last written by the pre-rename operator (skyhook.nvidia.com/* keys). Re-key
+		// any legacy node metadata to the nodewright prefix BEFORE we trust
+		// GetVersion()/State() (both read the new prefix), otherwise a renamed node
+		// looks fresh and every package re-runs. No-op on a genuinely fresh node.
+		// MIGRATION-SHIM: remove this block with the legacy skyhook.nvidia.com group.
+		if err := migrateNodePrefixToNodeWright(node, logger); err != nil {
+			return err
+		}
+		from = node.GetVersion()
+	}
 	to := version.VERSION
 
 	if from == to { // already migrated
@@ -314,6 +331,11 @@ func (node *skyhookNode) Migrate(logger logr.Logger) error {
 	}
 
 	return nil
+}
+
+// MIGRATION-SHIM: remove with the legacy skyhook.nvidia.com group.
+func (node *skyhookNode) PruneLegacyMetadata() bool {
+	return pruneLegacyNodePrefix(node)
 }
 
 // SetState persists the given NodeState to the node's annotations and in-memory state.

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -54,7 +54,7 @@ func GetPackage(pod *corev1.Pod) (*PackageSkyhook, error) {
 }
 
 // SetPackages sets the package in the pod annotations
-func SetPackages(pod *corev1.Pod, skyhook *v1alpha1.Skyhook, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
+func SetPackages(pod *corev1.Pod, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
 	if pod == nil || _package == nil {
 		return nil
 	}

@@ -19,7 +19,7 @@ controllerManager:
   # Configure node affinity expressions for testing - this targets non-existent labels
   nodeAffinity:
     matchExpressions:
-      - key: skyhook.nvidia.com/test-node
+      - key: nodewright.nvidia.com/test-node
         operator: In
         values:
         - fooboar

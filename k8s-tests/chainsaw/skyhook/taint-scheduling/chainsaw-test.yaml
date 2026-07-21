@@ -28,11 +28,11 @@ spec:
   - get:
       apiVersion: v1
       kind: Node
-      selector: skyhook.nvidia.com/test-node=skyhooke2e
+      selector: nodewright.nvidia.com/test-node=skyhooke2e
       format: yaml
   - get:
-      apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
       name: taint-scheduling
       format: yaml
   steps:
@@ -42,9 +42,9 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset taint-scheduling --confirm 2>/dev/null || true
+          ../nodewright-cli reset taint-scheduling --confirm 2>/dev/null || true
           ## add taints to nodes
-          ../nodes_add_taint.sh all nvidia.com/gpu:NoSchedule skyhook.nvidia.com/test-node=skyhooke2e
+          ../nodes_add_taint.sh all nvidia.com/gpu:NoSchedule nodewright.nvidia.com/test-node=skyhooke2e
     - create:
         file: skyhook.yaml
     - assert:
@@ -67,4 +67,4 @@ spec:
     - script:
         content: |
           ## remove taints from nodes
-          ../nodes_remove_taint.sh all nvidia.com/gpu:NoSchedule skyhook.nvidia.com/test-node=skyhooke2e
+          ../nodes_remove_taint.sh all nvidia.com/gpu:NoSchedule nodewright.nvidia.com/test-node=skyhooke2e

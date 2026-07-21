@@ -5,6 +5,34 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+### Breaking Changes
+
+- **The primary CRD is renamed from `Skyhook` (`skyhook.nvidia.com/v1alpha1`) to
+  `NodeWright` (`nodewright.nvidia.com/v1alpha1`), and `DeploymentPolicy` moves to
+  the same `nodewright.nvidia.com` group.** This is the operator side of the
+  Skyhook to NodeWright rename.
+  - **Migration is automatic for the common case.** The transition release serves
+    both API groups. A mirror controller imports every existing `skyhook.nvidia.com`
+    `Skyhook`/`DeploymentPolicy` into its `nodewright.nvidia.com` equivalent and
+    reconciles the NodeWright as the source of truth. Per-node package state is
+    re-keyed in place (`skyhook.nvidia.com/*` node annotations become
+    `nodewright.nvidia.com/*`), so **packages are not re-run** and in-progress
+    rollouts keep their position.
+  - **Legacy `Skyhook`/`DeploymentPolicy` objects become read-only once migrated:**
+    the admission webhook rejects spec and `pause`/`disable` edits (deletions and
+    identical re-applies are still allowed) and emits a deprecation warning.
+    Operate the mirrored `NodeWright` instead; to move your manifests forward,
+    change `apiVersion` to `nodewright.nvidia.com/v1alpha1` (and, for `Skyhook`,
+    `kind` to `NodeWright`) and re-apply.
+  - **Upgrade during a quiet window:** perform the upgrade only when every Skyhook
+    is `complete` with no nodes in progress. In-flight stages resume idempotently
+    (no double reboot), but upgrading idle avoids even the benign package-pod
+    restart.
+  - The legacy `skyhook.nvidia.com` group remains available for a multi-release,
+    adoption-gated migration window and is removed in a later release.
+  - **See [docs/nodewright-migration.md](../docs/nodewright-migration.md)** for the
+    full migration guide, the pre-upgrade check, and a verification checklist.
+
 ### Bug Fixes
 
 - **Package `image` must be a bare registry/repository reference; inline tags

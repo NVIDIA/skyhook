@@ -20,10 +20,10 @@ apiVersion: v1
 metadata:
   namespace: skyhook
   labels:
-    skyhook.nvidia.com/name: simple-skyhook
-    skyhook.nvidia.com/package: spencer-3.2.3
+    nodewright.nvidia.com/name: simple-skyhook
+    nodewright.nvidia.com/package: spencer-3.2.3
   annotations:
-    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+    ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
       {
         "name": "spencer",
         "version": "3.2.3",
@@ -32,8 +32,8 @@ metadata:
         "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
-    - apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
+    - apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
       name: simple-skyhook
 spec:
   initContainers:
@@ -75,10 +75,10 @@ apiVersion: v1
 metadata:
   namespace: skyhook
   labels:
-    skyhook.nvidia.com/name: simple-skyhook
-    skyhook.nvidia.com/package: foobar-1.2
+    nodewright.nvidia.com/name: simple-skyhook
+    nodewright.nvidia.com/package: foobar-1.2
   annotations:
-    ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+    ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
       {
         "name": "foobar",
         "version": "1.2",
@@ -87,8 +87,8 @@ metadata:
         "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
-    - apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
+    - apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
       name: simple-skyhook
 spec:
   initContainers:

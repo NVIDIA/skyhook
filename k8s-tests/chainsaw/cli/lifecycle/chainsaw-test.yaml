@@ -30,7 +30,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-lifecycle-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset cli-lifecycle-test --confirm 2>/dev/null || true
           echo "✓ State reset complete"
 
   # Step 1: Create a Skyhook
@@ -43,7 +43,7 @@ spec:
         content: |
           echo "Waiting for Skyhook to be created..."
           for i in $(seq 1 15); do
-            if kubectl get skyhook cli-lifecycle-test 2>/dev/null; then
+            if kubectl get nodewright cli-lifecycle-test 2>/dev/null; then
               echo "Skyhook created"
               exit 0
             fi
@@ -58,7 +58,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli pause cli-lifecycle-test --confirm
+          ../nodewright-cli pause cli-lifecycle-test --confirm
     - assert:
         file: assert-paused.yaml
 
@@ -68,7 +68,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli resume cli-lifecycle-test
+          ../nodewright-cli resume cli-lifecycle-test
     - assert:
         file: assert-resumed.yaml
 
@@ -78,7 +78,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli disable cli-lifecycle-test --confirm
+          ../nodewright-cli disable cli-lifecycle-test --confirm
     - assert:
         file: assert-disabled.yaml
 
@@ -88,7 +88,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli enable cli-lifecycle-test
+          ../nodewright-cli enable cli-lifecycle-test
     - assert:
         file: assert-enabled.yaml
 
@@ -98,26 +98,26 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli pause cli-lifecycle-test --confirm
-          ../skyhook-cli disable cli-lifecycle-test --confirm
+          ../nodewright-cli pause cli-lifecycle-test --confirm
+          ../nodewright-cli disable cli-lifecycle-test --confirm
     - assert:
         file: assert-paused-and-disabled.yaml
     - script:
         timeout: 30s
         content: |
           # Resume should only remove pause, not disable
-          ../skyhook-cli resume cli-lifecycle-test
+          ../nodewright-cli resume cli-lifecycle-test
     - assert:
         file: assert-still-disabled.yaml
     - script:
         timeout: 30s
         content: |
           # Enable should remove disable
-          ../skyhook-cli enable cli-lifecycle-test
+          ../nodewright-cli enable cli-lifecycle-test
 
   # Cleanup
   - name: cleanup
     try:
     - script:
         content: |
-          kubectl delete skyhook cli-lifecycle-test 2>/dev/null || true
+          kubectl delete nodewright cli-lifecycle-test 2>/dev/null || true

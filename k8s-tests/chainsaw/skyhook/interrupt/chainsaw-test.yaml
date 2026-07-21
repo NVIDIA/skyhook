@@ -29,11 +29,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: interrupt
         format: yaml
   steps:
@@ -43,7 +43,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset interrupt --confirm 2>/dev/null || true
+          ../nodewright-cli reset interrupt --confirm 2>/dev/null || true
     - create:
         file: pod.yaml
     - wait:
@@ -75,10 +75,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: interrupt
-              skyhook.nvidia.com/package: jason-1.3.2
+              nodewright.nvidia.com/name: interrupt
+              nodewright.nvidia.com/package: jason-1.3.2
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "jason",
                   "version": "1.3.2",
@@ -87,8 +87,8 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: skyhook.nvidia.com/v1alpha1
-                kind: Skyhook
+              - apiVersion: nodewright.nvidia.com/v1alpha1
+                kind: NodeWright
                 name: interrupt
           spec:
             initContainers:
@@ -113,10 +113,10 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_interrupt: in_progress
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_interrupt: in_progress
             annotations:
-              ("skyhook.nvidia.com/nodeState_interrupt" && parse_json("skyhook.nvidia.com/nodeState_interrupt")):
+              ("nodewright.nvidia.com/nodeState_interrupt" && parse_json("nodewright.nvidia.com/nodeState_interrupt")):
                 {
                   "jason|1.3.2": {
                       "name": "jason",
@@ -126,16 +126,16 @@ spec:
                       "state": "complete"
                   }
                 }
-              skyhook.nvidia.com/status_interrupt: in_progress
+              nodewright.nvidia.com/status_interrupt: in_progress
           spec:
             taints:
             - effect: NoSchedule
               key: node.kubernetes.io/unschedulable
           status:
-            (conditions[?type == 'skyhook.nvidia.com/interrupt/NotReady']):
+            (conditions[?type == 'nodewright.nvidia.com/interrupt/NotReady']):
             - reason: "Incomplete"
               status: "True"
-            (conditions[?type == 'skyhook.nvidia.com/interrupt/Erroring']):
+            (conditions[?type == 'nodewright.nvidia.com/interrupt/Erroring']):
             - reason: "Not Erroring"
               status: "False"
     - assert:
@@ -154,10 +154,10 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_interrupt: in_progress
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_interrupt: in_progress
             annotations:
-              ("skyhook.nvidia.com/nodeState_interrupt" && parse_json("skyhook.nvidia.com/nodeState_interrupt")):
+              ("nodewright.nvidia.com/nodeState_interrupt" && parse_json("nodewright.nvidia.com/nodeState_interrupt")):
                 {
                   "jason|1.3.2": {
                       "name": "jason",
@@ -181,17 +181,17 @@ spec:
                       "state": "in_progress"
                   }
                 }
-              skyhook.nvidia.com/cordon_interrupt: "true"
-              skyhook.nvidia.com/status_interrupt: in_progress
+              nodewright.nvidia.com/cordon_interrupt: "true"
+              nodewright.nvidia.com/status_interrupt: in_progress
           spec:
             taints:
             - effect: NoSchedule
               key: node.kubernetes.io/unschedulable
           status:
-            (conditions[?type == 'skyhook.nvidia.com/interrupt/NotReady']):
+            (conditions[?type == 'nodewright.nvidia.com/interrupt/NotReady']):
             - reason: "Incomplete"
               status: "True"
-            (conditions[?type == 'skyhook.nvidia.com/interrupt/Erroring']):
+            (conditions[?type == 'nodewright.nvidia.com/interrupt/Erroring']):
             - reason: "Not Erroring"
               status: "False"
     - assert:
@@ -202,10 +202,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: interrupt
-              skyhook.nvidia.com/package: dexter-1.2.3
+              nodewright.nvidia.com/name: interrupt
+              nodewright.nvidia.com/package: dexter-1.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                     "name": "dexter",
                     "version": "1.2.3",
@@ -214,8 +214,8 @@ spec:
                     "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: skyhook.nvidia.com/v1alpha1
-                kind: Skyhook
+              - apiVersion: nodewright.nvidia.com/v1alpha1
+                kind: NodeWright
                 name: interrupt
           spec:
             initContainers:
@@ -235,10 +235,10 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_interrupt: complete
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_interrupt: complete
             annotations:
-              ("skyhook.nvidia.com/nodeState_interrupt" && parse_json("skyhook.nvidia.com/nodeState_interrupt")):
+              ("nodewright.nvidia.com/nodeState_interrupt" && parse_json("nodewright.nvidia.com/nodeState_interrupt")):
                 {
                   "baxter|3.3": {
                       "name": "baxter",
@@ -276,20 +276,20 @@ spec:
                       "state": "complete"
                   }
                 }
-              skyhook.nvidia.com/status_interrupt: complete
+              nodewright.nvidia.com/status_interrupt: complete
             (!taints || length(taints)==`0` || (taints && !not_null(taints))): true ## taints should be empty or not exist
           status:
-            (conditions[?type == 'skyhook.nvidia.com/interrupt/NotReady']):
+            (conditions[?type == 'nodewright.nvidia.com/interrupt/NotReady']):
             - reason: "Complete"
               status: "False"
-            (conditions[?type == 'skyhook.nvidia.com/interrupt/Erroring']):
+            (conditions[?type == 'nodewright.nvidia.com/interrupt/Erroring']):
             - reason: "Not Erroring"
               status: "False"
     - assert:
         ## skyhook complete
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: interrupt
           status:

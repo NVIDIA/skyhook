@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: uninstall-on-delete
         format: yaml
   steps:
@@ -43,13 +43,13 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset uninstall-on-delete --confirm 2>/dev/null || true
+          ../nodewright-cli reset uninstall-on-delete --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-on-delete
           status:
@@ -62,7 +62,7 @@ spec:
     try:
     - script:
         content: |
-          kubectl delete skyhook uninstall-on-delete --wait=false
+          kubectl delete nodewright uninstall-on-delete --wait=false
     - assert:
         ## uninstall pod for enabled package
         resource:
@@ -71,8 +71,8 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: uninstall-on-delete
-              skyhook.nvidia.com/package: enabled-pkg-2.1.4
+              nodewright.nvidia.com/name: uninstall-on-delete
+              nodewright.nvidia.com/package: enabled-pkg-2.1.4
           spec:
             initContainers:
               - name: enabled-pkg-init
@@ -86,7 +86,7 @@ spec:
         ## verify the CR is eventually deleted
         content: |
           for i in $(seq 1 60); do
-            if ! kubectl get skyhook uninstall-on-delete 2>/dev/null; then
+            if ! kubectl get nodewright uninstall-on-delete 2>/dev/null; then
               echo "CR deleted successfully"
               exit 0
             fi
@@ -106,8 +106,8 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-on-delete")."disabled-pkg|2.1.4".name == 'disabled-pkg'): true
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-on-delete")."disabled-pkg|2.1.4".stage == 'config'): true
-              (parse_json("skyhook.nvidia.com/nodeState_uninstall-on-delete")."disabled-pkg|2.1.4".state == 'complete'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-on-delete")."disabled-pkg|2.1.4".name == 'disabled-pkg'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-on-delete")."disabled-pkg|2.1.4".stage == 'config'): true
+              (parse_json("nodewright.nvidia.com/nodeState_uninstall-on-delete")."disabled-pkg|2.1.4".state == 'complete'): true

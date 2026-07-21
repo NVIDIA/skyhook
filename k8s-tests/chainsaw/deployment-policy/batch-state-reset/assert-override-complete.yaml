@@ -16,8 +16,8 @@
 
 # Assert override skyhook completed but batch state was NOT reset (preserved)
 # With resetBatchStateOnCompletion: false, batch state should show values > initial
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: test-override-disabled
 status:

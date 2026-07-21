@@ -55,7 +55,7 @@ Each scenario validates:
 The test requires 8 nodes labeled with:
 
 - `tier: "1"` - Compartment selector
-- `skyhook.nvidia.com/test-node: batch-reset-test` - Test isolation
+- `nodewright.nvidia.com/test-node: batch-reset-test` - Test isolation
 
 ## Test Flow
 

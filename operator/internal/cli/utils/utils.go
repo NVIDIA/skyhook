@@ -39,7 +39,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 )
 
 // Output format constants
@@ -49,6 +49,21 @@ const (
 	OutputFormatYAML  = "yaml"
 	OutputFormatWide  = "wide"
 )
+
+// RegisterNodeWrightNameFlag adds the `--nodewright` flag (bound to *dest) that
+// names the target NodeWright CR. It also keeps the legacy `--skyhook` flag
+// working as a deprecated back-compat alias: the CR was renamed Skyhook ->
+// NodeWright, so scripts that still pass `--skyhook` work but print a migration
+// warning. When required is true, exactly one of the two must be supplied.
+func RegisterNodeWrightNameFlag(cmd *cobra.Command, dest *string, usage string, required bool) {
+	cmd.Flags().StringVar(dest, "nodewright", "", usage)
+	cmd.Flags().StringVar(dest, "skyhook", "", usage)
+	_ = cmd.Flags().MarkDeprecated("skyhook", "use --nodewright instead")
+	cmd.MarkFlagsMutuallyExclusive("nodewright", "skyhook")
+	if required {
+		cmd.MarkFlagsOneRequired("nodewright", "skyhook")
+	}
+}
 
 // MatchNodes matches node patterns against a list of available nodes.
 // Patterns can be exact node names or regex patterns.
@@ -89,13 +104,13 @@ func MatchNodes(patterns []string, availableNodes []string) ([]string, error) {
 }
 
 // UnstructuredToSkyhook converts an unstructured object to a Skyhook.
-func UnstructuredToSkyhook(u *unstructured.Unstructured) (*v1alpha1.Skyhook, error) {
+func UnstructuredToSkyhook(u *unstructured.Unstructured) (*v1alpha1.NodeWright, error) {
 	data, err := u.MarshalJSON()
 	if err != nil {
 		return nil, fmt.Errorf("marshaling unstructured: %w", err)
 	}
 
-	var skyhook v1alpha1.Skyhook
+	var skyhook v1alpha1.NodeWright
 	if err := json.Unmarshal(data, &skyhook); err != nil {
 		return nil, fmt.Errorf("unmarshaling to skyhook: %w", err)
 	}
@@ -116,7 +131,7 @@ const (
 func SetSkyhookAnnotation(ctx context.Context, dynamicClient dynamic.Interface, skyhookName, annotation, value string) error {
 	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, annotation, value)
 
-	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	gvr := v1alpha1.GroupVersion.WithResource("nodewrights")
 	_, err := dynamicClient.Resource(gvr).Patch(
 		ctx,
 		skyhookName,
@@ -136,7 +151,7 @@ func SetSkyhookAnnotation(ctx context.Context, dynamicClient dynamic.Interface, 
 func RemoveSkyhookAnnotation(ctx context.Context, dynamicClient dynamic.Interface, skyhookName, annotation string) error {
 	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:null}}}`, annotation)
 
-	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	gvr := v1alpha1.GroupVersion.WithResource("nodewrights")
 	_, err := dynamicClient.Resource(gvr).Patch(
 		ctx,
 		skyhookName,
@@ -329,7 +344,7 @@ const (
 	MinAnnotationSupportVersion = "v0.8.0"
 	// MinNodeStateSupportVersion is the lowest operator version known to use
 	// the current map[string]PackageStatus shape for the
-	// skyhook.nvidia.com/nodeState_<skyhook> annotation. The shape itself has
+	// nodewright.nvidia.com/nodeState_<skyhook> annotation. The shape itself has
 	// been stable since this version; what has evolved in later releases is
 	// the set of recognized stage / state values (e.g. uninstall and
 	// uninstall-interrupt were added in v0.16.0). Users targeting an older
@@ -381,11 +396,11 @@ func IsValidVersion(v string) bool {
 }
 
 // GetSkyhook fetches a Skyhook CR by name using the dynamic client.
-func GetSkyhook(ctx context.Context, dynamicClient dynamic.Interface, name string) (*v1alpha1.Skyhook, error) {
-	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+func GetSkyhook(ctx context.Context, dynamicClient dynamic.Interface, name string) (*v1alpha1.NodeWright, error) {
+	gvr := v1alpha1.GroupVersion.WithResource("nodewrights")
 	obj, err := dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("getting skyhook %q: %w", name, err)
+		return nil, fmt.Errorf("getting NodeWright %q: %w", name, err)
 	}
 	return UnstructuredToSkyhook(obj)
 }
@@ -397,7 +412,7 @@ func GetSkyhook(ctx context.Context, dynamicClient dynamic.Interface, name strin
 // Deployment. If neither source yields a valid version we warn but allow the
 // edit to proceed — better than refusing every command in clusters where the
 // CLI can't see the operator's namespace.
-func CheckNodeStateOperatorVersion(ctx context.Context, cmd *cobra.Command, kube kubernetes.Interface, namespace string, skyhook *v1alpha1.Skyhook) error {
+func CheckNodeStateOperatorVersion(ctx context.Context, cmd *cobra.Command, kube kubernetes.Interface, namespace string, skyhook *v1alpha1.NodeWright) error {
 	opVersion := GetSkyhookVersion(skyhook)
 	if opVersion == "" || !IsValidVersion(opVersion) {
 		deployVersion, derr := DiscoverOperatorVersion(ctx, kube, namespace)
@@ -415,7 +430,7 @@ func CheckNodeStateOperatorVersion(ctx context.Context, cmd *cobra.Command, kube
 
 // GetSkyhookVersion extracts the operator version from a Skyhook's annotation.
 // Returns empty string if the annotation is not present.
-func GetSkyhookVersion(skyhook *v1alpha1.Skyhook) string {
+func GetSkyhookVersion(skyhook *v1alpha1.NodeWright) string {
 	if skyhook == nil || skyhook.Annotations == nil {
 		return ""
 	}
@@ -457,23 +472,27 @@ func DiscoverOperatorVersion(ctx context.Context, kube kubernetes.Interface, nam
 		}
 	}
 
-	return "", fmt.Errorf("unable to determine operator version; no skyhook operator deployment found in namespace %q", namespace)
+	return "", fmt.Errorf("unable to determine operator version; no nodewright operator deployment found in namespace %q", namespace)
 }
 
-// isSkyhookOperatorDeployment checks if a deployment looks like the Skyhook operator
-// by examining container images for "skyhook" (most reliable), then labels as fallback.
+// isSkyhookOperatorDeployment checks if a deployment looks like the operator by
+// examining container images (most reliable), then labels as fallback. It matches
+// both "nodewright" (current) and "skyhook" (legacy): the operator image and names
+// moved from skyhook -> nodewright, and legacy installs may still carry either.
 func isSkyhookOperatorDeployment(deployment *appsv1.Deployment) bool {
-	// Check container images for "skyhook" (most reliable - image name won't change)
+	looksLikeOperator := func(s string) bool {
+		s = strings.ToLower(s)
+		return strings.Contains(s, "nodewright") || strings.Contains(s, "skyhook")
+	}
+
 	for _, container := range deployment.Spec.Template.Spec.Containers {
-		if strings.Contains(strings.ToLower(container.Image), "skyhook") {
+		if looksLikeOperator(container.Image) {
 			return true
 		}
 	}
 
-	// Fallback: check labels for "skyhook"
 	for key, value := range deployment.Labels {
-		if strings.Contains(strings.ToLower(key), "skyhook") ||
-			strings.Contains(strings.ToLower(value), "skyhook") {
+		if looksLikeOperator(key) || looksLikeOperator(value) {
 			return true
 		}
 	}
@@ -504,7 +523,7 @@ func ExtractImageTag(image string) string {
 // PatchSkyhookStatusRaw patches the skyhook status with raw JSON bytes.
 // Use this when you need explicit null values to clear omitempty fields.
 func PatchSkyhookStatusRaw(ctx context.Context, dynamicClient dynamic.Interface, skyhookName string, patchBytes []byte) error {
-	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	gvr := v1alpha1.GroupVersion.WithResource("nodewrights")
 	_, err := dynamicClient.Resource(gvr).Patch(
 		ctx,
 		skyhookName,
@@ -534,7 +553,7 @@ func ConfirmYN(cmd *cobra.Command, prompt string) (bool, error) {
 }
 
 // ListNodesWithSkyhookState returns the parsed NodeState for every node that
-// has the skyhook.nvidia.com/nodeState_<skyhookName> annotation. If
+// has the nodewright.nvidia.com/nodeState_<skyhookName> annotation. If
 // labelSelector is non-empty it is applied at the apiserver. Nodes with a
 // malformed annotation are excluded from the result and accumulated into the
 // returned error (so callers see partial success rather than a silent skip).
@@ -578,7 +597,7 @@ func ListNodesWithSkyhookState(ctx context.Context, kubeClient kubernetes.Interf
 
 // PatchSkyhookStatus patches the status subresource of a Skyhook CR using the dynamic client.
 // This is used to update status fields without triggering a spec update.
-func PatchSkyhookStatus(ctx context.Context, dynamicClient dynamic.Interface, skyhookName string, status v1alpha1.SkyhookStatus) error {
+func PatchSkyhookStatus(ctx context.Context, dynamicClient dynamic.Interface, skyhookName string, status v1alpha1.NodeWrightStatus) error {
 	statusBytes, err := json.Marshal(map[string]interface{}{
 		"status": status,
 	})
@@ -586,7 +605,7 @@ func PatchSkyhookStatus(ctx context.Context, dynamicClient dynamic.Interface, sk
 		return fmt.Errorf("marshaling status: %w", err)
 	}
 
-	gvr := v1alpha1.GroupVersion.WithResource("skyhooks")
+	gvr := v1alpha1.GroupVersion.WithResource("nodewrights")
 	_, err = dynamicClient.Resource(gvr).Patch(
 		ctx,
 		skyhookName,

@@ -16,14 +16,14 @@
 
 # Remove pkg-keep (uninstall.enabled is false/unset) from spec entirely.
 # Per D2 semantics the node-state entry for pkg-keep stays.
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: uninstall-mixed-packages
 spec:
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      nodewright.nvidia.com/test-node: skyhooke2e
   interruptionBudget:
     count: 1
   packages:

@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	ktesting "k8s.io/client-go/testing"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/context"
 	mockdynamic "github.com/NVIDIA/nodewright/operator/internal/mocks/dynamic"
@@ -47,7 +47,7 @@ var _ = Describe("UpdateState Command", func() {
 		It("creates the command with the expected use string and arg count", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewUpdateStateCmd(ctx)
-			Expect(cmd.Use).To(Equal("update-state <skyhook-name> <package> <version> <stage> <state>"))
+			Expect(cmd.Use).To(Equal("update-state <nodewright-name> <package> <version> <stage> <state>"))
 			Expect(cmd.Args).NotTo(BeNil())
 			Expect(cmd.Args(cmd, []string{"a", "b", "c", "d"})).To(HaveOccurred())
 			Expect(cmd.Args(cmd, []string{"a", "b", "c", "d", "e"})).NotTo(HaveOccurred())
@@ -84,9 +84,9 @@ var _ = Describe("UpdateState Command", func() {
 		)
 
 		skyhookGVR := schema.GroupVersionResource{
-			Group:    "skyhook.nvidia.com",
+			Group:    "nodewright.nvidia.com",
 			Version:  "v1alpha1",
-			Resource: "skyhooks",
+			Resource: "nodewrights",
 		}
 
 		BeforeEach(func() {
@@ -102,7 +102,7 @@ var _ = Describe("UpdateState Command", func() {
 		})
 
 		setupSkyhookCR := func(packages map[string]string) {
-			sk := &v1alpha1.Skyhook{}
+			sk := &v1alpha1.NodeWright{}
 			sk.Name = "demo"
 			sk.Spec.Packages = v1alpha1.Packages{}
 			for name, version := range packages {
@@ -115,7 +115,7 @@ var _ = Describe("UpdateState Command", func() {
 			raw, err := json.Marshal(sk)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(json.Unmarshal(raw, &u.Object)).To(Succeed())
-			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "skyhook.nvidia.com", Version: "v1alpha1", Kind: "Skyhook"})
+			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "nodewright.nvidia.com", Version: "v1alpha1", Kind: "NodeWright"})
 
 			mockNSRes := &mockdynamic.NamespaceableResourceInterface{}
 			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
@@ -128,7 +128,7 @@ var _ = Describe("UpdateState Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: name,
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_demo": string(raw),
+						"nodewright.nvidia.com/nodeState_demo": string(raw),
 					},
 				},
 			}
@@ -154,7 +154,7 @@ var _ = Describe("UpdateState Command", func() {
 			Expect(err.Error()).To(ContainSubstring("invalid state"))
 		})
 
-		It("rejects a package not present in the Skyhook spec", func() {
+		It("rejects a package not present in the NodeWright spec", func() {
 			setupSkyhookCR(map[string]string{"other": "9.9"})
 			addNodeWithState("n1", v1alpha1.NodeState{"pkg1|1.0": {Name: "pkg1", Version: "1.0"}})
 			opts := &updateStateOptions{confirm: true}
@@ -174,7 +174,7 @@ var _ = Describe("UpdateState Command", func() {
 			for _, name := range []string{"n1", "n2"} {
 				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), name, metav1.GetOptions{})
 				var ns v1alpha1.NodeState
-				Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
+				Expect(json.Unmarshal([]byte(got.Annotations["nodewright.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
 				entry, ok := ns["pkg1|1.0"]
 				Expect(ok).To(BeTrue())
 				Expect(string(entry.Stage)).To(Equal("interrupt"))
@@ -183,7 +183,7 @@ var _ = Describe("UpdateState Command", func() {
 
 			n1, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 			var n1ns v1alpha1.NodeState
-			Expect(json.Unmarshal([]byte(n1.Annotations["skyhook.nvidia.com/nodeState_demo"]), &n1ns)).To(Succeed())
+			Expect(json.Unmarshal([]byte(n1.Annotations["nodewright.nvidia.com/nodeState_demo"]), &n1ns)).To(Succeed())
 			Expect(n1ns["pkg1|1.0"].Image).To(Equal("img:1"))
 			Expect(n1ns["pkg1|1.0"].ContainerSHA).To(Equal("sha"))
 			Expect(n1ns["pkg1|1.0"].Restarts).To(Equal(int32(3)))
@@ -199,12 +199,12 @@ var _ = Describe("UpdateState Command", func() {
 
 			n1, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 			var ns1 v1alpha1.NodeState
-			Expect(json.Unmarshal([]byte(n1.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns1)).To(Succeed())
+			Expect(json.Unmarshal([]byte(n1.Annotations["nodewright.nvidia.com/nodeState_demo"]), &ns1)).To(Succeed())
 			Expect(string(ns1["pkg1|1.0"].State)).To(Equal("erroring"))
 
 			n2, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n2", metav1.GetOptions{})
 			var ns2 v1alpha1.NodeState
-			Expect(json.Unmarshal([]byte(n2.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns2)).To(Succeed())
+			Expect(json.Unmarshal([]byte(n2.Annotations["nodewright.nvidia.com/nodeState_demo"]), &ns2)).To(Succeed())
 			Expect(string(ns2["pkg1|1.0"].State)).To(Equal("complete"))
 		})
 
@@ -244,7 +244,7 @@ var _ = Describe("UpdateState Command", func() {
 
 			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 			var ns v1alpha1.NodeState
-			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
+			Expect(json.Unmarshal([]byte(got.Annotations["nodewright.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
 			Expect(string(ns["pkg1|1.0"].Stage)).To(Equal("apply"))
 			Expect(string(ns["pkg1|1.0"].State)).To(Equal("complete"))
 		})
@@ -262,9 +262,9 @@ var _ = Describe("UpdateState Command", func() {
 		})
 
 		It("rejects update-state against an operator older than the supported floor", func() {
-			sk := &v1alpha1.Skyhook{}
+			sk := &v1alpha1.NodeWright{}
 			sk.Name = "demo"
-			sk.Annotations = map[string]string{"skyhook.nvidia.com/version": "v0.7.0"}
+			sk.Annotations = map[string]string{"nodewright.nvidia.com/version": "v0.7.0"}
 			sk.Spec.Packages = v1alpha1.Packages{
 				"pkg1": {PackageRef: v1alpha1.PackageRef{Name: "pkg1", Version: "1.0"}, Image: "example.com/pkg1"},
 			}
@@ -272,7 +272,7 @@ var _ = Describe("UpdateState Command", func() {
 			raw, err := json.Marshal(sk)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(json.Unmarshal(raw, &u.Object)).To(Succeed())
-			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "skyhook.nvidia.com", Version: "v1alpha1", Kind: "Skyhook"})
+			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "nodewright.nvidia.com", Version: "v1alpha1", Kind: "NodeWright"})
 			mockNSRes := &mockdynamic.NamespaceableResourceInterface{}
 			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
 			mockNSRes.On("Get", mock.Anything, "demo", mock.Anything, mock.Anything).Return(u, nil)
@@ -305,7 +305,7 @@ var _ = Describe("UpdateState Command", func() {
 				Expect(runUpdateState(gocontext.Background(), cmd, kubeClient, []string{"demo", "pkg1", "1.0", "apply", "in_progress"}, opts, cliCtx)).To(Succeed())
 
 				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
-				raw, ok := got.Annotations["skyhook.nvidia.com/nodeState_demo"]
+				raw, ok := got.Annotations["nodewright.nvidia.com/nodeState_demo"]
 				Expect(ok).To(BeTrue())
 				var ns v1alpha1.NodeState
 				Expect(json.Unmarshal([]byte(raw), &ns)).To(Succeed())
@@ -327,7 +327,7 @@ var _ = Describe("UpdateState Command", func() {
 
 				got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 				var ns v1alpha1.NodeState
-				Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
+				Expect(json.Unmarshal([]byte(got.Annotations["nodewright.nvidia.com/nodeState_demo"]), &ns)).To(Succeed())
 				Expect(string(ns["pkg1|1.0"].State)).To(Equal("complete"))
 			})
 		})

@@ -29,9 +29,10 @@ import (
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
@@ -52,7 +53,7 @@ type nodeStatusOptions struct {
 
 // BindToCmd binds the options to the command flags
 func (o *nodeStatusOptions) BindToCmd(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Filter by Skyhook name")
+	utils.RegisterNodeWrightNameFlag(cmd, &o.skyhookName, "Filter by NodeWright name", false)
 }
 
 // NewStatusCmd creates the node status command
@@ -61,39 +62,43 @@ func NewStatusCmd(ctx *cliContext.CLIContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "status [node-name...]",
-		Short: "Show all Skyhook activity on specific node(s)",
-		Long: `Show all Skyhook activity on specific node(s) by reading node annotations.
+		Short: "Show all NodeWright activity on specific node(s)",
+		Long: `Show all NodeWright activity on specific node(s) by reading node annotations.
 
-This command displays a summary of all Skyhook CRs that have activity on the 
+This command displays a summary of all NodeWright CRs that have activity on the 
 specified node(s), including overall status and package completion counts.
 
-If no node name is provided, all nodes with Skyhook annotations are shown.
+If no node name is provided, all nodes with NodeWright annotations are shown.
 Node names can be exact matches or regex patterns.`,
-		Example: `  # Show all Skyhook activity on a specific node
-  kubectl skyhook node status worker-1
+		Example: `  # Show all NodeWright activity on a specific node
+  kubectl nodewright node status worker-1
 
-  # Show Skyhook activity on multiple nodes
-  kubectl skyhook node status worker-1 worker-2 worker-3
+  # Show NodeWright activity on multiple nodes
+  kubectl nodewright node status worker-1 worker-2 worker-3
 
-  # Show Skyhook activity on nodes matching a pattern
-  kubectl skyhook node status "worker-.*"
+  # Show NodeWright activity on nodes matching a pattern
+  kubectl nodewright node status "worker-.*"
 
-  # Filter by specific Skyhook
-  kubectl skyhook node status worker-1 --skyhook gpu-init
+  # Filter by specific NodeWright
+  kubectl nodewright node status worker-1 --nodewright gpu-init
 
-  # View all nodes with Skyhook activity
-  kubectl skyhook node status
+  # View all nodes with NodeWright activity
+  kubectl nodewright node status
 
   # Output as JSON
-  kubectl skyhook node status worker-1 -o json
+  kubectl nodewright node status worker-1 -o json
 
   # Output with package details
-  kubectl skyhook node status worker-1 -o wide`,
+  kubectl nodewright node status worker-1 -o wide`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
 			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
+			}
+
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
 			}
 
 			return runNodeStatus(cmd.Context(), kubeClient, args, opts, ctx)
@@ -105,7 +110,7 @@ Node names can be exact matches or regex patterns.`,
 	return cmd
 }
 
-// nodeSkyhookSummary represents a summary of Skyhook activity on a node
+// nodeSkyhookSummary represents a summary of NodeWright activity on a node
 type nodeSkyhookSummary struct {
 	NodeName         string                 `json:"nodeName"`
 	SkyhookName      string                 `json:"skyhookName"`
@@ -159,7 +164,7 @@ func runNodeStatus(ctx context.Context, kubeClient *client.Client, nodePatterns 
 		targetNodeSet[n] = true
 	}
 
-	// Collect status from all nodes with Skyhook annotations
+	// Collect status from all nodes with NodeWright annotations
 	var summaries []nodeSkyhookSummary
 
 	for _, node := range nodeList.Items {
@@ -167,7 +172,7 @@ func runNodeStatus(ctx context.Context, kubeClient *client.Client, nodePatterns 
 			continue
 		}
 
-		// Find all Skyhook annotations on this node
+		// Find all NodeWright annotations on this node
 		for annotationKey, annotationValue := range node.Annotations {
 			if !strings.HasPrefix(annotationKey, nodeStateAnnotationPrefix) {
 				continue
@@ -248,7 +253,7 @@ func runNodeStatus(ctx context.Context, kubeClient *client.Client, nodePatterns 
 	})
 
 	if len(summaries) == 0 {
-		_, _ = fmt.Fprintf(out, "No Skyhook activity found on specified nodes\n")
+		_, _ = fmt.Fprintf(out, "No NodeWright activity found on specified nodes\n")
 		return nil
 	}
 

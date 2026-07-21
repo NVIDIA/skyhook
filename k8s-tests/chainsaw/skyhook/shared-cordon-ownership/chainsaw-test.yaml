@@ -28,16 +28,16 @@ spec:
   - get:
       apiVersion: v1
       kind: Node
-      selector: skyhook.nvidia.com/shared-cordon-ownership=true
+      selector: nodewright.nvidia.com/shared-cordon-ownership=true
       format: yaml
   - get:
-      apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
       name: shared-cordon-fast
       format: yaml
   - get:
-      apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
       name: shared-cordon-slow
       format: yaml
   steps:
@@ -48,16 +48,16 @@ spec:
         content: |
           set -eu
 
-          ../skyhook-cli reset shared-cordon-fast --confirm 2>/dev/null || true
-          ../skyhook-cli reset shared-cordon-slow --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-fast --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-slow --confirm 2>/dev/null || true
 
-          node=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          node=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
           if [ -z "$node" ]; then
             echo "no skyhooke2e test node found"
             exit 1
           fi
 
-          kubectl label node "$node" skyhook.nvidia.com/shared-cordon-ownership=true --overwrite
+          kubectl label node "$node" nodewright.nvidia.com/shared-cordon-ownership=true --overwrite
     - create:
         file: blocker-pod.yaml
     - wait:
@@ -76,9 +76,9 @@ spec:
         content: |
           set -eu
 
-          node=$(kubectl get nodes -l skyhook.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}')
+          node=$(kubectl get nodes -l nodewright.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}')
           for _ in $(seq 1 90); do
-            slow_cordon=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/cordon_shared-cordon-slow}' 2>/dev/null || true)
+            slow_cordon=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.nodewright\.nvidia\.com/cordon_shared-cordon-slow}' 2>/dev/null || true)
             unschedulable=$(kubectl get node "$node" -o jsonpath='{.spec.unschedulable}' 2>/dev/null || true)
 
             if [ "$slow_cordon" = "true" ] && [ "$unschedulable" = "true" ]; then
@@ -89,7 +89,7 @@ spec:
           done
 
           kubectl get node "$node" -o yaml
-          kubectl get skyhook shared-cordon-slow -o yaml
+          kubectl get nodewright shared-cordon-slow -o yaml
           echo "timed out waiting for shared-cordon-slow to own the cordon"
           exit 1
     - create:
@@ -97,8 +97,8 @@ spec:
     - assert:
         timeout: 120s
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: shared-cordon-fast
           status:
@@ -108,10 +108,10 @@ spec:
         content: |
           set -eu
 
-          node=$(kubectl get nodes -l skyhook.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}')
+          node=$(kubectl get nodes -l nodewright.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}')
           unschedulable=$(kubectl get node "$node" -o jsonpath='{.spec.unschedulable}' 2>/dev/null || true)
-          fast_cordon=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/cordon_shared-cordon-fast}' 2>/dev/null || true)
-          slow_cordon=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/cordon_shared-cordon-slow}' 2>/dev/null || true)
+          fast_cordon=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.nodewright\.nvidia\.com/cordon_shared-cordon-fast}' 2>/dev/null || true)
+          slow_cordon=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.nodewright\.nvidia\.com/cordon_shared-cordon-slow}' 2>/dev/null || true)
 
           if [ "$unschedulable" != "true" ]; then
             kubectl get node "$node" -o yaml
@@ -135,8 +135,8 @@ spec:
     - assert:
         timeout: 180s
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: shared-cordon-slow
           status:
@@ -146,9 +146,9 @@ spec:
         content: |
           set -eu
 
-          node=$(kubectl get nodes -l skyhook.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}')
+          node=$(kubectl get nodes -l nodewright.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}')
           unschedulable=$(kubectl get node "$node" -o jsonpath='{.spec.unschedulable}' 2>/dev/null || true)
-          cordons=$(kubectl get node "$node" -o json | jq -r '.metadata.annotations // {} | keys[] | select(startswith("skyhook.nvidia.com/cordon_"))')
+          cordons=$(kubectl get node "$node" -o json | jq -r '.metadata.annotations // {} | keys[] | select(startswith("nodewright.nvidia.com/cordon_"))')
 
           if [ -n "$unschedulable" ] && [ "$unschedulable" != "false" ]; then
             kubectl get node "$node" -o yaml
@@ -168,10 +168,10 @@ spec:
           set -eu
 
           kubectl delete pod shared-cordon-blocker --ignore-not-found=true --wait=false 2>/dev/null || true
-          ../skyhook-cli reset shared-cordon-fast --confirm 2>/dev/null || true
-          ../skyhook-cli reset shared-cordon-slow --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-fast --confirm 2>/dev/null || true
+          ../nodewright-cli reset shared-cordon-slow --confirm 2>/dev/null || true
 
-          node=$(kubectl get nodes -l skyhook.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+          node=$(kubectl get nodes -l nodewright.nvidia.com/shared-cordon-ownership=true -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
           if [ -n "$node" ]; then
-            kubectl label node "$node" skyhook.nvidia.com/shared-cordon-ownership- 2>/dev/null || true
+            kubectl label node "$node" nodewright.nvidia.com/shared-cordon-ownership- 2>/dev/null || true
           fi

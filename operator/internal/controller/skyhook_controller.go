@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	"github.com/NVIDIA/nodewright/operator/internal/drain"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
@@ -70,7 +70,7 @@ const (
 	TaintUnschedulable     = corev1.TaintNodeUnschedulable
 	InterruptContainerName = "interrupt"
 
-	SkyhookFinalizer = "skyhook.nvidia.com/skyhook"
+	SkyhookFinalizer = "nodewright.nvidia.com/nodewright"
 
 	// Annotation values used as truthy/falsy strings on Skyhook and Node objects.
 	annotationTrueValue  = "true"
@@ -119,6 +119,12 @@ type SkyhookOperatorOptions struct {
 	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
 	AgentImage           string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/skyhook/agent:latest"` // TODO: this needs to be updated with a working default
 	AgentLogRoot         string        `env:"AGENT_LOG_ROOT, default=/var/log/skyhook"`
+	// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+	// rename. LegacyCleanupDelay is how long after a Skyhook finishes migrating the
+	// operator keeps its legacy skyhook.nvidia.com node state / pods / ConfigMap labels
+	// around (a rollback window) before pruning them. 0 or less prunes immediately (no
+	// rollback window). Remove with the legacy group at the removal release.
+	LegacyCleanupDelay time.Duration `env:"LEGACY_CLEANUP_DELAY, default=24h"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {
@@ -258,7 +264,7 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}).
 		// Heavy path: Skyhook and Node events collapse onto the global key.
 		Watches(
-			&v1alpha1.Skyhook{},
+			&v1alpha1.NodeWright{},
 			globalHandler,
 		).
 		Watches(
@@ -304,6 +310,14 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return r.PodReconcile(ctx, pod)
 		}
 		return ctrl.Result{}, err
+	}
+
+	// Migration safety interlock: while any legacy skyhook.nvidia.com Skyhook is still
+	// mid-rollout, hold this NodeWright reconcile and requeue rather than take over a
+	// node the pre-rename operator may still be mutating. Clears once the legacy
+	// Skyhooks read complete; fresh clusters and post-migration installs never hold.
+	if hold := r.legacyMigrationHold(ctx); hold != nil {
+		return *hold, nil
 	}
 
 	// get all skyhooks (SCR)
@@ -571,8 +585,22 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			return false, fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
-		if err := skyhook.GetSkyhook().Skyhook.Validate(); err != nil {
+		if err := skyhook.GetSkyhook().NodeWright.Validate(); err != nil {
 			return false, fmt.Errorf("error validating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+		}
+
+		// MIGRATION-SHIM: rollback-safe legacy cleanup. skyhook.Migrate above adopts
+		// legacy node state ADDITIVELY (keeps the skyhook.nvidia.com keys). We only
+		// prune those legacy keys/pods/labels once the rollback window has elapsed,
+		// tracked by the legacy-migrated-at stamp on the NodeWright. See
+		// docs/plans/2026-07-20-legacy-cleanup-ttl-design.md.
+		nw := skyhook.GetSkyhook().NodeWright
+		prune := legacyCleanupShouldPrune(nw.GetAnnotations()[legacyMigratedAtAnnotation], r.opts.LegacyCleanupDelay, time.Now())
+
+		if prune {
+			for _, node := range skyhook.GetNodes() {
+				node.PruneLegacyMetadata()
+			}
 		}
 
 		for _, node := range skyhook.GetNodes() {
@@ -590,11 +618,22 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			}
 		}
 
+		// Converge (add nodewright labels, keep legacy pods) or prune (delete legacy
+		// pods, drop legacy labels) the workloads the pre-rename operator created under
+		// the legacy skyhook.nvidia.com labels.
+		hadLegacyWorkloads, workloadsChanged, err := r.reconcileLegacyLabeledWorkloads(ctx, skyhook.GetSkyhook().Name, prune)
+		if err != nil {
+			return false, fmt.Errorf("error reconciling legacy-labeled workloads for skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+		}
+		if workloadsChanged {
+			updates = true
+		}
+
 		if skyhook.GetSkyhook().Updated {
 			// need to do this because SaveNodesAndSkyhook only saves skyhook status, not the main skyhook object where the annotations are
 			// additionally it needs to be an update, a patch nils out the annotations for some reason, which the save function does a patch
 
-			if err = r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+			if err = r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating during migration skyhook status [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 
@@ -620,6 +659,17 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 
 			updates = true
 		}
+
+		// Manage the rollback-window stamp LAST: it re-gets and patches the NodeWright,
+		// bumping its resourceVersion. Running it after the status/version writes above
+		// (which submit the in-memory copy) avoids a stale-RV 409 on the first migration
+		// reconcile. Set the stamp on the first converge that finds legacy artifacts
+		// (unless pruning immediately); clear it once a prune has removed everything.
+		if stampChanged, err := r.reconcileLegacyMigratedStamp(ctx, skyhook, prune, hadLegacyWorkloads); err != nil {
+			return false, err
+		} else if stampChanged {
+			updates = true
+		}
 	}
 
 	if len(errors) > 0 {
@@ -627,6 +677,215 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 	}
 
 	return updates, nil
+}
+
+// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+// rename. Delete everything tagged MIGRATION-SHIM together with the legacy
+// skyhook.nvidia.com group in the removal release (see docs/plans Phase 10).
+//
+// legacyMetadataPrefix is the metadata prefix the pre-rename operator stamped on
+// package pods and per-node metadata ConfigMaps. It is intentionally hardcoded (a
+// one-shot migration constant whose value can never change) so the controller keeps
+// depending only on the new nodewright api group.
+const legacyMetadataPrefix = "skyhook.nvidia.com"
+
+// legacyMigratedAtAnnotation is stamped on a NodeWright (RFC3339) the first time its
+// legacy skyhook.nvidia.com artifacts are adopted. The prune of those artifacts is
+// deferred until LegacyCleanupDelay has elapsed since this time, giving a rollback
+// window. MIGRATION-SHIM: remove with the legacy group.
+const legacyMigratedAtAnnotation = v1alpha1.METADATA_PREFIX + "/legacy-migrated-at"
+
+// legacyCleanupShouldPrune reports whether the legacy skyhook.nvidia.com artifacts for
+// a NodeWright may be pruned yet. delay <= 0 prunes immediately (no rollback window).
+// Otherwise a NodeWright is prunable only once delay has elapsed since its stamp; an
+// absent stamp means "not yet adopted, converge first", and an unparseable stamp fails
+// toward prune so a corrupt value cannot pin legacy state forever.
+func legacyCleanupShouldPrune(stamp string, delay time.Duration, now time.Time) bool {
+	if delay <= 0 {
+		return true
+	}
+	if stamp == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return true
+	}
+	return !now.Before(t.Add(delay))
+}
+
+// MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
+// reconcileLegacyLabeledWorkloads converges or prunes the workloads the pre-rename
+// operator created under the legacy skyhook.nvidia.com labels for the named skyhook.
+// Converge (prune=false) adds the nodewright label to the per-node metadata ConfigMaps
+// alongside the legacy one and leaves the legacy package pods in place, so a rolled-back
+// pre-rename operator still owns its workloads. Prune (prune=true) graceful-deletes the
+// legacy package pods and drops the legacy ConfigMap label. Returns whether any legacy
+// artifact was found and whether anything was written. Level-triggered and idempotent.
+func (r *SkyhookReconciler) reconcileLegacyLabeledWorkloads(ctx context.Context, skyhookName string, prune bool) (bool, bool, error) {
+	hadLegacy := false
+	changed := false
+
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(r.opts.Namespace),
+		client.MatchingLabels{fmt.Sprintf("%s/name", legacyMetadataPrefix): skyhookName}); err != nil {
+		return false, false, fmt.Errorf("listing legacy-labeled pods for skyhook [%s]: %w", skyhookName, err)
+	}
+	if len(pods.Items) > 0 {
+		hadLegacy = true
+	}
+	if prune {
+		for i := range pods.Items {
+			// Graceful delete: honor the pod's terminationGracePeriodSeconds. Single-writer
+			// safety comes from the migration hold (the legacy Skyhook is complete, so its
+			// pods are no longer mutating the host), not from the grace period.
+			if err := r.Delete(ctx, &pods.Items[i]); err != nil && !apierrors.IsNotFound(err) {
+				return false, false, fmt.Errorf("deleting legacy-labeled pod [%s]: %w", pods.Items[i].Name, err)
+			}
+			changed = true
+		}
+	}
+
+	cms := &corev1.ConfigMapList{}
+	if err := r.List(ctx, cms, client.InNamespace(r.opts.Namespace),
+		client.MatchingLabels{fmt.Sprintf("%s/skyhook-node-meta", legacyMetadataPrefix): skyhookName}); err != nil {
+		return false, false, fmt.Errorf("listing legacy-labeled configmaps for skyhook [%s]: %w", skyhookName, err)
+	}
+	if len(cms.Items) > 0 {
+		hadLegacy = true
+	}
+	for i := range cms.Items {
+		cm := &cms.Items[i]
+		var mutated bool
+		if prune {
+			mutated = relabelLegacyMetadataPrefix(cm.Labels)
+		} else {
+			mutated = addNodeWrightMetaLabel(cm.Labels)
+		}
+		if mutated {
+			if err := r.Update(ctx, cm); err != nil {
+				return false, false, fmt.Errorf("updating legacy configmap labels [%s]: %w", cm.Name, err)
+			}
+			changed = true
+		}
+	}
+
+	return hadLegacy, changed, nil
+}
+
+// MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
+// reconcileLegacyMigratedStamp stamps the NodeWright's legacy-migrated-at annotation
+// the first time a converge finds legacy artifacts (starting the rollback window), and
+// clears it once a prune has removed everything legacy. Returns whether it wrote.
+func (r *SkyhookReconciler) reconcileLegacyMigratedStamp(ctx context.Context, skyhook SkyhookNodes, prune, hadLegacyWorkloads bool) (bool, error) {
+	nw := skyhook.GetSkyhook().NodeWright
+	stamp := nw.GetAnnotations()[legacyMigratedAtAnnotation]
+	name := skyhook.GetSkyhook().Name
+
+	if prune {
+		if stamp != "" && !hadLegacyWorkloads && !anyNodeHasLegacyMetadata(skyhook.GetNodes()) {
+			return true, r.patchLegacyMigratedStamp(ctx, name, "", true)
+		}
+		return false, nil
+	}
+
+	if stamp == "" && (hadLegacyWorkloads || anyNodeHasLegacyMetadata(skyhook.GetNodes())) {
+		return true, r.patchLegacyMigratedStamp(ctx, name, time.Now().Format(time.RFC3339), false)
+	}
+	return false, nil
+}
+
+// patchLegacyMigratedStamp sets or removes the legacy-migrated-at annotation on the
+// NodeWright with a focused merge patch (re-read then patch, to avoid clobbering other
+// concurrent writers and the annotation-nilling gotcha of a full update).
+func (r *SkyhookReconciler) patchLegacyMigratedStamp(ctx context.Context, name, value string, remove bool) error {
+	nw, err := r.dal.GetSkyhook(ctx, name)
+	if err != nil {
+		return fmt.Errorf("getting nodewright to update legacy-migrated-at stamp [%s]: %w", name, err)
+	}
+	before := nw.DeepCopy()
+	annotations := nw.GetAnnotations()
+	if remove {
+		if annotations == nil {
+			return nil
+		}
+		delete(annotations, legacyMigratedAtAnnotation)
+	} else {
+		if annotations == nil {
+			annotations = map[string]string{}
+		}
+		annotations[legacyMigratedAtAnnotation] = value
+	}
+	nw.SetAnnotations(annotations)
+	if err := r.Patch(ctx, nw, client.MergeFrom(before)); err != nil {
+		return fmt.Errorf("patching legacy-migrated-at stamp on [%s]: %w", name, err)
+	}
+	return nil
+}
+
+// anyNodeHasLegacyMetadata reports whether any node still carries a legacy
+// skyhook.nvidia.com-prefixed annotation, label, or condition.
+func anyNodeHasLegacyMetadata(nodes []wrapper.SkyhookNode) bool {
+	for _, node := range nodes {
+		n := node.GetNode()
+		for k := range n.Annotations {
+			if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
+				return true
+			}
+		}
+		for k := range n.Labels {
+			if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
+				return true
+			}
+		}
+		for _, c := range n.Status.Conditions {
+			if strings.HasPrefix(string(c.Type), legacyMetadataPrefix+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// addNodeWrightMetaLabel adds a nodewright.nvidia.com-prefixed copy of each legacy
+// skyhook.nvidia.com label, keeping the legacy label. Returns true if it added any.
+func addNodeWrightMetaLabel(labels map[string]string) bool {
+	changed := false
+	var legacy []string
+	for k := range labels {
+		if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
+			legacy = append(legacy, k)
+		}
+	}
+	for _, k := range legacy {
+		suffix := strings.TrimPrefix(k, legacyMetadataPrefix+"/")
+		newKey := fmt.Sprintf("%s/%s", v1alpha1.METADATA_PREFIX, suffix)
+		if _, exists := labels[newKey]; !exists {
+			labels[newKey] = labels[k]
+			changed = true
+		}
+	}
+	return changed
+}
+
+// MIGRATION-SHIM (see legacyMetadataPrefix): remove with the legacy group.
+// relabelLegacyMetadataPrefix rewrites, in place, any label key under the legacy
+// skyhook.nvidia.com prefix to the current nodewright.nvidia.com prefix, preserving
+// the value. It returns true if it changed anything. Safe to mutate the map during
+// the range: rewritten keys carry the new prefix, so CutPrefix skips them if the
+// iteration happens to visit them.
+func relabelLegacyMetadataPrefix(labels map[string]string) bool {
+	changed := false
+	for k, v := range labels {
+		suffix, ok := strings.CutPrefix(k, legacyMetadataPrefix+"/")
+		if !ok {
+			continue
+		}
+		delete(labels, k)
+		labels[fmt.Sprintf("%s/%s", v1alpha1.METADATA_PREFIX, suffix)] = v
+		changed = true
+	}
+	return changed
 }
 
 // ReportState computes and puts important information into the skyhook status so that monitoring tools such as k9s
@@ -681,7 +940,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 
 			if id != "" && id != node.GetNode().Status.NodeInfo.BootID { // node rebooted
 				if r.opts.ReapplyOnReboot {
-					r.recorder.Eventf(skyhook.GetSkyhook().Skyhook, nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node [%s] to be reapplied", node.GetNode().Name)
+					r.recorder.Eventf(skyhook.GetSkyhook().NodeWright, nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node [%s] to be reapplied", node.GetNode().Name)
 					r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonNodeReboot, "ResetNodeState", "detected reboot, resetting node for [%s] to be reapplied", node.GetSkyhook().Name)
 					node.Reset()
 
@@ -721,7 +980,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 		}
 		if skyhook.GetSkyhook().Updated { // update
 			updates = true
-			err := r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook)
+			err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error updating skyhook status after reboot [%s]: %w", skyhook.GetSkyhook().Name, err))
 			}
@@ -904,8 +1163,8 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 	}
 
 	if len(errs) == 0 && skyhook.GetSkyhook().Updated {
-		patch := client.MergeFrom(clusterState.tracker.GetOriginal(skyhook.GetSkyhook().Skyhook))
-		err := r.Status().Patch(ctx, skyhook.GetSkyhook().Skyhook, patch)
+		patch := client.MergeFrom(clusterState.tracker.GetOriginal(skyhook.GetSkyhook().NodeWright))
+		err := r.Status().Patch(ctx, skyhook.GetSkyhook().NodeWright, patch)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -1229,7 +1488,7 @@ func (r *SkyhookReconciler) UpsertNodeLabelsAnnotationsPackages(ctx context.Cont
 		},
 	}
 
-	if err := ctrl.SetControllerReference(skyhook.Skyhook, newCM, r.scheme); err != nil {
+	if err := ctrl.SetControllerReference(skyhook.NodeWright, newCM, r.scheme); err != nil {
 		return fmt.Errorf("error setting ownership: %w", err)
 	}
 
@@ -1452,7 +1711,7 @@ func (r *SkyhookReconciler) UpsertConfigmaps(ctx context.Context, skyhook Skyhoo
 				Data: _package.ConfigMap,
 			}
 			// set owner of CM to the SCR, which will clean up the CM in delete of the SCR
-			if err := ctrl.SetControllerReference(skyhook.GetSkyhook().Skyhook, newCM, r.scheme); err != nil {
+			if err := ctrl.SetControllerReference(skyhook.GetSkyhook().NodeWright, newCM, r.scheme); err != nil {
 				return false, false, fmt.Errorf("error setting ownership of cm: %w", err)
 			}
 
@@ -1511,15 +1770,15 @@ func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.S
 // Phase 3: cleanup (zero metrics, uncordon, remove SCR metadata, remove finalizer)
 func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, error) {
 	if skyhook.GetSkyhook().DeletionTimestamp.IsZero() { // if not deleted, and does not have our finalizer, add it
-		if !controllerutil.ContainsFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer) {
-			controllerutil.AddFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer)
+		if !controllerutil.ContainsFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer) {
+			controllerutil.AddFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
 
-			if err := r.Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating skyhook to add finalizer: %w", err)
 			}
 		}
 	} else { // being deleted
-		if controllerutil.ContainsFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer) {
+		if controllerutil.ContainsFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer) {
 
 			// Phase 2: scan uninstall-enabled packages across all nodes to
 			// decide whether to block, wait, or proceed to Phase 3. Capture
@@ -1567,7 +1826,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 						"Repair the nodeState annotation before deletion.",
 				})
 				r.recorder.Eventf(
-					skyhook.GetSkyhook().Skyhook,
+					skyhook.GetSkyhook().NodeWright,
 					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
@@ -1595,7 +1854,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 						"Unpause to let uninstall complete before deletion.",
 				})
 				r.recorder.Eventf(
-					skyhook.GetSkyhook().Skyhook,
+					skyhook.GetSkyhook().NodeWright,
 					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
@@ -1626,7 +1885,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 						"Re-enable the Skyhook to let uninstall complete before deletion.",
 				})
 				r.recorder.Eventf(
-					skyhook.GetSkyhook().Skyhook,
+					skyhook.GetSkyhook().NodeWright,
 					nil,
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
@@ -1680,15 +1939,19 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 				return false, utilerrors.NewAggregate(errs)
 			}
 
-			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().Skyhook, SkyhookFinalizer)
-			if err := r.Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
-				return false, fmt.Errorf("error updating skyhook removing finalizer: %w", err)
-			}
-			// should be 1, and now 2. we want to set ObservedGeneration up to not trigger an logic from this update adding the finalizer
+			// Bump ObservedGeneration and write status BEFORE removing the finalizer:
+			// removing the last finalizer lets the apiserver delete the object
+			// immediately, so a status update afterward would race that deletion into a
+			// spurious NotFound. (The bump keeps the finalizer-removal Update below from
+			// re-triggering add-finalizer logic.)
 			skyhook.GetSkyhook().Status.ObservedGeneration = skyhook.GetSkyhook().Status.ObservedGeneration + 1
-
-			if err := r.Status().Update(ctx, skyhook.GetSkyhook().Skyhook); err != nil {
+			if err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating skyhook status: %w", err)
+			}
+
+			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
+			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
+				return false, fmt.Errorf("error updating skyhook removing finalizer: %w", err)
 			}
 
 			return true, nil
@@ -1776,7 +2039,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 			_package.Version,
 			skyhookNode.GetSkyhook().Name,
 		)
-		r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
+		r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
 			"drain timed out after [%s] for node [%s] package [%s:%s]",
 			drainConfig.Timeout.Duration,
 			skyhookNode.GetNode().Name,
@@ -1872,11 +2135,11 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 
 	pod := createInterruptPodForPackage(r.opts, _interrupt, argEncode, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name, stage)
 
-	if err := SetPackages(pod, skyhookNode.GetSkyhook().Skyhook, _package.Image, stage, _package); err != nil {
+	if err := SetPackages(pod, skyhookNode.GetSkyhook().NodeWright, _package.Image, stage, _package); err != nil {
 		return fmt.Errorf("error setting package on interrupt: %w", err)
 	}
 
-	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().Skyhook, pod, r.scheme); err != nil {
+	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().NodeWright, pod, r.scheme); err != nil {
 		return fmt.Errorf("error setting ownership: %w", err)
 	}
 
@@ -1886,7 +2149,7 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 
 	_ = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, stage, 0, _package.ContainerSHA)
 
-	r.recorder.Eventf(skyhookNode.GetSkyhook().Skyhook, nil, EventTypeNormal, EventsReasonSkyhookInterrupt, "InterruptNode",
+	r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, EventTypeNormal, EventsReasonSkyhookInterrupt, "InterruptNode",
 		"Interrupting node [%s] package [%s:%s] from [skyhook:%s]",
 		skyhookNode.GetNode().Name,
 		_package.Name,
@@ -2852,13 +3115,13 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 
 	pod := createPodFromPackage(r.opts, _package, skyhookNode.GetSkyhook(), skyhookNode.GetNode().Name, stage)
 
-	if err := SetPackages(pod, skyhookNode.GetSkyhook().Skyhook, _package.Image, stage, _package); err != nil {
+	if err := SetPackages(pod, skyhookNode.GetSkyhook().NodeWright, _package.Image, stage, _package); err != nil {
 		return fmt.Errorf("error setting package on pod: %w", err)
 	}
 
 	// setup ownership of the pod we created
 	// helps run time know what to do when something happens to this pod we are about to create
-	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().Skyhook, pod, r.scheme); err != nil {
+	if err := ctrl.SetControllerReference(skyhookNode.GetSkyhook().NodeWright, pod, r.scheme); err != nil {
 		return fmt.Errorf("error setting ownership: %w", err)
 	}
 

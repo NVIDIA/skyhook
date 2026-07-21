@@ -1,6 +1,6 @@
-# Skyhook Kyverno Policies
+# NodeWright Kyverno Policies
 
-This directory contains example [Kyverno](https://kyverno.io/) policies for Skyhook. These policies can be used to enforce security and best practices for Skyhook packages.
+This directory contains example [Kyverno](https://kyverno.io/) policies for NodeWright. These policies can be used to enforce security and best practices for NodeWright packages.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ kubectl apply -f https://raw.githubusercontent.com/kyverno/kyverno/main/definiti
 
 ### Restrict Package Images
 
-The `disable_packages.yaml` policy demonstrates how to restrict which container images can be used in Skyhook packages. This is particularly useful for:
+The `disable_packages.yaml` policy demonstrates how to restrict which container images can be used in NodeWright packages. This is particularly useful for:
 
 - Preventing the use of potentially dangerous images (e.g., those containing shell scripts)
 - Enforcing the use of approved container registries
@@ -35,18 +35,18 @@ To apply the policy:
 kubectl apply -f disable_packages.yaml
 ```
 
-The policy will prevent the creation of Skyhook resources that contain packages with restricted image patterns. Currently, it blocks:
+The policy will prevent the creation of NodeWright resources that contain packages with restricted image patterns. Currently, it blocks:
 
 - Images containing 'shellscript' anywhere in the image name
 - Images from Docker Hub (matching 'docker.io/*')
 
 ## Testing the Policy
 
-You can test the policy by trying to create a Skyhook resource with a restricted image. For example:
+You can test the policy by trying to create a NodeWright resource with a restricted image. For example:
 
 ```yaml
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
     app.kubernetes.io/part-of: skyhook-operator

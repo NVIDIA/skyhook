@@ -37,7 +37,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	ktesting "k8s.io/client-go/testing"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/context"
 	mockdynamic "github.com/NVIDIA/nodewright/operator/internal/mocks/dynamic"
@@ -85,7 +85,7 @@ var _ = Describe("Reset Command", func() {
 			ctx := context.NewCLIContext(nil)
 			cmd := NewResetCmd(ctx)
 
-			Expect(cmd.Use).To(Equal("reset <skyhook-name>"))
+			Expect(cmd.Use).To(Equal("reset <nodewright-name>"))
 			Expect(cmd.Short).To(ContainSubstring("Reset all nodes"))
 		})
 
@@ -431,9 +431,9 @@ var _ = Describe("Reset Command", func() {
 		)
 
 		skyhookGVR := schema.GroupVersionResource{
-			Group:    "skyhook.nvidia.com",
+			Group:    "nodewright.nvidia.com",
 			Version:  "v1alpha1",
-			Resource: "skyhooks",
+			Resource: "nodewrights",
 		}
 
 		BeforeEach(func() {
@@ -449,16 +449,16 @@ var _ = Describe("Reset Command", func() {
 		})
 
 		setupSkyhookCR := func(name, version string) {
-			sk := &v1alpha1.Skyhook{}
+			sk := &v1alpha1.NodeWright{}
 			sk.Name = name
 			sk.Annotations = map[string]string{
-				"skyhook.nvidia.com/version": version,
+				"nodewright.nvidia.com/version": version,
 			}
 			u := &unstructured.Unstructured{}
 			raw, err := json.Marshal(sk)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(json.Unmarshal(raw, &u.Object)).To(Succeed())
-			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "skyhook.nvidia.com", Version: "v1alpha1", Kind: "Skyhook"})
+			u.SetGroupVersionKind(schema.GroupVersionKind{Group: "nodewright.nvidia.com", Version: "v1alpha1", Kind: "NodeWright"})
 			mockNSRes := &mockdynamic.NamespaceableResourceInterface{}
 			mockDynamic.On("Resource", skyhookGVR).Return(mockNSRes)
 			mockNSRes.On("Get", mock.Anything, name, mock.Anything, mock.Anything).Return(u, nil)
@@ -470,7 +470,7 @@ var _ = Describe("Reset Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: name,
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_demo": string(raw),
+						"nodewright.nvidia.com/nodeState_demo": string(raw),
 					},
 				},
 			}
@@ -489,7 +489,7 @@ var _ = Describe("Reset Command", func() {
 
 			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 			var after v1alpha1.NodeState
-			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
+			Expect(json.Unmarshal([]byte(got.Annotations["nodewright.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
 			_, hasPkg1 := after["pkg1|1.0"]
 			_, hasPkg2 := after["pkg2|2.0"]
 			Expect(hasPkg1).To(BeFalse())
@@ -506,7 +506,7 @@ var _ = Describe("Reset Command", func() {
 
 			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
 			var after v1alpha1.NodeState
-			Expect(json.Unmarshal([]byte(got.Annotations["skyhook.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
+			Expect(json.Unmarshal([]byte(got.Annotations["nodewright.nvidia.com/nodeState_demo"]), &after)).To(Succeed())
 			_, hasPkg1 := after["pkg1|1.0"]
 			Expect(hasPkg1).To(BeTrue())
 			Expect(out.String()).To(ContainSubstring("no matching package"))
@@ -520,7 +520,7 @@ var _ = Describe("Reset Command", func() {
 			opts := &resetOptions{confirm: true, skipBatchReset: true, pkg: "pkg1"}
 			Expect(runReset(gocontext.Background(), cmd, kubeClient, "demo", opts, cliCtx)).To(Succeed())
 			got, _ := fakeKube.CoreV1().Nodes().Get(gocontext.Background(), "n1", metav1.GetOptions{})
-			_, exists := got.Annotations["skyhook.nvidia.com/nodeState_demo"]
+			_, exists := got.Annotations["nodewright.nvidia.com/nodeState_demo"]
 			Expect(exists).To(BeFalse())
 		})
 

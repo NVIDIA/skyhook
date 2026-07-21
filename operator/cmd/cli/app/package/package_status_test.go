@@ -32,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/context"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
@@ -44,8 +44,8 @@ const testSkyhookName = "my-skyhook"
 var _ = Describe("Package Status Command", func() {
 	Describe("formatPackageList", func() {
 		It("should format single package", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"pkg1": {PackageRef: v1alpha1.PackageRef{Version: "1.0.0"}},
 					},
@@ -56,8 +56,8 @@ var _ = Describe("Package Status Command", func() {
 		})
 
 		It("should format multiple packages sorted alphabetically", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"zebra": {PackageRef: v1alpha1.PackageRef{Version: "1.0"}},
 						"alpha": {PackageRef: v1alpha1.PackageRef{Version: "2.0"}},
@@ -70,8 +70,8 @@ var _ = Describe("Package Status Command", func() {
 		})
 
 		It("should handle empty packages", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{},
 				},
 			}
@@ -82,8 +82,8 @@ var _ = Describe("Package Status Command", func() {
 
 	Describe("outputPackageStatusTableOrWide", func() {
 		It("should output table format with headers", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"pkg1": {PackageRef: v1alpha1.PackageRef{Version: "1.0"}},
 					},
@@ -102,7 +102,7 @@ var _ = Describe("Package Status Command", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			result := output.String()
-			Expect(result).To(ContainSubstring("Skyhook: my-skyhook"))
+			Expect(result).To(ContainSubstring("NodeWright: my-skyhook"))
 			Expect(result).To(ContainSubstring("NODE"))
 			Expect(result).To(ContainSubstring("PACKAGE"))
 			Expect(result).To(ContainSubstring("VERSION"))
@@ -113,8 +113,8 @@ var _ = Describe("Package Status Command", func() {
 		})
 
 		It("should include packages header", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"pkg1": {PackageRef: v1alpha1.PackageRef{Version: "1.0"}},
 						"pkg2": {PackageRef: v1alpha1.PackageRef{Version: "2.0"}},
@@ -131,8 +131,8 @@ var _ = Describe("Package Status Command", func() {
 		})
 
 		It("should include RESTARTS and IMAGE columns in wide output", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"pkg1": {PackageRef: v1alpha1.PackageRef{Version: "1.0"}},
 					},
@@ -181,8 +181,8 @@ var _ = Describe("Package Status Command", func() {
 		createSkyhookUnstructured := func() *unstructured.Unstructured {
 			return &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "skyhook.nvidia.com/v1alpha1",
-					"kind":       "Skyhook",
+					"apiVersion": "nodewright.nvidia.com/v1alpha1",
+					"kind":       "NodeWright",
 					"metadata": map[string]interface{}{
 						"name": testSkyhookName,
 					},
@@ -212,7 +212,7 @@ var _ = Describe("Package Status Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -243,7 +243,7 @@ var _ = Describe("Package Status Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -296,7 +296,7 @@ var _ = Describe("Package Status Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": "invalid-json",
+						"nodewright.nvidia.com/nodeState_my-skyhook": "invalid-json",
 					},
 				},
 			}
@@ -326,7 +326,7 @@ var _ = Describe("Package Status Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -356,7 +356,7 @@ var _ = Describe("Package Status Command", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "node1",
 					Annotations: map[string]string{
-						"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+						"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 					},
 				},
 			}
@@ -389,7 +389,7 @@ var _ = Describe("Package Status Command", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: name,
 						Annotations: map[string]string{
-							"skyhook.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
+							"nodewright.nvidia.com/nodeState_my-skyhook": string(nodeStateJSON),
 						},
 					},
 				}

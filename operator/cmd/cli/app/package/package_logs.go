@@ -29,9 +29,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
@@ -47,13 +48,11 @@ type logsOptions struct {
 
 // BindToCmd binds the logs options to command flags
 func (o *logsOptions) BindToCmd(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
+	utils.RegisterNodeWrightNameFlag(cmd, &o.skyhookName, "Name of the NodeWright CR (required)", true)
 	cmd.Flags().StringVar(&o.node, "node", "", "Filter by node name")
 	cmd.Flags().StringVar(&o.stage, "stage", "", "Filter by stage (apply, config, interrupt, post-interrupt)")
 	cmd.Flags().BoolVarP(&o.follow, "follow", "f", false, "Follow log output")
 	cmd.Flags().Int64Var(&o.tail, "tail", -1, "Number of lines to show from the end of logs (-1 for all)")
-
-	_ = cmd.MarkFlagRequired("skyhook")
 }
 
 // NewLogsCmd creates the package logs command
@@ -62,31 +61,31 @@ func NewLogsCmd(ctx *cliContext.CLIContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "logs <package-name>",
-		Short: "Retrieve logs from Skyhook package pods",
-		Long: `Retrieve logs from pods running a Skyhook package.
+		Short: "Retrieve logs from NodeWright package pods",
+		Long: `Retrieve logs from pods running a NodeWright package.
 
-This command finds pods by their Skyhook labels and retrieves their logs.
+This command finds pods by their NodeWright labels and retrieves their logs.
 By default, it shows logs from the most relevant stage container.`,
 		Example: `  # Get logs for a package
-  kubectl skyhook package logs shellscript --skyhook gpu-init
+  kubectl nodewright package logs shellscript --nodewright gpu-init
 
   # Get logs for a package on a specific node
-  kubectl skyhook package logs shellscript --skyhook gpu-init --node worker-1
+  kubectl nodewright package logs shellscript --nodewright gpu-init --node worker-1
 
   # Get logs from a specific stage
-  kubectl skyhook package logs shellscript --skyhook gpu-init --stage apply
+  kubectl nodewright package logs shellscript --nodewright gpu-init --stage apply
 
   # Follow logs in real-time
-  kubectl skyhook package logs shellscript --skyhook gpu-init -f
+  kubectl nodewright package logs shellscript --nodewright gpu-init -f
 
   # Show last 100 lines
-  kubectl skyhook package logs shellscript --skyhook gpu-init --tail 100`,
+  kubectl nodewright package logs shellscript --nodewright gpu-init --tail 100`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.packageName = args[0]
 
 			if opts.skyhookName == "" {
-				return fmt.Errorf("--skyhook flag is required")
+				return fmt.Errorf("--nodewright flag is required")
 			}
 
 			// Validate stage if provided
@@ -103,6 +102,10 @@ By default, it shows logs from the most relevant stage container.`,
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
+			}
+
 			namespace := ctx.GlobalFlags.Namespace()
 			return runLogs(cmd.Context(), cmd.OutOrStdout(), kubeClient, opts, namespace)
 		},
@@ -114,7 +117,7 @@ By default, it shows logs from the most relevant stage container.`,
 }
 
 func runLogs(ctx context.Context, out io.Writer, kubeClient *client.Client, opts *logsOptions, namespace string) error {
-	// Build label selector for Skyhook pods
+	// Build label selector for NodeWright pods
 	labelSelector := fmt.Sprintf("%s/name=%s", v1alpha1.METADATA_PREFIX, opts.skyhookName)
 
 	// List pods matching the selector

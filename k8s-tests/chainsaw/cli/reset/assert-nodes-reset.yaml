@@ -18,22 +18,23 @@ apiVersion: v1
 kind: Node
 metadata:
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/test-node: skyhooke2e
     ## since skyhook is running it will set it to disabled after we clear it
     ## should it do this, not sure i guess, but seems nice to have it that way
     # (not):
-    #   skyhook.nvidia.com/status_cli-reset-test: .*
+    #   nodewright.nvidia.com/status_cli-reset-test: .*
   annotations:
-    # Verify that all skyhook-related annotations are removed(lookup(@ || {}, 'skyhook.nvidia.com/nodeState_cli-reset-test')): null
-    (contains(keys(@), "skyhook.nvidia.com/nodeState_cli-reset-test")): false
-    (contains(keys(@), "skyhook.nvidia.com/cordon_cli-reset-test")): false
-    skyhook.nvidia.com/status_cli-reset-test: disabled ## disabled after clearing
-    # skyhook.nvidia.com/version_cli-reset-test: .* ## also rest after clearing
+    # Verify that all skyhook-related annotations are removed(lookup(@ || {}, 'nodewright.nvidia.com/nodeState_cli-reset-test')): null
+    (contains(keys(@), "nodewright.nvidia.com/nodeState_cli-reset-test")): false
+    (contains(keys(@), "nodewright.nvidia.com/cordon_cli-reset-test")): false
+    nodewright.nvidia.com/status_cli-reset-test: disabled ## disabled after clearing
+    # nodewright.nvidia.com/version_cli-reset-test: .* ## also rest after clearing
 ---
-# Verify node ordering is reset after CLI reset
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+# Verify node ordering is reset after CLI reset. nodeOrderOffset is omitempty, so a
+# reset (0) value is absent from status; default it to 0 in the assertion.
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: cli-reset-test
 status:
-  nodeOrderOffset: 0
+  (nodeOrderOffset || `0`): 0

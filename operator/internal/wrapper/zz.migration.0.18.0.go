@@ -1,0 +1,166 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package wrapper
+
+import (
+	"strings"
+
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
+	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+)
+
+// legacySkyhookMetadataPrefix is the metadata prefix the pre-rename operator used
+// for every node annotation, node label, and node condition type. The operator now
+// keys all of that under v1alpha1.METADATA_PREFIX ("nodewright.nvidia.com"). This
+// literal is intentionally hardcoded rather than imported from the legacy api
+// package: it is a one-shot migration constant (the value can never change), and
+// wrapper otherwise depends only on the new api group.
+const legacySkyhookMetadataPrefix = "skyhook.nvidia.com"
+
+// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+// rename. Delete this whole file (and its call in wrapper/node.go's Migrate) with the
+// legacy skyhook.nvidia.com group in the removal release.
+//
+// migrateNodePrefixToNodeWright copies, in place, any node metadata still under the
+// legacy skyhook.nvidia.com prefix to the current nodewright.nvidia.com prefix,
+// KEEPING the legacy keys.
+//
+// WHY: after the Skyhook -> NodeWright rename the operator reads node state
+// (nodeState_/status_/version_/cordon_/drainStart_/autoTaint_ annotations, status
+// labels, and skyhook.nvidia.com/<name>/<type> conditions) under the NEW prefix. A
+// node last written by the pre-rename operator carries only OLD-prefix keys, so
+// without this copy the operator sees no state and re-runs every package on every
+// node. It must run before GetVersion()/State() are trusted (both read the new
+// prefix), so a renamed node is adopted instead of treated as fresh.
+//
+// WHY KEEP THE LEGACY KEYS: this is the reversible converge half of the rollback-safe
+// migration. The legacy copies let a rolled-back pre-rename operator still find its
+// state; pruneLegacyNodePrefix drops them once the rollback window (LegacyCleanupDelay)
+// elapses. Idempotent: a key already present under the new prefix wins (explicit
+// nodewright value is not overwritten); with no legacy keys present it is a no-op and
+// does not mark the node updated. The bare runtime-required taint key
+// ("skyhook.nvidia.com", no trailing slash, and a taint not an annotation/label)
+// intentionally does not match and is left untouched: that key did not move in the
+// rename.
+func migrateNodePrefixToNodeWright(node *skyhookNode, logger logr.Logger) error {
+	oldPrefix := legacySkyhookMetadataPrefix + "/"
+	newPrefix := v1alpha1.METADATA_PREFIX + "/"
+
+	changed := false
+	copyPrefixedMap(node.Annotations, oldPrefix, newPrefix, &changed)
+	copyPrefixedMap(node.Labels, oldPrefix, newPrefix, &changed)
+
+	// Add a nodewright-prefixed copy of each legacy condition, keeping the legacy one.
+	conditions := node.GetNode().Status.Conditions
+	var added []corev1.NodeCondition
+	for i := range conditions {
+		suffix, ok := strings.CutPrefix(string(conditions[i].Type), oldPrefix)
+		if !ok {
+			continue
+		}
+		newType := corev1.NodeConditionType(newPrefix + suffix)
+		if hasCondition(conditions, newType) {
+			continue
+		}
+		c := conditions[i]
+		c.Type = newType
+		added = append(added, c)
+		changed = true
+	}
+	if len(added) > 0 {
+		node.GetNode().Status.Conditions = append(conditions, added...)
+	}
+
+	if changed {
+		node.updated = true
+		logger.Info("adopted legacy node metadata under the nodewright prefix (legacy kept for rollback)", "node", node.Name, "skyhook", node.skyhookName)
+	}
+	return nil
+}
+
+// pruneLegacyNodePrefix removes, in place, all node metadata still under the legacy
+// skyhook.nvidia.com prefix (annotations, labels, and conditions). This is the
+// destructive prune half of the rollback-safe migration: it runs only after the
+// rollback window elapses. The nodewright-prefixed copies written by the converge are
+// the live state and are left untouched. Returns true if anything was removed.
+func pruneLegacyNodePrefix(node *skyhookNode) bool {
+	oldPrefix := legacySkyhookMetadataPrefix + "/"
+
+	changed := false
+	dropPrefixedKeys(node.Annotations, oldPrefix, &changed)
+	dropPrefixedKeys(node.Labels, oldPrefix, &changed)
+
+	conditions := node.GetNode().Status.Conditions
+	kept := conditions[:0]
+	for _, c := range conditions {
+		if strings.HasPrefix(string(c.Type), oldPrefix) {
+			changed = true
+			continue
+		}
+		kept = append(kept, c)
+	}
+	node.GetNode().Status.Conditions = kept
+
+	if changed {
+		node.updated = true
+	}
+	return changed
+}
+
+// copyPrefixedMap copies every key in m from oldPrefix to newPrefix, KEEPING the
+// legacy key. A key already present under newPrefix is left as-is (explicit new value
+// wins). Sets *changed when it added a new-prefix key. A nil map is a no-op.
+func copyPrefixedMap(m map[string]string, oldPrefix, newPrefix string, changed *bool) {
+	// Collect legacy keys first so we do not mutate the map while ranging it.
+	var legacy []string
+	for k := range m {
+		if strings.HasPrefix(k, oldPrefix) {
+			legacy = append(legacy, k)
+		}
+	}
+	for _, k := range legacy {
+		newKey := newPrefix + strings.TrimPrefix(k, oldPrefix)
+		if _, exists := m[newKey]; !exists {
+			m[newKey] = m[k]
+			*changed = true
+		}
+	}
+}
+
+// dropPrefixedKeys deletes every key in m under prefix, in place. Sets *changed when
+// anything was deleted. A nil map is a no-op.
+func dropPrefixedKeys(m map[string]string, prefix string, changed *bool) {
+	for k := range m {
+		if strings.HasPrefix(k, prefix) {
+			delete(m, k)
+			*changed = true
+		}
+	}
+}
+
+// hasCondition reports whether conditions already carries a condition of type t.
+func hasCondition(conditions []corev1.NodeCondition, t corev1.NodeConditionType) bool {
+	for i := range conditions {
+		if conditions[i].Type == t {
+			return true
+		}
+	}
+	return false
+}

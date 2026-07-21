@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: uninstall-cancel
         format: yaml
   steps:
@@ -41,13 +41,13 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset uninstall-cancel --confirm 2>/dev/null || true
+          ../nodewright-cli reset uninstall-cancel --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-cancel
           status:
@@ -65,8 +65,8 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_uninstall-cancel: in_progress
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_uninstall-cancel: in_progress
     - sleep:
         duration: 15s
     - update:
@@ -78,10 +78,10 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
-              skyhook.nvidia.com/status_uninstall-cancel: complete
+              nodewright.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/status_uninstall-cancel: complete
             annotations:
-              ("skyhook.nvidia.com/nodeState_uninstall-cancel" && parse_json("skyhook.nvidia.com/nodeState_uninstall-cancel")):
+              ("nodewright.nvidia.com/nodeState_uninstall-cancel" && parse_json("nodewright.nvidia.com/nodeState_uninstall-cancel")):
                 {
                   "mypkg|2.1.4": {
                       "name": "mypkg",
@@ -93,8 +93,8 @@ spec:
                 }
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: uninstall-cancel
           status:

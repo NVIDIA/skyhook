@@ -19,20 +19,20 @@ apiVersion: v1
 kind: Node
 metadata:
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
-    skyhook.nvidia.com/status_dont-write-logs-agent-operator: complete
+    nodewright.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/status_dont-write-logs-agent-operator: complete
   annotations: 
-    skyhook.nvidia.com/status_dont-write-logs-agent-operator: complete
+    nodewright.nvidia.com/status_dont-write-logs-agent-operator: complete
 status:
-  (conditions[?type == 'skyhook.nvidia.com/dont-write-logs-agent-operator/NotReady']):
+  (conditions[?type == 'nodewright.nvidia.com/dont-write-logs-agent-operator/NotReady']):
   - reason: "Complete"
     status: "False"
-  (conditions[?type == 'skyhook.nvidia.com/dont-write-logs-agent-operator/Erroring']):
+  (conditions[?type == 'nodewright.nvidia.com/dont-write-logs-agent-operator/Erroring']):
   - reason: "Not Erroring"
     status: "False"
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: dont-write-logs-agent-operator
 status:

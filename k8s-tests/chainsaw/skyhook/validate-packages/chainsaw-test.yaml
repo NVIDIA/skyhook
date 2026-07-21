@@ -29,11 +29,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: validate-packages
         format: yaml
   steps:
@@ -43,7 +43,7 @@ spec:
     - script:
         content: |
           ## remove annotation/labels from last run
-          ../skyhook-cli reset validate-packages --confirm 2>/dev/null || true
+          ../nodewright-cli reset validate-packages --confirm 2>/dev/null || true
     - apply:
         file: skyhook.yaml
     - sleep:

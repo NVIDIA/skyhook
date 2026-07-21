@@ -28,7 +28,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../../../operator/bin/skyhook reset dont-write-logs-agent-operator --confirm 2>/dev/null || true
+          ../../../operator/bin/nodewright reset dont-write-logs-agent-operator --confirm 2>/dev/null || true
     - script:
         content: |
           ## reinstall the debug pod in case it was deleted

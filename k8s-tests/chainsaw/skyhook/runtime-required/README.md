@@ -10,7 +10,7 @@ The test explicitly validates node isolation by blocking one node while the othe
 
 ### Phase 1: Setup with Blocked Node
 
-1. Label both worker nodes with the test label (`skyhook.nvidia.com/runtime-required-test=true`)
+1. Label both worker nodes with the test label (`nodewright.nvidia.com/runtime-required-test=true`)
 2. Add runtime-required taints to both nodes
 3. **Add blocking taint to kind-worker2** only (`test-block=true:NoSchedule`)
 4. Apply a runtime-required skyhook (does NOT tolerate the blocking taint)
@@ -47,5 +47,5 @@ The test explicitly validates node isolation by blocking one node while the othe
 
 ## Notes
 
-- Uses dedicated label `skyhook.nvidia.com/runtime-required-test=true` to avoid conflicts with other tests
+- Uses dedicated label `nodewright.nvidia.com/runtime-required-test=true` to avoid conflicts with other tests
 - Tests both worker nodes independently

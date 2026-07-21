@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -29,9 +29,10 @@ import (
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
@@ -44,10 +45,8 @@ type statusOptions struct {
 
 // BindToCmd binds the status options to command flags
 func (o *statusOptions) BindToCmd(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.skyhookName, "skyhook", "", "Name of the Skyhook CR (required)")
+	utils.RegisterNodeWrightNameFlag(cmd, &o.skyhookName, "Name of the NodeWright CR (required)", true)
 	cmd.Flags().StringArrayVar(&o.nodes, "node", nil, "Node name or regex pattern (can be specified multiple times)")
-
-	_ = cmd.MarkFlagRequired("skyhook")
 }
 
 // NewStatusCmd creates the package status command
@@ -60,34 +59,38 @@ func NewStatusCmd(ctx *cliContext.CLIContext) *cobra.Command {
 		Long: `Query the status of a package across cluster nodes by reading node annotations.
 
 This command displays the current state, stage, and version of a package
-on each node that has Skyhook state annotations.
+on each node that has NodeWright state annotations.
 
 The output can be filtered by:
-  - Skyhook name (required flag)
+  - NodeWright name (required flag)
   - Node name patterns (optional, supports regex)`,
 		Example: `  # View package status on all nodes
-  kubectl skyhook package status shellscript --skyhook gpu-init
+  kubectl nodewright package status shellscript --nodewright gpu-init
 
   # View package status on specific nodes
-  kubectl skyhook package status shellscript --skyhook gpu-init --node worker-1 --node worker-2
+  kubectl nodewright package status shellscript --nodewright gpu-init --node worker-1 --node worker-2
 
   # View package status on nodes matching a regex pattern
-  kubectl skyhook package status shellscript --skyhook gpu-init --node "worker-.*"
+  kubectl nodewright package status shellscript --nodewright gpu-init --node "worker-.*"
 
   # Output as JSON
-  kubectl skyhook package status shellscript --skyhook gpu-init -o json`,
+  kubectl nodewright package status shellscript --nodewright gpu-init -o json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.packageName = args[0]
 
 			if opts.skyhookName == "" {
-				return fmt.Errorf("--skyhook flag is required")
+				return fmt.Errorf("--nodewright flag is required")
 			}
 
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
 			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
+			}
+
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
 			}
 
 			return runStatus(cmd.Context(), kubeClient, opts, ctx)
@@ -118,10 +121,10 @@ func newNodePackageStatus(nodeName string, pkgStatus v1alpha1.PackageStatus) nod
 
 func runStatus(ctx context.Context, kubeClient *client.Client, opts *statusOptions, cliCtx *cliContext.CLIContext) error {
 	out := cliCtx.Config().OutputWriter
-	// Get the Skyhook CR to validate it exists and get package info
+	// Get the NodeWright CR to validate it exists and get package info
 	skyhookUnstructured, err := kubeClient.Dynamic().Resource(skyhookGVR).Get(ctx, opts.skyhookName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("getting skyhook %q: %w", opts.skyhookName, err)
+		return fmt.Errorf("getting NodeWright %q: %w", opts.skyhookName, err)
 	}
 
 	skyhook, err := utils.UnstructuredToSkyhook(skyhookUnstructured)
@@ -238,15 +241,15 @@ func packageStatusTableConfig() utils.TableConfig[nodePackageStatus] {
 	}
 }
 
-func outputPackageStatusTableOrWide(out io.Writer, skyhook *v1alpha1.Skyhook, statuses []nodePackageStatus, wide bool) error {
-	headerLine := fmt.Sprintf("Skyhook: %s\nPackages: %s", skyhook.Name, formatPackageList(skyhook))
+func outputPackageStatusTableOrWide(out io.Writer, skyhook *v1alpha1.NodeWright, statuses []nodePackageStatus, wide bool) error {
+	headerLine := fmt.Sprintf("NodeWright: %s\nPackages: %s", skyhook.Name, formatPackageList(skyhook))
 	if wide {
 		return utils.OutputWideWithHeader(out, headerLine, packageStatusTableConfig(), statuses)
 	}
 	return utils.OutputTableWithHeader(out, headerLine, packageStatusTableConfig(), statuses)
 }
 
-func formatPackageList(skyhook *v1alpha1.Skyhook) string {
+func formatPackageList(skyhook *v1alpha1.NodeWright) string {
 	packages := make([]string, 0, len(skyhook.Spec.Packages))
 	for name, pkg := range skyhook.Spec.Packages {
 		packages = append(packages, fmt.Sprintf("%s:%s", name, pkg.Version))

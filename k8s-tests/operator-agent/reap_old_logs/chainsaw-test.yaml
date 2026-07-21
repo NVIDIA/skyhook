@@ -28,7 +28,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../../../operator/bin/skyhook reset reap-old-logs-agent-operator --confirm
+          ../../../operator/bin/nodewright reset reap-old-logs-agent-operator --confirm
     - script:
         content: |
           ## reinstall the debug pod in case it was deleted

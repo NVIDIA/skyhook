@@ -18,10 +18,10 @@ apiVersion: v1
 kind: Node
 metadata:
   labels:
-    skyhook.nvidia.com/test-node: skyhooke2e
-    skyhook.nvidia.com/status_taint-scheduling: complete
+    nodewright.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/status_taint-scheduling: complete
   annotations:
-    ("skyhook.nvidia.com/nodeState_taint-scheduling" && parse_json("skyhook.nvidia.com/nodeState_taint-scheduling")):
+    ("nodewright.nvidia.com/nodeState_taint-scheduling" && parse_json("nodewright.nvidia.com/nodeState_taint-scheduling")):
       {
         "spencer|3.2.3": {
             "name": "spencer",
@@ -31,12 +31,12 @@ metadata:
             "state": "complete"
         }
       }
-    skyhook.nvidia.com/status_taint-scheduling: complete
+    nodewright.nvidia.com/status_taint-scheduling: complete
 status:
-  (conditions[?type == 'skyhook.nvidia.com/taint-scheduling/NotReady']):
+  (conditions[?type == 'nodewright.nvidia.com/taint-scheduling/NotReady']):
   - reason: "Complete"
     status: "False"
-  (conditions[?type == 'skyhook.nvidia.com/taint-scheduling/Erroring']):
+  (conditions[?type == 'nodewright.nvidia.com/taint-scheduling/Erroring']):
   - reason: "Not Erroring"
     status: "False"
 spec:
@@ -44,8 +44,8 @@ spec:
   - effect: NoSchedule
     key: nvidia.com/gpu
 ---
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: taint-scheduling
 status:
@@ -58,7 +58,7 @@ status:
   - reason: TaintNotTolerable
     status: "False"
     type: TaintNotTolerable
-  (conditions[?type == 'skyhook.nvidia.com/TaintNotTolerable']):
+  (conditions[?type == 'nodewright.nvidia.com/TaintNotTolerable']):
   - reason: TaintNotTolerable
     status: "False"
-    type: skyhook.nvidia.com/TaintNotTolerable
+    type: nodewright.nvidia.com/TaintNotTolerable

@@ -29,9 +29,10 @@ import (
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
@@ -47,17 +48,17 @@ func NewUpdateStateCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &updateStateOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "update-state <skyhook-name> <package> <version> <stage> <state>",
-		Short: "Update the recorded state of a single package on Skyhook-managed nodes",
+		Use:   "update-state <nodewright-name> <package> <version> <stage> <state>",
+		Short: "Update the recorded state of a single package on NodeWright-managed nodes",
 		Long: `Edit the per-node nodeState annotation for one package.
 
 By default the command applies to every node that already has state for the
-named Skyhook. Use --node or --selector to narrow the affected nodes.
+named NodeWright. Use --node or --selector to narrow the affected nodes.
 
 This is an administrator escape hatch. It does not validate that the new
 (stage, state) combination is reachable by the operator from the current
 state, and it does not gate destructive stages (uninstall,
-uninstall-interrupt) behind extra prompts. Pause the Skyhook CR before
+uninstall-interrupt) behind extra prompts. Pause the NodeWright CR before
 running this command — otherwise the operator may overwrite the edit
 immediately.
 
@@ -65,13 +66,13 @@ Use --add to create a fresh nodeState entry for nodes that do not yet have
 one for this package. --add requires --node or --selector so the scope is
 explicit.`,
 		Example: `  # Mark pkg1@1.0 as complete on every tracked node
-  kubectl skyhook update-state gpu-init pkg1 1.0 config complete --confirm
+  kubectl nodewright update-state gpu-init pkg1 1.0 config complete --confirm
 
   # Same, but only on one node
-  kubectl skyhook update-state gpu-init pkg1 1.0 config complete --node n1 --confirm
+  kubectl nodewright update-state gpu-init pkg1 1.0 config complete --node n1 --confirm
 
   # Create a fresh entry on selected nodes
-  kubectl skyhook update-state gpu-init pkg1 1.0 apply in_progress --selector role=gpu --add --confirm`,
+  kubectl nodewright update-state gpu-init pkg1 1.0 apply in_progress --selector role=gpu --add --confirm`,
 		Args: cobra.ExactArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
@@ -79,6 +80,11 @@ explicit.`,
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
+
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
+			}
+
 			return runUpdateState(cmd.Context(), cmd, kubeClient, args, opts, ctx)
 		},
 	}
@@ -147,7 +153,7 @@ func enumerateUpdateNodes(cmd *cobra.Command, nodeStates map[string]v1alpha1.Nod
 	if len(opts.nodes) > 0 {
 		for _, n := range opts.nodes {
 			if _, ok := nodeStates[n]; !ok {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "node %q not found or has no state for Skyhook %q\n", n, skyhookName)
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "node %q not found or has no state for NodeWright %q\n", n, skyhookName)
 				continue
 			}
 			ordered = append(ordered, n)
@@ -224,7 +230,7 @@ func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.
 
 	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
 	if err != nil {
-		return fmt.Errorf("fetching Skyhook %q: %w", skyhookName, err)
+		return fmt.Errorf("fetching NodeWright %q: %w", skyhookName, err)
 	}
 
 	if err := utils.CheckNodeStateOperatorVersion(ctx, cmd, kubeClient.Kubernetes(), cliCtx.GlobalFlags.Namespace(), skyhook); err != nil {
@@ -233,7 +239,7 @@ func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.
 
 	pkg, ok := skyhook.Spec.Packages[packageName]
 	if !ok || pkg.Version != packageVersion {
-		return fmt.Errorf("package %q (version %q) not found in spec of Skyhook %q", packageName, packageVersion, skyhookName)
+		return fmt.Errorf("package %q (version %q) not found in spec of NodeWright %q", packageName, packageVersion, skyhookName)
 	}
 
 	nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, opts.selector)
@@ -270,7 +276,7 @@ func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.
 		targets = append(targets, t)
 	}
 
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", skyhookName)
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package: %s@%s -> stage=%s state=%s", packageName, packageVersion, stage, state)
 	if opts.add {
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), " (add)")

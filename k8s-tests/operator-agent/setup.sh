@@ -37,7 +37,7 @@ spec:
         - key: node.kubernetes.io/unschedulable
           operator: "Exists"
         # Tolerate the skyhook unschedulable taint so it wont go away during interrupt tests
-        - key: skyhook.nvidia.com/unschedulable
+        - key: nodewright.nvidia.com/unschedulable
           operator: "Exists"
     containers:
         - name: debugger

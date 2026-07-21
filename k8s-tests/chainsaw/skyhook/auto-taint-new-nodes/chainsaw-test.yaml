@@ -31,8 +31,8 @@ spec:
       name: kind-worker
       format: yaml
   - get:
-      apiVersion: skyhook.nvidia.com/v1alpha1
-      kind: Skyhook
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
       format: yaml
   steps:
   # Phase 1: Setup - strip all skyhook annotations so the node is genuinely "new"
@@ -40,10 +40,10 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset auto-taint-new-nodes --confirm 2>/dev/null || true
-          ../skyhook-cli reset auto-taint-second --confirm 2>/dev/null || true
-          ## remove all skyhook.nvidia.com/ annotations from kind-worker so it looks new
-          kubectl get node kind-worker -o go-template='{{range $k, $v := .metadata.annotations}}{{$k}}{{"\n"}}{{end}}' | grep '^skyhook\.nvidia\.com/' | while read key; do
+          ../nodewright-cli reset auto-taint-new-nodes --confirm 2>/dev/null || true
+          ../nodewright-cli reset auto-taint-second --confirm 2>/dev/null || true
+          ## remove all nodewright.nvidia.com/ annotations from kind-worker so it looks new
+          kubectl get node kind-worker -o go-template='{{range $k, $v := .metadata.annotations}}{{$k}}{{"\n"}}{{end}}' | grep '^nodewright\.nvidia\.com/' | while read key; do
             kubectl annotate node kind-worker "${key}-" 2>/dev/null || true
           done
           ## remove any runtime-required taint

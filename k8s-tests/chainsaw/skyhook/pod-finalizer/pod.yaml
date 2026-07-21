@@ -19,13 +19,13 @@ kind: Pod
 metadata:
   name: hello-world
   labels: 
-    skyhook.nvidia.com/name: "foobar"
+    nodewright.nvidia.com/name: "foobar"
   annotations:
-    skyhook.nvidia.com/package: '{"name":"foobar","version":"1.2.3","stage":"apply","skyhook":"foobar"}'
+    nodewright.nvidia.com/package: '{"name":"foobar","version":"1.2.3","stage":"apply","skyhook":"foobar"}'
 spec:
   restartPolicy: OnFailure
   nodeSelector:
-    skyhook.nvidia.com/test-node: skyhooke2e
+    nodewright.nvidia.com/test-node: skyhooke2e
   initContainers:
   - name: foobar-init
     image: busybox:latest

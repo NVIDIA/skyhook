@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: malformed-node-state
         format: yaml
   steps:
@@ -41,13 +41,13 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset malformed-node-state --confirm 2>/dev/null || true
+          ../nodewright-cli reset malformed-node-state --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: malformed-node-state
           status:
@@ -63,19 +63,19 @@ spec:
     - script:
         content: |
           ## Save the current valid nodeState so we can restore it later.
-          node=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          node=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
           echo "Target node: $node"
-          kubectl get node "$node" -o jsonpath='{.metadata.annotations.skyhook\.nvidia\.com/nodeState_malformed-node-state}' > /tmp/malformed-node-state-backup.json
+          kubectl get node "$node" -o jsonpath='{.metadata.annotations.nodewright\.nvidia\.com/nodeState_malformed-node-state}' > /tmp/malformed-node-state-backup.json
           echo "Saved backup: $(wc -c < /tmp/malformed-node-state-backup.json) bytes"
           kubectl annotate node "$node" \
-            "skyhook.nvidia.com/nodeState_malformed-node-state={not-valid-json" \
+            "nodewright.nvidia.com/nodeState_malformed-node-state={not-valid-json" \
             --overwrite
     - assert:
         ## NodeStateMalformed condition with Reason=ParseError, and the
         ## message names the number of affected nodes and lists them.
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: malformed-node-state
           status:
@@ -91,18 +91,18 @@ spec:
     try:
     - script:
         content: |
-          node=$(kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
+          node=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[0].metadata.name}')
           value=$(cat /tmp/malformed-node-state-backup.json)
           echo "Restoring nodeState on $node ($(printf %s "$value" | wc -c) bytes)"
           kubectl annotate node "$node" \
-            "skyhook.nvidia.com/nodeState_malformed-node-state=$value" \
+            "nodewright.nvidia.com/nodeState_malformed-node-state=$value" \
             --overwrite
     - assert:
         ## NodeStateMalformed must be absent — UpdateNodeStateMalformedCondition
         ## calls RemoveCondition when no nodes have parse errors.
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: malformed-node-state
           status:

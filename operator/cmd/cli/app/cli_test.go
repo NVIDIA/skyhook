@@ -35,7 +35,7 @@ func TestCLISmoke(t *testing.T) {
 	RunSpecs(t, "CLI Test Suite")
 }
 
-var _ = Describe("Skyhook CLI Tests", func() {
+var _ = Describe("NodeWright CLI Tests", func() {
 	var rootCmd *cobra.Command
 	var testCtx *context.CLIContext
 	var output *bytes.Buffer
@@ -93,7 +93,7 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			err := rootCmd.Execute()
 			Expect(err).NotTo(HaveOccurred())
 			helpText := output.String()
-			Expect(helpText).To(ContainSubstring("kubectl-compatible helper for managing Skyhook deployments."))
+			Expect(helpText).To(ContainSubstring("kubectl-compatible helper for managing NodeWright deployments."))
 			Expect(helpText).To(ContainSubstring("Available Commands:"))
 		})
 
@@ -101,7 +101,7 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			rootCmd.SetArgs([]string{"--version"})
 			err := rootCmd.Execute()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output.String()).To(ContainSubstring("Skyhook plugin: "))
+			Expect(output.String()).To(ContainSubstring("NodeWright plugin: "))
 		})
 	})
 
@@ -242,7 +242,7 @@ var _ = Describe("Skyhook CLI Tests", func() {
 
 			err := versionCmd.Execute()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output.String()).To(ContainSubstring("Skyhook plugin:"))
+			Expect(output.String()).To(ContainSubstring("NodeWright plugin:"))
 		})
 	})
 

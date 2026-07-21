@@ -1,3 +1,4 @@
+{{/* MIGRATION-SHIM: RBAC for the legacy skyhook.nvidia.com CRD; remove this template with the legacy group in the removal release. */}}
 {{ if ((.Values.rbac).createSkyhookEditorRole) }}
 # permissions for end users to edit skyhooks.
 ## NOTE: not managed by helmify, needs to be manually updated, however, should not change much

@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,7 +148,7 @@ var _ = Describe("Skyhook condition helpers", func() {
 				Message:            "1/1 nodes complete (node-a)",
 			}
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{},
+				NodeWright: &v1alpha1.NodeWright{},
 			}
 
 			Expect(AddSkyhookCondition(skyhook, condition)).To(BeTrue())
@@ -166,8 +166,8 @@ var _ = Describe("Skyhook condition helpers", func() {
 
 	DescribeTable("removeSkyhookConditionTypes", func(existing []metav1.Condition, conditionTypes []string, expectedTypes []string, changed bool) {
 		skyhook := &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					Conditions: existing,
 				},
 			},
@@ -196,8 +196,8 @@ var _ = Describe("Skyhook condition helpers", func() {
 
 	DescribeTable("hasTrueSkyhookCondition", func(conditions []metav1.Condition, conditionTypes []string, expected bool) {
 		skyhook := &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					Conditions: conditions,
 				},
 			},

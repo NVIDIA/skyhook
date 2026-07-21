@@ -23,7 +23,7 @@
 package wrapper
 
 import (
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/go-logr/logr"
 	mock "github.com/stretchr/testify/mock"
 	v10 "k8s.io/api/core/v1"
@@ -421,6 +421,50 @@ func (_c *MockSkyhookNodeOnly_PackageStatus_Call) Return(packageStatus *v1alpha1
 }
 
 func (_c *MockSkyhookNodeOnly_PackageStatus_Call) RunAndReturn(run func(name string) (*v1alpha1.PackageStatus, bool)) *MockSkyhookNodeOnly_PackageStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PruneLegacyMetadata provides a mock function for the type MockSkyhookNodeOnly
+func (_mock *MockSkyhookNodeOnly) PruneLegacyMetadata() bool {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for PruneLegacyMetadata")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func() bool); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockSkyhookNodeOnly_PruneLegacyMetadata_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PruneLegacyMetadata'
+type MockSkyhookNodeOnly_PruneLegacyMetadata_Call struct {
+	*mock.Call
+}
+
+// PruneLegacyMetadata is a helper method to define mock.On call
+func (_e *MockSkyhookNodeOnly_Expecter) PruneLegacyMetadata() *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
+	return &MockSkyhookNodeOnly_PruneLegacyMetadata_Call{Call: _e.mock.On("PruneLegacyMetadata")}
+}
+
+func (_c *MockSkyhookNodeOnly_PruneLegacyMetadata_Call) Run(run func()) *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_PruneLegacyMetadata_Call) Return(b bool) *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_PruneLegacyMetadata_Call) RunAndReturn(run func() bool) *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
 	_c.Call.Return(run)
 	return _c
 }

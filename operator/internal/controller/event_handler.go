@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -107,7 +107,7 @@ func (h *globalDelayHandler) enqueue(ctx context.Context, object client.Object, 
 // relevant reports whether an event on object should wake the heavy reconcile.
 func (h *globalDelayHandler) relevant(ctx context.Context, object client.Object) (bool, error) {
 	switch obj := object.(type) {
-	case *v1alpha1.Skyhook:
+	case *v1alpha1.NodeWright:
 		return true, nil
 	case *corev1.Node:
 		list, err := h.dal.GetSkyhooks(ctx)
@@ -125,7 +125,7 @@ func (h *globalDelayHandler) relevant(ctx context.Context, object client.Object)
 
 // matchSelectors returns the Skyhooks whose node selector matches the given
 // labels.
-func matchSelectors(crs *v1alpha1.SkyhookList, lbs map[string]string) []types.NamespacedName {
+func matchSelectors(crs *v1alpha1.NodeWrightList, lbs map[string]string) []types.NamespacedName {
 
 	ret := make([]types.NamespacedName, 0)
 

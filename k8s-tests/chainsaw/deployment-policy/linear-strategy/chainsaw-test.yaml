@@ -33,11 +33,11 @@ spec:
     - script:
         content: |
           # Clear node annotations from previous runs using skyhook CLI
-          ../skyhook-cli reset linear-strategy-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset linear-strategy-test --confirm 2>/dev/null || true
           # Clean up any leftover labels
           chmod +x ../label-nodes.sh
           ../label-nodes.sh clean-all tier 2>/dev/null || true
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node 2>/dev/null || true
           echo "✓ State reset complete"
   
   - name: setup-nodes
@@ -46,9 +46,9 @@ spec:
         content: |
           chmod +x ../label-nodes.sh
           # Label nodes for linear strategy test
-          ../label-nodes.sh add 0-7 tier=production skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 0-7 tier=production nodewright.nvidia.com/test-node=skyhooke2e
           echo "✓ Node labeling complete"
-          kubectl get nodes -L tier,skyhook.nvidia.com/test-node --no-headers | grep production | sort
+          kubectl get nodes -L tier,nodewright.nvidia.com/test-node --no-headers | grep production | sort
   
   - name: apply-resources
     try:
@@ -106,7 +106,7 @@ spec:
           ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           
           # Verify current_batch metric exists and is greater than 0
-          CURRENT_BATCH=$(kubectl get skyhook linear-strategy-test -o jsonpath='{.status.compartmentStatuses.production.batchState.currentBatch}')
+          CURRENT_BATCH=$(kubectl get nodewright linear-strategy-test -o jsonpath='{.status.compartmentStatuses.production.batchState.currentBatch}')
           ../../metrics_test.py skyhook_rollout_current_batch "$CURRENT_BATCH" -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           
           echo "✓ All final metrics verified!"
@@ -116,17 +116,17 @@ spec:
     - script:
         content: |
           # Clean up node annotations
-          ../skyhook-cli reset linear-strategy-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset linear-strategy-test --confirm 2>/dev/null || true
           # Clean up labels
           ../label-nodes.sh clean-all tier
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           name: linear-strategy-test
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
+          apiVersion: nodewright.nvidia.com/v1alpha1
           kind: DeploymentPolicy
           name: linear-ramp-policy

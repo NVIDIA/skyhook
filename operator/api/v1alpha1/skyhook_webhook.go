@@ -36,10 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// log is for logging in this package.
 var (
-	skyhooklog       = logf.Log.WithName("skyhook-resource")
-	validPackageName = regexp.MustCompile(`(?m)^[a-z][-a-z0-9]{0,41}[a-z]$`)
+	validPackageName = regexp.MustCompile(`^[a-z][-a-z0-9]{0,41}[a-z]$`)
 )
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
@@ -69,7 +67,7 @@ var _ admission.Defaulter[*Skyhook] = &SkyhookWebhook{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *SkyhookWebhook) Default(ctx context.Context, skyhook *Skyhook) error {
 
-	skyhooklog.Info("default", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("default", "name", skyhook.Name)
 
 	// TODO(user): fill in your defaulting logic.
 	// Things we might want to default:
@@ -82,124 +80,60 @@ func (r *SkyhookWebhook) Default(ctx context.Context, skyhook *Skyhook) error {
 
 var _ admission.Validator[*Skyhook] = &SkyhookWebhook{}
 
+// skyhookDeprecationWarning is surfaced on every create/update of a legacy Skyhook so
+// operators are nudged toward the new group during the migration bridge. It deliberately
+// does not name a specific removal release; the bridge is kept for a multi-release window.
+const skyhookDeprecationWarning = "skyhook.nvidia.com/v1alpha1 Skyhook is deprecated; migrate to " +
+	"nodewright.nvidia.com/v1alpha1 NodeWright (change apiVersion to nodewright.nvidia.com/v1alpha1 and " +
+	"kind to NodeWright). The Skyhook kind will be removed in a future release."
+
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate create", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("validate create", "name", skyhook.Name)
+
+	warnings := admission.Warnings{skyhookDeprecationWarning}
 
 	if err := skyhook.Validate(); err != nil {
-		return nil, err
+		return warnings, fmt.Errorf("validating skyhook %q: %w", skyhook.Name, err)
 	}
 
-	return nil, r.validateDeploymentPolicyExists(ctx, skyhook)
+	return warnings, r.validateDeploymentPolicyExists(ctx, skyhook)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldSkyhook, newSkyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate update", "name", newSkyhook.Name)
+	logf.FromContext(ctx).Info("validate update", "name", newSkyhook.Name)
 
-	if err := newSkyhook.Validate(); err != nil {
-		return nil, err
-	}
+	warnings := admission.Warnings{skyhookDeprecationWarning}
 
-	var warnings admission.Warnings
-
-	// Uninstall-specific validations require the old object
+	// MIGRATION-SHIM: a migrated legacy Skyhook is frozen read-only; real edits go to the
+	// NodeWright (see legacy_readonly_webhook.go, not mirrored into the nodewright group).
+	// legacyReadOnlyError rejects every user-meaningful edit and allows only no-ops,
+	// finalizer edits, and deletions. Those allow-listed updates must NOT be re-validated:
+	// re-running Validate()/validateDeploymentPolicyExists on a frozen object would wrongly
+	// reject a GitOps no-op re-apply or a finalizer strip (e.g. once a stricter rule ships,
+	// or after the referenced legacy DeploymentPolicy is gone), stranding the object in
+	// Terminating. All substantive validation — including the uninstall/downgrade rules —
+	// now runs on the writable NodeWright (see nodewright_webhook.go).
 	if oldSkyhook != nil {
-		// Check for removal of uninstall-enabled packages
-		for name, oldPkg := range oldSkyhook.Spec.Packages {
-			if _, stillExists := newSkyhook.Spec.Packages[name]; !stillExists {
-				if oldPkg.UninstallEnabled() {
-					if !isPackageFullyUninstalled(oldSkyhook, name) {
-						return nil, fmt.Errorf(
-							"package %q has uninstall.enabled=true; set uninstall.apply=true "+
-								"and wait for completion before removing from spec", name)
-					}
-				}
-			}
-		}
-
-		// Reject version downgrade unless the package has already been explicitly
-		// uninstalled on all nodes. The user must have flipped uninstall.apply=true
-		// on the old spec AND waited for the uninstall to complete (package absent
-		// from every tracked node's state) before changing the version.
-		for name, oldPkg := range oldSkyhook.Spec.Packages {
-			newPkg, exists := newSkyhook.Spec.Packages[name]
-			if !exists {
-				continue
-			}
-			if newPkg.Version == oldPkg.Version {
-				continue
-			}
-			if !semver.IsValid(newPkg.Version) || !semver.IsValid(oldPkg.Version) {
-				continue // not comparable; Validate() rejects invalid formats separately
-			}
-			if semver.Compare(newPkg.Version, oldPkg.Version) != -1 {
-				continue // upgrade or equal — allowed
-			}
-
-			if !oldPkg.UninstallEnabled() {
-				continue // explicit uninstall not required for this package
-			}
-
-			// Downgrade. Required:
-			//   (a) OLD spec already had uninstall.apply=true, AND
-			//   (b) package absent from all nodes (uninstall complete per D2).
-			if !oldPkg.IsUninstalling() {
-				return nil, fmt.Errorf(
-					"package %q: downgrade not allowed — set uninstall.apply=true first, "+
-						"wait for uninstall to complete, then change version", name)
-			}
-			if !isPackageFullyUninstalled(oldSkyhook, name) {
-				return nil, fmt.Errorf(
-					"package %q: downgrade not allowed — uninstall has not yet completed "+
-						"on all nodes. Wait for the uninstall to finish, then change version", name)
-			}
-		}
-
-		// Warn (not reject) on cancel: apply going from true to false
-		for name, oldPkg := range oldSkyhook.Spec.Packages {
-			newPkg, exists := newSkyhook.Spec.Packages[name]
-			if exists && oldPkg.IsUninstalling() && !newPkg.IsUninstalling() {
-				warnings = append(warnings, fmt.Sprintf(
-					"package %q: uninstall cancelled — nodes where uninstall completed will need to re-install", name))
-			}
-		}
+		return warnings, legacyReadOnlyError(oldSkyhook, newSkyhook)
 	}
 
-	if err := r.validateDeploymentPolicyExists(ctx, newSkyhook); err != nil {
-		return warnings, err
+	// oldSkyhook == nil is never a real update (the apiserver always supplies the prior
+	// object); it is only reached by unit tests exercising create-style spec validation
+	// through this entrypoint, so validate the spec and its policy reference as on create.
+	if err := newSkyhook.Validate(); err != nil {
+		return warnings, fmt.Errorf("validating skyhook %q: %w", newSkyhook.Name, err)
 	}
-
-	return warnings, nil
-}
-
-// isPackageFullyUninstalled checks whether a package has been uninstalled from all nodes
-// by examining the NodeState in the Skyhook status (which mirrors node annotations).
-//
-// A Skyhook with zero tracked nodes (empty or nil Status.NodeState) is treated
-// as fully uninstalled: there's nothing to uninstall, so there's nothing to
-// block. Otherwise a Skyhook whose NodeSelector matches no nodes — or that has
-// never been reconciled — would be permanently un-editable.
-func isPackageFullyUninstalled(skyhook *Skyhook, packageName string) bool {
-	pkg, exists := skyhook.Spec.Packages[packageName]
-	if !exists {
-		return false
-	}
-	uniqueName := pkg.GetUniqueName()
-	for _, nodeState := range skyhook.Status.NodeState {
-		if _, inState := nodeState[uniqueName]; inState {
-			return false // still present on at least one node
-		}
-	}
-	return true
+	return warnings, r.validateDeploymentPolicyExists(ctx, newSkyhook)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *SkyhookWebhook) ValidateDelete(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate delete", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("validate delete", "name", skyhook.Name)
 
 	// I do yet know if we need to do any valuations on delete,
 	// if so guessing they would be different than update and create anyways
@@ -232,16 +166,20 @@ func validateResourceOverrides(name string, res *ResourceRequirements) error {
 func (r *Skyhook) Validate() error {
 
 	if err := r.Spec.InterruptionBudget.Validate(); err != nil {
-		return err
+		return fmt.Errorf("interruption budget: %w", err)
 	}
 
 	if err := r.Spec.DrainConfig.Validate(); err != nil {
-		return err
+		return fmt.Errorf("drain config: %w", err)
 	}
 
 	// DeploymentPolicy and InterruptionBudget are mutually exclusive
 	if r.Spec.DeploymentPolicy != "" && (r.Spec.InterruptionBudget.Percent != nil || r.Spec.InterruptionBudget.Count != nil) {
 		return fmt.Errorf("deploymentPolicy and interruptionBudget are mutually exclusive")
+	}
+
+	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.PodNonInterruptLabels); err != nil {
+		return fmt.Errorf("pod non-interrupt labels are not valid: %w", err)
 	}
 
 	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.NodeSelector); err != nil {
@@ -338,12 +276,12 @@ func (r *Skyhook) Validate() error {
 	var err error
 	graph, err = r.Spec.BuildGraph()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec building graph: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec building graph: %w", err)
 	}
 
 	err = graph.Valid()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %w", err)
 	}
 
 	return nil

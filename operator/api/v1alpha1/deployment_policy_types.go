@@ -374,6 +374,9 @@ func (s *FixedStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessin
 	batchSize := *s.InitialBatch
 	processedNodes := state.CompletedNodes + state.FailedNodes
 	remaining := totalNodes - processedNodes
+	if remaining <= 0 {
+		return 0
+	}
 	if batchSize > remaining {
 		batchSize = remaining
 	}
@@ -406,6 +409,9 @@ func (s *LinearStrategy) CalculateBatchSize(totalNodes int, state *BatchProcessi
 
 	processedNodes := state.CompletedNodes + state.FailedNodes
 	remaining := totalNodes - processedNodes
+	if remaining <= 0 {
+		return 0
+	}
 	if batchSize > remaining {
 		batchSize = remaining
 	}
@@ -443,6 +449,9 @@ func (s *ExponentialStrategy) CalculateBatchSize(totalNodes int, state *BatchPro
 
 	processedNodes := state.CompletedNodes + state.FailedNodes
 	remaining := totalNodes - processedNodes
+	if remaining <= 0 {
+		return 0
+	}
 	if batchSize > remaining {
 		batchSize = remaining
 	}

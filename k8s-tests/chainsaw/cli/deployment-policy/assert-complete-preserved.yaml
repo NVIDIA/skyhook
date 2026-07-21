@@ -16,8 +16,8 @@
 
 # Assert rollout completed and batch state was preserved (not auto-reset)
 # With 2 nodes and budget count: 1, exponential strategy processes batch 1 (1 node), then batch 2 (1 node)
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   name: cli-dp-reset-test
 status:

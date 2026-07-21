@@ -48,6 +48,28 @@ var _ = Describe("Skyhook Webhook", func() {
 	})
 
 	Context("When creating Skyhook under Validating Webhook", func() {
+		It("Should return a migration deprecation warning on create and update", func() {
+
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+						},
+					},
+				},
+			}
+
+			warnings, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).To(BeNil())
+			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
+
+			warnings, err = skyhookWebhook.ValidateUpdate(ctx, skyhook, skyhook)
+			Expect(err).To(BeNil())
+			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
+		})
+
 		It("Should deny if missing a depends on", func() {
 
 			skyhook := &Skyhook{
@@ -801,7 +823,7 @@ var _ = Describe("Skyhook Webhook", func() {
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 	})
 
-	It("should reject skyhook update to reference non-existent deployment policy", func() {
+	It("rejects a legacy skyhook spec update (read-only once migrated)", func() {
 		// Create a Skyhook without deployment policy
 		skyhook := &Skyhook{
 			ObjectMeta: metav1.ObjectMeta{
@@ -821,19 +843,19 @@ var _ = Describe("Skyhook Webhook", func() {
 		}
 		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-		// Try to update it to reference a non-existent policy
+		// A legacy Skyhook is read-only after migration: the spec change (here the
+		// deployment policy reference) is rejected before the policy-existence check.
 		updatedSkyhook := skyhook.DeepCopy()
 		updatedSkyhook.Spec.DeploymentPolicy = "does-not-exist"
 
 		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("deploymentPolicy \"does-not-exist\" not found"))
+		Expect(err).To(MatchError(ContainSubstring("read-only")))
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
 	})
 
-	It("should allow skyhook update to reference valid deployment policy", func() {
+	It("rejects a legacy skyhook spec update even to a valid deployment policy (read-only)", func() {
 		// Create a deployment policy
 		policy := &DeploymentPolicy{
 			ObjectMeta: metav1.ObjectMeta{
@@ -871,12 +893,12 @@ var _ = Describe("Skyhook Webhook", func() {
 		}
 		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-		// Update it to reference the valid policy - should succeed
+		// Read-only rejects the spec change even though the referenced policy is valid.
 		updatedSkyhook := skyhook.DeepCopy()
 		updatedSkyhook.Spec.DeploymentPolicy = "valid-policy-for-update"
 
 		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).To(MatchError(ContainSubstring("read-only")))
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())

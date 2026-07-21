@@ -29,18 +29,18 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: depends-on
         format: yaml
     - get:
         apiVersion: v1
         kind: Pod
         namespace: skyhook
-        selector: skyhook.nvidia.com/name=depends-on
+        selector: nodewright.nvidia.com/name=depends-on
         format: yaml
   steps:
   - name: setup
@@ -49,7 +49,7 @@ spec:
     - script:
         content: |
           ## remove annotation from last run
-          ../skyhook-cli reset depends-on --confirm 2>/dev/null || true
+          ../nodewright-cli reset depends-on --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     ## sequential: pods get cleaned up between stages, dependency order: aa-fast → bb-slow → cc-last
@@ -61,10 +61,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: depends-on
-              skyhook.nvidia.com/package: aa-fast-1.2.3
+              nodewright.nvidia.com/name: depends-on
+              nodewright.nvidia.com/package: aa-fast-1.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "aa-fast",
                   "version": "1.2.3",
@@ -80,10 +80,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: depends-on
-              skyhook.nvidia.com/package: bb-slow-1.2
+              nodewright.nvidia.com/name: depends-on
+              nodewright.nvidia.com/package: bb-slow-1.2
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "bb-slow",
                   "version": "1.2",
@@ -99,10 +99,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: depends-on
-              skyhook.nvidia.com/package: aa-fast-1.2.3
+              nodewright.nvidia.com/name: depends-on
+              nodewright.nvidia.com/package: aa-fast-1.2.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "aa-fast",
                   "version": "1.2.3",
@@ -118,10 +118,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: depends-on
-              skyhook.nvidia.com/package: bb-slow-1.2
+              nodewright.nvidia.com/name: depends-on
+              nodewright.nvidia.com/package: bb-slow-1.2
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "bb-slow",
                   "version": "1.2",
@@ -137,10 +137,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: depends-on
-              skyhook.nvidia.com/package: cc-last-5.4.3
+              nodewright.nvidia.com/name: depends-on
+              nodewright.nvidia.com/package: cc-last-5.4.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "cc-last",
                   "version": "5.4.3",
@@ -156,10 +156,10 @@ spec:
           metadata:
             namespace: skyhook
             labels:
-              skyhook.nvidia.com/name: depends-on
-              skyhook.nvidia.com/package: cc-last-5.4.3
+              nodewright.nvidia.com/name: depends-on
+              nodewright.nvidia.com/package: cc-last-5.4.3
             annotations:
-              ("skyhook.nvidia.com/package" && parse_json("skyhook.nvidia.com/package")):
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
                 {
                   "name": "cc-last",
                   "version": "5.4.3",
@@ -171,8 +171,8 @@ spec:
     - assert:
         ## skyhook complete with all packages at config stage
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: depends-on
           status:

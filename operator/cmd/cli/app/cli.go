@@ -39,8 +39,8 @@ const (
 	ExitCodeError   ExitCode = 1
 )
 
-// commandName is the kubectl-skyhook plugin's invocation name (kubectl picks it up from the binary).
-const commandName = "skyhook"
+// commandName is the kubectl-nodewright plugin's invocation name (kubectl picks it up from the binary).
+const commandName = "nodewright"
 
 // ToInt converts the ExitCode to an integer
 func (e ExitCode) ToInt() int {
@@ -52,8 +52,8 @@ func NewSkyhookCommand(ctx *context.CLIContext) *cobra.Command {
 	// skyhookCmd represents the root command
 	skyhookCmd := &cobra.Command{
 		Use:           commandName,
-		Short:         "Skyhook SRE plugin",
-		Long:          "kubectl-compatible helper for managing Skyhook deployments.",
+		Short:         "NodeWright SRE plugin",
+		Long:          "kubectl-compatible helper for managing NodeWright deployments.",
 		Version:       internalVersion.Summary(),
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -66,7 +66,7 @@ func NewSkyhookCommand(ctx *context.CLIContext) *cobra.Command {
 	ctx.GlobalFlags.AddFlags(skyhookCmd.PersistentFlags())
 
 	// Customize the version output template
-	skyhookCmd.SetVersionTemplate("Skyhook plugin: {{.Version}}\n")
+	skyhookCmd.SetVersionTemplate("NodeWright plugin: {{.Version}}\n")
 
 	// Add subcommands
 	skyhookCmd.AddCommand(
@@ -85,7 +85,7 @@ func NewSkyhookCommand(ctx *context.CLIContext) *cobra.Command {
 	return skyhookCmd
 }
 
-// Execute runs the Skyhook CLI with the given context.
+// Execute runs the NodeWright CLI with the given context.
 // If ctx is nil, a default context is created.
 func Execute(config *context.CLIConfig) ExitCode {
 	// create Context from config, if nil, create a default context

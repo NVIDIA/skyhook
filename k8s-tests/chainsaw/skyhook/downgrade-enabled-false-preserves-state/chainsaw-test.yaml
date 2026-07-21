@@ -28,11 +28,11 @@ spec:
     - get:
         apiVersion: v1
         kind: Node
-        selector: skyhook.nvidia.com/test-node=skyhooke2e
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
         format: yaml
     - get:
-        apiVersion: skyhook.nvidia.com/v1alpha1
-        kind: Skyhook
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
         name: preserve-downgrade-state
         format: yaml
   steps:
@@ -41,13 +41,13 @@ spec:
     try:
     - script:
         content: |
-          ../skyhook-cli reset preserve-downgrade-state --confirm 2>/dev/null || true
+          ../nodewright-cli reset preserve-downgrade-state --confirm 2>/dev/null || true
     - create:
         file: skyhook.yaml
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: preserve-downgrade-state
           status:
@@ -65,9 +65,9 @@ spec:
           kind: Node
           metadata:
             labels:
-              skyhook.nvidia.com/test-node: skyhooke2e
+              nodewright.nvidia.com/test-node: skyhooke2e
             annotations:
-              ("skyhook.nvidia.com/nodeState_preserve-downgrade-state" && parse_json("skyhook.nvidia.com/nodeState_preserve-downgrade-state")):
+              ("nodewright.nvidia.com/nodeState_preserve-downgrade-state" && parse_json("nodewright.nvidia.com/nodeState_preserve-downgrade-state")):
                 {
                   "mypkg|2.1.4": {
                       "name": "mypkg",
@@ -86,8 +86,8 @@ spec:
                 }
     - assert:
         resource:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           metadata:
             name: preserve-downgrade-state
           status:

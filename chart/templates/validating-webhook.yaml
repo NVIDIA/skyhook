@@ -14,6 +14,7 @@ webhooks:
       port: 443
   failurePolicy: Fail
   matchPolicy: Equivalent
+  {{/* MIGRATION-SHIM: legacy skyhook.nvidia.com webhook entry; remove with the legacy group in the removal release. */}}
   name: validate-skyhook.nvidia.com
   namespaceSelector: {}
   objectSelector: {}
@@ -40,12 +41,66 @@ webhooks:
       port: 443
   failurePolicy: Fail
   matchPolicy: Equivalent
+  {{/* MIGRATION-SHIM: legacy skyhook.nvidia.com webhook entry; remove with the legacy group in the removal release. */}}
   name: validate-deploymentpolicy.nvidia.com
   namespaceSelector: {}
   objectSelector: {}
   rules:
   - apiGroups:
     - skyhook.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - deploymentpolicies
+    scope: '*'
+  sideEffects: None
+  timeoutSeconds: 10
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: skyhook-operator-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /validate-nodewright-nvidia-com-v1alpha1-nodewright
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: validate-nodewright.nvidia.com
+  namespaceSelector: {}
+  objectSelector: {}
+  rules:
+  - apiGroups:
+    - nodewright.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nodewrights
+    scope: '*'
+  sideEffects: None
+  timeoutSeconds: 10
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: skyhook-operator-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /validate-nodewright-nvidia-com-v1alpha1-deploymentpolicy
+      port: 443
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: validate-deploymentpolicy-nodewright.nvidia.com
+  namespaceSelector: {}
+  objectSelector: {}
+  rules:
+  - apiGroups:
+    - nodewright.nvidia.com
     apiVersions:
     - v1alpha1
     operations:
