@@ -30,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -94,7 +95,7 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 
 	It("converge: adds the nodewright ConfigMap label but keeps the legacy label and the legacy pods", func() {
 		c := buildClient(legacyPod("legacy-pod", "node-a"), legacyCM())
-		r, err := NewSkyhookReconciler(c.Scheme(), c, events.NewFakeRecorder(10), opts)
+		r, err := NewSkyhookReconciler(c.Scheme(), c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, false)
@@ -137,7 +138,7 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 		cm.Labels["nodewright.nvidia.com/name"] = shName
 
 		c := buildClient(legacyPod("legacy-pod", "node-a"), newPod, otherPod, cm)
-		r, err := NewSkyhookReconciler(c.Scheme(), c, events.NewFakeRecorder(10), opts)
+		r, err := NewSkyhookReconciler(c.Scheme(), c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, true)
@@ -174,7 +175,7 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 
 	It("is a cheap no-op when there is nothing legacy-labeled", func() {
 		c := buildClient()
-		r, err := NewSkyhookReconciler(c.Scheme(), c, events.NewFakeRecorder(10), opts)
+		r, err := NewSkyhookReconciler(c.Scheme(), c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, false)
