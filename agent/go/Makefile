@@ -22,6 +22,9 @@ SHELL = /usr/bin/env bash -o pipefail
 GO ?= go
 BINARY_DIR ?= ./bin
 AGENT_BINARY ?= $(BINARY_DIR)/agent
+REPORTING ?= $(shell pwd)/reporting
+COVERAGE_DATA_DIR ?= $(REPORTING)/coverdata
+COVDATA = $(shell $(GO) tool -n covdata >/dev/null 2>&1 && echo "$(GO) tool covdata" || echo "$(GO) run $(shell $(GO) env GOROOT)/src/cmd/covdata")
 
 .PHONY: all
 all: build
@@ -45,11 +48,39 @@ vet: ## Run go vet against code.
 	$(GO) vet ./...
 
 .PHONY: test
-test: unit-tests ## Run unit tests.
+test: unit-tests ## Run unit tests and report coverage.
+	$(MAKE) merge-coverage
+	@test -f $(REPORTING)/cover.out || { echo "Coverage output was not generated" >&2; exit 1; }
+	$(GO) tool cover -func=$(REPORTING)/cover.out
 
+.PHONY: reporting
+reporting: $(REPORTING)
+
+$(REPORTING):
+	mkdir -p $@
+
+# Command and step tests re-execute covered test binaries. GOCOVERDIR prevents
+# runtime warnings from those child processes.
 .PHONY: unit-tests
-unit-tests: ginkgo ## Run Ginkgo/Gomega unit tests.
-	$(GINKGO) run ./...
+unit-tests: reporting ginkgo ## Run Ginkgo/Gomega unit tests with coverage.
+	rm -rf $(COVERAGE_DATA_DIR)
+	mkdir -p $(COVERAGE_DATA_DIR)
+	GOCOVERDIR=$(abspath $(COVERAGE_DATA_DIR)) $(GINKGO) run --cover --coverprofile=unit.coverprofile --output-dir=$(REPORTING) ./...
+
+.PHONY: merge-coverage
+merge-coverage: reporting ## Merge test coverage profiles.
+	rm -f $(REPORTING)/cover.out $(REPORTING)/raw.coverprofile $(REPORTING)/temp-cover.out
+	@if [ -d "$(COVERAGE_DATA_DIR)" ] && [ -n "$$(ls -A $(COVERAGE_DATA_DIR) 2>/dev/null)" ]; then \
+		$(COVDATA) textfmt -i=$(abspath $(COVERAGE_DATA_DIR)) -o=$(REPORTING)/raw.coverprofile; \
+	fi
+	@if ls $(REPORTING)/*.coverprofile 1> /dev/null 2>&1; then \
+		cat $(REPORTING)/*.coverprofile > $(REPORTING)/temp-cover.out; \
+		echo "mode: set" > $(REPORTING)/cover.out; \
+		tail -n +2 $(REPORTING)/temp-cover.out | sed '/mode: set/d' >> $(REPORTING)/cover.out; \
+		rm -f $(REPORTING)/temp-cover.out; \
+	else \
+		echo "No coverage files found - skipping merge"; \
+	fi
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint.
@@ -70,3 +101,4 @@ build: ## Build agent binary.
 clean: ## Remove local build artifacts.
 	rm -rf $(BINARY_DIR)
 	rm -rf $(LOCALBIN)
+	rm -rf $(REPORTING)

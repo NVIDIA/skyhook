@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -90,9 +91,9 @@ var _ = Describe("UpgradeStep.Run", func() {
 			Arguments:  []string{"x"},
 		}}
 
-		status, err := u.Run(context.Background(), RunConfig{})
+		status, err := u.Run(context.Background(), execution.Config{})
 
-		Expect(status).To(Equal(StatusFailed))
+		Expect(status).To(Equal(execution.StatusFailed))
 		Expect(err).To(MatchError(
 			ContainSubstring("UpgradeStep upgrade can not have any arguments, but found: [x]"),
 		))

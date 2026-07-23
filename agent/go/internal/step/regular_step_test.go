@@ -19,7 +19,20 @@
 package step
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/NVIDIA/nodewright/agent/internal/command"
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -147,3 +160,184 @@ var _ = Describe("NewRegularStep", func() {
 		Expect(round.(RegularStep).Idempotence()).To(Equal(Disabled))
 	})
 })
+
+var _ = Describe("RegularStep.Run", func() {
+	It("executes a portable step with arguments, environment, working directory, and output", func() {
+		stepRoot, skyhookDir, executable := prepareStepTestExecutable()
+		GinkgoT().Setenv("NODEWRIGHT_STEP_VALUE", "from-parent")
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+		config := newStepRunConfig(stepRoot, skyhookDir, execution.WithRunOutput(stdout, stderr))
+		value := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments([]string{
+				"-test.run=^TestStep$", "--", "inspect", "literal", "env:NODEWRIGHT_STEP_VALUE",
+			}),
+			WithEnv(map[string]string{"NODEWRIGHT_CUSTOM": "configured"}),
+		)
+
+		status, err := value.Run(context.Background(), config)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+		Expect(stdout.String()).To(Equal(fmt.Sprintf(
+			"arguments=literal,from-parent\ncustom=configured\nstep-root=%s\nskyhook-dir=%s\nworking-directory=%s\n",
+			stepRoot,
+			skyhookDir,
+			skyhookDir,
+		)))
+		Expect(stderr.String()).To(Equal("step-helper-stderr\n"))
+	})
+
+	It("uses the configured accepted return codes", func() {
+		stepRoot, skyhookDir, executable := prepareStepTestExecutable()
+		arguments := []string{"-test.run=^TestStep$", "--", "exit", "7"}
+		config := newStepRunConfig(stepRoot, skyhookDir)
+
+		accepted := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments(arguments),
+			WithReturncodes([]command.ExitCode{7}),
+		)
+		status, err := accepted.Run(context.Background(), config)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+
+		rejected := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments(arguments),
+		)
+		status, err = rejected.Run(context.Background(), config)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusFailed))
+	})
+
+	It("fails when the step is terminated by a signal", func() {
+		stepRoot, skyhookDir, executable := prepareStepTestExecutable()
+		value := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments([]string{"-test.run=^TestStep$", "--", "signal"}),
+		)
+
+		status, err := value.Run(context.Background(), newStepRunConfig(stepRoot, skyhookDir))
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusFailed))
+	})
+
+	It("reports all missing argument environment variables before execution", func() {
+		missingNames := []string{"NODEWRIGHT_MISSING_ONE", "NODEWRIGHT_MISSING_TWO"}
+		for _, name := range missingNames {
+			value, exists := os.LookupEnv(name)
+			Expect(os.Unsetenv(name)).To(Succeed())
+			DeferCleanup(func() {
+				if exists {
+					Expect(os.Setenv(name, value)).To(Succeed())
+					return
+				}
+				Expect(os.Unsetenv(name)).To(Succeed())
+			})
+		}
+
+		stepRoot, skyhookDir, executable := prepareStepTestExecutable()
+		value := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments([]string{"env:" + missingNames[0], "env:" + missingNames[1]}),
+		)
+
+		status, err := value.Run(context.Background(), newStepRunConfig(stepRoot, skyhookDir))
+
+		Expect(status).To(Equal(execution.StatusFailed))
+		Expect(err).To(MatchError(ContainSubstring(
+			"expected environment variables do not exist: " + strings.Join(missingNames, ", "),
+		)))
+	})
+
+	It("cancels an in-flight step", func() {
+		stepRoot, skyhookDir, executable := prepareStepTestExecutable()
+		value := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments([]string{"-test.run=^TestStep$", "--", "wait"}),
+		)
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(100*time.Millisecond, cancel)
+
+		status, err := value.Run(ctx, newStepRunConfig(stepRoot, skyhookDir))
+
+		Expect(status).To(Equal(execution.StatusFailed))
+		Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+	})
+})
+
+func newStepRunConfig(stepRoot, skyhookDir string, options ...execution.Option) execution.Config {
+	options = append([]execution.Option{
+		execution.WithRootMount("/"),
+		execution.WithStepRoot(stepRoot),
+		execution.WithSkyhookDir(skyhookDir),
+		execution.WithRunOutput(io.Discard, io.Discard),
+	}, options...)
+	config, err := execution.NewConfig(options...)
+	Expect(err).NotTo(HaveOccurred())
+	return config
+}
+
+func prepareStepTestExecutable() (string, string, string) {
+	stepRoot := GinkgoT().TempDir()
+	skyhookDir := GinkgoT().TempDir()
+	executable := filepath.Join(stepRoot, "step-helper")
+	testExecutable, err := filepath.Abs(os.Args[0])
+	Expect(err).NotTo(HaveOccurred())
+	data, err := os.ReadFile(testExecutable)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(os.WriteFile(executable, data, 0o700)).To(Succeed())
+	return stepRoot, skyhookDir, executable
+}
+
+func runStepTestHelper() bool {
+	separator := -1
+	for index, argument := range os.Args {
+		if argument == "--" {
+			separator = index
+			break
+		}
+	}
+	if separator < 0 || separator+1 >= len(os.Args) {
+		return false
+	}
+	action := os.Args[separator+1]
+	values := os.Args[separator+2:]
+	switch action {
+	case "inspect":
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			os.Exit(2)
+		}
+		_, _ = fmt.Fprintf(os.Stdout, "arguments=%s\n", strings.Join(values, ","))
+		_, _ = fmt.Fprintf(os.Stdout, "custom=%s\n", os.Getenv("NODEWRIGHT_CUSTOM"))
+		_, _ = fmt.Fprintf(os.Stdout, "step-root=%s\n", os.Getenv("STEP_ROOT"))
+		_, _ = fmt.Fprintf(os.Stdout, "skyhook-dir=%s\n", os.Getenv("SKYHOOK_DIR"))
+		_, _ = fmt.Fprintf(os.Stdout, "working-directory=%s\n", workingDirectory)
+		_, _ = fmt.Fprintln(os.Stderr, "step-helper-stderr")
+		os.Exit(0)
+	case "exit":
+		code, err := strconv.Atoi(values[0])
+		if err != nil {
+			os.Exit(2)
+		}
+		os.Exit(code)
+	case "signal":
+		_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+		time.Sleep(time.Hour)
+	case "wait":
+		time.Sleep(time.Hour)
+	default:
+		os.Exit(2)
+	}
+	return true
+}

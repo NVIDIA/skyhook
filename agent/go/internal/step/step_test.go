@@ -20,7 +20,6 @@ package step
 
 import (
 	"encoding/json"
-	"io"
 	"testing"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
@@ -30,6 +29,9 @@ import (
 )
 
 func TestStep(t *testing.T) {
+	if runStepTestHelper() {
+		return
+	}
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Step Suite")
 }
@@ -89,43 +91,6 @@ var _ = Describe("Step interface", func() {
 		}
 		Expect(sawRegular).To(BeTrue())
 		Expect(sawUpgrade).To(BeTrue())
-	})
-})
-
-var _ = Describe("RunConfig", func() {
-	It("requires absolute execution paths", func() {
-		_, err := NewRunConfig(
-			WithRootMount("host"),
-			WithStepRoot("/package/steps"),
-			WithSkyhookDir("/package"),
-		)
-		Expect(err).To(MatchError(ContainSubstring(`root mount "host" is not absolute`)))
-
-		_, err = NewRunConfig(
-			WithRootMount("/host"),
-			WithStepRoot("steps"),
-			WithSkyhookDir("/package"),
-		)
-		Expect(err).To(MatchError(ContainSubstring(`step root "steps" is not absolute`)))
-
-		_, err = NewRunConfig(
-			WithRootMount("/host"),
-			WithStepRoot("/package/steps"),
-			WithSkyhookDir("package"),
-		)
-		Expect(err).To(MatchError(ContainSubstring(`skyhook directory "package" is not absolute`)))
-	})
-
-	It("treats nil output writers as discarded streams", func() {
-		config, err := NewRunConfig(
-			WithRootMount("/host"),
-			WithStepRoot("/package/steps"),
-			WithSkyhookDir("/package"),
-			WithRunOutput(nil, nil),
-		)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(config.stdout).To(Equal(io.Discard))
-		Expect(config.stderr).To(Equal(io.Discard))
 	})
 })
 
