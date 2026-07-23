@@ -120,7 +120,7 @@ jobs:
           cache: false
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           # Pinned to match agent-ci.yaml PYTHON_VERSION so notices generation
           # uses the same interpreter as the agent build.
