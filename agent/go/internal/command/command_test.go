@@ -29,6 +29,11 @@ import (
 )
 
 func TestCommand(t *testing.T) {
+	// Command execution tests re-enter this binary as a controlled subprocess.
+	// Helper invocations exit before registering and running the Ginkgo suite.
+	if runCommandTestHelper() {
+		return
+	}
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Command Suite")
 }

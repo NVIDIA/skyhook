@@ -16,15 +16,56 @@
 
 package interrupts
 
-// NodeRestart restarts the node.
+import (
+	"context"
+	"errors"
+	"fmt"
+	"syscall"
+
+	"github.com/NVIDIA/nodewright/agent/internal/command"
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
+)
+
+// NodeRestart runs reboot inside the configured root mount. A SIGTERM from
+// userspace shutdown marks the reboot complete even when command execution
+// ends with context cancellation or a deadline.
 type NodeRestart struct{}
 
 var _ Interrupt = NodeRestart{}
 
-func (NodeRestart) Type() string { return "node_restart" }
+func (NodeRestart) Type() InterruptType { return NodeRestartType }
 
-func (NodeRestart) InterruptCmd() [][]string {
-	return [][]string{{"reboot"}}
+func (n NodeRestart) Run(ctx context.Context, config execution.Config) (execution.Status, error) {
+	if err := validateRun(ctx, config, n.Type()); err != nil {
+		return execution.StatusFailed, err
+	}
+
+	runner := command.NewRunner(command.WithChroot(config.RootMount()))
+	cmd := command.NewCommand(
+		"reboot",
+		command.WithWorkingDirectory(config.SkyhookDir()),
+		command.WithStdout(config.Stdout()),
+		command.WithStderr(config.Stderr()),
+	)
+	result, runErr := runner.Run(ctx, cmd)
+	if nodeRestartCompleted(result) && (runErr == nil ||
+		errors.Is(runErr, context.Canceled) ||
+		errors.Is(runErr, context.DeadlineExceeded)) {
+		return execution.StatusSuccess, nil
+	}
+	if runErr != nil {
+		return execution.StatusFailed, fmt.Errorf("running interrupt %q command %q: %w", n.Type(), cmd.Executable, runErr)
+	}
+	if result.Signal != nil || result.ExitCode != command.SuccessExitCode {
+		return execution.StatusFailed, nil
+	}
+	return execution.StatusSuccess, nil
+}
+
+func nodeRestartCompleted(result command.Result) bool {
+	// A reboot terminates userspace with SIGTERM before the command can return.
+	// Preserving success prevents the next agent pod from rebooting the node again.
+	return result.ExitCode == command.SignalExitCode && result.Signal == syscall.SIGTERM
 }
 
 func (n NodeRestart) Serialize() ([]byte, error) {

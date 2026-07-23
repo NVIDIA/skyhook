@@ -21,6 +21,8 @@ package step
 import (
 	"context"
 	"fmt"
+
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
 )
 
 // UpgradeStep is a Step that runs only during the Upgrade and
@@ -49,9 +51,9 @@ func NewUpgradeStep(path string, opts ...RegularStepOption) (UpgradeStep, error)
 }
 
 // Run validates the upgrade-step invariant before executing the embedded regular step.
-func (u UpgradeStep) Run(ctx context.Context, config RunConfig) (Status, error) {
+func (u UpgradeStep) Run(ctx context.Context, config execution.Config) (execution.Status, error) {
 	if err := u.Validate(); err != nil {
-		return StatusFailed, fmt.Errorf("upgrade step validation failed: %w", err)
+		return execution.StatusFailed, fmt.Errorf("upgrade step validation failed: %w", err)
 	}
 	return u.RegularStep.Run(ctx, config)
 }

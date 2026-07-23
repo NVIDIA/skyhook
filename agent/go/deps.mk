@@ -19,7 +19,7 @@
 ## plus ci can watch this file to know to build a new build image
 
 GOLANGCI_LINT_VERSION ?= v2.12.2
-GINKGO_VERSION ?= v2.28.1
+GINKGO_VERSION ?= v2.32.0
 
 ## Location to install dependencies to
 LOCALBIN ?= $(shell pwd)/bin
@@ -41,4 +41,6 @@ golangci-lint: $(LOCALBIN) ## Download golangci-lint locally if necessary.
 
 .PHONY: ginkgo
 ginkgo: $(LOCALBIN) ## Download ginkgo locally if necessary.
-	test -s $(GINKGO) || GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
+	@test -x $(GINKGO) \
+		&& [ "$$($(GINKGO) version)" = "Ginkgo Version $(patsubst v%,%,$(GINKGO_VERSION))" ] \
+		|| GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
