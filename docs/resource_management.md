@@ -1,6 +1,6 @@
 # Resource Management in NodeWright
 
-NodeWright provides flexible and robust resource management for the pods it creates, allowing you to control CPU and memory usage at both the namespace and per-package level. This document explains how resource defaults and overrides work, and what validation rules are enforced.
+NodeWright provides flexible resource management for the pods it creates: it uses a namespace LimitRange for defaults when one is present (the chart installs one by default, which you can disable) and allows per-package overrides. This document explains how resource defaults and overrides work, and what validation rules are enforced.
 
 ---
 
