@@ -21,11 +21,9 @@ package step
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
+
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
 )
 
 // Step is the interface satisfied by every concrete step type the
@@ -34,7 +32,7 @@ import (
 type Step interface {
 	// Run executes the step using the supplied filesystem and output
 	// composition.
-	Run(context.Context, RunConfig) (Status, error)
+	Run(context.Context, execution.Config) (execution.Status, error)
 
 	// Encode serializes the step to its JSON wire form. Each concrete
 	// type owns its own discriminator bit and any invariants it
@@ -51,97 +49,6 @@ type Step interface {
 
 	// Idempotence reports how the agent treats re-runs of the step.
 	Idempotence() Idempotence
-}
-
-// Status reports whether a step run satisfied its execution policy.
-type Status string
-
-const (
-	StatusSuccess Status = "success"
-	StatusFailed  Status = "failed"
-)
-
-// RunConfig contains the execution policy shared by steps in one agent run.
-// Construct it with NewRunConfig.
-type RunConfig struct {
-	rootMount  string
-	stepRoot   string
-	skyhookDir string
-	stdout     io.Writer
-	stderr     io.Writer
-}
-
-func (config RunConfig) validate() error {
-	if !filepath.IsAbs(config.rootMount) {
-		return fmt.Errorf("root mount %q is not absolute", config.rootMount)
-	}
-	if !filepath.IsAbs(config.stepRoot) {
-		return fmt.Errorf("step root %q is not absolute", config.stepRoot)
-	}
-	if !filepath.IsAbs(config.skyhookDir) {
-		return fmt.Errorf("skyhook directory %q is not absolute", config.skyhookDir)
-	}
-	if config.stdout == nil {
-		return errors.New("stdout writer is nil")
-	}
-	if config.stderr == nil {
-		return errors.New("stderr writer is nil")
-	}
-	return nil
-}
-
-// RunOption configures a RunConfig.
-type RunOption func(*RunConfig)
-
-// NewRunConfig constructs step execution policy.
-func NewRunConfig(options ...RunOption) (RunConfig, error) {
-	config := RunConfig{
-		stdout: os.Stdout,
-		stderr: os.Stderr,
-	}
-	for _, option := range options {
-		option(&config)
-	}
-	if err := config.validate(); err != nil {
-		return RunConfig{}, fmt.Errorf("constructing step run config: %w", err)
-	}
-	return config, nil
-}
-
-// WithRootMount sets the absolute host root used by host-executed steps.
-func WithRootMount(rootMount string) RunOption {
-	return func(config *RunConfig) {
-		config.rootMount = rootMount
-	}
-}
-
-// WithStepRoot sets the child-visible absolute path containing step scripts.
-func WithStepRoot(stepRoot string) RunOption {
-	return func(config *RunConfig) {
-		config.stepRoot = stepRoot
-	}
-}
-
-// WithSkyhookDir sets the child-visible absolute package working directory.
-func WithSkyhookDir(skyhookDir string) RunOption {
-	return func(config *RunConfig) {
-		config.skyhookDir = skyhookDir
-	}
-}
-
-// WithRunOutput sets the parent streams that receive raw command output. A nil
-// writer discards its corresponding stream.
-func WithRunOutput(stdout, stderr io.Writer) RunOption {
-	return func(config *RunConfig) {
-		if stdout == nil {
-			stdout = io.Discard
-		}
-		if stderr == nil {
-			stderr = io.Discard
-		}
-		config.stdout = stdout
-		config.stderr = stderr
-	}
 }
 
 // Decode parses a JSON step payload, returning either a RegularStep or an

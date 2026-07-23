@@ -54,7 +54,7 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: operator/go.mod
-      - uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a  # v4.37.1
+      - uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81  # v4.37.3
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -67,6 +67,6 @@ jobs:
           set -euo pipefail
           (cd operator && GOFLAGS=-mod=vendor go build ./...)
           (cd agent/go && GOFLAGS=-mod=mod go build ./...)
-      - uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4.37.0
+      - uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81  # v4.37.3
         with:
           category: "/language:${{ matrix.language }}"
