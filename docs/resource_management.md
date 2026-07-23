@@ -1,12 +1,12 @@
-# Resource Management in Skyhook
+# Resource Management in NodeWright
 
-Skyhook provides flexible and robust resource management for the pods it creates, allowing you to control CPU and memory usage at both the namespace and per-package level. This document explains how resource defaults and overrides work, and what validation rules are enforced.
+NodeWright provides flexible and robust resource management for the pods it creates, allowing you to control CPU and memory usage at both the namespace and per-package level. This document explains how resource defaults and overrides work, and what validation rules are enforced.
 
 ---
 
 ## 1. Namespace Defaults with LimitRange
 
-By default, Skyhook uses a [Kubernetes LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/) to set default CPU and memory requests/limits for all containers in the namespace where Skyhook operates.
+By default, NodeWright uses a [Kubernetes LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/) to set default CPU and memory requests/limits for all containers in the namespace where NodeWright operates.
 
 **Example LimitRange:**
 ```yaml
@@ -33,7 +33,7 @@ spec:
 
 ## 2. Per-Package Resource Overrides
 
-You can override the default resource requests/limits for each package in your Skyhook Custom Resource (CR). This is done in the `resources` field for each package:
+You can override the default resource requests/limits for each package in your NodeWright Custom Resource (CR). This is done in the `resources` field for each package:
 
 **Example:**
 ```yaml
@@ -56,7 +56,7 @@ spec:
 
 ## 3. Validation Rules
 
-Skyhook enforces the following validation rules (via webhook) for resource overrides:
+NodeWright enforces the following validation rules (via webhook) for resource overrides:
 
 - If any of the four resource fields are set, **all four must be set**.
 - All values must be **positive**.
@@ -73,7 +73,7 @@ Skyhook enforces the following validation rules (via webhook) for resource overr
 | ❌     | 200m      | 400m     | 128Mi        | 64Mi        | memoryLimit < memoryRequest |
 | ❌     | 0         | 400m     | 128Mi        | 256Mi       | Zero value |
 
-If a resource override is invalid, the Skyhook CR will be **rejected** by the webhook.
+If a resource override is invalid, the NodeWright CR will be **rejected** by the webhook.
 
 ---
 
@@ -88,7 +88,7 @@ If a resource override is invalid, the Skyhook CR will be **rejected** by the we
 
 ## 5. Troubleshooting
 
-- If your Skyhook CR is rejected, check that all four resource fields are set and valid if you are using overrides.
+- If your NodeWright CR is rejected, check that all four resource fields are set and valid if you are using overrides.
 - Use `kubectl describe limitrange -n <namespace>` to see the current defaults.
 - Use `kubectl describe skyhook <name>` to see the status and any error messages.
 
@@ -114,7 +114,7 @@ If there is **no LimitRange** and you do **not** set resource requests/limits in
 
 ## 7. Special Case: Uninstall Pod Resources
 
-Uninstall pods in Skyhook **do not use per-package resource overrides**.  
+Uninstall pods in NodeWright **do not use per-package resource overrides**.  
 Instead, their resource requests/limits are determined only by the namespace defaults:
 
 - If a LimitRange is present in the namespace, uninstall pods will use those default CPU and memory requests/limits.
