@@ -97,6 +97,8 @@ const (
 	ErrNotStruct          = internalError("input must be a struct")
 	ErrPrefixNotStruct    = internalError("prefix is only valid on struct types")
 	ErrPrivateField       = internalError("cannot parse private fields")
+	ErrRecursivePointer   = internalError("pointer type is recursive")
+	ErrRecursiveStruct    = internalError("struct type is recursive")
 	ErrRequiredAndDefault = internalError("field cannot be required and have a default value")
 	ErrUnknownOption      = internalError("unknown option")
 )
@@ -183,11 +185,19 @@ type prefixLookuper struct {
 }
 
 func (p *prefixLookuper) Lookup(key string) (string, bool) {
-	return p.l.Lookup(p.Key(key))
+	return p.l.Lookup(p.prefix + key)
 }
 
+// Key returns the given key with this lookuper's prefix prepended, resolved
+// through the wrapped lookuper's own Key when it implements the keyed
+// extension. This mirrors Lookup, which hands the prefixed key to the wrapped
+// lookuper: the name returned is the name the underlying chain resolves.
 func (p *prefixLookuper) Key(key string) string {
-	return p.prefix + key
+	key = p.prefix + key
+	if keyer, ok := p.l.(keyedLookuper); ok {
+		key = keyer.Key(key)
+	}
+	return key
 }
 
 func (p *prefixLookuper) Unwrap() Lookuper {
@@ -342,11 +352,15 @@ func ProcessWith(ctx context.Context, c *Config) error {
 		return m == nil
 	})
 
-	return processWith(ctx, c)
+	return processWith(ctx, c, make(map[reflect.Type]bool))
 }
 
 // processWith is a helper that retains configuration from the parent structs.
-func processWith(ctx context.Context, c *Config) error {
+// path tracks the struct types on the current descent path: the descent
+// materializes nil struct pointers as it goes, so a type cycle can never
+// terminate on its own and is reported as [ErrRecursiveStruct] instead of
+// recursing without bound.
+func processWith(ctx context.Context, c *Config, path map[reflect.Type]bool) error {
 	i := c.Target
 
 	l := c.Lookuper
@@ -365,6 +379,11 @@ func processWith(ctx context.Context, c *Config) error {
 	}
 
 	t := e.Type()
+	if path[t] {
+		return fmt.Errorf("%s: %w", t, ErrRecursiveStruct)
+	}
+	path[t] = true
+	defer delete(path, t)
 
 	structDelimiter := c.DefaultDelimiter
 	if structDelimiter == "" {
@@ -431,33 +450,55 @@ func processWith(ctx context.Context, c *Config) error {
 		required := structRequired || opts.Required
 
 		isNilStructPtr := false
+		var nilPtrOrigin, nilPtrChain reflect.Value
 		setNilStruct := func(v reflect.Value) {
-			origin := e.Field(i)
 			if isNilStructPtr {
-				empty := reflect.New(origin.Type().Elem()).Interface()
+				empty := reflect.New(v.Type().Elem()).Interface()
 
 				// If a struct (after traversal) equals to the empty value, it means
 				// nothing was changed in any sub-fields. With the noinit opt, we skip
 				// setting the empty value to the original struct pointer (keep it nil).
 				if !reflect.DeepEqual(v.Interface(), empty) || !noInit {
-					origin.Set(v)
+					nilPtrOrigin.Set(nilPtrChain)
 				}
 			}
 		}
 
 		// Initialize pointer structs.
 		pointerWasSet := false
+		if ef.Kind() == reflect.Pointer && ef.Type().Elem().Kind() == reflect.Pointer {
+			// A named pointer type can dereference to itself (type P *P), directly
+			// or through other named pointer types. No chain of such a type ever
+			// reaches a value to decode into, so dereferencing one below (or
+			// materializing one in processField) would never terminate.
+			if _, ok := nonPointerType(ef.Type()); !ok {
+				return fmt.Errorf("%s: %s: %w", tf.Name, ef.Type(), ErrRecursivePointer)
+			}
+		}
 		for ef.Kind() == reflect.Pointer {
 			if ef.IsNil() {
-				if ef.Type().Elem().Kind() != reflect.Struct {
-					// This is a nil pointer to something that isn't a struct, like
-					// *string. Move along.
+				base, _ := nonPointerType(ef.Type()) // cannot cycle, checked above
+				if base.Kind() != reflect.Struct {
+					// This is a nil pointer chain to something that isn't a struct,
+					// like *string or **string. Move along; processField
+					// materializes those through the field itself.
 					break
 				}
 
 				isNilStructPtr = true
-				// Use an empty struct of the type so we can traverse.
-				ef = reflect.New(ef.Type().Elem()).Elem()
+				nilPtrOrigin = ef
+				// Materialize a detached pointer chain that keeps the field's
+				// declared type at every level, initializing each cell from its
+				// own element type the way processField's pointer loop does, and
+				// traverse the empty struct at its end. setNilStruct attaches
+				// the whole chain to the origin with a single Set.
+				nilPtrChain = reflect.New(ef.Type().Elem())
+				cell := nilPtrChain.Elem()
+				for cell.Kind() == reflect.Pointer {
+					cell.Set(reflect.New(cell.Type().Elem()))
+					cell = cell.Elem()
+				}
+				ef = cell
 			} else {
 				pointerWasSet = true
 				ef = ef.Elem()
@@ -504,7 +545,7 @@ func processWith(ctx context.Context, c *Config) error {
 				DefaultOverwrite: overwrite,
 				DefaultRequired:  required,
 				Mutators:         mutators,
-			}); err != nil {
+			}, path); err != nil {
 				return fmt.Errorf("%s: %w", tf.Name, err)
 			}
 
@@ -544,7 +585,7 @@ func processWith(ctx context.Context, c *Config) error {
 		// Apply any mutators. Mutators are applied after the lookup, but before any
 		// type conversions. They always resolve to a string (or error), so we don't
 		// call mutators when the environment variable was not set.
-		if found || usedDefault {
+		if len(mutators) > 0 && (found || usedDefault) {
 			originalKey := key
 			resolvedKey := originalKey
 			if keyer, ok := l.(keyedLookuper); ok {
@@ -587,56 +628,120 @@ func splitString(s, on, esc string) []string {
 	return a
 }
 
-// keyAndOpts parses the given tag value (e.g. env:"foo,required") and
-// returns the key name and options as a list.
-func keyAndOpts(tag string) (string, *options, error) {
-	parts := splitString(tag, ",", "\\")
-	key, tagOpts := strings.TrimSpace(parts[0]), parts[1:]
-
-	if key != "" && !validateEnvName(key) {
-		return "", nil, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
-	}
-
+// keyAndOpts parses the given tag value (e.g. env:"foo,required") and returns
+// the key name and the parsed options.
+func keyAndOpts(tag string) (string, options, error) {
 	var opts options
 
-LOOP:
-	for i, o := range tagOpts {
-		o = strings.TrimLeftFunc(o, unicode.IsSpace)
-		search := strings.ToLower(o)
-
-		// Boolean keyword options ignore surrounding whitespace. Value options
-		// (prefix=, delimiter=, separator=, default=) intentionally preserve any
-		// trailing whitespace as part of their value, so they continue to match on
-		// the left-trimmed-only form.
-		keyword := strings.TrimRightFunc(search, unicode.IsSpace)
-
-		switch {
-		case keyword == optDecodeUnset:
-			opts.DecodeUnset = true
-		case keyword == optOverwrite:
-			opts.Overwrite = true
-		case keyword == optRequired:
-			opts.Required = true
-		case keyword == optNoInit:
-			opts.NoInit = true
-		case strings.HasPrefix(search, optPrefix):
-			opts.Prefix = strings.TrimPrefix(o, optPrefix)
-		case strings.HasPrefix(search, optDelimiter):
-			opts.Delimiter = strings.TrimPrefix(o, optDelimiter)
-		case strings.HasPrefix(search, optSeparator):
-			opts.Separator = strings.TrimPrefix(o, optSeparator)
-		case strings.HasPrefix(search, optDefault):
-			// If a default value was given, assume everything after is the provided
-			// value, including comma-seprated items.
-			o = strings.TrimLeft(strings.Join(tagOpts[i:], ","), " ")
-			opts.Default = strings.TrimPrefix(o, optDefault)
-			break LOOP
-		default:
-			return "", nil, fmt.Errorf("%q: %w", o, ErrUnknownOption)
+	// Fast path: no comma means the entire tag is the key with no options.
+	if strings.IndexByte(tag, ',') == -1 {
+		key := strings.TrimSpace(tag)
+		if key != "" && !validateEnvName(key) {
+			return "", opts, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
 		}
+		return key, opts, nil
 	}
 
-	return key, &opts, nil
+	// Escape path: a backslash may escape a comma (for example a literal comma
+	// in a delimiter or default value). This is rare, so fall back to the
+	// allocation-heavier split that resolves escapes.
+	if strings.IndexByte(tag, '\\') != -1 {
+		parts := splitString(tag, ",", "\\")
+		key := strings.TrimSpace(parts[0])
+		if key != "" && !validateEnvName(key) {
+			return "", opts, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
+		}
+
+		tagOpts := parts[1:]
+		for i, o := range tagOpts {
+			isDefault, err := applyTagOption(o, &opts)
+			if err != nil {
+				return "", opts, err
+			}
+			if isDefault {
+				o = strings.TrimLeft(strings.Join(tagOpts[i:], ","), " ")
+				opts.Default = strings.TrimPrefix(o, optDefault)
+				break
+			}
+		}
+		return key, opts, nil
+	}
+
+	// Common path: commas are present but there are no escapes, so the segments
+	// can be iterated in place without allocating a slice.
+	comma := strings.IndexByte(tag, ',')
+	key := strings.TrimSpace(tag[:comma])
+	if key != "" && !validateEnvName(key) {
+		return "", opts, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
+	}
+
+	rest := tag[comma+1:]
+	for {
+		c := strings.IndexByte(rest, ',')
+		seg := rest
+		if c != -1 {
+			seg = rest[:c]
+		}
+
+		// A default option consumes the remainder of the tag verbatim, including
+		// any commas, so extract it directly and stop.
+		if hasPrefixFold(strings.TrimLeftFunc(seg, unicode.IsSpace), optDefault) {
+			o := strings.TrimLeft(rest, " ")
+			opts.Default = strings.TrimPrefix(o, optDefault)
+			break
+		}
+
+		if _, err := applyTagOption(seg, &opts); err != nil {
+			return "", opts, err
+		}
+
+		if c == -1 {
+			break
+		}
+		rest = rest[c+1:]
+	}
+
+	return key, opts, nil
+}
+
+// applyTagOption parses a single option token (the text between two commas) and
+// records it on opts. It returns isDefault=true when the token is a "default="
+// option; in that case the caller is responsible for extracting the value,
+// which may itself contain commas.
+//
+// Boolean keyword options ignore surrounding whitespace. Value options
+// (prefix=, delimiter=, separator=, default=) intentionally preserve any
+// trailing whitespace as part of their value.
+func applyTagOption(o string, opts *options) (isDefault bool, err error) {
+	o = strings.TrimLeftFunc(o, unicode.IsSpace)
+	keyword := strings.TrimRightFunc(o, unicode.IsSpace)
+
+	switch {
+	case strings.EqualFold(keyword, optDecodeUnset):
+		opts.DecodeUnset = true
+	case strings.EqualFold(keyword, optOverwrite):
+		opts.Overwrite = true
+	case strings.EqualFold(keyword, optRequired):
+		opts.Required = true
+	case strings.EqualFold(keyword, optNoInit):
+		opts.NoInit = true
+	case hasPrefixFold(o, optPrefix):
+		opts.Prefix = strings.TrimPrefix(o, optPrefix)
+	case hasPrefixFold(o, optDelimiter):
+		opts.Delimiter = strings.TrimPrefix(o, optDelimiter)
+	case hasPrefixFold(o, optSeparator):
+		opts.Separator = strings.TrimPrefix(o, optSeparator)
+	case hasPrefixFold(o, optDefault):
+		return true, nil
+	default:
+		return false, fmt.Errorf("%q: %w", o, ErrUnknownOption)
+	}
+	return false, nil
+}
+
+// hasPrefixFold reports whether s begins with prefix, ignoring case.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
 
 // lookup looks up the given key using the provided Lookuper and options. The
@@ -771,6 +876,28 @@ func processAsDecoder(ctx context.Context, v string, ef reflect.Value) (bool, er
 	return imp, err
 }
 
+// nonPointerType returns the first non-pointer type reached by successively
+// dereferencing t, and reports whether one exists. Named pointer types can
+// dereference to themselves (type P *P), directly or through other named
+// pointer types; such a chain never reaches a non-pointer type. The two
+// cursors advance at different speeds, so on a cyclic chain they eventually
+// meet, without allocating a set of visited types.
+func nonPointerType(t reflect.Type) (reflect.Type, bool) {
+	slow, fast := t, t
+	for fast.Kind() == reflect.Pointer {
+		fast = fast.Elem()
+		if fast.Kind() != reflect.Pointer {
+			return fast, true
+		}
+		fast = fast.Elem()
+		slow = slow.Elem()
+		if slow == fast {
+			return nil, false
+		}
+	}
+	return fast, true
+}
+
 func processField(ctx context.Context, v string, ef reflect.Value, delimiter, separator string, noInit bool) error {
 	// If the input value is empty and initialization is skipped, do nothing.
 	if v == "" && noInit {
@@ -778,6 +905,14 @@ func processField(ctx context.Context, v string, ef reflect.Value, delimiter, se
 	}
 
 	// Handle pointers and uninitialized pointers.
+	if ef.Type().Kind() == reflect.Pointer && ef.Type().Elem().Kind() == reflect.Pointer {
+		// Collection elements do not pass through the field-level check in
+		// processWith, so reject recursive pointer types here too, before the
+		// materialization below chases the chain.
+		if _, ok := nonPointerType(ef.Type()); !ok {
+			return fmt.Errorf("%s: %w", ef.Type(), ErrRecursivePointer)
+		}
+	}
 	for ef.Type().Kind() == reflect.Pointer {
 		if ef.IsNil() {
 			ef.Set(reflect.New(ef.Type().Elem()))

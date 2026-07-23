@@ -4,13 +4,13 @@ go 1.26.5
 
 require (
 	github.com/go-logr/logr v1.4.3
+	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
+	github.com/sethvargo/go-envconfig v1.4.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sync v0.22.0
-	github.com/onsi/ginkgo/v2 v2.32.0
-	github.com/sethvargo/go-envconfig v1.4.0
 	go.uber.org/zap v1.28.0
+	golang.org/x/sync v0.22.0
 	k8s.io/api v0.36.2
 	k8s.io/apimachinery v0.36.2
 	k8s.io/cli-runtime v0.36.2
