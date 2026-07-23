@@ -16,15 +16,42 @@
 
 package interrupts
 
+import (
+	"context"
+	"fmt"
+
+	"github.com/NVIDIA/nodewright/agent/internal/command"
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
+)
+
 // RestartAllServices reloads all services.
 type RestartAllServices struct{}
 
 var _ Interrupt = RestartAllServices{}
 
-func (RestartAllServices) Type() string { return "restart_all_services" }
+func (RestartAllServices) Type() InterruptType { return RestartAllServicesType }
 
-func (RestartAllServices) InterruptCmd() [][]string {
-	return [][]string{{"service", "procps", "force-reload"}}
+func (r RestartAllServices) Run(ctx context.Context, config execution.Config) (execution.Status, error) {
+	if err := validateRun(ctx, config, r.Type()); err != nil {
+		return execution.StatusFailed, err
+	}
+
+	runner := command.NewRunner(command.WithChroot(config.RootMount()))
+	cmd := command.NewCommand(
+		"service",
+		command.WithArguments("procps", "force-reload"),
+		command.WithWorkingDirectory(config.SkyhookDir()),
+		command.WithStdout(config.Stdout()),
+		command.WithStderr(config.Stderr()),
+	)
+	result, runErr := runner.Run(ctx, cmd)
+	if runErr != nil {
+		return execution.StatusFailed, fmt.Errorf("running interrupt %q command %q: %w", r.Type(), cmd.Executable, runErr)
+	}
+	if result.Signal != nil || result.ExitCode != command.SuccessExitCode {
+		return execution.StatusFailed, nil
+	}
+	return execution.StatusSuccess, nil
 }
 
 func (r RestartAllServices) Serialize() ([]byte, error) {

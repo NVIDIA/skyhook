@@ -16,13 +16,22 @@
  * limitations under the License.
  */
 
+// Package interrupts decodes, encodes, and runs agent interrupt operations.
+//
+// Each Interrupt identifies its wire type with Type, executes its own command
+// composition through Run using execution.Config and execution.Status, and
+// preserves its operator-facing wire representation through Serialize.
 package interrupts
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
 )
 
 // errInvalidSerializedInterrupt is returned when a serialized interrupt is not
@@ -30,11 +39,35 @@ import (
 // callers can branch on it with errors.Is.
 var errInvalidSerializedInterrupt = errors.New(`serialized interrupt must be base64-encoded JSON with a "type" field`)
 
-// Interrupt is the pure data contract for an interrupt type.
+// InterruptType identifies a supported interrupt implementation on the wire.
+type InterruptType string
+
+const (
+	NodeRestartType        InterruptType = "node_restart"
+	ServiceRestartType     InterruptType = "service_restart"
+	RestartAllServicesType InterruptType = "restart_all_services"
+	NoOpType               InterruptType = "no_op"
+	ScriptInterruptType    InterruptType = "script_interrupt"
+)
+
+// Interrupt is the contract satisfied by every interrupt type.
 type Interrupt interface {
-	Type() string
-	InterruptCmd() [][]string
+	Type() InterruptType
+	Run(context.Context, execution.Config) (execution.Status, error)
 	Serialize() ([]byte, error)
+}
+
+func validateRun(ctx context.Context, config execution.Config, interruptType InterruptType) error {
+	if ctx == nil {
+		return errors.New("running interrupt: context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("running interrupt %q: %w", interruptType, err)
+	}
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("running interrupt %q: invalid run config: %w", interruptType, err)
+	}
+	return nil
 }
 
 // Encode serializes an Interrupt to the base64+JSON wire form expected
@@ -66,7 +99,7 @@ func Decode(serializedValue string) (Interrupt, error) {
 	// error) from a present-but-empty value (an unknown-type error); the two
 	// take different branches below.
 	var head struct {
-		Type *string `json:"type"`
+		Type *InterruptType `json:"type"`
 	}
 	if err := json.Unmarshal(data, &head); err != nil {
 		return nil, fmt.Errorf("%w: %v", errInvalidSerializedInterrupt, err)
@@ -76,9 +109,9 @@ func Decode(serializedValue string) (Interrupt, error) {
 	}
 
 	switch *head.Type {
-	case NodeRestart{}.Type():
+	case NodeRestartType:
 		return NodeRestart{}, nil
-	case ServiceRestart{}.Type():
+	case ServiceRestartType:
 		var wire struct {
 			Services []string `json:"services"`
 		}
@@ -86,11 +119,11 @@ func Decode(serializedValue string) (Interrupt, error) {
 			return nil, fmt.Errorf("%w: %v", errInvalidSerializedInterrupt, err)
 		}
 		return ServiceRestart{Services: wire.Services}, nil
-	case RestartAllServices{}.Type():
+	case RestartAllServicesType:
 		return RestartAllServices{}, nil
-	case NoOp{}.Type():
+	case NoOpType:
 		return NoOp{}, nil
-	case ScriptInterrupt{}.Type():
+	case ScriptInterruptType:
 		return ScriptInterrupt{}, nil
 	default:
 		return nil, fmt.Errorf(
@@ -101,16 +134,21 @@ func Decode(serializedValue string) (Interrupt, error) {
 	}
 }
 
-// supportedTypes returns the comma-separated list of known interrupt
-// type names in the order Decode dispatches on them.
+// supportedTypes returns the known interrupt types in Decode dispatch order.
 func supportedTypes() string {
-	return "node_restart, service_restart, restart_all_services, no_op, script_interrupt"
+	return strings.Join([]string{
+		string(NodeRestartType),
+		string(ServiceRestartType),
+		string(RestartAllServicesType),
+		string(NoOpType),
+		string(ScriptInterruptType),
+	}, ", ")
 }
 
 // marshalTypeOnly serializes an interrupt whose wire form is just
 // {"type": "..."}.
-func marshalTypeOnly(typeName string) ([]byte, error) {
+func marshalTypeOnly(typeName InterruptType) ([]byte, error) {
 	return json.Marshal(struct {
-		Type string `json:"type"`
+		Type InterruptType `json:"type"`
 	}{Type: typeName})
 }
