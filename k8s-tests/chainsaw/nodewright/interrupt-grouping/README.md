@@ -6,7 +6,7 @@ Validates that interrupts are correctly grouped around services or reboots, ensu
 
 ## Test Scenario
 
-1. Apply a skyhook with multiple packages that have different interrupt configurations
+1. Apply a nodewright with multiple packages that have different interrupt configurations
 2. Verify that interrupts are grouped correctly:
    - Service-related interrupts are grouped together
    - Reboot-related interrupts are grouped together
@@ -22,5 +22,5 @@ Validates that interrupts are correctly grouped around services or reboots, ensu
 
 ## Files
 
-- `chainsaw-test.yaml` - Main test configuration with all assertions inline (pods, nodes, skyhook status, ConfigMap) for sequential ordering through apply, config, interrupt, and post-interrupt stages
-- `nodewright.yaml` - Skyhook with grouped interrupt packages
+- `chainsaw-test.yaml` - Main test configuration with all assertions inline (pods, nodes, nodewright status, ConfigMap) for sequential ordering through apply, config, interrupt, and post-interrupt stages
+- `nodewright.yaml` - NodeWright with grouped interrupt packages

@@ -21,5 +21,5 @@ control (`delete nodes`, which the role does not grant) confirms the impersonate
 check discriminates rather than passing unconditionally.
 
 Because it validates chart-rendered RBAC, it lives in the `helm` suite (the
-`skyhook` e2e suite runs the operator via `make run` with the developer's
+`nodewright` e2e suite runs the operator via `make run` with the developer's
 kubeconfig, which bypasses the ServiceAccount's RBAC entirely).
