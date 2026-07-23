@@ -16,15 +16,24 @@
 
 package interrupts
 
+import (
+	"context"
+
+	"github.com/NVIDIA/nodewright/agent/internal/execution"
+)
+
 // NoOp performs no interrupt action.
 type NoOp struct{}
 
 var _ Interrupt = NoOp{}
 
-func (NoOp) Type() string { return "no_op" }
+func (NoOp) Type() InterruptType { return NoOpType }
 
-func (NoOp) InterruptCmd() [][]string {
-	return [][]string{}
+func (n NoOp) Run(ctx context.Context, config execution.Config) (execution.Status, error) {
+	if err := validateRun(ctx, config, n.Type()); err != nil {
+		return execution.StatusFailed, err
+	}
+	return execution.StatusSuccess, nil
 }
 
 func (n NoOp) Serialize() ([]byte, error) {
