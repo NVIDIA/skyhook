@@ -2,7 +2,7 @@
 
 Tests both `sequencing: node` (default, per-node ordering) and `sequencing: all` (opt-in, global ordering).
 
-## Skyhook Layout
+## NodeWright Layout
 
 ```
 Priority 1:  zzz          sequencing: node (default)
@@ -66,7 +66,7 @@ kind-worker2 ░░░░░░ blocked ░░░░░░░  zzz ■■■■�
 | File | Phase | Purpose |
 |------|-------|---------|
 | `chainsaw-test.yaml` | — | Main test, 7 phases |
-| `nodewright.yaml` | 2 | Skyhook definitions (zzz, gate, b, c, d) |
+| `nodewright.yaml` | 2 | NodeWright definitions (zzz, gate, b, c, d) |
 | `nodewright-pause-update.yaml` | 6 | Unpause b |
 | `skyhook-disable-update.yaml` | — | Disable state patches (not used in current flow) |
 | `assert-node1-priority1-complete-node2-blocked.yaml` | 3 | worker past zzz, worker2 blocked |

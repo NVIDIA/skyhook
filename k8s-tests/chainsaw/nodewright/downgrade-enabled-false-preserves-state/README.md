@@ -18,7 +18,7 @@ version's files are still there.
    uninstall gate.
 3. Assert the node's `nodeState_<name>` annotation contains **both** entries
    — `mypkg|2.1.4` (old, preserved) and `mypkg|1.2.3` (new, complete).
-4. Assert the Skyhook returns to `status: complete`.
+4. Assert the NodeWright returns to `status: complete`.
 
 ## Key Features Tested
 
@@ -31,5 +31,5 @@ version's files are still there.
 ## Files
 
 - `chainsaw-test.yaml` — Main test: install v2 → downgrade to v1 → assert both versions tracked
-- `nodewright.yaml` — Initial v2.1.4 Skyhook, `uninstall.enabled: false`
+- `nodewright.yaml` — Initial v2.1.4 NodeWright, `uninstall.enabled: false`
 - `update-downgrade.yaml` — Patch changing version to v1.2.3

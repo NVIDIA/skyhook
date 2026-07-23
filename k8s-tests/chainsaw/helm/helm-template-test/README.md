@@ -7,13 +7,13 @@ These tests validate that the Helm chart templates render correctly under variou
 ### Render Correctness
 
 1. **default-limitrange** -- LimitRange renders with correct default values (500m/512Mi limits, 250m/256Mi requests)
-2. **default-cleanup-skyhooks-job-resources** -- Skyhook cleanup job has correct resource limits/requests
+2. **default-cleanup-skyhooks-job-resources** -- NodeWright cleanup job has correct resource limits/requests
 3. **default-cleanup-webhook-job-resources** -- Webhook cleanup job has correct resource limits/requests
 4. **limitrange-disabled-null-fallback-resources** -- `limitRange: null` still produces fallback resource limits in cleanup jobs
 5. **limitrange-disabled-null-no-limitrange** -- `limitRange: null` omits the LimitRange resource
 6. **limitrange-disabled-false-no-limitrange** -- `limitRange: false` omits the LimitRange resource
 7. **webhook-disabled-no-webhook-cleanup-job** -- `webhook.enable: false` omits the webhook cleanup job
-8. **cleanup-disabled-no-skyhook-cleanup-job** -- `cleanup.enabled: false` omits the skyhook cleanup job
+8. **cleanup-disabled-no-skyhook-cleanup-job** -- `cleanup.enabled: false` omits the nodewright cleanup job
 
 ### Validation Error Paths
 
@@ -34,11 +34,11 @@ These tests validate that the Helm chart templates render correctly under variou
 
 ### Cleanup Job Scheduling Parity
 
-1. **cleanup-jobs-inherit-tolerations-skyhooks** -- Tolerations propagate to skyhook cleanup job
+1. **cleanup-jobs-inherit-tolerations-skyhooks** -- Tolerations propagate to nodewright cleanup job
 2. **cleanup-jobs-inherit-tolerations-webhook** -- Tolerations propagate to webhook cleanup job
-3. **cleanup-jobs-inherit-selectors-skyhooks** -- Node selectors propagate to skyhook cleanup job
+3. **cleanup-jobs-inherit-selectors-skyhooks** -- Node selectors propagate to nodewright cleanup job
 4. **cleanup-jobs-inherit-selectors-webhook** -- Node selectors propagate to webhook cleanup job
-5. **cleanup-jobs-inherit-node-affinity-skyhooks** -- Node affinity propagates to skyhook cleanup job
+5. **cleanup-jobs-inherit-node-affinity-skyhooks** -- Node affinity propagates to nodewright cleanup job
 6. **cleanup-jobs-inherit-node-affinity-webhook** -- Node affinity propagates to webhook cleanup job
 
 ## Template Scoping With `-s`
@@ -155,7 +155,7 @@ Used for: namespace validation, selector/affinity conflict, PDB validation.
 The other tests in `k8s-tests/chainsaw/helm/` (e.g., `helm-chart-test`, `helm-scale-test`, `helm-node-affinity-test`) are **integration tests** that:
 
 - Install the chart into a real cluster with `helm install`
-- Apply Skyhook/DeploymentPolicy CRs
+- Apply NodeWright/DeploymentPolicy CRs
 - Assert on live cluster state (running pods, scheduled workloads)
 - Require a running operator and Kind cluster
 

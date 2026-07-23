@@ -11,7 +11,7 @@ There are four classifications of E2E tests in this project:
 | **NodeWright** | [chainsaw/nodewright/](./chainsaw/nodewright/) | Core operator functionality tests |
 | **Helm** | [chainsaw/helm/](./chainsaw/helm/) | Helm chart deployment and configuration tests |
 | **Deployment Policy** | [chainsaw/deployment-policy/](./chainsaw/deployment-policy/) | Deployment policy and rollout strategy tests |
-| **CLI** | [chainsaw/cli/](./chainsaw/cli/) | kubectl-skyhook CLI command tests |
+| **CLI** | [chainsaw/cli/](./chainsaw/cli/) | kubectl-nodewright CLI command tests |
 
 For more information on each suite, refer to their respective README files.
 
@@ -22,7 +22,7 @@ To create a new test:
 1. Make a new folder in the appropriate test suite directory
 2. Add a file named `chainsaw-test.yaml` with the test configuration
 3. Add a `README.md` documenting the test (see standards below)
-4. Add any additional YAML files needed (skyhook definitions, assertions, etc.)
+4. Add any additional YAML files needed (nodewright definitions, assertions, etc.)
 
 ## Test Documentation Standards
 
@@ -80,14 +80,14 @@ Brief description of what this test validates.
 Due to some limitations it can be hard to test circumstances where a node will be removed from a cluster. The operator performs cleanup on node removal (removing orphan configmaps) which makes automated testing difficult. For these scenarios, test manually:
 
 1. Run `make create-kind-cluster` and wait for local cluster to be brought up
-2. Run `make install` to install the skyhook CRD into the cluster
+2. Run `make install` to install the nodewright CRD into the cluster
 3. Use VSCode's debugger to run the operator with your local cluster
-4. Use `kubectl apply -f k8s-tests/chainsaw/nodewright/simple-nodewright/nodewright.yaml` to define a skyhook
-5. Use `kubectl` or `k9s` to overview the state of the skyhook and its resources. Look for the configmap named `{skyhook.Name}-{node.Name}-metadata`
+4. Use `kubectl apply -f k8s-tests/chainsaw/nodewright/simple-nodewright/nodewright.yaml` to define a nodewright
+5. Use `kubectl` or `k9s` to overview the state of the nodewright and its resources. Look for the configmap named `{nodewright.Name}-{node.Name}-metadata`
 6. Remove the node with `kubectl delete node {node.Name}`
-7. Verify the configmap `{skyhook.Name}-{node.Name}-metadata` no longer exists
+7. Verify the configmap `{nodewright.Name}-{node.Name}-metadata` no longer exists
 8. Note: Kind doesn't autoscale, so you'll need to rebuild the cluster to continue testing (`make create-kind-cluster`)
 
 ## Agentless Test Image
 
-The tests use a test container image from `containers/agentless` which sleeps briefly and returns, simulating the skyhook agent. Since the operator enforces strict versioning (no `latest` tag), only predefined semantic or calendar versions can be used. See `containers/agentless/versions.sh` for available versions.
+The tests use a test container image from `containers/agentless` which sleeps briefly and returns, simulating the nodewright agent. Since the operator enforces strict versioning (no `latest` tag), only predefined semantic or calendar versions can be used. See `containers/agentless/versions.sh` for available versions.

@@ -6,7 +6,7 @@ Validates that package dependencies (dependsOn) work correctly, ensuring package
 
 ## Test Scenario
 
-1. Create a skyhook with three packages:
+1. Create a nodewright with three packages:
    - Package A (no dependencies)
    - Package B (no dependencies)
    - Package C (depends on A and B)
@@ -22,5 +22,5 @@ Validates that package dependencies (dependsOn) work correctly, ensuring package
 
 ## Files
 
-- `chainsaw-test.yaml` - Main test configuration with all assertions inline (pods, skyhook status) for sequential ordering to verify dependency execution order
-- `nodewright.yaml` - Skyhook with package dependencies
+- `chainsaw-test.yaml` - Main test configuration with all assertions inline (pods, nodewright status) for sequential ordering to verify dependency execution order
+- `nodewright.yaml` - NodeWright with package dependencies
