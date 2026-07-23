@@ -1,10 +1,10 @@
 # Operator Status, State, Stage, and Condition Definitions
 
-This document provides concise definitions for the status, state, stage, and condition concepts used throughout the Skyhook operator to track package operations and node lifecycle management.
+This document provides concise definitions for the status, state, stage, and condition concepts used throughout the NodeWright operator to track package operations and node lifecycle management.
 
 ## Key Relationships
 
-- **Status** reflects the overall health and progress of nodes and the Skyhook resource
+- **Status** reflects the overall health and progress of nodes and the NodeWright resource
 - **State** tracks the execution status of individual package operations
 - **Stage** defines the specific lifecycle phase a package is currently in
 
@@ -21,7 +21,7 @@ This document provides concise definitions for the status, state, stage, and con
 
 ## Status
 
-**Scope**: Applied to the overall Skyhook resource and individual nodes  
+**Scope**: Applied to the overall NodeWright resource and individual nodes  
 **Purpose**: High-level operational status indicating the current condition
 
 | Status | Definition |
@@ -29,19 +29,19 @@ This document provides concise definitions for the status, state, stage, and con
 | `complete`    | All operations have finished successfully |
 | `blocked`     | Operations are prevented from proceeding due to taint toleration issues |
 | `waiting`     | Queued for execution but not yet started |
-| `disabled`    | Execution is disabled but will continue for other Skyhooks |
-| `paused`      | Execution is paused for this and all other Skyhooks supposed to be executed after this one |
+| `disabled`    | Execution is disabled but will continue for other NodeWrights |
+| `paused`      | Execution is paused for this and all other NodeWrights supposed to be executed after this one |
 | `in_progress` | Currently executing operations |
 | `erroring`    | Experiencing failures or errors |
 | `unknown`     | Status cannot be determined or is uninitialized |
 
 ## Conditions
 
-Skyhook publishes Kubernetes conditions on `.status.conditions`. The `Ready` condition is the standard user-facing summary for `kubectl wait --for=condition=Ready`, while other condition types report specific operator states that can coexist with `Ready`.
+NodeWright publishes Kubernetes conditions on `.status.conditions`. The `Ready` condition is the standard user-facing summary for `kubectl wait --for=condition=Ready`, while other condition types report specific operator states that can coexist with `Ready`.
 
 ### Ready Condition
 
-`Ready` is a boolean projection of the Skyhook's multivalued `.status.status` field:
+`Ready` is a boolean projection of the NodeWright's multivalued `.status.status` field:
 
 | `.status.status` | `Ready.status` | `Ready.reason` | Meaning |
 |------------------|----------------|----------------|---------|
@@ -83,7 +83,7 @@ The truncation cap exists to keep condition payloads bounded for etcd object siz
 
 The operator also sets additional condition types that may be useful for troubleshooting:
 
-- `TaintNotTolerable`: selected nodes are skipped because their taints are not tolerated by the Skyhook
+- `TaintNotTolerable`: selected nodes are skipped because their taints are not tolerated by the NodeWright
 - `NodesIgnored`: selected nodes are skipped because they have the ignore label set
 - `ApplyPackage`: the controller is applying a package to a node
 - `DeploymentPolicyNotFound`: the referenced `DeploymentPolicy` is missing at reconcile time
@@ -150,9 +150,9 @@ cordon → wait → drain → upgrade (if upgrading) → config → interrupt �
 
 **Note**: The cordon, wait, and drain phases ensure that workloads are safely removed from the node before any package operations that require interrupts (such as reboots or kernel module changes) are executed.
 
-## Skyhook Status Fields
+## NodeWright Status Fields
 
-The Skyhook resource's `.status` object includes fields that track batch rollout state. Two fields are particularly relevant for [batch stickiness](deployment_policy.md#batch-stickiness) and [node ordering](ordering_of_skyhooks.md#node-order-within-a-rollout):
+The NodeWright resource's `.status` object includes fields that track batch rollout state. Two fields are particularly relevant for [batch stickiness](deployment_policy.md#batch-stickiness) and [node ordering](ordering_of_skyhooks.md#node-order-within-a-rollout):
 
 | Field | Definition |
 |-------|------------|

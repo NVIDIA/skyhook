@@ -1,6 +1,6 @@
 # Kubernetes Version Support
 
-This document outlines Skyhook's approach to supporting different Kubernetes versions.
+This document outlines NodeWright's approach to supporting different Kubernetes versions.
 
 ## What Version Should I Use?
 
@@ -29,9 +29,9 @@ Currently tested: **1.36, 1.35, 1.34, 1.33** (kind v0.32.0). 1.32 and older drop
 
 ### What This Means
 
-- **✅ Fully Supported:** We test and support these K8s versions in the current Skyhook release
-- **⚠️ Use older Skyhook:** Your K8s version is supported, but use an older Skyhook release
-- **❌ Not Supported:** Upgrade your Kubernetes cluster or use a much older Skyhook version
+- **✅ Fully Supported:** We test and support these K8s versions in the current NodeWright release
+- **⚠️ Use older NodeWright:** Your K8s version is supported, but use an older NodeWright release
+- **❌ Not Supported:** Upgrade your Kubernetes cluster or use a much older NodeWright version
 
 ### When Versions Change
 
@@ -39,13 +39,13 @@ Currently tested: **1.36, 1.35, 1.34, 1.33** (kind v0.32.0). 1.32 and older drop
 
 1. Wait **4+ weeks** after K8s release for ecosystem stability
 2. Add to the CI testing matrix in `operator/versions.yaml`
-3. Include in next Skyhook release
+3. Include in next NodeWright release
 
 **For EOL Kubernetes versions:**
 
-1. Stop including in new Skyhook releases
-2. Existing Skyhook versions continue to work
-3. Users should upgrade K8s and then upgrade Skyhook
+1. Stop including in new NodeWright releases
+2. Existing NodeWright versions continue to work
+3. Users should upgrade K8s and then upgrade NodeWright
 
 ## Upgrade Strategy
 
@@ -60,7 +60,7 @@ Currently tested: **1.36, 1.35, 1.34, 1.33** (kind v0.32.0). 1.32 and older drop
 We understand many installations run slightly older Kubernetes versions. Our strategy balances staying current while giving users time to upgrade:
 
 - **6-week notice** before dropping support for a Kubernetes version
-- **Clear documentation** about which Skyhook version to use for your Kubernetes version
+- **Clear documentation** about which NodeWright version to use for your Kubernetes version
 - **Gradual transitions** rather than sudden jumps when possible
 
 ## Version Selection Guide
@@ -82,11 +82,11 @@ As a small project, we focus our efforts on actively maintained Kubernetes versi
 
 ### What if I'm stuck on an older Kubernetes version?
 
-**You can still use Skyhook!** Just use an older Skyhook version that was built for your K8s version:
+**You can still use NodeWright!** Just use an older NodeWright version that was built for your K8s version:
 
 - Older releases continue to work and don't disappear
-- Check our release notes for which Skyhook version supports your K8s version
-- Plan your Kubernetes upgrade timeline, then upgrade Skyhook afterward
+- Check our release notes for which NodeWright version supports your K8s version
+- Plan your Kubernetes upgrade timeline, then upgrade NodeWright afterward
 
 ### Why wait 4 weeks before supporting new Kubernetes versions?
 
@@ -100,7 +100,7 @@ Waiting 4+ weeks lets the ecosystem stabilize and gives us confidence in support
 
 ### How do you test compatibility?
 
-For each Skyhook release, we test against all supported Kubernetes versions using:
+For each NodeWright release, we test against all supported Kubernetes versions using:
 
 - GitHub Actions matrix builds with multiple K8s versions. The exact tested patch versions are owned by `ci.kindNodeImages` in `operator/versions.yaml`.
 - Local testing with [kind](https://kind.sigs.k8s.io/)
