@@ -42,6 +42,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	kzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	nwv1 "github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
@@ -81,8 +82,9 @@ type options struct {
 	// SkyhookOperatorOptions are options for the operator operation, and not controller runtime.
 	controller.SkyhookOperatorOptions
 	controller.WebhookControllerOptions
+	controller.MetricsCertControllerOptions
 	// MetricsPort The address the metric endpoint binds to.
-	MetricsPort string `env:"METRICS_PORT, default=:8080"`
+	MetricsPort string `env:"METRICS_PORT, default=:8443"`
 	// ProbePort The address the probe endpoint binds to.
 	ProbePort string `env:"PROBE_PORT, default=:8081"`
 	// LeaderElection Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
@@ -107,10 +109,22 @@ func main() {
 	setupLog.Info("env options", "options", options)
 
 	certDir := filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
+	metricsCertDir := filepath.Join(os.TempDir(), "k8s-metrics-server", "serving-certs")
+	if err := controller.EnsureDummyCert(metricsCertDir); err != nil {
+		setupLog.Error(err, "unable to prepare metrics certificate directory")
+		os.Exit(1)
+	}
 	restConfig := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: options.MetricsPort},
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress:    options.MetricsPort,
+			SecureServing:  true,
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
+			CertDir:        metricsCertDir,
+			CertName:       "tls.crt",
+			KeyName:        "tls.key",
+		},
 		HealthProbeBindAddress: options.ProbePort,
 		LeaderElection:         options.LeaderElection,
 		LeaderElectionID:       reconcileLeaseID,
@@ -163,24 +177,47 @@ func main() {
 		os.Exit(1)
 	}
 
-	// webhookBootstrapMgr owns the webhook cert/caBundle bootstrap on its own lease so
-	// a stuck old-version leader on reconcileLeaseID cannot block a new pod from issuing
-	// the serving cert and patching the webhook configurations.
-	var webhookBootstrapMgr ctrl.Manager
-	if options.EnableWebhooks {
-		webhookBootstrapMgr, err = ctrl.NewManager(restConfig, ctrl.Options{
-			Scheme: scheme,
-			// Disable metrics + health probes on the bootstrap manager; the main manager
-			// already serves both, and binding the same ports twice would fail.
-			Metrics:          metricsserver.Options{BindAddress: "0"},
-			LeaderElection:   options.LeaderElection,
-			LeaderElectionID: webhookBootstrapLeaseID,
-		})
-		if err != nil {
-			setupLog.Error(err, "unable to start webhook bootstrap manager")
-			os.Exit(1)
-		}
+	// The historical webhook bootstrap lease also owns metrics certificate rotation.
+	// Keeping its identity stable preserves upgrade safety for the admission cert path.
+	webhookBootstrapMgr, err := ctrl.NewManager(restConfig, ctrl.Options{
+		Scheme: scheme,
+		// Disable metrics + health probes on the bootstrap manager; the main manager
+		// already serves both, and binding the same ports twice would fail.
+		Metrics:          metricsserver.Options{BindAddress: "0"},
+		LeaderElection:   options.LeaderElection,
+		LeaderElectionID: webhookBootstrapLeaseID,
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to start certificate bootstrap manager")
+		os.Exit(1)
+	}
 
+	metricsCertController := controller.NewMetricsCertController(
+		webhookBootstrapMgr.GetClient(),
+		webhookBootstrapMgr.GetCache(),
+		options.Namespace,
+		options.MetricsCertControllerOptions,
+	)
+	if err = webhookBootstrapMgr.Add(metricsCertController); err != nil {
+		setupLog.Error(err, "unable to add metrics certificate controller")
+		os.Exit(1)
+	}
+	if err = metricsCertController.SetupWithManager(webhookBootstrapMgr); err != nil {
+		setupLog.Error(err, "unable to set up metrics certificate controller")
+		os.Exit(1)
+	}
+	if err := mgr.Add(controller.NewSecretCertWatcher(
+		mgr.GetClient(),
+		mgr.GetCache(),
+		options.Namespace,
+		options.MetricsCertControllerOptions.SecretName,
+		metricsCertDir,
+	)); err != nil {
+		setupLog.Error(err, "unable to add metrics certificate watcher")
+		os.Exit(1)
+	}
+
+	if options.EnableWebhooks {
 		webhookController, err := controller.NewWebhookController(
 			webhookBootstrapMgr.GetClient(),
 			webhookBootstrapMgr.GetCache(),
@@ -264,14 +301,12 @@ func main() {
 		}
 		return nil
 	})
-	if webhookBootstrapMgr != nil {
-		g.Go(func() error {
-			if err := webhookBootstrapMgr.Start(gctx); err != nil {
-				return fmt.Errorf("webhook bootstrap manager: %w", err)
-			}
-			return nil
-		})
-	}
+	g.Go(func() error {
+		if err := webhookBootstrapMgr.Start(gctx); err != nil {
+			return fmt.Errorf("certificate bootstrap manager: %w", err)
+		}
+		return nil
+	})
 	if err := g.Wait(); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

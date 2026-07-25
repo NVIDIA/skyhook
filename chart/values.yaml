@@ -28,30 +28,11 @@ controllerManager:
   #     - gpu-workload
   nodeAffinity:
     matchExpressions: []
-  ## config for kube-rbac-proxy used for webhooks
-  kubeRbacProxy:
-    args:
-    - --secure-listen-address=0.0.0.0:8443
-    - --upstream=http://127.0.0.1:8080/
-    - --logtostderr=true
-    - --v=0
-    containerSecurityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop:
-        - ALL
-    image:
-      repository: quay.io/brancz/kube-rbac-proxy
-      tag: v0.15.0
-      digest: "sha256:2c7b120590cbe9f634f5099f2cbb91d0b668569023a81505ca124a5c437e7663" # manifest list digest (multi-arch)
-    resources:
-      limits:
-        cpu: 500m
-        memory: 128Mi
-      requests:
-        cpu: 5m
-        memory: 64Mi
+  ## Secure controller-runtime metrics endpoint.
+  metrics:
+    bindAddress: :8443
+    secretName: metrics-cert
+    serviceName: skyhook-operator-controller-manager-metrics-service
   manager:
     containerSecurityContext:
       allowPrivilegeEscalation: false
@@ -72,7 +53,6 @@ controllerManager:
       ## logLevel: "info" is the log level for the operator controller.
       ## If you want more or less logs, change this value to "debug" or "error".
       logLevel: info
-      metricsPort: :8080
       probePort: :8081
       ## reapplyOnReboot: "true" will reapply the packages on reboot. This is useful for systems that are read-only.
       reapplyOnReboot: "false"
@@ -118,16 +98,12 @@ kubernetesClusterDomain: cluster.local
 metricsService:
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "8080"
-    prometheus.io/scheme: "http"
+    prometheus.io/port: "8443"
+    prometheus.io/scheme: "https"
   ports:
   - name: metrics
     port: 8443
     targetPort: 8443
-    protocol: TCP
-  - name: metrics-http
-    port: 8080
-    targetPort: 8080
     protocol: TCP
   type: ClusterIP
 webhookService:

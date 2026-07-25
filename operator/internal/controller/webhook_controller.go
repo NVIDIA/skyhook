@@ -69,6 +69,7 @@ const (
 	certRotationThreshold    = 168 * time.Hour      // 7 days
 	certValidityDurationYear = 365 * 24 * time.Hour // 1 year
 	expirationAnnotationKey  = v1alpha1.METADATA_PREFIX + "/expiration"
+	serviceAnnotationKey     = v1alpha1.METADATA_PREFIX + "/service"
 )
 
 // This project used to use cert-manager to generate the webhook certificates.
@@ -88,7 +89,7 @@ type WebhookController struct {
 }
 
 func NewWebhookController(client client.Client, cache runtimecache.Cache, namespace, certDir string, opts WebhookControllerOptions) (*WebhookController, error) {
-	if err := ensureDummyCert(certDir); err != nil {
+	if err := EnsureDummyCert(certDir); err != nil {
 		return nil, err
 	}
 

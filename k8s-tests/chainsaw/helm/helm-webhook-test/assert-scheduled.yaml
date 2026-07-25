@@ -33,7 +33,6 @@ metadata:
 spec:
   containers:
   - name: manager
-  - name: kube-rbac-proxy
 status:
   (conditions[?type == 'Ready']):
   - status: 'True'

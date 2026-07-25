@@ -77,6 +77,13 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Changed
 
+- **Metrics now use controller-runtime's built-in authentication and
+  authorization filter.** The operator serves TLS metrics directly on `:8443`
+  and manages a dedicated, rotating `metrics-cert` Secret with the same
+  self-signed certificate machinery used by admission webhooks. The manager
+  performs TokenReview and SubjectAccessReview calls in process; the metrics
+  reader role and `/metrics` authorization contract are unchanged.
+
 - Align the default interrupt drain pod filter with Kubernetes drain semantics:
   already-terminating pods and mirror/static pods are skipped, unschedulable
   tolerations use Kubernetes `ToleratesTaint` matching, and DaemonSet pods are

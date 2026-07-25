@@ -310,7 +310,7 @@ skopeo inspect --raw docker://docker.io/alpine/kubectl:1.36.2 \
 
 `alpine/kubectl` is a maintained, versioned, multi-arch image. These short-lived maintenance jobs only run `kubectl get`/`delete` on stable core/apps resources, where kubectl's version skew is a cosmetic warning rather than a functional break, so the tag tracks a recent maintained release for current base-image fixes. Bump it as the image is maintained.
 
-Update the digest in `chart/values.yaml` for the kube-rbac-proxy, operator, agent, and maintenance-job kubectl (`webhook.removalImage`/`removalTag`/`removalDigest`) images:
+Update the digest in `chart/values.yaml` for the operator, agent, and maintenance-job kubectl (`webhook.removalImage`/`removalTag`/`removalDigest`) images:
 
 Note:
 
