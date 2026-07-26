@@ -124,11 +124,13 @@ spec:
           name: webhook-server
           protocol: TCP
         volumeMounts:
+        - mountPath: /tmp/k8s-metrics-server
+          name: metrics-certs
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: kube-api-access
           readOnly: true
         {{- if .Values.webhook.enable }}
-        - mountPath: /tmp
+        - mountPath: /tmp/k8s-webhook-server
           name: webhook-certs
         {{- end }}
         readinessProbe:
@@ -155,6 +157,8 @@ spec:
         - name: {{ quote .Values.imagePullSecret }}
       {{- end }}
       volumes:
+      - emptyDir: {}
+        name: metrics-certs
       - name: kube-api-access
         projected:
           defaultMode: 420

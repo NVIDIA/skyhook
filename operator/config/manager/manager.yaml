@@ -116,6 +116,9 @@ spec:
             value: ghcr.io/nvidia/skyhook/agent:latest
         image: controller:latest
         name: manager
+        volumeMounts:
+        - mountPath: /tmp/k8s-metrics-server
+          name: metrics-certs
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -145,5 +148,8 @@ spec:
           requests:
             cpu: 50m
             memory: 64Mi
+      volumes:
+      - emptyDir: {}
+        name: metrics-certs
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

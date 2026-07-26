@@ -233,7 +233,7 @@ CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 POOL_NON_DEFAULT := interrupt uninstall lifecycle
 POOL_NOTIN_SELECTOR := pool notin ($(shell echo $(POOL_NON_DEFAULT) | tr ' ' ','))
 
-e2e-tests: chainsaw install run build-cli ensure-test-symlinks ## Run end to end tests. Set POOL=<name> to run a single pool; unset runs all.
+e2e-tests: chainsaw install run build-cli ensure-test-symlinks prepare-metrics-test-access ## Run end to end tests. Set POOL=<name> to run a single pool; unset runs all.
 	## requires a cluster to be running with access
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
@@ -336,7 +336,7 @@ operator-agent-tests: chainsaw install ## Run operator agent tests.
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
-deployment-policy-tests: chainsaw install run ensure-test-symlinks ## Run all deployment policy E2E tests (requires 15-node cluster).
+deployment-policy-tests: chainsaw install run ensure-test-symlinks prepare-metrics-test-access ## Run all deployment policy E2E tests (requires 15-node cluster).
 	## requires a 15-node cluster to be running with access
 	## use 'make create-deployment-policy-cluster' to create the cluster
 	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
@@ -385,6 +385,14 @@ setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook na
 	else \
 		echo "Skipping node-init-secret creation; docker auth file $(DOCKER_AUTH_FILE) not found"; \
 	fi
+
+.PHONY: prepare-metrics-test-access
+prepare-metrics-test-access:
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) create serviceaccount metrics-test --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) create clusterrole metrics-test-reader --verb=get --non-resource-url=/metrics \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) create clusterrolebinding metrics-test-reader-access --clusterrole=metrics-test-reader \
+		--serviceaccount=$(SKYHOOK_NAMESPACE):metrics-test --dry-run=client -o yaml | $(KUBECTL) apply -f -
 
 
 create-kind-cluster: ctlptl validate-kind-node-image render-ctlptl-config ## creates or updates a kind cluster.

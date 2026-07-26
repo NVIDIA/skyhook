@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -19,6 +19,8 @@
 
 import argparse
 import os
+import ssl
+import subprocess
 import sys
 import time
 import re
@@ -58,7 +60,7 @@ def main():
     parser.add_argument('metric_name', help='Name of the metric to search for')
     parser.add_argument('metric_value', help='Value the metric should have (exact match)')
     parser.add_argument('-t', '--tag', action='append', default=[], help='Tag filter in key=value format (can be used multiple times)')
-    parser.add_argument('--url', default='http://127.0.0.1:8080/metrics', help='Metrics endpoint URL')
+    parser.add_argument('--url', default='https://127.0.0.1:8443/metrics', help='Metrics endpoint URL')
     parser.add_argument('--not-found', action='store_true', help='Succeed if the metric is NOT found (invert match logic)')
     args = parser.parse_args()
 
@@ -81,12 +83,27 @@ def main():
     if args.url == '-':
         mode = 'stdin'
 
+    request = args.url
+    ssl_context = None
+    if mode == 'url' and args.url.startswith('https://'):
+        token = subprocess.check_output(
+            ['kubectl', '-n', 'skyhook', 'create', 'token', 'metrics-test'],
+            text=True,
+        ).strip()
+        request = urllib.request.Request(
+            args.url,
+            headers={'Authorization': f'Bearer {token}'},
+        )
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
     while True:
         if mode == 'stdin':
             lines = sys.stdin.readlines()
         else:
             try:
-                with urllib.request.urlopen(args.url) as resp:
+                with urllib.request.urlopen(request, context=ssl_context) as resp:
                     content = resp.read().decode('utf-8')
                     lines = content.splitlines()
             except Exception as e:

@@ -66,6 +66,7 @@ func (r *MetricsCertController) NeedLeaderElection() bool {
 
 func (r *MetricsCertController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("metrics-certificate").
 		For(&corev1.Secret{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			return obj.GetNamespace() == r.namespace && obj.GetName() == r.opts.SecretName
 		}))).
