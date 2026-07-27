@@ -1,12 +1,12 @@
-# Skyhook Helm Chart
+# NodeWright Helm Chart
 
-Skyhook was developed for modifying the underlying host OS in Kubernetes clusters. Think of it as a package manager like apt/yum for linux but for whole cluster management. The package manager (Skyhook Operator) manages the lifecycle (install/configure/uninstall/upgrade) of the packages (Skyhook Custom Resource, often SCR for short). It is Kubernetes aware, making cluster modifications easy. This enables Skyhook to schedule updates around important workloads and do rolling updates. It can be used in any cluster environment: self-managed clusters, on-prem clusters, cloud clusters, etc. 
+NodeWright was developed for modifying the underlying host OS in Kubernetes clusters. Think of it as a package manager like apt/yum for linux but for whole cluster management. The package manager (NodeWright Operator) manages the lifecycle (install/configure/uninstall/upgrade) of the packages (NodeWright Custom Resource, often CR for short). It is Kubernetes aware, making cluster modifications easy. This enables NodeWright to schedule updates around important workloads and do rolling updates. It can be used in any cluster environment: self-managed clusters, on-prem clusters, cloud clusters, etc. 
 
 ## Benefits
 
  - The requested changes (the Packages) are native Kubernetes resources they can be combined and applied with common tools like ArgoCD, Helm, Flux etc. This means that all the tooling to manage applications can package customizations right alongside them to get applied, removed and upgraded as the applications themselves are.
- - Autoscaling, with skyhook if you want to enable autoscaling on your cluster but need to modify all Nodes added to a cluster, you need something that is kubernetes aware. Skyhook as feature to make sure you nodes are ready before then enter the cluster.
- - Upgrades are first class, with skyhook you can make deploy changes to your cluster and can wait for running workloads to finish before applying changes.
+ - Autoscaling: with NodeWright, if you want to enable autoscaling on your cluster but need to modify all Nodes added to a cluster, you need something that is Kubernetes-aware. NodeWright has a feature to make sure your nodes are ready before they enter the cluster.
+ - Upgrades are first class: with NodeWright you can make deploy changes to your cluster and can wait for running workloads to finish before applying changes.
 
 ## Key Features
 
@@ -33,7 +33,7 @@ Settings | Description | Default |
 | controllerManager.manager.env.leaderElection | Enable leader election for the operator controller. Default is "true" and is required for production. | "true" |
 | controllerManager.manager.env.logLevel | Log level for the operator controller. If you want more or less logs, change this value to "debug" or "error". | "info" |
 | controllerManager.manager.env.reapplyOnReboot | Reapply the packages on reboot. This is useful for systems that are read-only. | "false" |
-| controllerManager.manager.env.runtimeRequiredTaint | This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag. This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete. | skyhook.nvidia.com=runtime-required:NoSchedule | 
+| controllerManager.manager.env.runtimeRequiredTaint | This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag. This taint is assumed to be on all new nodes; NodeWright pods tolerate it, and the operator removes it from a node once every `runtimeRequired: true` NodeWright targeting that node has completed on it (completion on other nodes does not affect removal). | skyhook.nvidia.com=runtime-required:NoSchedule | 
 | controllerManager.manager.image.repository | Where to get the image from | "ghcr.io/nvidia/nodewright/operator" |
 | controllerManager.manager.image.tag | what version of the operator to run | defaults to appVersion |
 | controllerManager.manager.image.digest | content-addressable pin for the operator image. If set, the digest determines the pulled image. If both tag and digest are provided, the digest takes precedence; the rendered image may include `tag@digest` but the digest controls selection. | "" |
@@ -44,11 +44,11 @@ Settings | Description | Default |
 | useHostNetwork | run the operator pods with `hostNetwork: true`. Required in environments where the apiserver is only reachable on the host network. | false |
 | estimatedPackageCount | estimated number of packages to be installed on the cluster, this is used to calculate the resources for the operator controller. | 1 |
 | estimatedNodeCount | estimated number of nodes in the cluster, this is used to calculate the resources for the operator controller | 1 |
-| rbac.createSkyhookViewerRole | create a `ClusterRole` that grants read-only access to Skyhook and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
-| rbac.createSkyhookEditorRole | create a `ClusterRole` that grants read/write access to Skyhook and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
+| rbac.createSkyhookViewerRole | create a `ClusterRole` that grants read-only access to NodeWright and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
+| rbac.createSkyhookEditorRole | create a `ClusterRole` that grants read/write access to NodeWright and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
 | limitRange.default | namespace-wide default CPU/memory **limits** applied to every container that doesn't set its own. Set both `default` and `defaultRequest` (or omit `limitRange` entirely to disable). See [../docs/resource_management.md](../docs/resource_management.md). | cpu: 500m, memory: 512Mi |
 | limitRange.defaultRequest | namespace-wide default CPU/memory **requests** applied to every container that doesn't set its own. | cpu: 250m, memory: 256Mi |
-| cleanup.enabled | Automatically delete all Skyhook and DeploymentPolicy resources during helm uninstall. Recommended to prevent orphaned CRs. | true |
+| cleanup.enabled | Automatically delete all NodeWright and DeploymentPolicy resources during helm uninstall. Recommended to prevent orphaned CRs. | true |
 | cleanup.jobTimeoutSeconds | Hard deadline for the entire cleanup job during uninstall. The job will be killed if it exceeds this time. | 120 |
 
 ### NOTES
@@ -76,7 +76,7 @@ If you use public images (default operator `ghcr.io/nvidia/nodewright/operator` 
 
 ### Resource Management
 
-Skyhook uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your Skyhook CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.
+NodeWright uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your NodeWright CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.
 
 ## Versioning
 
@@ -91,7 +91,7 @@ This Helm chart follows independent versioning from the operator and agent compo
 
 ### Automatic Cleanup (Default Behavior)
 
-By default, the Helm chart includes a pre-delete hook that automatically cleans up all Skyhook and DeploymentPolicy custom resources before uninstalling. This prevents orphaned resources that could cause issues during reinstallation.
+By default, the Helm chart includes a pre-delete hook that automatically cleans up all NodeWright and DeploymentPolicy custom resources before uninstalling. This prevents orphaned resources that could cause issues during reinstallation.
 
 ```bash
 # Uninstall with automatic cleanup (default)
@@ -100,14 +100,14 @@ helm uninstall nodewright --namespace skyhook
 
 The pre-delete hook will:
 
-- Delete all Skyhook resources cluster-wide
+- Delete all NodeWright resources cluster-wide
 - Delete all DeploymentPolicy resources cluster-wide
 - Wait for finalizers to be processed
 - Proceed with uninstall even if cleanup times out (job deadline: 2 minutes, configurable via `cleanup.jobTimeoutSeconds`)
 
 ### Disabling Automatic Cleanup
 
-If you need to preserve Skyhook resources during uninstall (e.g., for backup/migration scenarios), disable the cleanup feature:
+If you need to preserve NodeWright resources during uninstall (e.g., for backup/migration scenarios), disable the cleanup feature:
 
 ```yaml
 # values.yaml

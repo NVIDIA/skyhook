@@ -85,7 +85,7 @@ Cancellation semantics depend on which stage the node is at when `apply` is flip
 
 When a NodeWright CR is deleted (`kubectl delete skyhook my-skyhook`):
 
-- **`enabled: true` packages**: The finalizer triggers uninstall pods, waits for completion on all nodes, then cleans up (uncordon nodes, remove CR labels/annotations, remove finalizer).
+- **`enabled: true` packages**: The finalizer triggers uninstall pods, waits for completion on all nodes, then removes this NodeWright's own cordon ownership and metadata. A node is uncordoned only once no `cordon_*` ownership annotations remain (other NodeWrights sharing the node may still hold it); the CR finalizer is removed last.
 - **`enabled: false` packages (or nil)**: No uninstall pods — state is cleaned up immediately. The package state remains on nodes so administrators can see what was previously applied.
 
 #### Deletion edge cases

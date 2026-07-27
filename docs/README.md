@@ -1,34 +1,34 @@
-# Skyhook Documentation
+# NodeWright Documentation
 
-This directory contains user and operator documentation for Skyhook. Here you'll find guides, examples, and reference material to help you deploy, configure, and secure Skyhook in your Kubernetes cluster.
+This directory contains user and operator documentation for NodeWright. Here you'll find guides, examples, and reference material to help you deploy, configure, and secure NodeWright in your Kubernetes cluster.
 
 ## Available Documentation
 
 - [Kyverno Policy Examples](kyverno/README.md):
-  Example Kyverno policies for restricting images or packages in Skyhook resources.
+  Example Kyverno policies for restricting images or packages in NodeWright resources.
 
 - **Features**
   - [Providing Secrets to Packages](providing_secrets_to_packages.md):
-    How to securely provide secrets to Skyhook-managed packages.
+    How to securely provide secrets to NodeWright-managed packages.
 
   - [Runtime Required](runtime_required.md):
-    How to use the runtime required taint and feature in Skyhook.
+    How to use the runtime required taint and feature in NodeWright.
 
   - [Interrupt Flow and Ordering](interrupt_flow.md):
-    Detailed explanation of how Skyhook handles packages with interrupts, including the interrupt sequence.
+    Detailed explanation of how NodeWright handles packages with interrupts, including the interrupt sequence.
 
-  - [Strict Ordering](ordering_of_skyhooks.md): How and why the operator applies each Skyhook Custom Resource in a deterministic sequential order.
+  - [Strict Ordering](ordering_of_skyhooks.md): How and why the operator applies each NodeWright Custom Resource in a deterministic sequential order.
 
   - [Deployment Policy and Compartments](deployment_policy.md): 
     Fine-grained rollout control with compartments, budgets, and strategies. Includes overlap resolution, safety mechanisms, and migration from interruptionBudget.
 
 - **Resources**
   - [Resource Management](resource_management.md):
-  How Skyhook manages CPU/memory resources using LimitRange, per-package overrides, and validation rules.
+  How NodeWright manages CPU/memory resources using LimitRange, per-package overrides, and validation rules.
 
-  - [Operator Resources At Scale](operator_resources_at_scale.md): Considerations for how cpu and memory have to change for the Operator pods as cluster nodes and skyhook packages change.
+  - [Operator Resources At Scale](operator_resources_at_scale.md): Considerations for how cpu and memory have to change for the Operator pods as cluster nodes and nodewright packages change.
 
-  - [Operator Status Definitions](operator-status-definitions.md): Definitions of Status, State, Stage, and Condition concepts used throughout the Skyhook operator.
+  - [Operator Status Definitions](operator-status-definitions.md): Definitions of Status, State, Stage, and Condition concepts used throughout the NodeWright operator.
 
   - [Webhook Bootstrap Lease](designs/webhook-bootstrap-lease.md): Why the admission-webhook cert bootstrap runs on a dedicated leader-election lease, and the runbook for upgrading from v0.7.x (where the new lease does not yet exist).
 
@@ -37,6 +37,6 @@ This directory contains user and operator documentation for Skyhook. Here you'll
       Developer workflow notes, including local kind clusters and Kubernetes test version ownership.
 
   - [Releases](releases.md):
-      Release notes and upgrade information for Skyhook.
+      Release notes and upgrade information for NodeWright.
 
   - [CI test pools](ci-test-pools.md) — how the chainsaw e2e suite is partitioned across parallel CI jobs.

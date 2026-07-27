@@ -49,10 +49,10 @@ A node is considered "new" if it has no NodeWright annotations. This works for b
 
 The taint is removed from a node when all CRs with `runtimeRequired: true` that target that node are complete **on that specific node**.
 
-**Important**: Taint removal is per-node, not per-skyhook. This means:
+**Important**: Taint removal is per-node, not per-NodeWright. This means:
 
-- Node A's taint is removed when all runtime-required nodewrights complete on Node A
-- Node A does NOT wait for Node B to complete those same nodewrights
+- Node A's taint is removed when all runtime-required NodeWrights complete on Node A
+- Node A does NOT wait for Node B to complete those same NodeWrights
 - If Node B is stuck or failing, Node A can still have its taint removed and become available
 
 This per-node behavior prevents deadlocks where a few bad nodes would block all other healthy nodes from becoming available.
@@ -65,4 +65,4 @@ This per-node behavior prevents deadlocks where a few bad nodes would block all 
 
 This is useful when you want to gate other work behind the successful completion of some set of NodeWright Packages. This can be for security reasons or for scheduling.
 
-**NOTE:** No additional toleration is required, nodewright auto tolerates this (env:`runtimeRequiredTaint`) taint.
+**NOTE:** No additional toleration is required; NodeWright automatically tolerates this (`runtimeRequiredTaint`) taint.
