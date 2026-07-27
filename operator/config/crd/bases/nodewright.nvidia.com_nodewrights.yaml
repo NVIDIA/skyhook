@@ -539,6 +539,13 @@ spec:
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                       type: object
+                    stageTimeout:
+                      description: |-
+                        StageTimeout bounds the wall-clock runtime of each of this package's stage Jobs
+                        (mapped to the Job's activeDeadlineSeconds), all retries and reboot time included.
+                        A stage that runs past it is failed and surfaced as erroring. Unset uses the
+                        operator default (JOB_STAGE_TIMEOUT); "0" disables the deadline for this package.
+                      type: string
                     uninstall:
                       description: Uninstall configures explicit uninstall support
                         for this package.
