@@ -10,9 +10,9 @@ Runtime required is a special mode that packages can be run in. This mode is for
 1. That same taint must be set as the chart value `controllerManager.manager.env.runtimeRequiredTaint`
     1. The default value for this taint is `skyhook.nvidia.com=runtime-required:NoSchedule`
 
-## Required Skyhooks
+## Required NodeWrights
 
-Once the pre-requisites are satisfied any Skyhook Custom Resource (SCR) may be marked with `runtimeRequired: true`. This flag indicates that all packages within this SCR must complete
+Once the pre-requisites are satisfied any NodeWright Custom Resource (CR) may be marked with `runtimeRequired: true`. This flag indicates that all packages within this CR must complete
 before the nodes that it targets are considered available for general use.
 
 ## Auto-tainting new nodes
@@ -21,7 +21,7 @@ before the nodes that it targets are considered available for general use.
 
 If you cannot control node tainting at provisioning time, `autoTaintNewNodes` provides a fallback. Note that there is a small window between when a node joins the cluster and when the operator's reconcile loop applies the taint, during which workloads could theoretically be scheduled on the node.
 
-To enable, set `autoTaintNewNodes: true` alongside `runtimeRequired: true` on the Skyhook CR:
+To enable, set `autoTaintNewNodes: true` alongside `runtimeRequired: true` on the NodeWright CR:
 
 ```yaml
 spec:
@@ -31,28 +31,28 @@ spec:
 
 When enabled, the operator automatically applies the runtime-required taint to nodes that:
 
-1. Match the Skyhook's node selector
+1. Match the NodeWright's node selector
 2. Do not already have the runtime-required taint
-3. Have no `skyhook.nvidia.com/*` annotations (i.e., have never been touched by the Skyhook operator)
+3. Have no `skyhook.nvidia.com/*` annotations (i.e., have never been touched by the NodeWright operator)
 
-A node is considered "new" if it has no Skyhook annotations. This works for both initial cluster setup (day 0) and nodes joining an existing cluster (day 2+). Nodes that have already been processed by Skyhook (and had their taint removed after completion) will not be re-tainted because they retain their Skyhook annotations.
+A node is considered "new" if it has no NodeWright annotations. This works for both initial cluster setup (day 0) and nodes joining an existing cluster (day 2+). Nodes that have already been processed by NodeWright (and had their taint removed after completion) will not be re-tainted because they retain their NodeWright annotations.
 
-**Exception: reboot with `REAPPLY_ON_REBOOT=true`.** When the operator is configured with `REAPPLY_ON_REBOOT=true` and a Skyhook has both `runtimeRequired: true` and `autoTaintNewNodes: true`, a node whose boot ID changes is treated as new for taint purposes. The runtime-required taint is re-applied alongside the state reset in the same atomic operation, ensuring no workloads can schedule on the rebooted node before Skyhook finishes re-applying. The taint is removed again by the normal completion path once all runtime-required Skyhooks finish on that node.
+**Exception: reboot with `REAPPLY_ON_REBOOT=true`.** When the operator is configured with `REAPPLY_ON_REBOOT=true` and a NodeWright has both `runtimeRequired: true` and `autoTaintNewNodes: true`, a node whose boot ID changes is treated as new for taint purposes. The runtime-required taint is re-applied alongside the state reset in the same atomic operation, ensuring no workloads can schedule on the rebooted node before NodeWright finishes re-applying. The taint is removed again by the normal completion path once all runtime-required NodeWrights finish on that node.
 
 ## What runtimeRequired: true will NOT do
 
-1. Without `autoTaintNewNodes: true`, it will NOT add the taint to any nodes targeted by a SCR with `runtimeRequired: true`
+1. Without `autoTaintNewNodes: true`, it will NOT add the taint to any nodes targeted by a CR with `runtimeRequired: true`
 
 ## Details
 
 ## When is the runtime-required taint removed from a node
 
-The taint is removed from a node when all SCRs with `runtimeRequired: true` that target that node are complete **on that specific node**.
+The taint is removed from a node when all CRs with `runtimeRequired: true` that target that node are complete **on that specific node**.
 
-**Important**: Taint removal is per-node, not per-skyhook. This means:
+**Important**: Taint removal is per-node, not per-NodeWright. This means:
 
-- Node A's taint is removed when all runtime-required skyhooks complete on Node A
-- Node A does NOT wait for Node B to complete those same skyhooks
+- Node A's taint is removed when all runtime-required NodeWrights complete on Node A
+- Node A does NOT wait for Node B to complete those same NodeWrights
 - If Node B is stuck or failing, Node A can still have its taint removed and become available
 
 This per-node behavior prevents deadlocks where a few bad nodes would block all other healthy nodes from becoming available.
@@ -63,6 +63,6 @@ This per-node behavior prevents deadlocks where a few bad nodes would block all 
 
 ## Why would you use runtime required
 
-This is useful when you want to gate other work behind the successful completion of some set of Skyhook Packages. This can be for security reasons or for scheduling.
+This is useful when you want to gate other work behind the successful completion of some set of NodeWright Packages. This can be for security reasons or for scheduling.
 
-**NOTE:** No additional toleration is required, skyhook auto tolerates this (env:`runtimeRequiredTaint`) taint.
+**NOTE:** No additional toleration is required; NodeWright automatically tolerates this (`runtimeRequiredTaint`) taint.

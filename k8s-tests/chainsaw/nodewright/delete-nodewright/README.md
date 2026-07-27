@@ -1,26 +1,26 @@
-# Delete Skyhook Test
+# Delete NodeWright Test
 
 ## Purpose
 
-Validates that deleting a Skyhook resource properly cleans up all associated resources and metrics.
+Validates that deleting a NodeWright resource properly cleans up all associated resources and metrics.
 
 ## Test Scenario
 
 1. Reset state from previous runs
-2. Apply a skyhook with multiple packages (dexter, spencer, foobar)
-3. Wait for the skyhook to complete
+2. Apply a nodewright with multiple packages (dexter, spencer, foobar)
+3. Wait for the nodewright to complete
 4. Verify all metrics are present:
    - Node target count
    - Node status count
    - Package state counts
    - Package stage counts
    - Rollout metrics
-5. Delete the skyhook
+5. Delete the nodewright
 6. Verify all metrics are cleaned up
 
 ## Key Features Tested
 
-- Skyhook deletion
+- NodeWright deletion
 - Metrics cleanup after deletion
 - Resource cleanup (configmaps, owner references)
 - Multiple package handling
@@ -28,5 +28,5 @@ Validates that deleting a Skyhook resource properly cleans up all associated res
 ## Files
 
 - `chainsaw-test.yaml` - Main test configuration
-- `nodewright.yaml` - Skyhook resource definition
+- `nodewright.yaml` - NodeWright resource definition
 - `assert.yaml` - State assertions

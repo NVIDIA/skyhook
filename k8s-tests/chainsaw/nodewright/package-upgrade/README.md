@@ -4,7 +4,7 @@
 
 Covers the package **upgrade path** in isolation: a version bump must run
 the `upgrade` stage (not `apply`), swap the ConfigMap to the new version,
-fire the interrupt cycle, and return the Skyhook to `complete` with the
+fire the interrupt cycle, and return the NodeWright to `complete` with the
 package at `stage=post-interrupt, state=complete`.
 
 Narrowed from the original combined uninstall/downgrade/upgrade test —
@@ -27,7 +27,7 @@ upgrade.
      created with the expected args (`upgrade` / `upgrade-check`).
    - Node returns to `complete` with the new version at
      `stage=post-interrupt, state=complete`.
-   - Skyhook status reaches `complete` with `packageList: nullptr:2.0.1`
+   - NodeWright status reaches `complete` with `packageList: nullptr:2.0.1`
      and `observedGeneration: 4`.
    - A new ConfigMap `...-nullptr-2.0.1` exists with the updated content
      (per-version ConfigMap naming).
@@ -39,14 +39,14 @@ upgrade.
 - Per-version ConfigMap creation (new version gets a fresh ConfigMap with
   current spec content)
 - Full interrupt cycle post-upgrade (cordon, interrupt pod, post-interrupt)
-- Skyhook status recovers to `complete` after the upgrade finishes
+- NodeWright status recovers to `complete` after the upgrade finishes
 
 ## Files
 
 - `chainsaw-test.yaml` — Main test: initial install → upgrade, with inline
-  node/pod/skyhook assertions for sequential ordering
-- `nodewright.yaml` — Initial Skyhook with `nullptr:2.0.0`
+  node/pod/nodewright assertions for sequential ordering
+- `nodewright.yaml` — Initial NodeWright with `nullptr:2.0.0`
 - `update.yaml` — Patch bumping to `nullptr:2.0.1` with changed ConfigMap
-- `assert-install.yaml` — Initial install assertions (node lifecycle, skyhook
+- `assert-install.yaml` — Initial install assertions (node lifecycle, nodewright
   status, ConfigMap) asserted in parallel
 - `assert-cm-update.yaml` — New ConfigMap assertion after upgrade

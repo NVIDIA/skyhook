@@ -16,6 +16,21 @@ A basic example of using a container overlay
 1. Run `make fmt` to format the code
 1. Push code to and make an MR
 
+### Go agent execution contracts
+
+The Go rewrite under `agent/go` shares execution policy between steps and
+interrupts through `execution.Config`. A `Config` composes the host root mount,
+the child-visible step and package directories, and the stdout and stderr
+writers that receive raw command output. Operations report `execution.Status`:
+`execution.StatusSuccess` means the operation satisfied its execution policy,
+while `execution.StatusFailed` means it did not.
+
+Each Go interrupt owns its command construction and execution. The `Interrupt`
+contract exposes `Type` for the wire identity, `Run` for execution using an
+`execution.Config`, and `Serialize` for the operator-facing representation.
+Retry state and completion flags remain orchestration concerns outside the
+interrupt implementations.
+
 ### Container Image Build
 
 1. Do code changes

@@ -1,4 +1,4 @@
-# Skyhook Upgrade Test
+# NodeWright Upgrade Test
 
 ## Purpose
 
@@ -10,7 +10,7 @@ Tests the operator's ability to handle state migration during operator version u
 2. This triggers an infinite reconciliation loop: upgrade -> config -> upgrade -> config
 3. Update the operator version
 4. Verify the migration fixes the state and stops the loop
-5. Assert the skyhook completes normally
+5. Assert the nodewright completes normally
 
 ## Key Features Tested
 
@@ -21,8 +21,8 @@ Tests the operator's ability to handle state migration during operator version u
 
 ## Files
 
-- `chainsaw-test.yaml` - Main test configuration with all assertions inline (nodes, skyhook status) for sequential ordering through pre-migration and post-migration states
-- `nodewright.yaml` - Skyhook definition
+- `chainsaw-test.yaml` - Main test configuration with all assertions inline (nodes, nodewright status) for sequential ordering through pre-migration and post-migration states
+- `nodewright.yaml` - NodeWright definition
 
 ## Notes
 

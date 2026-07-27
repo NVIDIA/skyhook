@@ -1,6 +1,6 @@
 # Node Affinity Test
 
-This test validates the node affinity configuration feature for the Skyhook Operator Helm chart.
+This test validates the node affinity configuration feature for the NodeWright Operator Helm chart.
 
 ## Test Overview
 

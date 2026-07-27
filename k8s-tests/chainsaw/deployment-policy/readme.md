@@ -1,6 +1,6 @@
 # Deployment Policy Tests
 
-This directory contains end-to-end tests for the Skyhook deployment policy feature. These tests validate rollout strategies, compartment management, and budget enforcement for controlled node deployments.
+This directory contains end-to-end tests for the NodeWright deployment policy feature. These tests validate rollout strategies, compartment management, and budget enforcement for controlled node deployments.
 
 ## Test Cluster Requirements
 

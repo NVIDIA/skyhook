@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Verifies that a corrupted `nodeState_<skyhook>` annotation surfaces as a
-dedicated user-visible `NodeStateMalformed` condition on the Skyhook (not a
+Verifies that a corrupted `nodeState_<nodewright>` annotation surfaces as a
+dedicated user-visible `NodeStateMalformed` condition on the NodeWright (not a
 silent reconcile error), and that repairing the annotation clears the
 condition on the next reconcile.
 
@@ -15,7 +15,7 @@ Two controller changes make this work:
    this, `BuildState` would abort the entire reconcile before any condition
    could be set, deadlocking the operator on the malformed annotation.
 2. `UpdateNodeStateMalformedCondition` (new, in
-   `internal/controller/cluster_state_v2.go`) iterates the Skyhook's nodes,
+   `internal/controller/cluster_state_v2.go`) iterates the NodeWright's nodes,
    collects the names of any whose nodeState annotation cannot be parsed,
    and sets `NodeStateMalformed` with `Reason=ParseError`
    and a message listing them. The condition is **stage-agnostic** —
@@ -27,19 +27,19 @@ Two controller changes make this work:
 
 ## Test Scenario
 
-1. Install a minimal Skyhook (one package, no uninstall configured). Wait
+1. Install a minimal NodeWright (one package, no uninstall configured). Wait
    for `status: complete`.
-2. Save the valid `nodeState_<skyhook>` annotation to
+2. Save the valid `nodeState_<nodewright>` annotation to
    `/tmp/malformed-node-state-backup.json`, then overwrite it on the test
    node with invalid JSON (`{not-valid-json`).
-3. Assert the Skyhook has condition
+3. Assert the NodeWright has condition
    `NodeStateMalformed` with `status=True`,
    `reason=ParseError`, and a message containing
    `nodeState annotation cannot be parsed on 1 node(s)`.
 4. Restore the saved annotation.
 5. Assert the `NodeStateMalformed` condition is absent
    (`length(conditions[?type == '...NodeStateMalformed']) == 0`) and the
-   Skyhook is `status: complete`.
+   NodeWright is `status: complete`.
 
 No uninstall is required — that's the point of the dedicated condition.
 
@@ -55,4 +55,4 @@ No uninstall is required — that's the point of the dedicated condition.
 ## Files
 
 - `chainsaw-test.yaml` — Main test: install → corrupt → assert condition → repair → assert condition gone
-- `nodewright.yaml` — Minimal Skyhook with one package (`mypkg:2.1.4`, no uninstall block)
+- `nodewright.yaml` — Minimal NodeWright with one package (`mypkg:2.1.4`, no uninstall block)

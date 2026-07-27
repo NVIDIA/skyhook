@@ -1,8 +1,8 @@
-# Skyhook Versioning Strategy
+# NodeWright Versioning Strategy
 
-Skyhook uses independent versioning for three components, all following [Semantic Versioning](https://semver.org/):
+NodeWright uses independent versioning for three components, all following [Semantic Versioning](https://semver.org/):
 
-1. **Operator** - Kubernetes operator that manages Skyhook resources
+1. **Operator** - Kubernetes operator that manages NodeWright resources
 2. **Agent** - Container that executes package operations on nodes  
 3. **Chart** - Helm chart for deploying the operator
    1. NOTE: the versioning of the chat also includes versioning of the expected agent version. 
@@ -58,7 +58,7 @@ image: "ghcr.io/nvidia/skyhook/operator:0.7.0"
 
 ## Release Branching Strategy
 
-Skyhook uses **release branches** to manage patches and maintenance releases:
+NodeWright uses **release branches** to manage patches and maintenance releases:
 
 ```bash
 release/v0.8.x    # Contains operator v0.8.0 + agent v6.3.0 + chart v0.8.x

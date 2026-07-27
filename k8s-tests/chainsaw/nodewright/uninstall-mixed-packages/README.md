@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Covers a Skyhook with two packages — one `uninstall.enabled: true`
+Covers a NodeWright with two packages — one `uninstall.enabled: true`
 (`pkg-remove`) and one `uninstall.enabled: false` (`pkg-keep`) — and
 verifies two independent properties:
 
@@ -18,7 +18,7 @@ verifies two independent properties:
 
 ## Test Scenario
 
-1. Install both packages, wait for Skyhook `status: complete`.
+1. Install both packages, wait for NodeWright `status: complete`.
 2. Set `uninstall.apply: true` on `pkg-remove`. Assert:
    - An uninstall pod is created for `pkg-remove-2.1.4` with the
      `uninstall` / `uninstall-check` init containers.
@@ -27,13 +27,13 @@ verifies two independent properties:
 3. Remove `pkg-keep` from `spec.packages`. Assert:
    - `pkg-keep`'s node-state entry is **still present** (operator stops
      tracking but preserves the entry as a marker).
-   - Skyhook is `status: complete` (no tracked packages remaining).
+   - NodeWright is `status: complete` (no tracked packages remaining).
 
 ## Key Features Tested
 
 - Per-package uninstall targeting (uninstall pod labeled for the specific
   package only)
-- Non-interference: other packages in the Skyhook stay at their installed
+- Non-interference: other packages in the NodeWright stay at their installed
   stage during an uninstall
 - Webhook allows spec removal of `uninstall.enabled: false` packages
 - `nodeState` preservation for `enabled: false` removal (D2 semantic: non-
@@ -42,6 +42,6 @@ verifies two independent properties:
 ## Files
 
 - `chainsaw-test.yaml` — Main test: install both → uninstall one → remove the other from spec
-- `nodewright.yaml` — Skyhook with `pkg-remove` (enabled: true) and `pkg-keep` (enabled: false)
+- `nodewright.yaml` — NodeWright with `pkg-remove` (enabled: true) and `pkg-keep` (enabled: false)
 - `update-uninstall-one.yaml` — Patch setting `uninstall.apply: true` on `pkg-remove`
 - `update-remove-keep.yaml` — Patch removing `pkg-keep` from `spec.packages`

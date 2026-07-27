@@ -130,7 +130,7 @@ kubectl nodewright version --timeout 10s
 
 ### Pause/Resume Commands
 
-Control Skyhook processing state.
+Control NodeWright processing state.
 
 > **Note:** Requires operator v0.8.0+. See [Compatibility](#compatibility) for details.
 
@@ -145,7 +145,7 @@ kubectl nodewright resume my-skyhook
 
 ### Disable/Enable Commands
 
-Completely disable or re-enable a Skyhook.
+Completely disable or re-enable a NodeWright.
 
 > **Note:** Requires operator v0.8.0+. See [Compatibility](#compatibility) for details.
 
@@ -160,7 +160,7 @@ kubectl nodewright enable my-skyhook
 
 ### Reset Command
 
-Reset all package state for a Skyhook, causing re-execution from the beginning.
+Reset all package state for a NodeWright, causing re-execution from the beginning.
 
 ```bash
 # Reset all nodes for a Skyhook (also resets batch state by default)
@@ -216,7 +216,7 @@ prompts.
 kubectl nodewright update-state <skyhook-name> <package> <version> <stage> <state>
 ```
 
-> **⚠️ Pause the Skyhook before running `update-state`.**
+> **⚠️ Pause the NodeWright before running `update-state`.**
 >
 > `update-state` performs a read-modify-write on the node-state annotation and
 > uses a merge patch with no resource-version check. The patch rewrites the
@@ -225,7 +225,7 @@ kubectl nodewright update-state <skyhook-name> <package> <version> <stage> <stat
 > same annotation will also be clobbered. If the operator reconciles the
 > node between the CLI's read and write, the operator can immediately
 > overwrite the manual edit — at best wasting the operation, at worst racing
-> the operator into an inconsistent state. Always pause the Skyhook
+> the operator into an inconsistent state. Always pause the NodeWright
 > (`kubectl nodewright pause <name> --confirm`) before running this command,
 > and resume only when finished.
 >
@@ -259,8 +259,8 @@ The global `--dry-run` flag is honored: the command prints the set of nodes
 it would patch and exits without writing.
 
 By default `update-state` targets only nodes that already have a `nodeState`
-entry for the named Skyhook. If `--node` names a node that does not exist
-or has no state for the Skyhook, the command warns and skips that node
+entry for the named NodeWright. If `--node` names a node that does not exist
+or has no state for the NodeWright, the command warns and skips that node
 rather than failing.
 
 #### `--add`
@@ -272,7 +272,7 @@ manually deleted.
 
 `--add` **requires** either `--node` or `--selector` so the scope of the
 creation is explicit. Without one of these flags, `--add` would apply to
-every node in the cluster that matches the Skyhook's selector, which is
+every node in the cluster that matches the NodeWright's selector, which is
 far too broad for a creation operation — the CLI rejects this combination
 with an error.
 
@@ -317,7 +317,7 @@ kubectl nodewright deployment-policy reset gpu-init --dry-run
 kubectl nodewright dp reset gpu-init --confirm
 ```
 
-The `deployment-policy reset` command resets the batch processing state for all compartments in the specified Skyhook, including:
+The `deployment-policy reset` command resets the batch processing state for all compartments in the specified NodeWright, including:
 
 - Current batch number (reset to 1)
 - Consecutive failure count
@@ -339,7 +339,7 @@ See [Deployment Policy documentation](deployment_policy.md) for details on auto-
 
 ### Node Commands
 
-Manage Skyhook nodes across the cluster.
+Manage NodeWright nodes across the cluster.
 
 ```bash
 # List all nodes targeted by a Skyhook
@@ -373,7 +373,7 @@ kubectl nodewright node unignore worker-1
 
 ### Package Commands
 
-Manage Skyhook packages.
+Manage NodeWright packages.
 
 ```bash
 # Query package status across nodes
@@ -484,7 +484,7 @@ kubectl nodewright reset my-skyhook --skip-batch-reset --confirm
 ### Surgical Recovery
 
 When a single package on a single node is wedged and a full reset is too
-disruptive, pause the Skyhook, edit the recorded state directly, then
+disruptive, pause the NodeWright, edit the recorded state directly, then
 resume:
 
 ```bash

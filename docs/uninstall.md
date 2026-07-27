@@ -83,9 +83,9 @@ Cancellation semantics depend on which stage the node is at when `apply` is flip
 
 ### CR Deletion (Finalizer)
 
-When a Skyhook CR is deleted (`kubectl delete skyhook my-skyhook`):
+When a NodeWright CR is deleted (`kubectl delete skyhook my-skyhook`):
 
-- **`enabled: true` packages**: The finalizer triggers uninstall pods, waits for completion on all nodes, then cleans up (uncordon nodes, remove SCR labels/annotations, remove finalizer).
+- **`enabled: true` packages**: The finalizer triggers uninstall pods, waits for completion on all nodes, then removes this NodeWright's own cordon ownership and metadata. A node is uncordoned only once no `cordon_*` ownership annotations remain (other NodeWrights sharing the node may still hold it); the CR finalizer is removed last.
 - **`enabled: false` packages (or nil)**: No uninstall pods — state is cleaned up immediately. The package state remains on nodes so administrators can see what was previously applied.
 
 #### Deletion edge cases
@@ -95,14 +95,14 @@ The finalizer handles a few edge cases where the normal "wait for uninstall to c
 | State at deletion | Outcome | Condition / Event |
 |---|---|---|
 | `nodeState` annotation unreadable on any node | **Blocked.** The finalizer cannot safely decide what to preserve or what still needs uninstalling. Repair the annotation (or delete it) on the affected node, then reconciliation proceeds. | `DeletionBlocked` / `Reason: MalformedNodeState` |
-| Skyhook is **paused** AND at least one `uninstall.enabled=true` package is still tracked in `nodeState` | **Blocked.** A paused Skyhook can't drive uninstall (`processSkyhooksPerNode` short-circuits on pause). Unpause so uninstall can complete, then deletion proceeds. | `DeletionBlocked` / `Reason: PausedWithPendingUninstall` |
-| Skyhook is **disabled** AND at least one `uninstall.enabled=true` package is still tracked in `nodeState` | **Blocked.** A disabled Skyhook also can't drive uninstall (`processSkyhooksPerNode` short-circuits on disable). `uninstall.enabled=true` is an explicit request to run uninstall scripts before the CR is removed — silently deleting would leave host-side state the user asked to be cleaned. Re-enable the Skyhook so uninstall can run. | `DeletionBlocked` / `Reason: DisabledWithPendingUninstall` |
+| NodeWright is **paused** AND at least one `uninstall.enabled=true` package is still tracked in `nodeState` | **Blocked.** A paused NodeWright can't drive uninstall (`processSkyhooksPerNode` short-circuits on pause). Unpause so uninstall can complete, then deletion proceeds. | `DeletionBlocked` / `Reason: PausedWithPendingUninstall` |
+| NodeWright is **disabled** AND at least one `uninstall.enabled=true` package is still tracked in `nodeState` | **Blocked.** A disabled NodeWright also can't drive uninstall (`processSkyhooksPerNode` short-circuits on disable). `uninstall.enabled=true` is an explicit request to run uninstall scripts before the CR is removed — silently deleting would leave host-side state the user asked to be cleaned. Re-enable the NodeWright so uninstall can run. | `DeletionBlocked` / `Reason: DisabledWithPendingUninstall` |
 | Paused or disabled, but no uninstall-enabled packages are tracked in `nodeState` (all packages are `uninstall.enabled=false`, or their uninstall already completed) | **Deletion proceeds** normally — pause/disable only matter when there is uninstall work to drive. `uninstall.enabled=false` packages are treated as complete in the finalizer, and their `nodeState` entries are preserved by `CleanupSCRMetadata` (D2 semantics: non-absent entry means files remain on host). | — |
 
 Notes:
 
-- `DeletionBlocked` is cleared automatically once the blocking condition is resolved (annotation repaired, Skyhook unpaused, or the pending work is no longer present).
-- Forcing deletion of a blocked Skyhook requires manually removing the `skyhook.nvidia.com/skyhook` finalizer (`kubectl patch skyhook <name> --type=merge -p '{"metadata":{"finalizers":null}}'`). Doing this bypasses Phase 3 cleanup entirely: per-Skyhook labels/annotations/conditions are **not** removed and nodes are **not** uncordoned — the caller is responsible for any residual cleanup.
+- `DeletionBlocked` is cleared automatically once the blocking condition is resolved (annotation repaired, NodeWright unpaused, or the pending work is no longer present).
+- Forcing deletion of a blocked NodeWright requires manually removing the `skyhook.nvidia.com/skyhook` finalizer (`kubectl patch skyhook <name> --type=merge -p '{"metadata":{"finalizers":null}}'`). Doing this bypasses Phase 3 cleanup entirely: per-Skyhook labels/annotations/conditions are **not** removed and nodes are **not** uncordoned — the caller is responsible for any residual cleanup.
 
 ### Downgrade (version change)
 
@@ -175,7 +175,7 @@ kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.item
 
 ### Blocked dependency
 
-Check the Skyhook conditions:
+Check the NodeWright conditions:
 ```bash
 kubectl get skyhook <name> -o jsonpath='{.status.conditions}' | jq
 ```
@@ -194,7 +194,7 @@ If the webhook rejects removal of an `enabled: true` package:
 
 ### CR deletion deadlocks when an install is stuck at `erroring`
 
-**Symptom.** `kubectl delete skyhook <name>` hangs indefinitely. The Skyhook stays around with a `DeletionTimestamp` set and the `skyhook.nvidia.com/skyhook` finalizer attached. No uninstall pods are created for an `uninstall.enabled: true` package that's still tracked in `nodeState`.
+**Symptom.** `kubectl delete skyhook <name>` hangs indefinitely. The NodeWright stays around with a `DeletionTimestamp` set and the `skyhook.nvidia.com/skyhook` finalizer attached. No uninstall pods are created for an `uninstall.enabled: true` package that's still tracked in `nodeState`.
 
 **Why.** The finalizer drives uninstall through the same `HandleUninstallRequests` path as explicit uninstall. That path only transitions a package from an install stage (`apply`, `config`, `interrupt`, `post-interrupt`, `upgrade`) to `uninstall` when the package is in **`state: complete`** on the node. If the install never reached `complete` — e.g., `uninstall.sh` wasn't yet exercised because `apply.sh` is crash-looping in `state: erroring` — the uninstall trigger is skipped, so the finalizer's "wait for pending uninstall" phase never progresses.
 
@@ -216,7 +216,7 @@ Any rows returned are nodes the finalizer is waiting on.
 
 1. **Fix the underlying install.** Inspect `kubectl logs -n skyhook <pod> -c <pkg>-apply` and correct the script, config, or environment so the install completes. Once the node reaches `stage: config` / `state: complete` (or `post-interrupt/complete` if the package has an interrupt), the finalizer's next reconcile will transition it to `uninstall` and proceed.
 
-2. **Reset the affected node's Skyhook state.** Use the CLI:
+2. **Reset the affected node's NodeWright state.** Use the CLI:
 
     ```bash
     kubectl skyhook reset <skyhook-name> --node <node-name> --confirm
@@ -238,7 +238,7 @@ Any rows returned are nodes the finalizer is waiting on.
 
 **Rare.** Requires a specific sequence: the uninstall pod has already finished, the node has transitioned to `stage: uninstall-interrupt` / `state: in_progress`, the interrupt pod is **not currently running** (never fired, was manually deleted, or the kubelet evicted it), and the user then edits the package to remove the `interrupt:` block.
 
-**Symptom.** The node's `nodeState` entry for the package is pinned at `stage: uninstall-interrupt` / `state: in_progress`. No new pod is created, no state transition occurs, and the Skyhook never returns to `complete`. Reconciles are a no-op for this package.
+**Symptom.** The node's `nodeState` entry for the package is pinned at `stage: uninstall-interrupt` / `state: in_progress`. No new pod is created, no state transition occurs, and the NodeWright never returns to `complete`. Reconciles are a no-op for this package.
 
 **Why.** Once the uninstall pod succeeds, `HandleCompletePod` commits the node to `stage: uninstall-interrupt` only when `package.HasInterrupt()` was true at that moment. The next reconcile's `ProcessInterrupt` re-checks `HasInterrupt` from the *current* spec to decide whether to (re-)create the interrupt pod — if the user has since removed the `interrupt:` block, the check fails and no pod is spawned. `ApplyPackage` short-circuits `stage == uninstall-interrupt` to a no-op (the interrupt machinery is supposed to drive it), and `HandleUninstallRequests` only calls `RemoveState` once `state == complete` — which will never happen without a pod to succeed. The node is permanently stranded.
 
@@ -278,11 +278,11 @@ An entry from the first command with no rows from the second confirms the strand
 
 ### `uninstall.apply: true` on a package that was never installed is a silent no-op
 
-**Symptom.** A package with `uninstall.enabled: true` / `uninstall.apply: true` is in the spec of a newly-applied (or extended) Skyhook. Reconcile runs, no uninstall pod spawns, and the package is **never installed** either. The Skyhook looks idle for that package — no events, no error condition, nothing in the status to explain the silence.
+**Symptom.** A package with `uninstall.enabled: true` / `uninstall.apply: true` is in the spec of a newly-applied (or extended) NodeWright. Reconcile runs, no uninstall pod spawns, and the package is **never installed** either. The NodeWright looks idle for that package — no events, no error condition, nothing in the status to explain the silence.
 
 **Why.** The reconciler treats `IsUninstalling() && absent from nodeState` as the terminal "uninstalled" state (per D2). A brand-new package is also absent from nodeState, which collides with that signal: `shouldSkipApplyForUninstall` returns true (apply requested + absent), so the install pipeline is skipped. The package is interpreted as "already uninstalled, nothing to do." The webhook only validates `apply: true` requires `enabled: true` — it has no way to tell "never-installed" from "fully-uninstalled" at admission time.
 
-**Most common trigger.** Copy-pasting a working Skyhook YAML from one cluster to another and forgetting to flip `apply` back to `false` before applying. Also reachable by applying a Skyhook with `apply: true` set in a manifest generated by a tool that tracks "last known good" config.
+**Most common trigger.** Copy-pasting a working NodeWright YAML from one cluster to another and forgetting to flip `apply` back to `false` before applying. Also reachable by applying a NodeWright with `apply: true` set in a manifest generated by a tool that tracks "last known good" config.
 
 **How to confirm.** Package is in spec with `apply: true, enabled: true`, but no entry in any node's `nodeState_<skyhook-name>` annotation:
 
@@ -302,9 +302,9 @@ uninstall:
   apply: false
 ```
 
-Re-apply the Skyhook. The install pipeline will engage on the next reconcile.
+Re-apply the NodeWright. The install pipeline will engage on the next reconcile.
 
-**Long-term fix.** Either emit an admission warning for `apply: true` on a package where the webhook sees no node state, or raise an explicit Skyhook condition (`Skipped: apply=true on never-installed package`) so the silence is surfaced in `kubectl describe`.
+**Long-term fix.** Either emit an admission warning for `apply: true` on a package where the webhook sees no node state, or raise an explicit NodeWright condition (`Skipped: apply=true on never-installed package`) so the silence is surfaced in `kubectl describe`.
 
 ### Changing `version` while `uninstall.apply: true` is in flight leaves the new version uninstalled
 
@@ -338,23 +338,23 @@ If spec shows the new version and no node state references the new `name|version
 
 **Long-term fix.** `HandleCancelledUninstalls` should delete any in-flight uninstall pod when it resets the stage, instead of leaving cleanup to `ValidateRunningPackages`.
 
-### `CleanupSCRMetadata` can over-delete annotations when a Skyhook name collides with a taint-key suffix
+### `CleanupSCRMetadata` can over-delete annotations when a NodeWright name collides with a taint-key suffix
 
-**Unlikely, operational.** During CR-delete cleanup (`HandleFinalizer` Phase 3), `CleanupSCRMetadata` removes any `skyhook.nvidia.com/*` annotation or label whose key ends with `_<skyhookName>`. That suffix-match also catches the `skyhook.nvidia.com/autoTaint_<taintKey>` annotation written by `AutoTaintNewNodes` — **but only if the Skyhook's name exactly equals the taint key's value**. In practice both sides are user-chosen strings; a collision requires a Skyhook named to match a taint key (e.g., a Skyhook literally named `runtime-required` in a cluster where the runtime-required taint uses that string).
+**Unlikely, operational.** During CR-delete cleanup (`HandleFinalizer` Phase 3), `CleanupSCRMetadata` removes any `skyhook.nvidia.com/*` annotation or label whose key ends with `_<skyhookName>`. That suffix-match also catches the `skyhook.nvidia.com/autoTaint_<taintKey>` annotation written by `AutoTaintNewNodes` — **but only if the NodeWright's name exactly equals the taint key's value**. In practice both sides are user-chosen strings; a collision requires a NodeWright named to match a taint key (e.g., a NodeWright literally named `runtime-required` in a cluster where the runtime-required taint uses that string).
 
-**Impact if it happens.** The `autoTaint_*` annotation is removed when the Skyhook is deleted, losing the audit trail of which nodes were auto-tainted. The taint itself is a separate concern (managed by `HandleAutoTaint`) and is not affected. In real clusters this is almost never reachable because Skyhook names tend to be descriptive (`gpu-drivers`, `kernel-tune`) while taint keys tend to be namespaced (`nvidia.com/gpu`, `skyhook.nvidia.com`).
+**Impact if it happens.** The `autoTaint_*` annotation is removed when the NodeWright is deleted, losing the audit trail of which nodes were auto-tainted. The taint itself is a separate concern (managed by `HandleAutoTaint`) and is not affected. In real clusters this is almost never reachable because NodeWright names tend to be descriptive (`gpu-drivers`, `kernel-tune`) while taint keys tend to be namespaced (`nvidia.com/gpu`, `skyhook.nvidia.com`).
 
-**Avoidance.** Don't name Skyhooks to exactly match a taint key in use. If you have a clash, either rename the Skyhook or disable `AutoTaintNewNodes` on it before deletion.
+**Avoidance.** Don't name NodeWrights to exactly match a taint key in use. If you have a clash, either rename the NodeWright or disable `AutoTaintNewNodes` on it before deletion.
 
 **Long-term fix.** Replace the suffix match in `CleanupSCRMetadata` with an explicit list of cleanup keys (`status_`, `nodeState_`, `cordon_`, `version_`) so unrelated keys with a coincidentally-matching suffix are never touched.
 
-### Force-deleting a Skyhook mid-uninstall and recreating it can run a stray apply pod
+### Force-deleting a NodeWright mid-uninstall and recreating it can run a stray apply pod
 
-**Rare; requires `kubectl delete --force --grace-period=0` on a Skyhook with an active uninstall pod.** Under normal deletion the finalizer holds the CR until the uninstall pod completes, so this path isn't reachable. Force-delete bypasses the finalizer.
+**Rare; requires `kubectl delete --force --grace-period=0` on a NodeWright with an active uninstall pod.** Under normal deletion the finalizer holds the CR until the uninstall pod completes, so this path isn't reachable. Force-delete bypasses the finalizer.
 
-**Symptom.** After force-deleting a Skyhook whose uninstall pod was mid-run, then recreating a Skyhook with the same name and `uninstall.apply: true`, one of the affected nodes briefly runs an **apply** pod for the package before the controller transitions it back to uninstall. The end state is correct (the package eventually uninstalls), but operators see one unexpected install cycle.
+**Symptom.** After force-deleting a NodeWright whose uninstall pod was mid-run, then recreating a NodeWright with the same name and `uninstall.apply: true`, one of the affected nodes briefly runs an **apply** pod for the package before the controller transitions it back to uninstall. The end state is correct (the package eventually uninstalls), but operators see one unexpected install cycle.
 
-**Why.** When the uninstall pod completes, `HandleCompletePod` looks up the parent Skyhook via `dal.GetSkyhook`; if the CR is gone, it returns `(nil, nil)` and the function exits without writing the usual "remove state" or "advance to `uninstall-interrupt`" outcome. The caller `UpdateNodeState` then falls through to its default `Upsert(state=Complete, stage=packagePtr.Stage)` — persisting `stage: uninstall` / `state: complete` on the node annotation. Recreating the Skyhook surfaces that orphaned annotation. `HandleUninstallRequests`'s `StageUninstall` branch re-adds the package to `toUninstall` regardless of state. `ApplyPackage` then reads `packageStatus.Stage = uninstall` and calls `NextStage`, which (for a no-interrupt package at `state: complete`) maps `uninstall → apply` per `NodeState.NextStage` — so an apply pod is created. The apply pod completes, the node moves to `stage: apply` / `state: complete`, the next reconcile takes the install-cycle branch in `HandleUninstallRequests`, and Upserts the package back to `stage: uninstall` / `state: in_progress`. Self-corrects within one extra apply cycle.
+**Why.** When the uninstall pod completes, `HandleCompletePod` looks up the parent NodeWright via `dal.GetSkyhook`; if the CR is gone, it returns `(nil, nil)` and the function exits without writing the usual "remove state" or "advance to `uninstall-interrupt`" outcome. The caller `UpdateNodeState` then falls through to its default `Upsert(state=Complete, stage=packagePtr.Stage)` — persisting `stage: uninstall` / `state: complete` on the node annotation. Recreating the NodeWright surfaces that orphaned annotation. `HandleUninstallRequests`'s `StageUninstall` branch re-adds the package to `toUninstall` regardless of state. `ApplyPackage` then reads `packageStatus.Stage = uninstall` and calls `NextStage`, which (for a no-interrupt package at `state: complete`) maps `uninstall → apply` per `NodeState.NextStage` — so an apply pod is created. The apply pod completes, the node moves to `stage: apply` / `state: complete`, the next reconcile takes the install-cycle branch in `HandleUninstallRequests`, and Upserts the package back to `stage: uninstall` / `state: in_progress`. Self-corrects within one extra apply cycle.
 
 **How to confirm.** After the force-delete + recreate, look for the orphaned terminal-uninstall entry **before** the controller has had time to re-trigger:
 
@@ -370,8 +370,8 @@ kubectl get nodes -l <selector> -o json \
 
 Any rows are nodes the controller will run an unwanted apply pod on before retriggering uninstall.
 
-**Avoidance.** Don't `--force --grace-period=0` a Skyhook with active uninstall pods. Let the finalizer drive uninstall to completion, or use the documented workarounds for blocked-finalizer cases (`kubectl skyhook reset`, then plain `kubectl delete`).
+**Avoidance.** Don't `--force --grace-period=0` a NodeWright with active uninstall pods. Let the finalizer drive uninstall to completion, or use the documented workarounds for blocked-finalizer cases (`kubectl skyhook reset`, then plain `kubectl delete`).
 
-**Workaround if already in this state.** Before recreating the Skyhook, run `kubectl skyhook reset <skyhook-name> --node <node-name> --confirm` on each affected node to clear the orphaned annotation. Then recreate the Skyhook normally — the install pipeline engages cleanly with no spurious apply pod.
+**Workaround if already in this state.** Before recreating the NodeWright, run `kubectl skyhook reset <skyhook-name> --node <node-name> --confirm` on each affected node to clear the orphaned annotation. Then recreate the NodeWright normally — the install pipeline engages cleanly with no spurious apply pod.
 
 **Long-term fix.** In `HandleUninstallRequests`, special-case `stage: uninstall` / `state: complete`: call `RemoveState` (mirroring the existing `uninstall-interrupt / complete` branch) and skip the `toUninstall` append. The current "re-add defensively" comment predates the realisation that `NextStage` re-maps `uninstall → apply` for completed packages without an interrupt; the safe handling is to treat a completed uninstall as terminal-uninstalled per D2.
