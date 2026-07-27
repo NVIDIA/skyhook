@@ -26,12 +26,12 @@ can enter the following dead state:
 4. Meanwhile, Argo/Helm applying the new manifests has reset the
    `MutatingWebhookConfiguration` `caBundle` to empty, so the apiserver no
    longer trusts the v0.7.x pods either. With `failurePolicy: Fail`, all
-   CREATE/UPDATE on Skyhook CRs fail with
+   CREATE/UPDATE on NodeWright CRs fail with
    `x509: certificate signed by unknown authority`.
 
 Net result: the new pod waits forever for a secret that requires leadership to
 create, the old pod holds leadership forever because the new pod never goes
-Ready, and Argo cannot reconcile any further Skyhook config changes.
+Ready, and Argo cannot reconcile any further NodeWright config changes.
 
 The only field operations that broke the cycle were manual:
 

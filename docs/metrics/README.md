@@ -1,35 +1,35 @@
 # Metrics
 
-The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a Skyhook Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go).
+The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a NodeWright Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go).
 
-## Skyhook Status Metrics
+## NodeWright Status Metrics
 
- * `skyhook_status` : Binary metric indicating the status of the Skyhook Custom Resource (1 if in that status, 0 otherwise). Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+ * `skyhook_status` : Binary metric indicating the status of the NodeWright Custom Resource (1 if in that status, 0 otherwise). Tags:
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `status` : One of complete, disabled, paused
 
 ## Node Metrics
 
- * `skyhook_node_status_count` : Number of nodes in the cluster by status for the Skyhook Custom Resource. Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+ * `skyhook_node_status_count` : Number of nodes in the cluster by status for the NodeWright Custom Resource. Tags:
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `status` : One of complete, in_progress, erroring, blocked, waiting
- * `skyhook_node_target_count` : Total number of nodes targeted by this Skyhook Custom Resource. Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+ * `skyhook_node_target_count` : Total number of nodes targeted by this NodeWright Custom Resource. Tags:
+    * `skyhook_name` : The name of the NodeWright Custom Resource
 
 ## Package Metrics
 
  * `skyhook_package_state_count` : Number of nodes in the cluster by state for this package. Tags:
-    * `skyhook_name` : The name of the SCR the package belongs to
+    * `skyhook_name` : The name of the CR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
     * `state` : One of complete, in_progress, skipped, erroring, unknown
  * `skyhook_package_stage_count` : Number of nodes in the cluster by stage for this package. Tags:
-    * `skyhook_name` : The name of the SCR the package belongs to
+    * `skyhook_name` : The name of the CR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
     * `stage` : One of apply, config, interrupt, post_interrupt, uninstall, upgrade
  * `skyhook_package_restarts_count`: Number of restarts for this package on this node. Tags:
-    * `skyhook_name` : The name of the SCR the package belongs to
+    * `skyhook_name` : The name of the CR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
 
@@ -38,47 +38,47 @@ The current metrics supplied by the Operator are intended to be sufficient to de
 These metrics track the rollout progress and health of compartments defined in a DeploymentPolicy. See [Deployment Policy documentation](../deployment_policy.md) for details on compartments and strategies.
 
  * `skyhook_rollout_matched_nodes` : Number of nodes matched by this compartment's selector. Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy (or "legacy" if using interruptionBudget)
     * `compartment_name` : The name of the compartment (or "__default__" for unmatched nodes)
     * `strategy` : The rollout strategy type (fixed, linear, exponential, or unknown)
  * `skyhook_rollout_ceiling` : Maximum number of nodes that can be in progress at once in this compartment. Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
  * `skyhook_rollout_in_progress` : Number of nodes currently in progress in this compartment. Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
  * `skyhook_rollout_completed` : Number of nodes completed in this compartment. Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
  * `skyhook_rollout_progress_percent` : Percentage of nodes completed in this compartment (0-100). Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
  * `skyhook_rollout_current_batch` : Current batch number in the rollout strategy (0 if no batch processing). Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
  * `skyhook_rollout_consecutive_failures` : Number of consecutive batch failures in this compartment. Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
  * `skyhook_rollout_should_stop` : Binary metric indicating if rollout should be stopped due to failures (1 = stopped, 0 = continuing). Tags:
-    * `skyhook_name` : The name of the Skyhook Custom Resource
+    * `skyhook_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
 
-Note: When a Skyhook is deleted all metrics for that Skyhook are no longer reported.
+Note: When a NodeWright is deleted all metrics for that NodeWright are no longer reported.
 
 ## Testing
 
@@ -97,16 +97,16 @@ The makefile provides the `metrics` command which will install prometheus and gr
 
 ## Dashboard
 
-A comprehensive Grafana dashboard is provided at [dashboards/skyhook-dashboard.json](dashboards/skyhook-dashboard.json) that consolidates all Skyhook monitoring into a single dashboard with a unified view that includes:
+A comprehensive Grafana dashboard is provided at [dashboards/skyhook-dashboard.json](dashboards/skyhook-dashboard.json) that consolidates all NodeWright monitoring into a single dashboard with a unified view that includes:
 
-### Skyhook Overview Section
+### NodeWright Overview Section
 
-* Total Skyhooks count
-* Skyhook status distribution (Complete, In Progress, Erroring, Blocked, Other States)
-* Skyhook status trends over time
-* Detailed Skyhook status table
+* Total NodeWrights count
+* NodeWright status distribution (Complete, In Progress, Erroring, Blocked, Other States)
+* NodeWright status trends over time
+* Detailed NodeWright status table
 
-![Skyhook Overview Example](images/skyhook-overview.png "Skyhook Overview Example")
+![NodeWright Overview Example](images/skyhook-overview.png "NodeWright Overview Example")
 
 ### Node Monitoring Section
 
@@ -171,7 +171,7 @@ make grafana-password
 
 ### Scrape directly
 
-Use the file [prometheus_values.yaml](prometheus_values.yaml) as an example of configuring a scraper job for Skyhook. Note: This can be used directly with the prometheus community chart:
+Use the file [prometheus_values.yaml](prometheus_values.yaml) as an example of configuring a scraper job for NodeWright. Note: This can be used directly with the prometheus community chart:
 ```bash
 helm install prometheus prometheus-community/prometheus -f ../docs/metrics/prometheus_values.yaml
 ```

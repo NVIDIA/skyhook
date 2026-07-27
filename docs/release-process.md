@@ -1,6 +1,6 @@
-# Skyhook Release Process
+# NodeWright Release Process
 
-Step-by-step process for releasing Skyhook components using **release branches**.
+Step-by-step process for releasing NodeWright components using **release branches**.
 
 ## Release Branch Strategy
 
@@ -464,7 +464,7 @@ git push origin :refs/tags/operator/v1.2.3
 
 ## Third-Party Notices
 
-Skyhook ships `THIRD_PARTY_NOTICES.md` files that list every third-party module shipped in its released artifacts, along with verbatim license text. Three files are maintained:
+NodeWright ships `THIRD_PARTY_NOTICES.md` files that list every third-party module shipped in its released artifacts, along with verbatim license text. Three files are maintained:
 
 | File | Covers | Tool |
 | --- | --- | --- |
