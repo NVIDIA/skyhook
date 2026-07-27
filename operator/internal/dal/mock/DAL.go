@@ -27,7 +27,8 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	mock "github.com/stretchr/testify/mock"
-	"k8s.io/api/core/v1"
+	"k8s.io/api/batch/v1"
+	v10 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -207,24 +208,179 @@ func (_c *MockDAL_GetDeploymentPolicy_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// GetJob provides a mock function for the type MockDAL
+func (_mock *MockDAL) GetJob(ctx context.Context, namespace string, name string) (*v1.Job, error) {
+	ret := _mock.Called(ctx, namespace, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetJob")
+	}
+
+	var r0 *v1.Job
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (*v1.Job, error)); ok {
+		return returnFunc(ctx, namespace, name)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) *v1.Job); ok {
+		r0 = returnFunc(ctx, namespace, name)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*v1.Job)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, namespace, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDAL_GetJob_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetJob'
+type MockDAL_GetJob_Call struct {
+	*mock.Call
+}
+
+// GetJob is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespace string
+//   - name string
+func (_e *MockDAL_Expecter) GetJob(ctx interface{}, namespace interface{}, name interface{}) *MockDAL_GetJob_Call {
+	return &MockDAL_GetJob_Call{Call: _e.mock.On("GetJob", ctx, namespace, name)}
+}
+
+func (_c *MockDAL_GetJob_Call) Run(run func(ctx context.Context, namespace string, name string)) *MockDAL_GetJob_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDAL_GetJob_Call) Return(job *v1.Job, err error) *MockDAL_GetJob_Call {
+	_c.Call.Return(job, err)
+	return _c
+}
+
+func (_c *MockDAL_GetJob_Call) RunAndReturn(run func(ctx context.Context, namespace string, name string) (*v1.Job, error)) *MockDAL_GetJob_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetJobs provides a mock function for the type MockDAL
+func (_mock *MockDAL) GetJobs(ctx context.Context, opts ...client.ListOption) (*v1.JobList, error) {
+	// client.ListOption
+	_va := make([]interface{}, len(opts))
+	for _i := range opts {
+		_va[_i] = opts[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx)
+	_ca = append(_ca, _va...)
+	ret := _mock.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetJobs")
+	}
+
+	var r0 *v1.JobList
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v1.JobList, error)); ok {
+		return returnFunc(ctx, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v1.JobList); ok {
+		r0 = returnFunc(ctx, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*v1.JobList)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, ...client.ListOption) error); ok {
+		r1 = returnFunc(ctx, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockDAL_GetJobs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetJobs'
+type MockDAL_GetJobs_Call struct {
+	*mock.Call
+}
+
+// GetJobs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - opts ...client.ListOption
+func (_e *MockDAL_Expecter) GetJobs(ctx interface{}, opts ...interface{}) *MockDAL_GetJobs_Call {
+	return &MockDAL_GetJobs_Call{Call: _e.mock.On("GetJobs",
+		append([]interface{}{ctx}, opts...)...)}
+}
+
+func (_c *MockDAL_GetJobs_Call) Run(run func(ctx context.Context, opts ...client.ListOption)) *MockDAL_GetJobs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []client.ListOption
+		variadicArgs := make([]client.ListOption, len(args)-1)
+		for i, a := range args[1:] {
+			if a != nil {
+				variadicArgs[i] = a.(client.ListOption)
+			}
+		}
+		arg1 = variadicArgs
+		run(
+			arg0,
+			arg1...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockDAL_GetJobs_Call) Return(jobList *v1.JobList, err error) *MockDAL_GetJobs_Call {
+	_c.Call.Return(jobList, err)
+	return _c
+}
+
+func (_c *MockDAL_GetJobs_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v1.JobList, error)) *MockDAL_GetJobs_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetNode provides a mock function for the type MockDAL
-func (_mock *MockDAL) GetNode(ctx context.Context, nodeName string) (*v1.Node, error) {
+func (_mock *MockDAL) GetNode(ctx context.Context, nodeName string) (*v10.Node, error) {
 	ret := _mock.Called(ctx, nodeName)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetNode")
 	}
 
-	var r0 *v1.Node
+	var r0 *v10.Node
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*v1.Node, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*v10.Node, error)); ok {
 		return returnFunc(ctx, nodeName)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *v1.Node); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *v10.Node); ok {
 		r0 = returnFunc(ctx, nodeName)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1.Node)
+			r0 = ret.Get(0).(*v10.Node)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
@@ -265,18 +421,18 @@ func (_c *MockDAL_GetNode_Call) Run(run func(ctx context.Context, nodeName strin
 	return _c
 }
 
-func (_c *MockDAL_GetNode_Call) Return(node *v1.Node, err error) *MockDAL_GetNode_Call {
+func (_c *MockDAL_GetNode_Call) Return(node *v10.Node, err error) *MockDAL_GetNode_Call {
 	_c.Call.Return(node, err)
 	return _c
 }
 
-func (_c *MockDAL_GetNode_Call) RunAndReturn(run func(ctx context.Context, nodeName string) (*v1.Node, error)) *MockDAL_GetNode_Call {
+func (_c *MockDAL_GetNode_Call) RunAndReturn(run func(ctx context.Context, nodeName string) (*v10.Node, error)) *MockDAL_GetNode_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetNodes provides a mock function for the type MockDAL
-func (_mock *MockDAL) GetNodes(ctx context.Context, opts ...client.ListOption) (*v1.NodeList, error) {
+func (_mock *MockDAL) GetNodes(ctx context.Context, opts ...client.ListOption) (*v10.NodeList, error) {
 	// client.ListOption
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
@@ -291,16 +447,16 @@ func (_mock *MockDAL) GetNodes(ctx context.Context, opts ...client.ListOption) (
 		panic("no return value specified for GetNodes")
 	}
 
-	var r0 *v1.NodeList
+	var r0 *v10.NodeList
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v1.NodeList, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v10.NodeList, error)); ok {
 		return returnFunc(ctx, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v1.NodeList); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v10.NodeList); ok {
 		r0 = returnFunc(ctx, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1.NodeList)
+			r0 = ret.Get(0).(*v10.NodeList)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, ...client.ListOption) error); ok {
@@ -346,34 +502,34 @@ func (_c *MockDAL_GetNodes_Call) Run(run func(ctx context.Context, opts ...clien
 	return _c
 }
 
-func (_c *MockDAL_GetNodes_Call) Return(nodeList *v1.NodeList, err error) *MockDAL_GetNodes_Call {
+func (_c *MockDAL_GetNodes_Call) Return(nodeList *v10.NodeList, err error) *MockDAL_GetNodes_Call {
 	_c.Call.Return(nodeList, err)
 	return _c
 }
 
-func (_c *MockDAL_GetNodes_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v1.NodeList, error)) *MockDAL_GetNodes_Call {
+func (_c *MockDAL_GetNodes_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v10.NodeList, error)) *MockDAL_GetNodes_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetPod provides a mock function for the type MockDAL
-func (_mock *MockDAL) GetPod(ctx context.Context, namespace string, name string) (*v1.Pod, error) {
+func (_mock *MockDAL) GetPod(ctx context.Context, namespace string, name string) (*v10.Pod, error) {
 	ret := _mock.Called(ctx, namespace, name)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPod")
 	}
 
-	var r0 *v1.Pod
+	var r0 *v10.Pod
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (*v1.Pod, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (*v10.Pod, error)); ok {
 		return returnFunc(ctx, namespace, name)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) *v1.Pod); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) *v10.Pod); ok {
 		r0 = returnFunc(ctx, namespace, name)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1.Pod)
+			r0 = ret.Get(0).(*v10.Pod)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
@@ -420,18 +576,18 @@ func (_c *MockDAL_GetPod_Call) Run(run func(ctx context.Context, namespace strin
 	return _c
 }
 
-func (_c *MockDAL_GetPod_Call) Return(pod *v1.Pod, err error) *MockDAL_GetPod_Call {
+func (_c *MockDAL_GetPod_Call) Return(pod *v10.Pod, err error) *MockDAL_GetPod_Call {
 	_c.Call.Return(pod, err)
 	return _c
 }
 
-func (_c *MockDAL_GetPod_Call) RunAndReturn(run func(ctx context.Context, namespace string, name string) (*v1.Pod, error)) *MockDAL_GetPod_Call {
+func (_c *MockDAL_GetPod_Call) RunAndReturn(run func(ctx context.Context, namespace string, name string) (*v10.Pod, error)) *MockDAL_GetPod_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetPods provides a mock function for the type MockDAL
-func (_mock *MockDAL) GetPods(ctx context.Context, opts ...client.ListOption) (*v1.PodList, error) {
+func (_mock *MockDAL) GetPods(ctx context.Context, opts ...client.ListOption) (*v10.PodList, error) {
 	// client.ListOption
 	_va := make([]interface{}, len(opts))
 	for _i := range opts {
@@ -446,16 +602,16 @@ func (_mock *MockDAL) GetPods(ctx context.Context, opts ...client.ListOption) (*
 		panic("no return value specified for GetPods")
 	}
 
-	var r0 *v1.PodList
+	var r0 *v10.PodList
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v1.PodList, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) (*v10.PodList, error)); ok {
 		return returnFunc(ctx, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v1.PodList); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...client.ListOption) *v10.PodList); ok {
 		r0 = returnFunc(ctx, opts...)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1.PodList)
+			r0 = ret.Get(0).(*v10.PodList)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, ...client.ListOption) error); ok {
@@ -501,12 +657,12 @@ func (_c *MockDAL_GetPods_Call) Run(run func(ctx context.Context, opts ...client
 	return _c
 }
 
-func (_c *MockDAL_GetPods_Call) Return(podList *v1.PodList, err error) *MockDAL_GetPods_Call {
+func (_c *MockDAL_GetPods_Call) Return(podList *v10.PodList, err error) *MockDAL_GetPods_Call {
 	_c.Call.Return(podList, err)
 	return _c
 }
 
-func (_c *MockDAL_GetPods_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v1.PodList, error)) *MockDAL_GetPods_Call {
+func (_c *MockDAL_GetPods_Call) RunAndReturn(run func(ctx context.Context, opts ...client.ListOption) (*v10.PodList, error)) *MockDAL_GetPods_Call {
 	_c.Call.Return(run)
 	return _c
 }

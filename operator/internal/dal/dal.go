@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	skyhookv1alpha1 "github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -43,6 +44,8 @@ type DAL interface {
 	GetNodes(ctx context.Context, opts ...client.ListOption) (*corev1.NodeList, error)
 	GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error)
 	GetPods(ctx context.Context, opts ...client.ListOption) (*corev1.PodList, error)
+	GetJob(ctx context.Context, namespace, name string) (*batchv1.Job, error)
+	GetJobs(ctx context.Context, opts ...client.ListOption) (*batchv1.JobList, error)
 	GetDeploymentPolicies(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.DeploymentPolicyList, error)
 	GetDeploymentPolicy(ctx context.Context, name string) (*skyhookv1alpha1.DeploymentPolicy, error)
 }
@@ -139,6 +142,35 @@ func (e *dal) GetPods(ctx context.Context, opts ...client.ListOption) (*corev1.P
 	}
 
 	return &pods, nil
+}
+
+func (e *dal) GetJob(ctx context.Context, namespace, name string) (*batchv1.Job, error) {
+	var job batchv1.Job
+
+	if err := e.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &job); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting job [%s|%s]: %w", namespace, name, err)
+	}
+
+	return &job, nil
+}
+
+func (e *dal) GetJobs(ctx context.Context, opts ...client.ListOption) (*batchv1.JobList, error) {
+	var jobs batchv1.JobList
+	if err := e.client.List(ctx, &jobs, opts...); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting jobs: %w", err)
+	}
+
+	if len(jobs.Items) == 0 {
+		return nil, nil
+	}
+
+	return &jobs, nil
 }
 
 func (e *dal) GetDeploymentPolicies(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.DeploymentPolicyList, error) {

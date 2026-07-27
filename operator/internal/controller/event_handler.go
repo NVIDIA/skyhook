@@ -26,6 +26,7 @@ import (
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	"github.com/go-logr/logr"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -52,7 +53,8 @@ var globalReconcileKey = reconcile.Request{
 // watched event that is relevant to at least one Skyhook. A Skyhook event is
 // always relevant; a Node event is relevant only if some Skyhook's node
 // selector matches it — without that filter every kubelet heartbeat across the
-// cluster would wake the heavy reconcile.
+// cluster would wake the heavy reconcile. A package-stage Job event is relevant
+// only if the Job carries our name label.
 //
 // We enqueue via AddAfter rather than a plain EnqueueRequestsFromMapFunc because
 // the controller's priority queue only applies a delay on AddAfter/AddRateLimited:
@@ -118,6 +120,10 @@ func (h *globalDelayHandler) relevant(ctx context.Context, object client.Object)
 			return false, nil
 		}
 		return len(matchSelectors(list, obj.Labels)) > 0, nil
+	case *batchv1.Job:
+		// Gated on the name label rather than a lookup: anything else in the namespace
+		// (a CronJob's Jobs, say) must not wake the heavy reconcile.
+		return labels.Set(obj.Labels).Has(fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX)), nil
 	default:
 		return false, nil
 	}
