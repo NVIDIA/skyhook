@@ -36,7 +36,7 @@ the complementary case where no uninstall is required.
 ## Files
 
 - `chainsaw-test.yaml` — Main test: install v2 → uninstall v2 → downgrade to v1 → uninstall v1
-- `nodewright.yaml` — Initial v2.1.4 Skyhook, `uninstall.enabled: true`
+- `nodewright.yaml` — Initial v2.1.4 NodeWright, `uninstall.enabled: true`
 - `update-trigger-uninstall.yaml` — Patch setting `uninstall.apply: true` on v2.1.4
 - `update-downgrade.yaml` — Patch changing version to v1.2.3
 - `update-trigger-uninstall-v1.yaml` — Patch setting `uninstall.apply: true` on v1.2.3 to clear node state before cleanup

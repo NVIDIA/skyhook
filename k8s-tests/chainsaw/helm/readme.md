@@ -1,6 +1,6 @@
 ## Helm Tests
 
-This directory holds all the tests for the skyhook operator's helm chart. Right now this mainly ensures that tolerations set in the helm chart actually work and that the operator can be deployed successfully under another deployment name than skyhook-operator.
+This directory holds all the tests for the nodewright operator's helm chart. Right now this mainly ensures that tolerations set in the helm chart actually work and that the operator can be deployed successfully under another deployment name than skyhook-operator.
 
 ## Test Image
 

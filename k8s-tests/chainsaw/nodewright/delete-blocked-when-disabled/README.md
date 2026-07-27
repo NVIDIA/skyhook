@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Verifies the Skyhook finalizer refuses to proceed with cleanup when the CR is
+Verifies the NodeWright finalizer refuses to proceed with cleanup when the CR is
 disabled and at least one `uninstall.enabled: true` package is still tracked
-in `nodeState`. `processSkyhooksPerNode` skips disabled Skyhooks, so uninstall
+in `nodeState`. `processSkyhooksPerNode` skips disabled NodeWrights, so uninstall
 pods never get created; without this guard, the finalizer would silently drop
 on-host state the user explicitly asked to be cleaned.
 
@@ -13,14 +13,14 @@ string, different remediation (re-enable vs. unpause).
 
 ## Test Scenario
 
-1. Install a Skyhook with one `uninstall.enabled: true` package, wait for
+1. Install a NodeWright with one `uninstall.enabled: true` package, wait for
    `status: complete`.
-2. Annotate the Skyhook with `nodewright.nvidia.com/disable=true`.
+2. Annotate the NodeWright with `nodewright.nvidia.com/disable=true`.
 3. Issue `kubectl delete nodewright --wait=false`.
 4. Assert the CR is still present (`deletionTimestamp != null`) with a
    `DeletionBlocked` condition
    (`status=True`, `reason=DisabledWithPendingUninstall`).
-5. Assert a Warning event was recorded on the Skyhook with
+5. Assert a Warning event was recorded on the NodeWright with
    `reason=DeletionBlocked`.
 6. Remove the disable annotation. The finalizer now drives uninstall to
    completion and the CR disappears.

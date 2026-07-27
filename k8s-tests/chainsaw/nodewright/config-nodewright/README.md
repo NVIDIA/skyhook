@@ -1,4 +1,4 @@
-# Config Skyhook Test
+# Config NodeWright Test
 
 ## Purpose
 
@@ -6,8 +6,8 @@ Validates that configuration changes work correctly for the operator, including 
 
 ## Test Scenario
 
-1. Apply a simple skyhook definition and verify packages start applying
-2. Update two packages before the skyhook finishes:
+1. Apply a simple nodewright definition and verify packages start applying
+2. Update two packages before the nodewright finishes:
    - One with a package interrupt
    - One without a package interrupt
    - Both on a configmap key with a config interrupt defined
@@ -28,9 +28,9 @@ Validates that configuration changes work correctly for the operator, including 
 
 ## Files
 
-- `chainsaw-test.yaml` - Main test configuration with lifecycle assertions inline (nodes, skyhook status) for sequential ordering
-- `nodewright.yaml` - Initial skyhook definition
-- `update-while-running.yaml` - Config update applied while skyhook is still running
+- `chainsaw-test.yaml` - Main test configuration with lifecycle assertions inline (nodes, nodewright status) for sequential ordering
+- `nodewright.yaml` - Initial nodewright definition
+- `update-while-running.yaml` - Config update applied while nodewright is still running
 - `update.yaml` - Standard config update
 - `update-no-interrupt.yaml` - Config update with no interrupt
 - `update-glob.yaml` - Config update using glob-based package selection

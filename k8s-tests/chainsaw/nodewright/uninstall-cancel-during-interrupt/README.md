@@ -60,6 +60,6 @@ up.
 ## Files
 
 - `chainsaw-test.yaml` — Main test: install → trigger → reach interrupt → cancel → assert condition sticks → wait for cycle exit → assert cleared → drain uninstall before teardown
-- `nodewright.yaml` — Skyhook with `uninstall.enabled: true`, service interrupt, `SLEEP_LEN=5` (seconds per step)
+- `nodewright.yaml` — NodeWright with `uninstall.enabled: true`, service interrupt, `SLEEP_LEN=5` (seconds per step)
 - `update-trigger-uninstall.yaml` — Patch setting `uninstall.apply: true`
 - `update-cancel-uninstall.yaml` — Patch setting `uninstall.apply: false`
