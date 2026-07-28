@@ -41,6 +41,11 @@ import (
 // tail is an acceptable outcome for best-effort evidence.
 const podLogStreamTimeout = 10 * time.Second
 
+// logTailLines is the server-side bound on the deadline log tail. Lines, not bytes, because
+// TailLines is the only option that reads from the end; it is deliberately generous since
+// tailAndSanitize applies the real byte cap.
+const logTailLines = 500
+
 // New builds the DAL over the controller-runtime client used for every typed
 // get/list, plus a client-go clientset used only by GetPodLogTail; pod logs are
 // a subresource stream the controller-runtime client cannot read. clientset may
@@ -205,7 +210,17 @@ func (e *dal) GetPodLogTail(ctx context.Context, namespace, pod, container strin
 	ctx, cancel := context.WithTimeout(ctx, podLogStreamTimeout)
 	defer cancel()
 
-	stream, err := e.clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{Container: container}).Stream(ctx)
+	// TailLines bounds the transfer server-side. Without it the kubelet streams the whole
+	// log and tailAndSanitize discards all but the tail locally, so a stage that ran to its
+	// deadline producing steady output blows the timeout above and yields nothing: the
+	// snapshot fails exactly when its logs are most worth having. TailLines is the only
+	// tail-bounded option (LimitBytes reads from the start), so it is a coarse line-based
+	// bound with tailAndSanitize still enforcing the exact byte cap.
+	tailLines := int64(logTailLines)
+	stream, err := e.clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{
+		Container: container,
+		TailLines: &tailLines,
+	}).Stream(ctx)
 	if err != nil {
 		return "", fmt.Errorf("error opening log stream for pod [%s|%s] container [%s]: %w", namespace, pod, container, err)
 	}

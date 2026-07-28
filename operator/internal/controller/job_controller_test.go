@@ -381,7 +381,22 @@ var _ = Describe("JobReconcile", func() {
 
 		res, err := r.JobReconcile(ctx, job)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(res.RequeueAfter).To(Equal(failureTargetGrace))
+		// Just-transitioned, so effectively the whole window plus the boundary slack.
+		Expect(res.RequeueAfter).To(BeNumerically("~", failureTargetGrace+time.Second, time.Second))
+	})
+
+	It("requeues only the grace left on a part-way FailureTarget, not a fresh window", func() {
+		job := packageJob(v1alpha1.StageConfig, false)
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type: batchv1.JobFailureTarget, Status: corev1.ConditionTrue,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-4 * time.Minute)),
+		}}
+		r := newReconciler(job)
+
+		res, err := r.JobReconcile(ctx, job)
+		Expect(err).ToNot(HaveOccurred())
+		// 4 of the 5 minutes are already spent; re-check in the remaining ~1, not another 5.
+		Expect(res.RequeueAfter).To(BeNumerically("~", time.Minute+time.Second, 2*time.Second))
 	})
 
 	It("does not count or delete disruption casualties when pruning", func() {

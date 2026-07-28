@@ -295,7 +295,9 @@ func (r *SkyhookReconciler) handleActiveJob(ctx context.Context, job *batchv1.Jo
 		} else {
 			// An unreachable node emits no further Job event to drive the stale→erroring
 			// transition, so schedule the re-check ourselves rather than wait for a resync.
-			result.RequeueAfter = failureTargetGrace
+			// Requeue the time actually left, not a fresh full grace: a Job already part-way
+			// through the window would otherwise wait up to two full windows.
+			result.RequeueAfter = failureTargetRemaining(job)
 		}
 	}
 
@@ -311,12 +313,18 @@ func (r *SkyhookReconciler) handleActiveJob(ctx context.Context, job *batchv1.Jo
 // Failed. Terminal handling (marker, TTL, park) still waits for Failed.
 func (r *SkyhookReconciler) recordStaleFailureTarget(ctx context.Context, job *batchv1.Job) error {
 	pkg, err := GetPackage(job)
-	if err != nil || pkg == nil {
-		return err
+	if err != nil {
+		return fmt.Errorf("getting package from job %s: %w", job.Name, err)
+	}
+	if pkg == nil {
+		return nil
 	}
 	node, err := r.dal.GetNode(ctx, jobNodeName(job))
-	if err != nil || node == nil {
-		return err
+	if err != nil {
+		return fmt.Errorf("getting node for job %s: %w", job.Name, err)
+	}
+	if node == nil {
+		return nil
 	}
 	return r.recordJobErroring(ctx, job, pkg, node)
 }
@@ -517,6 +525,22 @@ func failureTargetStale(job *batchv1.Job) bool {
 		}
 	}
 	return false
+}
+
+// failureTargetRemaining is how much of the grace window a Job at FailureTarget has left, with
+// a second of slack so the requeue lands after the boundary rather than a hair before it and
+// burns another whole window. Zero when the Job is not at FailureTarget.
+func failureTargetRemaining(job *batchv1.Job) time.Duration {
+	for _, c := range job.Status.Conditions {
+		if c.Type == batchv1.JobFailureTarget && c.Status == corev1.ConditionTrue {
+			remaining := failureTargetGrace - time.Since(c.LastTransitionTime.Time) + time.Second
+			if remaining < time.Second {
+				return time.Second
+			}
+			return remaining
+		}
+	}
+	return 0
 }
 
 // hasDisruptionTarget reports whether the pod carries the DisruptionTarget condition: a pod
