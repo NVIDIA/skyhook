@@ -177,6 +177,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Package-stage Jobs get their own controller rather than a prefixed request on the
+	// shared reconcile queue: JobReconcile is per-object, so a real watch gives it a real
+	// requeue and its own backoff.
+	if err = (&controller.JobReconciler{SkyhookReconciler: cont}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Job")
+		os.Exit(1)
+	}
+
 	// Mirror controllers import legacy skyhook.nvidia.com objects into the new
 	// nodewright.nvidia.com group during the migration bridge (one-way, level-triggered).
 	if err = (&controller.SkyhookMirrorReconciler{}).SetupWithManager(mgr); err != nil {

@@ -35,9 +35,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
 var _ = Describe("JobReconcile", func() {
@@ -461,4 +463,54 @@ var _ = Describe("JobReconcile", func() {
 		_, err = r.JobReconcile(ctx, job)
 		Expect(err).To(HaveOccurred())
 	})
+
+	Describe("JobReconciler", func() {
+
+		It("reconciles the Job named by the request", func() {
+			node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageApply)
+			job := packageJob(v1alpha1.StageApply, false, trueCondition(batchv1.JobComplete, ""))
+			r := &JobReconciler{SkyhookReconciler: newReconciler(node, job)}
+
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{
+				Namespace: namespace, Name: job.Name,
+			}})
+			Expect(err).ToNot(HaveOccurred())
+
+			// Went through JobReconcile: completion recorded and the Job marked.
+			Expect(getNodeState(r.SkyhookReconciler)[pkgRef.GetUniqueName()].State).To(Equal(v1alpha1.StateComplete))
+			Expect(getJob(r.SkyhookReconciler, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
+		})
+
+		It("is a no-op for a Job deleted between the event and the read", func() {
+			node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageApply)
+			r := &JobReconciler{SkyhookReconciler: newReconciler(node)}
+
+			// A terminal event can outlive its Job (TTL reap, foreground delete); the read
+			// returns nothing and the node state must be left for the heavy pass to derive.
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{
+				Namespace: namespace, Name: "tuning-1-0-0-apply",
+			}})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getNodeState(r.SkyhookReconciler)[pkgRef.GetUniqueName()].State).To(Equal(v1alpha1.StateInProgress))
+		})
+	})
+
+	Describe("ownedJob predicate", func() {
+
+		It("admits a Job carrying the nodewright name label", func() {
+			Expect(ownedJob().Create(event.CreateEvent{Object: packageJob(v1alpha1.StageApply, false)})).To(BeTrue())
+		})
+
+		It("rejects a foreign Job in the same namespace", func() {
+			// Filtered at the predicate rather than inside Reconcile, so a CronJob's Jobs never
+			// reach the workqueue at all.
+			foreign := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
+				Name: "some-cronjob-28234", Namespace: namespace, Labels: map[string]string{"foo": "bar"},
+			}}
+			Expect(ownedJob().Create(event.CreateEvent{Object: foreign})).To(BeFalse())
+			Expect(ownedJob().Update(event.UpdateEvent{ObjectNew: foreign})).To(BeFalse())
+			Expect(ownedJob().Delete(event.DeleteEvent{Object: foreign})).To(BeFalse())
+		})
+	})
+
 })

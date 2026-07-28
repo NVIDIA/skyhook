@@ -310,12 +310,6 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Pod{},
 			handler.EnqueueRequestsFromMapFunc(podHandlerFunc),
 		).
-		// Cheap path: package-stage Job events route as "job---<name>" to JobReconcile. The
-		// informer is scoped to the operator namespace in main.go's cache config.
-		Watches(
-			&batchv1.Job{},
-			handler.EnqueueRequestsFromMapFunc(jobHandlerFunc),
-		).
 		Complete(r)
 }
 
@@ -343,7 +337,8 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
-// dispatchExecutorRequest routes a targeted pod---/job--- request to its per-object reconcile.
+// dispatchExecutorRequest routes a targeted pod---<name> request to PodReconcile. Jobs do not
+// come through here: JobReconciler owns them on its own watch and workqueue.
 // handled is true when req was an executor request, in which case result and err are authoritative;
 // otherwise the caller falls through to the heavy global pass.
 func (r *SkyhookReconciler) dispatchExecutorRequest(ctx context.Context, req ctrl.Request) (bool, ctrl.Result, error) {
@@ -356,23 +351,13 @@ func (r *SkyhookReconciler) dispatchExecutorRequest(ctx context.Context, req ctr
 		return true, ctrl.Result{}, err
 	}
 
-	// The Jobs execution path: JobReconcile is the completion authority for package-stage Jobs.
-	if name, ok := strings.CutPrefix(req.Name, "job---"); ok {
-		job, err := r.dal.GetJob(ctx, req.Namespace, name)
-		if err == nil && job != nil {
-			result, err := r.JobReconcile(ctx, job)
-			return true, result, err
-		}
-		return true, ctrl.Result{}, err
-	}
-
 	return false, ctrl.Result{}, nil
 }
 
 func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// split off targeted executor requests (pod---<name> / job---<name>) to their per-object path
+	// split off targeted pod---<name> requests to their per-object path
 	if handled, result, err := r.dispatchExecutorRequest(ctx, req); handled {
 		return result, err
 	}
@@ -675,7 +660,10 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 					errors = append(errors, fmt.Errorf("error patching node [%s]: %w", node.GetNode().Name, err))
 				}
 
-				err = r.Patch(ctx, node.GetNode(), client.MergeFrom(clusterState.tracker.GetOriginal(node.GetNode())))
+				// Optimistic lock: JobReconciler writes nodeState_<skyhook> concurrently. A
+				// conflict means this pass's snapshot is stale, so it escapes to the queue and
+				// the next pass re-derives rather than clobbering the newer write.
+				err = r.Patch(ctx, node.GetNode(), client.MergeFromWithOptions(clusterState.tracker.GetOriginal(node.GetNode()), client.MergeFromWithOptimisticLock{}))
 				if err != nil {
 					errors = append(errors, fmt.Errorf("error patching node [%s]: %w", node.GetNode().Name, err))
 				}
@@ -1039,6 +1027,10 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 					// "complete" state remains and the package is never reapplied.
 					if node.Changed() {
 						updates = true
+						// Deliberately NOT optimistic-locked: the reboot reset must land on a busy
+						// node whose resourceVersion moved under other controllers. Losing the reset
+						// strands a stale "complete" and the package is never reapplied, which is
+						// worse than the narrow chance of overwriting a concurrent state write.
 						patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()))
 						if err := r.Patch(ctx, node.GetNode(), patch); err != nil {
 							errs = append(errs, fmt.Errorf("error patching node after reboot [%s]: %w", node.GetNode().Name, err))
@@ -1193,7 +1185,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 	logger := log.FromContext(ctx)
 
 	for _, node := range skyhook.GetNodes() {
-		patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()))
+		patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()), client.MergeFromWithOptimisticLock{})
 		if node.Changed() {
 			err := r.Patch(ctx, node.GetNode(), patch)
 			if err != nil {
