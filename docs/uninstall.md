@@ -83,7 +83,7 @@ Cancellation semantics depend on which stage the node is at when `apply` is flip
 
 ### CR Deletion (Finalizer)
 
-When a NodeWright CR is deleted (`kubectl delete skyhook my-skyhook`):
+When a NodeWright CR is deleted (`kubectl delete nodewright my-nodewright`):
 
 - **`enabled: true` packages**: The finalizer triggers uninstall pods, waits for completion on all nodes, then removes this NodeWright's own cordon ownership and metadata. A node is uncordoned only once no `cordon_*` ownership annotations remain (other NodeWrights sharing the node may still hold it); the CR finalizer is removed last.
 - **`enabled: false` packages (or nil)**: No uninstall pods — state is cleaned up immediately. The package state remains on nodes so administrators can see what was previously applied.
@@ -102,7 +102,7 @@ The finalizer handles a few edge cases where the normal "wait for uninstall to c
 Notes:
 
 - `DeletionBlocked` is cleared automatically once the blocking condition is resolved (annotation repaired, NodeWright unpaused, or the pending work is no longer present).
-- Forcing deletion of a blocked NodeWright requires manually removing the `skyhook.nvidia.com/skyhook` finalizer (`kubectl patch skyhook <name> --type=merge -p '{"metadata":{"finalizers":null}}'`). Doing this bypasses Phase 3 cleanup entirely: per-Skyhook labels/annotations/conditions are **not** removed and nodes are **not** uncordoned — the caller is responsible for any residual cleanup.
+- Forcing deletion of a blocked NodeWright requires manually removing the `nodewright.nvidia.com/nodewright` finalizer (`kubectl patch nodewright <name> --type=merge -p '{"metadata":{"finalizers":null}}'`). Doing this bypasses Phase 3 cleanup entirely: per-NodeWright labels/annotations/conditions are **not** removed and nodes are **not** uncordoned — the caller is responsible for any residual cleanup.
 
 ### Downgrade (version change)
 
@@ -170,14 +170,14 @@ kubectl logs -n skyhook <pod-name> -c <package>-uninstallcheck
 
 Check node state:
 ```bash
-kubectl get nodes -l skyhook.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.annotations.skyhook\.nvidia\.com/nodeState_<skyhook-name>}' | jq
+kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.annotations.nodewright\.nvidia\.com/nodeState_<name>}' | jq
 ```
 
 ### Blocked dependency
 
 Check the NodeWright conditions:
 ```bash
-kubectl get skyhook <name> -o jsonpath='{.status.conditions}' | jq
+kubectl get nodewright <name> -o jsonpath='{.status.conditions}' | jq
 ```
 
 Look for `Blocked` condition with the dependency chain message.
@@ -194,7 +194,7 @@ If the webhook rejects removal of an `enabled: true` package:
 
 ### CR deletion deadlocks when an install is stuck at `erroring`
 
-**Symptom.** `kubectl delete skyhook <name>` hangs indefinitely. The NodeWright stays around with a `DeletionTimestamp` set and the `skyhook.nvidia.com/skyhook` finalizer attached. No uninstall pods are created for an `uninstall.enabled: true` package that's still tracked in `nodeState`.
+**Symptom.** `kubectl delete nodewright <name>` hangs indefinitely. The NodeWright stays around with a `DeletionTimestamp` set and the `nodewright.nvidia.com/nodewright` finalizer attached. No uninstall pods are created for an `uninstall.enabled: true` package that's still tracked in `nodeState`.
 
 **Why.** The finalizer drives uninstall through the same `HandleUninstallRequests` path as explicit uninstall. That path only transitions a package from an install stage (`apply`, `config`, `interrupt`, `post-interrupt`, `upgrade`) to `uninstall` when the package is in **`state: complete`** on the node. If the install never reached `complete` — e.g., `uninstall.sh` wasn't yet exercised because `apply.sh` is crash-looping in `state: erroring` — the uninstall trigger is skipped, so the finalizer's "wait for pending uninstall" phase never progresses.
 
@@ -203,7 +203,7 @@ If the webhook rejects removal of an `enabled: true` package:
 ```bash
 kubectl get nodes -l <selector> -o json \
   | jq -r '.items[] | .metadata.name as $n
-      | .metadata.annotations["skyhook.nvidia.com/nodeState_<skyhook-name>"]
+      | .metadata.annotations["nodewright.nvidia.com/nodeState_<name>"]
       | fromjson
       | to_entries[]
       | select(.value.state == "erroring" and (.value.stage | test("uninstall") | not))
@@ -219,18 +219,18 @@ Any rows returned are nodes the finalizer is waiting on.
 2. **Reset the affected node's NodeWright state.** Use the CLI:
 
     ```bash
-    kubectl skyhook reset <skyhook-name> --node <node-name> --confirm
+    kubectl nodewright node reset <node-name> --nodewright <name> --confirm
     ```
 
-    This clears the per-skyhook `nodeState` annotation on that node. With the entry gone, the finalizer's "is anything still tracked" check turns false and Phase 3 cleanup runs. **Caveat:** `uninstall.sh` does **not** run — anything the install script wrote to the host is left in place. Prefer this only when you know the install didn't actually modify host state, or when you're willing to clean up out-of-band.
+    This clears the per-NodeWright `nodeState` annotation on that node. With the entry gone, the finalizer's "is anything still tracked" check turns false and Phase 3 cleanup runs. **Caveat:** `uninstall.sh` does **not** run — anything the install script wrote to the host is left in place. Prefer this only when you know the install didn't actually modify host state, or when you're willing to clean up out-of-band.
 
 3. **Strip the finalizer (last resort).** Bypasses the finalizer entirely:
 
     ```bash
-    kubectl patch skyhook <name> --type=merge -p '{"metadata":{"finalizers":null}}'
+    kubectl patch nodewright <name> --type=merge -p '{"metadata":{"finalizers":null}}'
     ```
 
-    Same caveat as above, plus Phase 3 cleanup is **skipped**: node cordons, per-skyhook labels/annotations, and conditions are **not** removed. You'll need to run `kubectl skyhook reset` on each affected node (or hand-remove the residual keys) afterward.
+    Same caveat as above, plus Phase 3 cleanup is **skipped**: node cordons, per-NodeWright labels/annotations, and conditions are **not** removed. You'll need to run `kubectl nodewright node reset` on each affected node (or hand-remove the residual keys) afterward.
 
 **Long-term fix.** Tracked as a design gap: the finalizer should be able to drive uninstall from an install-erroring state (either after N retries, or via an explicit "give up on install" CR annotation). Until that lands, the workarounds above are the only options.
 
@@ -247,7 +247,7 @@ Any rows returned are nodes the finalizer is waiting on.
 ```bash
 kubectl get nodes -l <selector> -o json \
   | jq -r '.items[] | .metadata.name as $n
-      | .metadata.annotations["skyhook.nvidia.com/nodeState_<skyhook-name>"]
+      | .metadata.annotations["nodewright.nvidia.com/nodeState_<name>"]
       | fromjson
       | to_entries[]
       | select(.value.stage == "uninstall-interrupt" and .value.state != "complete")
@@ -257,7 +257,7 @@ kubectl get nodes -l <selector> -o json \
 And verify no interrupt pod exists for the package:
 
 ```bash
-kubectl get pods -n skyhook -l skyhook.nvidia.com/name=<skyhook-name>,skyhook.nvidia.com/package=<pkg>-<ver>,skyhook.nvidia.com/interrupt=True
+kubectl get pods -n skyhook -l nodewright.nvidia.com/name=<name>,nodewright.nvidia.com/package=<pkg>-<ver>,nodewright.nvidia.com/interrupt=True
 ```
 
 An entry from the first command with no rows from the second confirms the stranded state.
@@ -269,7 +269,7 @@ An entry from the first command with no rows from the second confirms the strand
 2. **Reset the affected node.**
 
     ```bash
-    kubectl skyhook reset <skyhook-name> --node <node-name> --confirm
+    kubectl nodewright node reset <node-name> --nodewright <name> --confirm
     ```
 
     Same caveat as the install-erroring case: any pending uninstall script does **not** run, and host-side state written by earlier lifecycle steps stays put.
@@ -284,12 +284,12 @@ An entry from the first command with no rows from the second confirms the strand
 
 **Most common trigger.** Copy-pasting a working NodeWright YAML from one cluster to another and forgetting to flip `apply` back to `false` before applying. Also reachable by applying a NodeWright with `apply: true` set in a manifest generated by a tool that tracks "last known good" config.
 
-**How to confirm.** Package is in spec with `apply: true, enabled: true`, but no entry in any node's `nodeState_<skyhook-name>` annotation:
+**How to confirm.** Package is in spec with `apply: true, enabled: true`, but no entry in any node's `nodeState_<name>` annotation:
 
 ```bash
-kubectl get skyhook <name> -o jsonpath='{.spec.packages.<pkg>.uninstall}'
+kubectl get nodewright <name> -o jsonpath='{.spec.packages.<pkg>.uninstall}'
 kubectl get nodes -l <selector> -o json \
-  | jq -r '.items[] | "\(.metadata.name): \(.metadata.annotations["skyhook.nvidia.com/nodeState_<skyhook-name>"] // "<no state>")"'
+  | jq -r '.items[] | "\(.metadata.name): \(.metadata.annotations["nodewright.nvidia.com/nodeState_<name>"] // "<no state>")"'
 ```
 
 If every node returns `<no state>` (or a state map that doesn't contain the package's `name|version` key), the package was never installed.
@@ -315,9 +315,9 @@ Re-apply the NodeWright. The install pipeline will engage on the next reconcile.
 **How to confirm.** Package in spec has the new version, every node's nodeState annotation either lacks the package entirely or has the package at the *old* version, and `uninstall.apply` is still `true`:
 
 ```bash
-kubectl get skyhook <name> -o jsonpath='{.spec.packages.<pkg>.version}'
+kubectl get nodewright <name> -o jsonpath='{.spec.packages.<pkg>.version}'
 kubectl get nodes -l <selector> -o json \
-  | jq -r '.items[] | .metadata.annotations["skyhook.nvidia.com/nodeState_<skyhook-name>"] // "{}" | fromjson | keys'
+  | jq -r '.items[] | .metadata.annotations["nodewright.nvidia.com/nodeState_<name>"] // "{}" | fromjson | keys'
 ```
 
 If spec shows the new version and no node state references the new `name|version` key, the package is stranded.
@@ -340,7 +340,7 @@ If spec shows the new version and no node state references the new `name|version
 
 ### `CleanupSCRMetadata` can over-delete annotations when a NodeWright name collides with a taint-key suffix
 
-**Unlikely, operational.** During CR-delete cleanup (`HandleFinalizer` Phase 3), `CleanupSCRMetadata` removes any `skyhook.nvidia.com/*` annotation or label whose key ends with `_<skyhookName>`. That suffix-match also catches the `skyhook.nvidia.com/autoTaint_<taintKey>` annotation written by `AutoTaintNewNodes` — **but only if the NodeWright's name exactly equals the taint key's value**. In practice both sides are user-chosen strings; a collision requires a NodeWright named to match a taint key (e.g., a NodeWright literally named `runtime-required` in a cluster where the runtime-required taint uses that string).
+**Unlikely, operational.** During CR-delete cleanup (`HandleFinalizer` Phase 3), `CleanupSCRMetadata` removes any `nodewright.nvidia.com/*` annotation or label whose key ends with `_<name>`. That suffix-match also catches the `nodewright.nvidia.com/autoTaint_<taintKey>` annotation written by `AutoTaintNewNodes` — **but only if the NodeWright's name exactly equals the taint key's value**. In practice both sides are user-chosen strings; a collision requires a NodeWright named to match a taint key (e.g., a NodeWright literally named `runtime-required` in a cluster where the runtime-required taint uses that string).
 
 **Impact if it happens.** The `autoTaint_*` annotation is removed when the NodeWright is deleted, losing the audit trail of which nodes were auto-tainted. The taint itself is a separate concern (managed by `HandleAutoTaint`) and is not affected. In real clusters this is almost never reachable because NodeWright names tend to be descriptive (`gpu-drivers`, `kernel-tune`) while taint keys tend to be namespaced (`nvidia.com/gpu`, `skyhook.nvidia.com`).
 
@@ -361,7 +361,7 @@ If spec shows the new version and no node state references the new `name|version
 ```bash
 kubectl get nodes -l <selector> -o json \
   | jq -r '.items[] | .metadata.name as $n
-      | .metadata.annotations["skyhook.nvidia.com/nodeState_<skyhook-name>"]
+      | .metadata.annotations["nodewright.nvidia.com/nodeState_<name>"]
       | fromjson
       | to_entries[]
       | select(.value.stage == "uninstall" and .value.state == "complete")
@@ -370,8 +370,8 @@ kubectl get nodes -l <selector> -o json \
 
 Any rows are nodes the controller will run an unwanted apply pod on before retriggering uninstall.
 
-**Avoidance.** Don't `--force --grace-period=0` a NodeWright with active uninstall pods. Let the finalizer drive uninstall to completion, or use the documented workarounds for blocked-finalizer cases (`kubectl skyhook reset`, then plain `kubectl delete`).
+**Avoidance.** Don't `--force --grace-period=0` a NodeWright with active uninstall pods. Let the finalizer drive uninstall to completion, or use the documented workarounds for blocked-finalizer cases (`kubectl nodewright node reset`, then plain `kubectl delete`).
 
-**Workaround if already in this state.** Before recreating the NodeWright, run `kubectl skyhook reset <skyhook-name> --node <node-name> --confirm` on each affected node to clear the orphaned annotation. Then recreate the NodeWright normally — the install pipeline engages cleanly with no spurious apply pod.
+**Workaround if already in this state.** Before recreating the NodeWright, run `kubectl nodewright node reset <node-name> --nodewright <name> --confirm` on each affected node to clear the orphaned annotation. Then recreate the NodeWright normally — the install pipeline engages cleanly with no spurious apply pod.
 
 **Long-term fix.** In `HandleUninstallRequests`, special-case `stage: uninstall` / `state: complete`: call `RemoveState` (mirroring the existing `uninstall-interrupt / complete` branch) and skip the `toUninstall` append. The current "re-add defensively" comment predates the realisation that `NextStage` re-maps `uninstall → apply` for completed packages without an interrupt; the safe handling is to treat a completed uninstall as terminal-uninstalled per D2.

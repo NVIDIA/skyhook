@@ -14,7 +14,7 @@ status:
         message: Node [X, Y, Z, ...] has taints that are not tolerable. Skipping.
 ```
 
-The legacy `skyhook.nvidia.com/TaintNotTolerable` condition type is retained for one release to allow existing consumers time to migrate.
+The legacy prefixed `nodewright.nvidia.com/TaintNotTolerable` condition type is retained for one release to allow existing consumers time to migrate.
 
 Metrics:
 

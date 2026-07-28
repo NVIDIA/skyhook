@@ -493,7 +493,7 @@ func (node *skyhookNode) RemoveTaint(key string) {
 }
 
 // HasSkyhookAnnotations returns true if the node has any annotation with the
-// skyhook.nvidia.com/ prefix, indicating it has been previously touched by the Skyhook operator.
+// nodewright.nvidia.com/ prefix, indicating it has been previously touched by the NodeWright operator.
 func (node *skyhookNode) HasSkyhookAnnotations() bool {
 	for key := range node.Annotations {
 		if strings.HasPrefix(key, v1alpha1.METADATA_PREFIX+"/") {
