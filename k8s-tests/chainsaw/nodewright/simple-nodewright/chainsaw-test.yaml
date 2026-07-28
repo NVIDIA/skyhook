@@ -62,6 +62,8 @@ spec:
           ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t stage=config
     - assert:
         file: assert_pods.yaml
+    - assert:
+        file: assert_jobs.yaml
     - script:
         content: |
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=complete
