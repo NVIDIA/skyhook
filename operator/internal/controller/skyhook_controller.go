@@ -665,10 +665,13 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 					errors = append(errors, fmt.Errorf("error patching node [%s]: %w", node.GetNode().Name, err))
 				}
 
-				// Optimistic lock: JobReconciler writes nodeState_<skyhook> concurrently. A
-				// conflict means this pass's snapshot is stale, so it escapes to the queue and
-				// the next pass re-derives rather than clobbering the newer write.
-				err = r.Patch(ctx, node.GetNode(), client.MergeFromWithOptions(clusterState.tracker.GetOriginal(node.GetNode()), client.MergeFromWithOptimisticLock{}))
+				// Deliberately NOT optimistic-locked. The pass patches every node from one
+				// whole-world snapshot, so a conflict cannot be retried in place: the state the
+				// patch was computed from is already stale. Gating it produced a conflict storm
+				// in e2e (0 -> 156 conflicts on one lifecycle run) where the pass never
+				// converged. JobReconciler's own writes are locked and retried instead, since a
+				// single object can be re-read cheaply.
+				err = r.Patch(ctx, node.GetNode(), client.MergeFrom(clusterState.tracker.GetOriginal(node.GetNode())))
 				if err != nil {
 					errors = append(errors, fmt.Errorf("error patching node [%s]: %w", node.GetNode().Name, err))
 				}
@@ -1190,7 +1193,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 	logger := log.FromContext(ctx)
 
 	for _, node := range skyhook.GetNodes() {
-		patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()), client.MergeFromWithOptimisticLock{})
+		patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()))
 		if node.Changed() {
 			err := r.Patch(ctx, node.GetNode(), patch)
 			if err != nil {
