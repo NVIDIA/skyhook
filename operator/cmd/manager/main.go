@@ -38,6 +38,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -138,9 +139,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// A client-go clientset is needed only for reading pod-log streams (a subresource
+	// the manager's controller-runtime client cannot serve); it shares the manager's config.
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "unable to create clientset")
+		os.Exit(1)
+	}
+
 	cont, err := controller.NewSkyhookReconciler(
 		mgr.GetScheme(),
 		mgr.GetClient(),
+		clientset,
 		mgr.GetEventRecorder("skyhook-controller"),
 		options.SkyhookOperatorOptions)
 	if err != nil {
