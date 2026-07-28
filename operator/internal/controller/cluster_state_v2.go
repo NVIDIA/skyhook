@@ -712,7 +712,7 @@ const maxMalformedNodesListed = 5
 
 // UpdateNodeStateMalformedCondition sets or clears the bare-named
 // `NodeStateMalformed` condition listing the nodes whose
-// `nodeState_<skyhook>` annotation cannot be parsed for this Skyhook. Unlike
+// `nodeState_<name>` annotation cannot be parsed for this NodeWright. Unlike
 // UninstallFailed, this condition is stage-agnostic — malformed state
 // affects every lifecycle decision (install, upgrade, uninstall, finalizer)
 // so it deserves its own user-visible signal.
