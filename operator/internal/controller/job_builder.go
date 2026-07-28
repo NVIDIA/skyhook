@@ -474,6 +474,26 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 	return pod
 }
 
+// jobMatchesPackage reports whether an existing stage Job still matches what the operator
+// would build for this package+stage now. It is the Job analogue of podMatchesPackage, used
+// to decide on an AlreadyExists race or a validation sweep whether a Job is stale and must
+// be replaced.
+//
+// podMatchesPackage compares only the package label, the interrupt label (to pick which
+// expected executor to build), and per-init-container name/image/env/resources, all of
+// which live on parts of the pod the Job builder copies through unchanged (the init-container
+// chain and the template labels). The Job-specific differences (exit-0 main container,
+// restartPolicy, extra tolerations, podFailurePolicy) are pod-level fields podMatchesPackage
+// never reads, so evaluating it on the Job's pod template gives the same answer as on the
+// equivalent raw pod. Reuse it rather than duplicate (and risk drifting) the compare.
+func jobMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, job batchv1.Job, skyhook *wrapper.Skyhook, stage v1alpha1.Stage) bool {
+	templatePod := corev1.Pod{
+		ObjectMeta: job.Spec.Template.ObjectMeta,
+		Spec:       job.Spec.Template.Spec,
+	}
+	return podMatchesPackage(opts, _package, templatePod, skyhook, stage)
+}
+
 // PodMatchesPackage asserts that a given pod matches the given pod spec
 func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, pod corev1.Pod, skyhook *wrapper.Skyhook, stage v1alpha1.Stage) bool {
 	var expectedPod *corev1.Pod
@@ -495,6 +515,14 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 	// check to see whether the name or the version of the package changed
 	packageLabel := fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)
 	if actualPod.Labels[packageLabel] != expectedPod.Labels[packageLabel] {
+		return false
+	}
+
+	// A differing count is itself a mismatch, and checking it up front is what keeps the
+	// indexing below in bounds: the loop walks the actual containers but indexes the
+	// expected slice, so an actual pod carrying an extra init container (an admission
+	// webhook injecting one, say) would otherwise panic the reconcile.
+	if len(actualPod.Spec.InitContainers) != len(expectedPod.Spec.InitContainers) {
 		return false
 	}
 
