@@ -87,9 +87,8 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: nodewright.nvidia.com/v1alpha1
-                kind: NodeWright
-                name: interrupt
+              - apiVersion: batch/v1
+                kind: Job
           spec:
             initContainers:
               - name: jason-init
@@ -214,9 +213,8 @@ spec:
                     "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: nodewright.nvidia.com/v1alpha1
-                kind: NodeWright
-                name: interrupt
+              - apiVersion: batch/v1
+                kind: Job
           spec:
             initContainers:
               - name: interrupt

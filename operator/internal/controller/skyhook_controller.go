@@ -331,8 +331,13 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 // Package stages run as batch/v1 Jobs; pods/log is read for the deadline failure-log snapshot.
-//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=pods/log,verbs=get
+// Jobs and their pod logs are namespace-scoped rather than cluster-wide: every Job the operator
+// touches lives in its own namespace (the informer is scoped there in main.go, and every list
+// passes client.InNamespace), and pod logs are only read off those Jobs' child pods. The literal
+// below is rewritten by the kustomize namespace transformer and templated as .Release.Namespace
+// in the chart.
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete,namespace=skyhook
+//+kubebuilder:rbac:groups=core,resources=pods/log,verbs=get,namespace=skyhook
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -2061,23 +2066,6 @@ func (r *SkyhookReconciler) HasRunningPackages(ctx context.Context, skyhookNode 
 		}
 	}
 
-	// Legacy window: a pre-upgrade raw pod still mid-flight also blocks the interrupt so we
-	// don't cordon/drain under a running legacy stage.
-	pods, err := r.dal.GetPods(ctx,
-		client.HasLabels{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX)},
-		client.MatchingFields{fieldSelectorNodeName: nodeName},
-	)
-	if err != nil {
-		return false, fmt.Errorf("error getting pods: %w", err)
-	}
-	if pods != nil {
-		for i := range pods.Items {
-			if !isJobOwnedPod(&pods.Items[i]) {
-				return true, nil
-			}
-		}
-	}
-
 	return false, nil
 }
 
@@ -2407,34 +2395,6 @@ func (r *SkyhookReconciler) JobExists(ctx context.Context, nodeName, skyhookName
 		}
 	}
 
-	// Legacy migration window: a stage still mid-flight as a pre-upgrade raw pod (no job-name
-	// label) must also gate creation so we don't mint a duplicate Job executor for it.
-	return r.legacyPodExists(ctx, nodeName, skyhookName, _package)
-}
-
-// legacyPodExists reports whether a pre-upgrade raw package/interrupt pod (one without a Job
-// owner) is still running on the node. Removed once the one-minor migration window closes.
-func (r *SkyhookReconciler) legacyPodExists(ctx context.Context, nodeName, skyhookName string, _package *v1alpha1.Package) (bool, error) {
-	pods, err := r.dal.GetPods(ctx,
-		client.MatchingFields{
-			fieldSelectorNodeName: nodeName,
-		},
-		client.MatchingLabels{
-			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhookName,
-			fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX): fmt.Sprintf("%s-%s", _package.Name, _package.Version),
-		},
-	)
-	if err != nil {
-		return false, fmt.Errorf("error checking existing legacy pods: %w", err)
-	}
-	if pods == nil {
-		return false, nil
-	}
-	for i := range pods.Items {
-		if !isJobOwnedPod(&pods.Items[i]) {
-			return true, nil
-		}
-	}
 	return false, nil
 }
 
@@ -2503,28 +2463,6 @@ func (r *SkyhookReconciler) deleteConfigUpdateExecutors(ctx context.Context, nod
 		}
 	}
 
-	// Legacy window: a legacy pod crash-looping on stale config has no Job to delete, and the
-	// existence gate would block a replacement, so delete it directly to avoid a deadlock.
-	pods, err := r.dal.GetPods(ctx,
-		client.MatchingFields{fieldSelectorNodeName: node.GetNode().Name},
-		client.MatchingLabels{
-			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX):    skyhookName,
-			fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX): fmt.Sprintf("%s-%s", _package.Name, _package.Version),
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("listing legacy package pods on node %s: %w", node.GetNode().Name, err)
-	}
-	if pods != nil {
-		for i := range pods.Items {
-			if isJobOwnedPod(&pods.Items[i]) {
-				continue
-			}
-			if err := r.Delete(ctx, &pods.Items[i]); err != nil {
-				return fmt.Errorf("deleting erroring legacy pod %s on node %s: %w", pods.Items[i].Name, node.GetNode().Name, err)
-			}
-		}
-	}
 	return nil
 }
 
@@ -2701,10 +2639,6 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 		}
 	}
 
-	legacyUpdate, legacyErrs := r.validateLegacyPods(ctx, skyhook)
-	update = update || legacyUpdate
-	errs = append(errs, legacyErrs...)
-
 	return update, utilerrors.NewAggregate(errs)
 }
 
@@ -2761,86 +2695,6 @@ func (r *SkyhookReconciler) jobIsStale(job *batchv1.Job, pkg *PackageSkyhook, no
 		return true
 	}
 	return status.Stage != pkg.Stage
-}
-
-// validateLegacyPods runs the pre-Jobs validation on legacy raw package pods (those without a Job
-// owner) still present during the one-minor migration window. Removed once the window closes.
-func (r *SkyhookReconciler) validateLegacyPods(ctx context.Context, skyhook SkyhookNodes) (bool, []error) {
-	update := false
-	errs := make([]error, 0)
-
-	pods, err := r.dal.GetPods(ctx,
-		client.MatchingLabels{
-			fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): skyhook.GetSkyhook().Name,
-		},
-	)
-	if err != nil {
-		return false, []error{fmt.Errorf("error getting pods while validating packages: %w", err)}
-	}
-	if pods == nil {
-		return false, nil
-	}
-
-	podsByNode := make(map[string][]corev1.Pod)
-	for i := range pods.Items {
-		if isJobOwnedPod(&pods.Items[i]) {
-			continue // Job child pods are validated through their Job above
-		}
-		podsByNode[pods.Items[i].Spec.NodeName] = append(podsByNode[pods.Items[i].Spec.NodeName], pods.Items[i])
-	}
-
-	for _, node := range skyhook.GetNodes() {
-		nodeState, err := node.State()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("node %s: reading state while validating legacy pods: %w", node.GetNode().Name, err))
-			continue
-		}
-		nodePods := podsByNode[node.GetNode().Name]
-		for i := range nodePods {
-			pod := nodePods[i]
-
-			runningPackage, err := GetPackage(&pod)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("error getting package from pod %s: %w", pod.Name, err))
-				continue
-			}
-			if runningPackage == nil {
-				continue
-			}
-
-			found := false
-			for _, v := range skyhook.GetSkyhook().Spec.Packages {
-				if podMatchesPackage(r.opts, &v, pod, skyhook.GetSkyhook(), runningPackage.Stage) {
-					found = true
-					break
-				}
-			}
-			if runningPackage.Stage == v1alpha1.StageUninstall && !found {
-				specPkg, inSpec := skyhook.GetSkyhook().Spec.Packages[runningPackage.Name]
-				if !inSpec || specPkg.Version != runningPackage.Version {
-					found = true
-				}
-			}
-
-			if !found {
-				update = true
-				if err := r.InvalidPackage(ctx, &pod); err != nil {
-					errs = append(errs, fmt.Errorf("error invalidating legacy pod %s: %w", pod.Name, err))
-				}
-				continue
-			}
-
-			status, exists := nodeState[runningPackage.GetUniqueName()]
-			if !exists || status.Stage != runningPackage.Stage {
-				update = true
-				if err := r.InvalidPackage(ctx, &pod); err != nil {
-					errs = append(errs, fmt.Errorf("error invalidating legacy pod %s: %w", pod.Name, err))
-				}
-			}
-		}
-	}
-
-	return update, errs
 }
 
 // InvalidPackage marks a package executor invalid and persists it, which triggers its controller

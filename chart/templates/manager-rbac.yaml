@@ -85,22 +85,9 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods/log
   - pods/status
   verbs:
   - get
-- apiGroups:
-  - batch
-  resources:
-  - jobs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
 - apiGroups:
   - ""
   resources:
@@ -198,6 +185,55 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
+  name: skyhook-operator-manager-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "chart.fullname" . }}-controller-manager
+  namespace: '{{ .Release.Namespace }}'
+---
+# Least privilege: every Job the operator touches lives in its own namespace (the informer is
+# scoped there and every list passes InNamespace), and pod logs are only read off those Jobs'
+# child pods, so these are a namespaced Role rather than part of the ClusterRole above.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: skyhook-operator-manager-role
+  namespace: '{{ .Release.Namespace }}'
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: skyhook-operator-manager-namespaced-rolebinding
+  namespace: '{{ .Release.Namespace }}'
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: skyhook-operator
+    app.kubernetes.io/part-of: skyhook-operator
+  {{- include "chart.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
   name: skyhook-operator-manager-role
 subjects:
 - kind: ServiceAccount

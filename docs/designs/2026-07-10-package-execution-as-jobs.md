@@ -217,7 +217,7 @@ kubectl get jobs -l skyhook.nvidia.com/node=worker-7                            
 
 ### RBAC
 
-The operator ClusterRole gains `batch/jobs` (`get;list;watch;create;update;patch;delete`) and `core/pods/log` `get` (the deadline snapshot) — kubebuilder markers + `make manifests`, hand-mirrored into `chart/`. The role stays cluster-scoped, but the Jobs informer is namespace-scoped and all Job writes target the operator namespace. Pod verbs stay: the operator still reads child pods for restarts/container names, reads workload pods for drain, and drives legacy pods during the upgrade window.
+The operator gains `batch/jobs` (`get;list;watch;create;update;patch;delete`) and `core/pods/log` `get` (the deadline snapshot) as a **namespaced Role**, not on the ClusterRole: every Job the operator touches lives in its own namespace (the informer is scoped there and every list passes `InNamespace`), and pod logs are only read off those Jobs' child pods, so cluster-wide grants would be privilege the operator never exercises. The `namespace=` field on the kubebuilder rbac markers makes controller-gen emit the Role; the binding is hand-written (controller-gen generates roles but never bindings), and both are mirrored into `chart/` templated on `.Release.Namespace`. Pod verbs stay cluster-wide: the operator still reads workload pods on any node for drain, reads child pods for restarts/container names, and drives legacy pods during the upgrade window.
 
 ## Upgrade and compatibility
 

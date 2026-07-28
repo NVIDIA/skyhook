@@ -69,67 +69,14 @@ func podHandlerFunc(ctx context.Context, o client.Object) []reconcile.Request {
 func (r *SkyhookReconciler) PodReconcile(ctx context.Context, pod *corev1.Pod) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("pod-reconcile")
 
-	// Dual path during the migration window: a Job-owned child pod's completion and lifecycle are
-	// owned by JobReconcile (and the Job controller), so here we only surface in-flight erroring —
-	// no delete-on-success, no complete write. Legacy raw pods (no job-name label) keep the full
-	// path below. This branch is removed together with the legacy path one minor after the swap.
-	if isJobOwnedPod(pod) {
-		return r.jobPodReconcile(ctx, pod)
-	}
-
-	// check if the package is invalid, if it is then delete the pod and return
-	if invalid, err := r.HandleInvalidPackage(ctx, pod); invalid || err != nil {
-		if err != nil {
-			logger.Error(err, "error handling invalid package", "pod", pod.Name)
-		}
-		return ctrl.Result{}, err
-	}
-
-	containerName, state, restarts := containerExitedSuccessfully(pod)
-	switch state {
-	case containerStateSuccess:
-		// only update node state once on success to mitigate race conditions. If
-		// the pod has been marked for deletion then we know this has run once already
-		if pod.DeletionTimestamp == nil {
-			requeue, err := r.UpdateNodeState(ctx, pod, v1alpha1.StateComplete, containerName, restarts)
-			if err != nil {
-				logger.Error(err, "error updating node state", "pod", pod.Name)
-				if requeue {
-					return ctrl.Result{}, err
-				}
-			}
-
-			// now delete pod
-			err = r.Delete(ctx, pod)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-
-		return ctrl.Result{}, nil
-	case containerStateFailed:
-		requeue, err := r.UpdateNodeState(ctx, pod, v1alpha1.StateErroring, containerName, restarts)
-		if err != nil {
-			logger.Error(err, "error updating node state", "pod", pod.Name)
-			if requeue {
-				return ctrl.Result{}, err
-			}
-		}
-	default:
-		// nothing to do
-		// logger.Info("nothing to do yet", "state", state, "pod", pod.Name)
-	}
-	return ctrl.Result{}, nil
-}
-
-// jobPodReconcile handles a Job-owned child pod during the migration window. JobReconcile and the
-// Job controller own completion and cleanup, so this only surfaces in-flight erroring from a
-// genuine step failure — it never deletes the pod or records completion. Erroring is guarded: a
-// terminating pod (pause suspend, a sweep, a manual delete) or a disruption casualty
-// (eviction/preemption/PodGC) stays silent, and only a real terminal step failure marks erroring.
-func (r *SkyhookReconciler) jobPodReconcile(ctx context.Context, pod *corev1.Pod) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithName("pod-reconcile")
-
+	// Every package pod is a Job's child now, so completion and cleanup belong to JobReconcile
+	// and the Job controller. This watch exists only to surface in-flight erroring: a step that
+	// fails mid-Job shows up here before the Job itself goes terminal. It never deletes a pod or
+	// records completion, which would race the Job path for the same node-state key.
+	//
+	// Erroring is guarded: a terminating pod (pause suspension, a sweep, a manual delete) or a
+	// disruption casualty (eviction/preemption/PodGC) has no failure verdict and stays silent;
+	// only a genuine terminal step failure marks erroring.
 	if pod.DeletionTimestamp != nil || hasDisruptionTarget(pod) {
 		return ctrl.Result{}, nil
 	}
@@ -140,7 +87,6 @@ func (r *SkyhookReconciler) jobPodReconcile(ctx context.Context, pod *corev1.Pod
 			logger.Error(err, "error updating node state for job pod failure", "pod", pod.Name)
 		}
 	}
-	// Success or in-flight: JobReconcile records completion; nothing to do here.
 	return ctrl.Result{}, nil
 }
 
@@ -162,24 +108,6 @@ func podFailureIsGenuine(pod *corev1.Pod) bool {
 		}
 	}
 	return false
-}
-
-// HandleInvalidPackage deletes invalid packages
-func (r *SkyhookReconciler) HandleInvalidPackage(ctx context.Context, pod *corev1.Pod) (bool, error) {
-	invalid, err := IsInvalidPackage(pod)
-	if err != nil {
-		return false, err
-	}
-
-	if invalid {
-		err := r.Delete(ctx, pod)
-		if err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-
-	return false, nil
 }
 
 // UpdateNodeState returns error and if to requeue, not all errors should be requeued, and some times there is no error but should be requeued

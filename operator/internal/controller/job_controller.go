@@ -56,8 +56,7 @@ const (
 	// the controller UID is the only unambiguous parent link (job-name alone is not).
 	batchControllerUIDLabel = "batch.kubernetes.io/controller-uid"
 
-	// batchJobNameLabel is stamped by the Job controller on every child pod. Its presence
-	// distinguishes a Job-owned pod from a legacy pre-upgrade raw pod during the migration window.
+	// batchJobNameLabel is stamped by the Job controller on every child pod.
 	batchJobNameLabel = "batch.kubernetes.io/job-name"
 
 	// lastLogsMaxBytes caps the deadline log snapshot. Annotations share a per-object
@@ -600,13 +599,6 @@ func jobFinished(job *batchv1.Job) bool {
 	}
 	failed, _ := jobFailure(job)
 	return failed
-}
-
-// isJobOwnedPod reports whether a pod is a Job's child (carries the batch job-name label),
-// distinguishing it from a legacy pre-upgrade raw package pod during the migration window.
-func isJobOwnedPod(pod *corev1.Pod) bool {
-	_, ok := pod.Labels[batchJobNameLabel]
-	return ok
 }
 
 // failureTargetStale reports whether the Job has sat at FailureTarget past the grace window

@@ -157,23 +157,9 @@ var _ = Describe("Jobs execution swap", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(exists).To(BeFalse())
 		})
-
-		It("counts a legacy raw pod (no job-name label) during the migration window", func() {
-			legacy := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "legacy-tuning", Namespace: namespace,
-					Labels: map[string]string{nameLabel: skyhookName, packageLabel: "tuning-1.0.0"},
-				},
-				Spec: corev1.PodSpec{NodeName: nodeName},
-			}
-			r, _ := newReconciler(legacy)
-			exists, err := r.JobExists(ctx, nodeName, skyhookName, pkg)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(exists).To(BeTrue())
-		})
 	})
 
-	Describe("pod dual-path", func() {
+	Describe("pod watch", func() {
 		It("does not delete a Job-owned pod on success (JobReconcile owns completion)", func() {
 			pod := jobOwnedPod("tuning-pod-ok", corev1.ContainerStatus{
 				Name: "apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
@@ -181,7 +167,7 @@ var _ = Describe("Jobs execution swap", func() {
 			r, c := newReconciler(pod)
 			_, err := r.PodReconcile(ctx, pod)
 			Expect(err).ToNot(HaveOccurred())
-			// still present — the legacy delete-on-success path must not touch Job-owned pods
+			// still present: completion and cleanup belong to JobReconcile, never this watch
 			Expect(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: pod.Name}, &corev1.Pod{})).To(Succeed())
 		})
 
