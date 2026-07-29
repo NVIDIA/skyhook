@@ -21,7 +21,6 @@ package graph
 import (
 	"fmt"
 	"io"
-	"slices"
 	"sort"
 )
 
@@ -48,13 +47,11 @@ func New[T any]() DependencyGraph[T] {
 	return &dag[T]{
 		vertices:     map[string]*vertex[T]{},
 		placeholders: map[string]*vertex[T]{},
-		leafs:        map[string]*vertex[T]{},
 	}
 }
 
 type dag[T any] struct {
 	vertices     map[string]*vertex[T]
-	leafs        map[string]*vertex[T]
 	placeholders map[string]*vertex[T]
 }
 
@@ -81,14 +78,13 @@ func (d *dag[T]) Add(name string, object T, dependencies ...string) error {
 	if !ok {
 		vert = &vertex[T]{name: name, object: object, parents: dependencies}
 	} else {
-		// set object on placeholder
+		// A placeholder was created by a child that named this vertex before it was added, so
+		// it carries edges but no parents; set both here or the parents are lost for good and
+		// this vertex looks dependency-free forever.
 		vert.object = object
+		vert.parents = dependencies
 	}
 	d.vertices[name] = vert
-
-	if len(dependencies) == 0 {
-		d.leafs[name] = vert
-	}
 
 	for _, dependency := range dependencies {
 		if dep, ok := d.vertices[dependency]; ok {
@@ -107,75 +103,43 @@ func (d *dag[T]) Add(name string, object T, dependencies ...string) error {
 	return nil
 }
 
-// leaves handle edge cases where there are more then one leaf, and from is a subset of the leaves not in the from
-func (d *dag[T]) leaves(from []string) []string {
-	leaves := make([]string, 0, len(d.leafs))
-	for _, f := range d.leafs {
-		leaves = append(leaves, f.name)
-	}
-	if len(from) > len(leaves) {
-		return nil
-	}
-	dif := diff(leaves, from)
-	return dif
-}
-
-// diff returns the elements in a that are not in b
-func diff(a, b []string) []string {
-	ret := make([]string, 0, len(a))
-	for _, v := range a {
-		if !slices.Contains(b, v) {
-			ret = append(ret, v)
-		}
-	}
-	return ret
-}
-
+// Next returns every vertex that is not yet in from and whose parents are all in from.
+//
+// Scanning all vertices rather than walking outward from from is deliberate: a walk only
+// ever reaches children of completed vertices, so a dependency-free vertex — which is
+// nobody's child — could never be re-offered once it was missed. That is what stranded a
+// still-incomplete package for good when the completed count grew past the number of
+// dependency-free packages.
 func (d *dag[T]) Next(from ...string) ([]string, error) {
 	if err := d.Valid(); err != nil {
 		return nil, err
 	}
 
-	if len(from) == 0 { // base starting case
-		return getNames(flat(d.leafs)), nil
-	}
-	leaves := d.leaves(from)
-	if len(leaves) > 0 {
-		return leaves, nil
+	done := make(map[string]struct{}, len(from))
+	for _, name := range from {
+		done[name] = struct{}{}
 	}
 
-	// Use a map to deduplicate edges
-	seen := make(map[string]*vertex[T])
-	for _, f := range from {
-		vert := d.vertices[f]
-		for _, edge := range vert.edges {
-			// Skip if already processed
-			if slices.Contains(from, edge.name) {
-				continue
-			}
+	ready := make([]*vertex[T], 0, len(d.vertices))
+	for _, vert := range d.vertices {
+		if _, ok := done[vert.name]; ok {
+			continue
+		}
 
-			// Check if all parents are in the completed set
-			allParentsSatisfied := true
-			for _, parent := range edge.parents {
-				if !slices.Contains(from, parent) {
-					allParentsSatisfied = false
-					break
-				}
+		satisfied := true
+		for _, parent := range vert.parents {
+			if _, ok := done[parent]; !ok {
+				satisfied = false
+				break
 			}
-			if allParentsSatisfied {
-				seen[edge.name] = edge
-			}
+		}
+		if satisfied {
+			ready = append(ready, vert)
 		}
 	}
 
-	// Convert map to slice
-	root := make([]*vertex[T], 0, len(seen))
-	for _, v := range seen {
-		root = append(root, v)
-	}
-
-	sortEdges(root)
-	return getNames(root), nil
+	sortEdges(ready)
+	return getNames(ready), nil
 }
 
 func (d *dag[T]) Get(from ...string) []T {
@@ -195,16 +159,6 @@ func (d *dag[T]) Valid() error {
 		return fmt.Errorf("error graph is not valid, missing: %v", miss)
 	}
 	return nil
-}
-
-func flat[T any](m map[string]*vertex[T]) []*vertex[T] {
-	root := make([]*vertex[T], 0, len(m))
-	for _, val := range m {
-		root = append(root, val)
-	}
-
-	sortEdges(root)
-	return root
 }
 
 func sortEdges[T any](e []*vertex[T]) {
