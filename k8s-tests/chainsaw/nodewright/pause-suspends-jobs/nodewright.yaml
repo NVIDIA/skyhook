@@ -28,7 +28,8 @@ spec:
     ## SLEEP_LEN holds apply open long enough to pause mid-stage. The whole test turns on
     ## catching this package while its Job is running, so this must outlast the pause step.
     slowpoke:
-      version: "1.0.0"
+      ## version is the agentless image tag; only published tags work here.
+      version: "1.2.3"
       image: ghcr.io/nvidia/skyhook/agentless
       env:
       - name: SLEEP_LEN

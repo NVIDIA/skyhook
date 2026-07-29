@@ -47,7 +47,13 @@ spec:
           ../nodewright-cli reset pause-suspends-jobs --confirm 2>/dev/null || true
     - create:
         file: nodewright.yaml
-    ## Wait for a running apply pod: pausing before the Job exists would prove nothing.
+    ## Wait until the apply stage is genuinely executing. Without this the negative assertion
+    ## after the pause passes vacuously against a pod that never started.
+    ##
+    ## Do NOT assert status.phase here: package work runs in init containers, so the pod stays
+    ## Pending for the whole stage and only reaches Running once apply has finished — the
+    ## opposite of the state this test needs. Init containers run one at a time, so exactly one
+    ## running entry means a step is in flight.
     - assert:
         resource:
           apiVersion: v1
@@ -56,10 +62,10 @@ spec:
             namespace: skyhook
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
-              nodewright.nvidia.com/package: slowpoke-1.0.0
+              nodewright.nvidia.com/package: slowpoke-1.2.3
               nodewright.nvidia.com/stage: apply
           status:
-            phase: Running
+            (length(initContainerStatuses[?state.running != null])): 1
 
   - name: pause-suspends-the-job-and-kills-the-pod
     description: >
@@ -80,7 +86,7 @@ spec:
             namespace: skyhook
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
-              nodewright.nvidia.com/package: slowpoke-1.0.0
+              nodewright.nvidia.com/package: slowpoke-1.2.3
               nodewright.nvidia.com/stage: apply
           spec:
             suspend: true
@@ -93,7 +99,7 @@ spec:
             namespace: skyhook
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
-              nodewright.nvidia.com/package: slowpoke-1.0.0
+              nodewright.nvidia.com/package: slowpoke-1.2.3
               nodewright.nvidia.com/stage: apply
     - script:
         ## The regression this test exists for. A pod deleted by suspension looks exactly
@@ -126,7 +132,7 @@ spec:
             namespace: skyhook
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
-              nodewright.nvidia.com/package: slowpoke-1.0.0
+              nodewright.nvidia.com/package: slowpoke-1.2.3
               nodewright.nvidia.com/stage: apply
           spec:
             ## Cleared, not merely absent: resume writes false rather than dropping the field.
@@ -140,5 +146,5 @@ spec:
             namespace: skyhook
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
-              nodewright.nvidia.com/package: slowpoke-1.0.0
+              nodewright.nvidia.com/package: slowpoke-1.2.3
               nodewright.nvidia.com/stage: apply
