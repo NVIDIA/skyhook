@@ -279,4 +279,116 @@ var _ = Describe("Jobs execution swap", func() {
 			Expect(r.shouldDeleteFinishedJob(parked, pkgSky, erroringEntry)).To(BeFalse())
 		})
 	})
+
+	Describe("pause suspend cascade", func() {
+		// buildSkyhookNodes wraps a NodeWright (with no packages, so any Job is stale) as the
+		// SkyhookNodes the suspend/resume helpers take. The nodes matter only for the
+		// ValidateRunningPackages ordering test; the plain helpers read only the Skyhook name.
+		buildSkyhookNodes := func(nodes ...corev1.Node) SkyhookNodes {
+			scr := v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: namespace}}
+			state, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{scr}},
+				&corev1.NodeList{Items: nodes},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(state.skyhooks).To(HaveLen(1))
+			return state.skyhooks[0]
+		}
+
+		suspendVal := func(c client.WithWatch, name string) *bool {
+			var got batchv1.Job
+			Expect(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &got)).To(Succeed())
+			return got.Spec.Suspend
+		}
+
+		invalidate := func(job *batchv1.Job) {
+			Expect(SetPackages(job, &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName}}, image, v1alpha1.StageApply, pkg)).To(Succeed())
+			Expect(InvalidatePackage(job)).To(Succeed())
+		}
+
+		It("suspends an unfinished Job when the Skyhook is paused", func() {
+			job := stageJob(v1alpha1.StageApply)
+			r, c := newReconciler(job)
+			Expect(r.suspendUnfinishedJobs(ctx, buildSkyhookNodes())).To(Succeed())
+			Expect(suspendVal(c, job.Name)).To(HaveValue(BeTrue()))
+		})
+
+		It("does not suspend a finished Job", func() {
+			job := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})
+			r, c := newReconciler(job)
+			Expect(r.suspendUnfinishedJobs(ctx, buildSkyhookNodes())).To(Succeed())
+			Expect(suspendVal(c, job.Name)).To(BeNil())
+		})
+
+		It("does not suspend an invalid Job (already being reaped)", func() {
+			job := stageJob(v1alpha1.StageApply)
+			invalidate(job)
+			r, c := newReconciler(job)
+			Expect(r.suspendUnfinishedJobs(ctx, buildSkyhookNodes())).To(Succeed())
+			Expect(suspendVal(c, job.Name)).To(BeNil())
+		})
+
+		It("is idempotent — leaves an already-suspended Job unchanged", func() {
+			job := stageJob(v1alpha1.StageApply)
+			job.Spec.Suspend = ptr(true)
+			r, c := newReconciler(job)
+			Expect(r.suspendUnfinishedJobs(ctx, buildSkyhookNodes())).To(Succeed())
+			Expect(suspendVal(c, job.Name)).To(HaveValue(BeTrue()))
+		})
+
+		It("resumes a suspended Job when the Skyhook is no longer paused", func() {
+			job := stageJob(v1alpha1.StageApply)
+			job.Spec.Suspend = ptr(true)
+			r, c := newReconciler(job)
+			Expect(r.resumeSuspendedJobs(ctx, buildSkyhookNodes())).To(Succeed())
+			Expect(suspendVal(c, job.Name)).To(HaveValue(BeFalse()))
+		})
+
+		It("leaves an invalid suspended Job suspended (validation reaps it before resume clears it)", func() {
+			job := stageJob(v1alpha1.StageApply)
+			job.Spec.Suspend = ptr(true)
+			invalidate(job)
+			r, c := newReconciler(job)
+			Expect(r.resumeSuspendedJobs(ctx, buildSkyhookNodes())).To(Succeed())
+			// still suspended — resume must not un-suspend a stale-spec Job before it is reaped
+			Expect(suspendVal(c, job.Name)).To(HaveValue(BeTrue()))
+		})
+
+		It("is a no-op with only a legacy pod present (legacy pods cannot suspend)", func() {
+			legacy := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "legacy-tuning", Namespace: namespace,
+					Labels: map[string]string{nameLabel: skyhookName, packageLabel: "tuning-1.0.0"},
+				},
+				Spec: corev1.PodSpec{NodeName: nodeName},
+			}
+			r, _ := newReconciler(legacy)
+			Expect(r.suspendUnfinishedJobs(ctx, buildSkyhookNodes())).To(Succeed())
+		})
+
+		It("invalidates a stale suspended Job without clearing suspend (resume ordering guard)", func() {
+			// A suspended Job whose package is no longer in spec (edited while paused). Validation must
+			// mark it invalid and return update=true — which makes the reconcile loop early-return
+			// BEFORE resumeSuspendedJobs runs — and must not clear suspend, so no stale-spec attempt
+			// launches before JobReconcile reaps it.
+			job := stageJob(v1alpha1.StageApply)
+			job.Spec.Suspend = ptr(true)
+			Expect(SetPackages(job, &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName}}, image, v1alpha1.StageApply, pkg)).To(Succeed())
+
+			node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+			r, c := newReconciler(job)
+			// empty Packages spec => the Job matches nothing => stale
+			update, err := r.ValidateRunningPackages(ctx, buildSkyhookNodes(node))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(update).To(BeTrue())
+
+			var got batchv1.Job
+			Expect(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: job.Name}, &got)).To(Succeed())
+			invalid, err := IsInvalidPackage(&got)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(invalid).To(BeTrue())                     // validation marked it invalid...
+			Expect(got.Spec.Suspend).To(HaveValue(BeTrue())) // ...and left suspend untouched
+		})
+	})
 })
