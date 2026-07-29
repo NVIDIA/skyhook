@@ -50,22 +50,33 @@ spec:
     ## Wait until the apply stage is genuinely executing. Without this the negative assertion
     ## after the pause passes vacuously against a pod that never started.
     ##
-    ## Do NOT assert status.phase here: package work runs in init containers, so the pod stays
-    ## Pending for the whole stage and only reaches Running once apply has finished — the
-    ## opposite of the state this test needs. Init containers run one at a time, so exactly one
-    ## running entry means a step is in flight.
-    - assert:
-        resource:
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            namespace: skyhook
-            labels:
-              nodewright.nvidia.com/name: pause-suspends-jobs
-              nodewright.nvidia.com/package: slowpoke-1.2.3
-              nodewright.nvidia.com/stage: apply
-          status:
-            (length(initContainerStatuses[?state.running != null])): 1
+    ## A polling script rather than an assert, matching the event poll in
+    ## delete-blocked-when-paused. An assert here has to wait for a resource that does not
+    ## exist yet — the operator must reconcile first — and a resource assert carrying a status
+    ## expression has nothing to evaluate against an empty match, so it fails on the first poll
+    ## instead of retrying. That passed locally only because a warm empty cluster produced the
+    ## pod before the first poll.
+    ##
+    ## Do NOT check status.phase: package work runs in init containers, so the pod stays Pending
+    ## for the whole stage and only reaches Running once apply has finished — the opposite of
+    ## the state this test needs. Init containers run one at a time, so a running entry means a
+    ## step is in flight.
+    - script:
+        timeout: 240s
+        content: |
+          for i in $(seq 1 80); do
+            running=$(kubectl get pods -n skyhook \
+              -l nodewright.nvidia.com/name=pause-suspends-jobs,nodewright.nvidia.com/package=slowpoke-1.2.3,nodewright.nvidia.com/stage=apply \
+              -o jsonpath='{.items[*].status.initContainerStatuses[*].state.running.startedAt}' 2>/dev/null)
+            if [ -n "$running" ]; then
+              echo "apply stage is executing (startedAt: $running)"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "no apply pod reached a running init container within timeout"
+          kubectl get jobs,pods -n skyhook -l nodewright.nvidia.com/name=pause-suspends-jobs -o wide || true
+          exit 1
 
   - name: pause-suspends-the-job-and-kills-the-pod
     description: >
