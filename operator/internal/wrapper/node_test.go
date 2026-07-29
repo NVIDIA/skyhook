@@ -139,6 +139,57 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pkgs).To(BeEmpty())
 		})
+
+		// Mirrors simple-update-skyhook after its update step: three packages with no
+		// dependsOn (baxter, dexter, jackie-chan) plus two that depend on dexter. A
+		// dependency-free package is nobody's child, so it has to stay runnable until it
+		// is itself complete, including once more packages are complete than there are
+		// dependency-free ones. Regression for the stall that parked a package at
+		// apply/complete and left the NodeWright in_progress forever.
+		It("still returns a dependency-free package once more packages are complete than there are roots", func() {
+			node := corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}}
+			skyhook := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "simple-update-skyhook"},
+				Spec: v1alpha1.NodeWrightSpec{
+					Packages: map[string]v1alpha1.Package{
+						"baxter":      {PackageRef: v1alpha1.PackageRef{Name: "baxter", Version: "2.3.1-test"}, Image: "img"},
+						"dexter":      {PackageRef: v1alpha1.PackageRef{Name: "dexter", Version: "1.2.3"}, Image: "img"},
+						"jackie-chan": {PackageRef: v1alpha1.PackageRef{Name: "jackie-chan", Version: "2024.7.7-test"}, Image: "img"},
+						"foobar":      {PackageRef: v1alpha1.PackageRef{Name: "foobar", Version: "1.2"}, Image: "img", DependsOn: map[string]string{"dexter": "1.2.3"}},
+						"spencer":     {PackageRef: v1alpha1.PackageRef{Name: "spencer", Version: "3.2.3"}, Image: "img", DependsOn: map[string]string{"dexter": "1.2.3"}},
+					},
+				},
+			}
+
+			skyhookNode, err := NewSkyhookNode(&node, &skyhook)
+			Expect(err).NotTo(HaveOccurred())
+
+			// everything except jackie-chan reaches config/complete
+			for _, ref := range []v1alpha1.PackageRef{
+				{Name: "baxter", Version: "2.3.1-test"},
+				{Name: "dexter", Version: "1.2.3"},
+				{Name: "foobar", Version: "1.2"},
+				{Name: "spencer", Version: "3.2.3"},
+			} {
+				Expect(skyhookNode.Upsert(ref, "img", v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")).To(Succeed())
+			}
+
+			// jackie-chan finished apply and is waiting to be advanced to config
+			Expect(skyhookNode.Upsert(v1alpha1.PackageRef{Name: "jackie-chan", Version: "2024.7.7-test"},
+				"img", v1alpha1.StateComplete, v1alpha1.StageApply, 0, "")).To(Succeed())
+
+			Expect(skyhookNode.IsComplete()).To(BeFalse())
+
+			pkgs, err := skyhookNode.RunNext()
+			Expect(err).NotTo(HaveOccurred())
+
+			names := make([]string, 0, len(pkgs))
+			for _, p := range pkgs {
+				names = append(names, p.Name)
+			}
+			Expect(names).To(ContainElement("jackie-chan"),
+				"jackie-chan is incomplete and has no unmet dependencies, so it must still be runnable")
+		})
 	})
 
 	Context("HasSkyhookAnnotations", func() {
