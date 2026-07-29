@@ -334,12 +334,11 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // wired through mgr.GetEventRecorder), so the core rule above is not sufficient on
 // its own — without this rule every recorded event is rejected as forbidden.
 //+kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
-// ConfigMaps are namespace-scoped for the same reason as Jobs below: the operator only ever
-// touches the per-node metadata ConfigMaps it creates in its own namespace (all four access
-// sites pass client.InNamespace), and a package's spec.configMap is mounted by the kubelet,
-// never read here. The informer is scoped to match in main.go; the two must move together,
-// since a cluster-wide informer under this Role would be rejected.
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete,namespace=skyhook
+// Cluster-wide to match the cluster-wide ConfigMap informer in main.go; the two must move
+// together, since a cluster-wide informer under a namespaced Role is rejected at LIST/WATCH.
+// Both are candidates for namespacing (see the note at the cache options), held back pending
+// the e2e/core investigation.
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 
 // Package stages run as batch/v1 Jobs; pods/log is read for the deadline failure-log snapshot.
 // Jobs and their pod logs are namespace-scoped rather than cluster-wide: every Job the operator

@@ -127,12 +127,6 @@ func main() {
 		//   Jobs        scoped. Package-stage Jobs are created in options.Namespace and every
 		//               list passes client.InNamespace, so caching a cluster's CronJobs and
 		//               user Jobs buys nothing.
-		//   ConfigMaps  scoped. All four access sites already pass client.InNamespace, and a
-		//               package's spec.configMap is a ConfigMapVolumeSource the kubelet
-		//               resolves, never an operator read. This is the informer most worth
-		//               scoping: ConfigMaps are numerous and up to 1MiB each, so a
-		//               cluster-wide one dominates operator memory on a large cluster.
-		//
 		//   Secrets     scoped, though nothing on THIS manager reads a Secret today — the only
 		//               reader is WebhookController, which runs on webhookBootstrapMgr below and
 		//               scopes its own cache. Listed anyway because the Secret RBAC is namespaced
@@ -148,14 +142,15 @@ func main() {
 		//               drained while user workloads are still running, and the interrupt
 		//               reboots the node under them.
 		//   Nodes       cluster-scoped kind; namespaces do not apply.
+		//   ConfigMaps  every access site passes client.InNamespace and a package's
+		//               spec.configMap is a kubelet-resolved mount, so this looks scopable and
+		//               would be the biggest memory win (ConfigMaps are numerous and up to 1MiB).
+		//               Left cluster-wide for now: scoping it correlated with intermittent
+		//               apply-to-config stalls in e2e/core that are not yet explained. Do not
+		//               re-scope without reproducing that first.
 		Cache: cache.Options{
 			ByObject: map[client.Object]cache.ByObject{
 				&batchv1.Job{}: {
-					Namespaces: map[string]cache.Config{
-						options.Namespace: {},
-					},
-				},
-				&corev1.ConfigMap{}: {
 					Namespaces: map[string]cache.Config{
 						options.Namespace: {},
 					},
