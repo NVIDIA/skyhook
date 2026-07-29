@@ -92,7 +92,7 @@ Starting with `v0.16.0`, NodeWright is distributed **exclusively via GitHub Cont
 | Artifact | Location |
 | --- | --- |
 | Operator image | `ghcr.io/nvidia/nodewright/operator` |
-| Agent image | `ghcr.io/nvidia/skyhook/agent` *(migration to `ghcr.io/nvidia/nodewright/agent` pending)* |
+| Agent image | `ghcr.io/nvidia/nodewright/agent` |
 | Helm chart (OCI) | `oci://ghcr.io/nvidia/nodewright/charts/nodewright` |
 
 `v0.16.0` is the **first release using OCI on `ghcr.io` for the Helm chart** — previously the chart was published to the NGC Helm repository (`https://helm.ngc.nvidia.com/nvidia/skyhook`). The OCI distribution removes the `helm repo add` step entirely; Helm 3.8+ pulls from `oci://` URLs directly.
