@@ -36,11 +36,15 @@ import (
 	"golang.org/x/sync/errgroup"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	kzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -115,6 +119,49 @@ func main() {
 		HealthProbeBindAddress: options.ProbePort,
 		LeaderElection:         options.LeaderElection,
 		LeaderElectionID:       reconcileLeaseID,
+		// Scoping an informer to the operator namespace is only safe for kinds the operator
+		// never reads outside it. A scoped cache does not fail closed in a useful way: a read
+		// for an out-of-scope object errors at runtime, and a scoped List silently returns a
+		// short answer, so widening a scope is cheap but narrowing one wrongly is a live bug.
+		//
+		//   Jobs        scoped. Package-stage Jobs are created in options.Namespace and every
+		//               list passes client.InNamespace, so caching a cluster's CronJobs and
+		//               user Jobs buys nothing.
+		//   Secrets     scoped, though nothing on THIS manager reads a Secret today — the only
+		//               reader is WebhookController, which runs on webhookBootstrapMgr below and
+		//               scopes its own cache. Listed anyway because the Secret RBAC is namespaced
+		//               now: informers start lazily, so without this entry the first Secret read
+		//               added here would quietly open a cluster-wide watch and get a 403 at
+		//               runtime rather than a compile error.
+		//
+		// Deliberately NOT scoped:
+		//
+		//   Pods        drain must see every workload pod on a node, in any namespace.
+		//               IsDrained and the drain executor list purely by the nodeName field
+		//               index. Scope this and drain sees only package pods, reports the node
+		//               drained while user workloads are still running, and the interrupt
+		//               reboots the node under them.
+		//   Nodes       cluster-scoped kind; namespaces do not apply.
+		//   ConfigMaps  every access site passes client.InNamespace and a package's
+		//               spec.configMap is a kubelet-resolved mount, so this looks scopable and
+		//               would be the biggest memory win (ConfigMaps are numerous and up to 1MiB).
+		//               Left cluster-wide for now: scoping it correlated with intermittent
+		//               apply-to-config stalls in e2e/core that are not yet explained. Do not
+		//               re-scope without reproducing that first.
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&batchv1.Job{}: {
+					Namespaces: map[string]cache.Config{
+						options.Namespace: {},
+					},
+				},
+				&corev1.Secret{}: {
+					Namespaces: map[string]cache.Config{
+						options.Namespace: {},
+					},
+				},
+			},
+		},
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:       9443,
 			CertDir:    certDir,
@@ -162,6 +209,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Package-stage Jobs and their pods get their own controllers rather than prefixed
+	// requests on the shared reconcile queue: both reconcile per-object, so a real watch
+	// gives each a real requeue and its own backoff.
+	if err = controller.NewJobReconciler(mgr.GetClient(), mgr.GetAPIReader(), clientset, mgr.GetEventRecorder("job-controller"), options.JobOperatorOptions).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Job")
+		os.Exit(1)
+	}
+	if err = controller.NewPodReconciler(mgr.GetClient(), mgr.GetAPIReader(), clientset, mgr.GetEventRecorder("pod-controller")).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Pod")
+		os.Exit(1)
+	}
+
 	// Mirror controllers import legacy skyhook.nvidia.com objects into the new
 	// nodewright.nvidia.com group during the migration bridge (one-way, level-triggered).
 	if err = (&controller.SkyhookMirrorReconciler{}).SetupWithManager(mgr); err != nil {
@@ -185,6 +244,21 @@ func main() {
 			Metrics:          metricsserver.Options{BindAddress: "0"},
 			LeaderElection:   options.LeaderElection,
 			LeaderElectionID: webhookBootstrapLeaseID,
+			// This manager owns the only Secret watch, and its Secret RBAC is namespaced, so the
+			// informer must be too: a cluster-wide LIST/WATCH would be rejected and the webhook
+			// would never bootstrap. Safe because every read is the operator's own serving-cert
+			// Secret — the For predicate matches on namespace and name, and webhookConfigToSecret
+			// enqueues that same key. The webhook configurations watched below are cluster-scoped
+			// kinds, so this does not touch them.
+			Cache: cache.Options{
+				ByObject: map[client.Object]cache.ByObject{
+					&corev1.Secret{}: {
+						Namespaces: map[string]cache.Config{
+							options.Namespace: {},
+						},
+					},
+				},
+			},
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start webhook bootstrap manager")

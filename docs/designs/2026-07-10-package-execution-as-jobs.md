@@ -99,13 +99,13 @@ spec:
       - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute }
       containers:
       - name: done                                # replaces the forever-running `pause` container
-        image: <agent image>
+        image: <package image>                    # already pulled by init-copy, and guaranteed to have /bin/sh
         command: ["/bin/sh", "-c", "exit 0"]
 ```
 
 Three things about this shape are non-obvious:
 
-- **The main container changes** because a Job records completion only when its pod reaches `Succeeded`, which needs every container to terminate. The init-container chain stays — it is the only native run-to-completion sequencing primitive, and per-step container names are load-bearing for state reporting. The `pause` container's *other* job, being the in-flight marker, is taken over by the Job object, which outlives its pods.
+- **The main container changes** because a Job records completion only when its pod reaches `Succeeded`, which needs every container to terminate. It runs on the **package image**, not the agent image: the init-copy container already invokes `/bin/sh` from the package image, so that image is guaranteed to have a shell, whereas a minimal agent image may not — and an exit-0 container whose `/bin/sh` is missing `StartError`s, so the pod never succeeds and the Job hangs forever. The init-container chain stays — it is the only native run-to-completion sequencing primitive, and per-step container names are load-bearing for state reporting. The `pause` container's *other* job, being the in-flight marker, is taken over by the Job object, which outlives its pods.
 - **`restartPolicy: Never` on package Jobs** makes each attempt a fresh pod, so a failure survives as a full-log archive pod instead of being destroyed by an in-place restart. Interrupt Jobs are the exception — they keep `OnFailure`, because a reboot interrupt kills its own pod by design; under `Never` every successful reboot would mint a spurious failed attempt, whereas in-place restart after the node returns is the proven recovery shape (the agent skips the already-done interrupt via its resource-id flag file).
 - **The unbounded not-ready/unreachable tolerations** stop the taint manager from evicting a node-pinned pod when a reboot-class interrupt keeps the node NotReady past the default eviction timeout. These pods are node-bound host agents — running them anywhere else is meaningless, so eviction is never useful. A node that stays NotReady forever holds the Job Active exactly as today's raw pod would; a *removed* node is handled by the orphaned-node sweep.
 
@@ -122,6 +122,8 @@ Because completed pods now linger, pod-deletion can no longer be the processed-o
 - **`Failed`, any other reason** → a backstop that unlimited backoff plus the deadline should make unreachable. No node-state write (matching today's silent disruption behavior); one Update carries the marker and failure TTL.
 - **Node gone** → if the node `Get` returns NotFound, there is no state to record: mark the Job processed and stop, rather than error-looping on a node that will never return.
 - **Active** → no terminal handling; the Pod watch keeps reporting in-flight `erroring` from failed-attempt evidence, and the operator prunes failed attempts to one archive.
+
+The Pod watch is **evidence, not authority**: it may only update an entry that already exists at the pod's stage and is not yet complete. It must never create one. Under `restartPolicy: Never` a failing Job mints a fresh pod per attempt, indefinitely, so an unguarded write becomes a repeating one. If it could create an entry, a node-state reset would be undone by the very Job the reset is meant to clear: the resurrected entry makes the reset invisible to the not-in-node-state check in rule 1 below, so the stale Job is never invalidated, and the existence gate then blocks the package's new stage forever. The same guard also stops a retained failed-attempt archive pod (kept on purpose, below) from regressing a completion the Job path already recorded.
 
 Recording a completion is two writes to two objects (node state, then the Job marker) and cannot be atomic; a crash between them re-serves the event. The re-processing path is guarded by per-transition postcondition checks so a re-served completion is only marked, not re-applied — detail in [Edge cases](#edge-cases-and-correctness-arguments). This is strictly better than today, which has the same two-write window with no guard.
 
@@ -217,7 +219,7 @@ kubectl get jobs -l skyhook.nvidia.com/node=worker-7                            
 
 ### RBAC
 
-The operator ClusterRole gains `batch/jobs` (`get;list;watch;create;update;patch;delete`) and `core/pods/log` `get` (the deadline snapshot) — kubebuilder markers + `make manifests`, hand-mirrored into `chart/`. The role stays cluster-scoped, but the Jobs informer is namespace-scoped and all Job writes target the operator namespace. Pod verbs stay: the operator still reads child pods for restarts/container names, reads workload pods for drain, and drives legacy pods during the upgrade window.
+The operator gains `batch/jobs` (`get;list;watch;create;update;patch;delete`) and `core/pods/log` `get` (the deadline snapshot) as a **namespaced Role**, not on the ClusterRole: every Job the operator touches lives in its own namespace (the informer is scoped there and every list passes `InNamespace`), and pod logs are only read off those Jobs' child pods, so cluster-wide grants would be privilege the operator never exercises. The `namespace=` field on the kubebuilder rbac markers makes controller-gen emit the Role; the binding is hand-written (controller-gen generates roles but never bindings), and both are mirrored into `chart/` templated on `.Release.Namespace`. Pod verbs stay cluster-wide: the operator still reads workload pods on any node for drain, reads child pods for restarts/container names, and drives legacy pods during the upgrade window.
 
 ## Upgrade and compatibility
 
