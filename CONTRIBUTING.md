@@ -7,6 +7,14 @@
 
 Want to contribute to Skyhook (NodeWright)? We welcome bug reports, feature requests, and pull requests.
 
+## Code of Conduct
+
+This project is governed by the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating you are expected to uphold it. Report unacceptable behavior to GitHub_Conduct@nvidia.com. See [Community standards](#community-standards) for how reports are handled.
+
+## Governance
+
+Maintainers, decision-making, and the process for becoming a maintainer are documented in [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md). Path-level review ownership is in [`.github/CODEOWNERS`](.github/CODEOWNERS).
+
 ## Filing Issues
 
 - **Bug reports**: Use the [bug report template](https://github.com/NVIDIA/skyhook/issues/new?template=bug_report_form.yml).
@@ -121,3 +129,28 @@ make license-fmt
 ```
 
 This adds the license header based on the LICENSE file and removes/replaces any existing header. Component Makefiles also run this automatically via `make fmt`.
+
+## Community standards
+
+We enforce the [Code of Conduct](CODE_OF_CONDUCT.md) in every project space: issues, pull requests, discussions, and any venue where someone is representing NodeWright.
+
+### Reporting
+
+Send reports to GitHub_Conduct@nvidia.com. Include what happened, where, when, and links if the incident is public. You do not need to be the target of the behavior to report it.
+
+### Response timeline
+
+- **Acknowledgement within 3 business days.** You get a confirmation that the report was received and who is handling it.
+- **Resolution within 14 business days** for most reports. If an investigation needs longer, we tell you that before day 14 and give an updated estimate.
+- **Immediate action** for ongoing harassment, threats, or doxxing, ahead of the full investigation.
+
+Reporter identity is shared only with the people investigating. Outcomes follow the [Enforcement Guidelines](CODE_OF_CONDUCT.md#enforcement-guidelines) ladder: correction, warning, temporary ban, permanent ban.
+
+### Out of scope
+
+The following are handled elsewhere, not through a conduct report:
+
+- **Security vulnerabilities**: see [SECURITY.md](SECURITY.md). Do not file a public issue.
+- **Technical disagreements**, including rejected pull requests and design decisions you disagree with. Escalate through the process in [GOVERNANCE.md](GOVERNANCE.md#decision-making).
+- **Conduct in venues unrelated to NodeWright**, unless it creates a credible safety risk for someone in this community.
+- **NVIDIA employment or HR matters**, which go through NVIDIA's internal channels.
