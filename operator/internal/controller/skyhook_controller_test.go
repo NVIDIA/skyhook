@@ -45,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -53,7 +54,7 @@ var _ = Describe("skyhook controller tests", func() {
 
 	var logger = log.FromContext(ctx)
 
-	It("should map only pods we created", func() {
+	It("should queue only pods we created", func() {
 
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -64,13 +65,14 @@ var _ = Describe("skyhook controller tests", func() {
 			},
 		}
 
-		ret := podHandlerFunc(ctx, pod)
-		Expect(ret).To(HaveLen(1))
-		Expect(ret[0].Name).To(BeEquivalentTo("pod---foobar"))
+		Expect(ownedPod().Create(event.CreateEvent{Object: pod})).To(BeTrue())
+		Expect(ownedPod().Update(event.UpdateEvent{ObjectNew: pod})).To(BeTrue())
 
-		pod.Labels = map[string]string{"foo": "bar"}
-		ret = podHandlerFunc(ctx, pod)
-		Expect(ret).To(BeNil())
+		foreign := pod.DeepCopy()
+		foreign.Labels = map[string]string{"foo": "bar"}
+		Expect(ownedPod().Create(event.CreateEvent{Object: foreign})).To(BeFalse())
+		Expect(ownedPod().Update(event.UpdateEvent{ObjectNew: foreign})).To(BeFalse())
+		Expect(ownedPod().Delete(event.DeleteEvent{Object: foreign})).To(BeFalse())
 
 	})
 
@@ -499,8 +501,10 @@ var _ = Describe("skyhook controller tests", func() {
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
 			AgentLogRoot:         "/log",
-			JobTTLSucceeded:      time.Hour,
-			JobTTLFailed:         24 * time.Hour,
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -1002,8 +1006,10 @@ var _ = Describe("skyhook controller tests", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
-			JobTTLSucceeded:      time.Hour,
-			JobTTLFailed:         24 * time.Hour,
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -1049,8 +1055,10 @@ var _ = Describe("skyhook controller tests", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
-			JobTTLSucceeded:      time.Hour,
-			JobTTLFailed:         24 * time.Hour,
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -2312,7 +2320,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2353,7 +2361,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 			v1alpha1.StateInProgress, v1alpha1.StageUninstallInterrupt, int32(0), "",
 		).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2390,7 +2398,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		// Defensive cleanup: RemoveState the old-version ref. No Upsert.
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2421,7 +2429,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -3397,7 +3405,7 @@ func TestHandleCompletePod_VersionComparison(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",

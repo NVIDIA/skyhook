@@ -52,7 +52,9 @@ var _ = Describe("job builders", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "ghcr.io/nvidia/skyhook/agent:1.2.3",
 			PauseImage:           "registry.k8s.io/pause:3.10",
-			JobStageTimeout:      time.Hour,
+			JobOperatorOptions: JobOperatorOptions{
+				JobStageTimeout: time.Hour,
+			},
 		}
 		skyhook = wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "gpu-init", UID: "abc", Generation: 4},
@@ -895,7 +897,9 @@ var _ = Describe("jobMatchesPackage", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "ghcr.io/nvidia/skyhook/agent:1.2.3",
 			PauseImage:           "registry.k8s.io/pause:3.10",
-			JobStageTimeout:      time.Hour,
+			JobOperatorOptions: JobOperatorOptions{
+				JobStageTimeout: time.Hour,
+			},
 		}
 		skyhook = wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "gpu-init", UID: "abc", Generation: 4},

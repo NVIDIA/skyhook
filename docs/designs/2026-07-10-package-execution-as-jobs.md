@@ -123,6 +123,8 @@ Because completed pods now linger, pod-deletion can no longer be the processed-o
 - **Node gone** → if the node `Get` returns NotFound, there is no state to record: mark the Job processed and stop, rather than error-looping on a node that will never return.
 - **Active** → no terminal handling; the Pod watch keeps reporting in-flight `erroring` from failed-attempt evidence, and the operator prunes failed attempts to one archive.
 
+The Pod watch is **evidence, not authority**: it may only update an entry that already exists at the pod's stage and is not yet complete. It must never create one. Under `restartPolicy: Never` a failing Job mints a fresh pod per attempt, indefinitely, so an unguarded write becomes a repeating one. If it could create an entry, a node-state reset would be undone by the very Job the reset is meant to clear: the resurrected entry makes the reset invisible to the not-in-node-state check in rule 1 below, so the stale Job is never invalidated, and the existence gate then blocks the package's new stage forever. The same guard also stops a retained failed-attempt archive pod (kept on purpose, below) from regressing a completion the Job path already recorded.
+
 Recording a completion is two writes to two objects (node state, then the Job marker) and cannot be atomic; a crash between them re-serves the event. The re-processing path is guarded by per-transition postcondition checks so a re-served completion is only marked, not re-applied — detail in [Edge cases](#edge-cases-and-correctness-arguments). This is strictly better than today, which has the same two-write window with no guard.
 
 ### Retry and the failed-attempt archive

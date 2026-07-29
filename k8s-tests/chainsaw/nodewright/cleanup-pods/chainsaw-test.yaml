@@ -62,10 +62,44 @@ spec:
             name: cleanup-pods
           status:
             status: erroring
+    ## Pin the precondition before resetting: bb's config Job must actually be on kind-worker and
+    ## unfinished. Without this the negative assertion below passes vacuously whenever the Job was
+    ## never created, and the test would prove nothing about reset or reaping.
+    - assert:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            namespace: skyhook
+            labels:
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: bb-1.2
+              nodewright.nvidia.com/node: kind-worker
+              nodewright.nvidia.com/stage: config
+          status:
+            (conditions[?type == 'Complete' && status == 'True']): []
     - script:
         content: |
           ## delete the node annotation on one node to trigger cleanup
           kubectl annotate node/kind-worker nodewright.nvidia.com/nodeState_cleanup-pods-
+    ## Assert the mechanism, not just its effect: bb's erroring config Job from before the reset
+    ## must not survive on the reset node. It is unfinished (restartPolicy Never with an unbounded
+    ## backoffLimit never goes terminal on a failing step), so it is only cleared if the reset is
+    ## actually observed: the sweep must see the node-state entry gone, invalidate the Job and
+    ## reap it. If anything writes that entry back, the Job stays, JobExists keeps gating the
+    ## package, and bb never reaches apply again. Scoped to bb on kind-worker: aa legitimately
+    ## re-runs config here after the reset, and kind-worker2 keeps its state and its Jobs.
+    - error:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            namespace: skyhook
+            labels:
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: bb-1.2
+              nodewright.nvidia.com/node: kind-worker
+              nodewright.nvidia.com/stage: config
     ## assert pods are recreated on kind-worker after reset (sequential: pods get cleaned up between stages)
     - assert:
         ## aa apply pod on kind-worker
@@ -87,8 +121,11 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
               - apiVersion: batch/v1
                 kind: Job
+                controller: true
           spec:
             nodeName: kind-worker
             initContainers:
@@ -123,8 +160,11 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
               - apiVersion: batch/v1
                 kind: Job
+                controller: true
           spec:
             nodeName: kind-worker
             initContainers:
@@ -159,8 +199,11 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
               - apiVersion: batch/v1
                 kind: Job
+                controller: true
           spec:
             nodeName: kind-worker
             initContainers:

@@ -55,7 +55,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -136,6 +135,16 @@ type SkyhookOperatorOptions struct {
 	// rollback window). Remove with the legacy group at the removal release.
 	LegacyCleanupDelay time.Duration `env:"LEGACY_CLEANUP_DELAY, default=24h"`
 
+	// Embedded rather than a separate field so the Job knobs are one nameable unit for
+	// JobReconciler while promotion keeps opts.JobStageTimeout resolving for the eight
+	// builder functions that thread SkyhookOperatorOptions, and keeps the env names flat.
+	JobOperatorOptions
+}
+
+// JobOperatorOptions are the knobs for package-stage Jobs, grouped so JobReconciler can take
+// just these rather than the whole operator options struct. A sibling of
+// WebhookControllerOptions in shape: per-controller options, parsed from the same flat env set.
+type JobOperatorOptions struct {
 	// JobTTLSucceeded / JobTTLFailed set ttlSecondsAfterFinished at completion time by
 	// outcome so failure logs outlive success logs; JobStageTimeout is the default
 	// activeDeadlineSeconds for a package stage Job when the package sets no stageTimeout
@@ -304,12 +313,9 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Node{},
 			globalHandler,
 		).
-		// Cheap path: Pod events keep their targeted "pod---<name>" routing,
-		// dispatched to PodReconcile in Reconcile below.
-		Watches(
-			&corev1.Pod{},
-			handler.EnqueueRequestsFromMapFunc(podHandlerFunc),
-		).
+		// Pod and Job events are not watched here: PodReconciler and JobReconciler own them
+		// on their own watches and workqueues, and the node-state writes they make are
+		// themselves Node events that reach the heavy pass above.
 		Complete(r)
 }
 
@@ -328,7 +334,12 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // wired through mgr.GetEventRecorder), so the core rule above is not sufficient on
 // its own — without this rule every recorded event is rejected as forbidden.
 //+kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// ConfigMaps are namespace-scoped for the same reason as Jobs below: the operator only ever
+// touches the per-node metadata ConfigMaps it creates in its own namespace (all four access
+// sites pass client.InNamespace), and a package's spec.configMap is mounted by the kubelet,
+// never read here. The informer is scoped to match in main.go; the two must move together,
+// since a cluster-wide informer under this Role would be rejected.
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete,namespace=skyhook
 
 // Package stages run as batch/v1 Jobs; pods/log is read for the deadline failure-log snapshot.
 // Jobs and their pod logs are namespace-scoped rather than cluster-wide: every Job the operator
@@ -342,30 +353,8 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
-// dispatchExecutorRequest routes a targeted pod---<name> request to PodReconcile. Jobs do not
-// come through here: JobReconciler owns them on its own watch and workqueue.
-// handled is true when req was an executor request, in which case result and err are authoritative;
-// otherwise the caller falls through to the heavy global pass.
-func (r *SkyhookReconciler) dispatchExecutorRequest(ctx context.Context, req ctrl.Request) (bool, ctrl.Result, error) {
-	if name, ok := strings.CutPrefix(req.Name, "pod---"); ok {
-		pod, err := r.dal.GetPod(ctx, req.Namespace, name)
-		if err == nil && pod != nil {
-			result, err := r.PodReconcile(ctx, pod)
-			return true, result, err
-		}
-		return true, ctrl.Result{}, err
-	}
-
-	return false, ctrl.Result{}, nil
-}
-
 func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-
-	// split off targeted pod---<name> requests to their per-object path
-	if handled, result, err := r.dispatchExecutorRequest(ctx, req); handled {
-		return result, err
-	}
 
 	// Migration safety interlock: while any legacy skyhook.nvidia.com Skyhook is still
 	// mid-rollout, hold this NodeWright reconcile and requeue rather than take over a
@@ -2375,9 +2364,11 @@ func (r *SkyhookReconciler) ValidateNodeConfigmaps(ctx context.Context, skyhookN
 	return update, utilerrors.NewAggregate(errs)
 }
 
-// JobExists reports whether an unfinished executor for this package still runs on the node —
-// an unfinished stage Job, or (during the legacy upgrade window) a pre-upgrade raw pod. A
+// JobExists reports whether an unfinished stage Job for this package still runs on the node. A
 // finished Job does not count, so a stage re-runs after its retained Job is cleaned up.
+//
+// Deliberately not stage-scoped: two executors for one package on a node share the same hostPath
+// copy dir, so an apply Job must not start beside a live config Job.
 func (r *SkyhookReconciler) JobExists(ctx context.Context, nodeName, skyhookName string, _package *v1alpha1.Package) (bool, error) {
 	jobs, err := r.dal.GetJobs(ctx,
 		client.InNamespace(r.opts.Namespace),
@@ -2420,7 +2411,7 @@ func (r *SkyhookReconciler) handleExistingJob(ctx context.Context, want *batchv1
 		if jobMatchesPackage(r.opts, _package, *existing, skyhookNode.GetSkyhook(), stage) {
 			return nil // another pass won the race with a matching Job
 		}
-		return r.deleteJobForeground(ctx, existing) // unfinished but stale spec
+		return deleteJobForeground(ctx, r.Client, existing) // unfinished but stale spec
 	}
 
 	if isParkedJob(existing) && r.entryErroringAtStage(skyhookNode, _package, stage) {
@@ -2429,7 +2420,7 @@ func (r *SkyhookReconciler) handleExistingJob(ctx context.Context, want *batchv1
 	if hasJobCondition(existing, batchv1.JobComplete) && !jobProcessed(existing) {
 		return nil // unrecorded completion; JobReconcile owns it, do not discard it
 	}
-	return r.deleteJobForeground(ctx, existing)
+	return deleteJobForeground(ctx, r.Client, existing)
 }
 
 // entryErroringAtStage reports whether this package's node-state entry sits at (stage, erroring),
@@ -2440,9 +2431,9 @@ func (r *SkyhookReconciler) entryErroringAtStage(skyhookNode wrapper.SkyhookNode
 }
 
 // deleteConfigUpdateExecutors clears a package's in-flight work on a node so a config change
-// re-runs it: its unfinished or parked (DeadlineExceeded) Jobs, plus any legacy erroring raw pod
-// during the migration window. Retained successful Jobs for other stages are left in place — a
-// literal port of the old delete-all-matching loop would gut retention on every config update.
+// re-runs it: its unfinished or parked (DeadlineExceeded) Jobs. Retained successful Jobs for
+// other stages are left in place — a literal port of the old delete-all-matching loop would gut
+// retention on every config update.
 func (r *SkyhookReconciler) deleteConfigUpdateExecutors(ctx context.Context, node wrapper.SkyhookNode, skyhookName string, _package *v1alpha1.Package) error {
 	jobs, err := r.dal.GetJobs(ctx,
 		client.InNamespace(r.opts.Namespace),
@@ -2459,7 +2450,7 @@ func (r *SkyhookReconciler) deleteConfigUpdateExecutors(ctx context.Context, nod
 		for i := range jobs.Items {
 			job := &jobs.Items[i]
 			if !jobFinished(job) || isParkedJob(job) {
-				if err := r.deleteJobForeground(ctx, job); err != nil {
+				if err := deleteJobForeground(ctx, r.Client, job); err != nil {
 					return fmt.Errorf("deleting erroring job %s on node %s: %w", job.Name, node.GetNode().Name, err)
 				}
 			}
@@ -2487,7 +2478,7 @@ func (r *SkyhookReconciler) deleteNodeJobs(ctx context.Context, skyhookName, nod
 		return nil
 	}
 	for i := range jobs.Items {
-		if err := r.deleteJobForeground(ctx, &jobs.Items[i]); err != nil {
+		if err := deleteJobForeground(ctx, r.Client, &jobs.Items[i]); err != nil {
 			return fmt.Errorf("deleting job %s on node %s: %w", jobs.Items[i].Name, nodeName, err)
 		}
 	}
@@ -2607,7 +2598,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 			// and a finished one has no node state left to claim it.
 			node, nodeExists := nodesByName[jobNodeName(job)]
 			if !nodeExists {
-				if err := r.deleteJobForeground(ctx, job); err != nil {
+				if err := deleteJobForeground(ctx, r.Client, job); err != nil {
 					errs = append(errs, fmt.Errorf("error deleting orphaned-node job %s: %w", job.Name, err))
 				} else {
 					update = true
@@ -2623,7 +2614,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 
 			if jobFinished(job) {
 				if r.shouldDeleteFinishedJob(job, pkg, nodeState) {
-					if err := r.deleteJobForeground(ctx, job); err != nil {
+					if err := deleteJobForeground(ctx, r.Client, job); err != nil {
 						errs = append(errs, fmt.Errorf("error deleting finished job %s: %w", job.Name, err))
 					} else {
 						update = true
@@ -2700,9 +2691,9 @@ func (r *SkyhookReconciler) jobIsStale(job *batchv1.Job, pkg *PackageSkyhook, no
 	return status.Stage != pkg.Stage
 }
 
-// InvalidPackage marks a package executor invalid and persists it, which triggers its controller
-// path to reap it: a Job is deleted foreground by JobReconcile; a legacy raw pod is deleted by
-// PodReconcile. Takes client.Object so both kinds route through the same mark-then-reap seam.
+// InvalidPackage marks a package executor invalid and persists it, which triggers JobReconcile to
+// delete the Job foreground. Takes client.Object rather than *batchv1.Job because the callers hold
+// the executor as an Object and the mark itself is kind-agnostic.
 func (r *SkyhookReconciler) InvalidPackage(ctx context.Context, obj client.Object) error {
 	if err := InvalidatePackage(obj); err != nil {
 		return fmt.Errorf("error invalidating package: %w", err)

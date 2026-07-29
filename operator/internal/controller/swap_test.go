@@ -60,9 +60,11 @@ var _ = Describe("Jobs execution swap", func() {
 			AgentImage:           "ghcr.io/nvidia/skyhook/agent:1.2.3",
 			PauseImage:           "registry.k8s.io/pause:3.10",
 			MaxInterval:          10 * time.Minute,
-			JobTTLSucceeded:      time.Hour,
-			JobTTLFailed:         24 * time.Hour,
-			JobStageTimeout:      time.Hour,
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+				JobStageTimeout: time.Hour,
+			},
 		}
 	}
 
@@ -83,6 +85,10 @@ var _ = Describe("Jobs execution swap", func() {
 		r, err := NewSkyhookReconciler(scheme, c, k8sfake.NewClientset(), events.NewFakeRecorder(50), validOpts())
 		Expect(err).ToNot(HaveOccurred())
 		return r, c
+	}
+	newPodWatch := func(objects ...client.Object) (*PodReconciler, client.WithWatch) {
+		_, c := newReconciler(objects...)
+		return NewPodReconciler(c, c, k8sfake.NewClientset(), events.NewFakeRecorder(50)), c
 	}
 
 	stageJob := func(stage v1alpha1.Stage, conditions ...batchv1.JobCondition) *batchv1.Job {
@@ -164,7 +170,7 @@ var _ = Describe("Jobs execution swap", func() {
 			pod := jobOwnedPod("tuning-pod-ok", corev1.ContainerStatus{
 				Name: "apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
 			})
-			r, c := newReconciler(pod)
+			r, c := newPodWatch(pod)
 			_, err := r.PodReconcile(ctx, pod)
 			Expect(err).ToNot(HaveOccurred())
 			// still present: completion and cleanup belong to JobReconcile, never this watch
@@ -176,7 +182,7 @@ var _ = Describe("Jobs execution swap", func() {
 				Name: "apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 137}},
 			})
 			pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue}}
-			r, c := newReconciler(pod)
+			r, c := newPodWatch(pod)
 			_, err := r.PodReconcile(ctx, pod)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: pod.Name}, &corev1.Pod{})).To(Succeed())
@@ -191,7 +197,7 @@ var _ = Describe("Jobs execution swap", func() {
 			pod := jobOwnedPod("tuning-pod-failed", corev1.ContainerStatus{
 				Name: "apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}},
 			})
-			r, c := newReconciler(node, pod)
+			r, c := newPodWatch(node, pod)
 			_, err = r.PodReconcile(ctx, pod)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -204,6 +210,43 @@ var _ = Describe("Jobs execution swap", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(state[pkg.GetUniqueName()].State).To(Equal(v1alpha1.StateErroring))
 		})
+
+		// A failing Job under restartPolicy Never mints a fresh pod per attempt, so every one of
+		// these lands on the watch. If the watch could write an entry the reset just cleared, the
+		// package would be re-pinned to the cleared stage and the reset could never take effect.
+		DescribeTable("never creates or regresses a node-state entry",
+			func(seed func(wrapper.SkyhookNodeOnly)) {
+				node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+				sn, err := wrapper.NewSkyhookNodeOnly(node, skyhookName)
+				Expect(err).ToNot(HaveOccurred())
+				seed(sn)
+
+				pod := jobOwnedPod("tuning-pod-failed", corev1.ContainerStatus{
+					Name: "apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}},
+				})
+				r, c := newPodWatch(node, pod)
+				_, err = r.PodReconcile(ctx, pod)
+				Expect(err).ToNot(HaveOccurred())
+
+				var got corev1.Node
+				Expect(c.Get(ctx, types.NamespacedName{Name: nodeName}, &got)).To(Succeed())
+				gsn, err := wrapper.NewSkyhookNodeOnly(&got, skyhookName)
+				Expect(err).ToNot(HaveOccurred())
+				after, err := gsn.State()
+				Expect(err).ToNot(HaveOccurred())
+
+				before, err := sn.State()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(after).To(Equal(before))
+			},
+			Entry("entry cleared by a node reset", func(wrapper.SkyhookNodeOnly) {}),
+			Entry("entry already moved past the pod's stage", func(sn wrapper.SkyhookNodeOnly) {
+				Expect(sn.Upsert(pkg.PackageRef, image, v1alpha1.StateInProgress, v1alpha1.StageConfig, 0, "")).To(Succeed())
+			}),
+			Entry("entry already recorded complete for this stage", func(sn wrapper.SkyhookNodeOnly) {
+				Expect(sn.Upsert(pkg.PackageRef, image, v1alpha1.StateComplete, v1alpha1.StageApply, 0, "")).To(Succeed())
+			}),
+		)
 	})
 
 	Describe("rerun predicate", func() {

@@ -32,8 +32,12 @@ metadata:
         "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
+    ## controller: true proves the pod is the Job's child, not merely referencing one. The Job's
+    ## own name is deliberately not asserted: it carries a config hash, so pinning it here would
+    ## break every test on any change to the naming scheme. assert_jobs.yaml covers Job ownership.
     - apiVersion: batch/v1
       kind: Job
+      controller: true
 spec:
   initContainers:
     - name: spencer-init
@@ -86,8 +90,12 @@ metadata:
         "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
+    ## controller: true proves the pod is the Job's child, not merely referencing one. The Job's
+    ## own name is deliberately not asserted: it carries a config hash, so pinning it here would
+    ## break every test on any change to the naming scheme. assert_jobs.yaml covers Job ownership.
     - apiVersion: batch/v1
       kind: Job
+      controller: true
 spec:
   initContainers:
     - name: foobar-init
