@@ -37,7 +37,7 @@ Settings | Description | Default |
 | controllerManager.manager.image.repository | Where to get the image from | "ghcr.io/nvidia/nodewright/operator" |
 | controllerManager.manager.image.tag | what version of the operator to run | defaults to appVersion |
 | controllerManager.manager.image.digest | content-addressable pin for the operator image. If set, the digest determines the pulled image. If both tag and digest are provided, the digest takes precedence; the rendered image may include `tag@digest` but the digest controls selection. | "" |
-| controllerManager.manager.agent.repository | Where to get the image from | "ghcr.io/nvidia/skyhook/agent" |
+| controllerManager.manager.agent.repository | Where to get the image from | "ghcr.io/nvidia/nodewright/agent" |
 | controllerManager.manager.agent.tag | what version of the agent to run | defaults to the current latest, but is not latest example v6.1.5 |
 | controllerManager.manager.agent.digest | content-addressable pin for the agent image. Same precedence rules as above: if both tag and digest are provided, the digest controls which image is pulled. | "" |
 | imagePullSecret | the secret used to pull the operator controller image, agent image, and package images. | "" |
@@ -72,7 +72,7 @@ Settings | Description | Default |
 imagePullSecret: "node-init-secret"
 ```
 
-If you use public images (default operator `ghcr.io/nvidia/nodewright/operator` and agent `ghcr.io/nvidia/skyhook/agent` — the agent path migration to `nodewright` is pending), no action is needed.
+If you use public images (default operator `ghcr.io/nvidia/nodewright/operator` and agent `ghcr.io/nvidia/nodewright/agent`), no action is needed.
 
 ### Resource Management
 

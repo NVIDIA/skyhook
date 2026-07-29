@@ -347,7 +347,7 @@ delete-kind-cluster: ctlptl render-ctlptl-config ## delete the local ctlptl kind
 operator-agent-tests: chainsaw install ## Run operator agent tests.
 	@if [ -z "$(AGENT_IMAGE)" ]; then \
 		echo "Error: AGENT_IMAGE is not set. Please set it to the agent image to test against."; \
-		echo "Example: AGENT_IMAGE=ghcr.io/nvidia/skyhook/agent:v6.4.0 make operator-agent-tests"; \
+		echo "Example: AGENT_IMAGE=ghcr.io/nvidia/nodewright/agent:v6.4.2 make operator-agent-tests"; \
 		exit 1; \
 	fi
 	@echo "Running operator-agent tests with AGENT_IMAGE=$(AGENT_IMAGE)"
