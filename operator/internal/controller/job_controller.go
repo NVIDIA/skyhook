@@ -25,13 +25,22 @@ import (
 	"time"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
@@ -52,6 +61,9 @@ const (
 	// the controller UID is the only unambiguous parent link (job-name alone is not).
 	batchControllerUIDLabel = "batch.kubernetes.io/controller-uid"
 
+	// batchJobNameLabel is stamped by the Job controller on every child pod.
+	batchJobNameLabel = "batch.kubernetes.io/job-name"
+
 	// lastLogsMaxBytes caps the deadline log snapshot. Annotations share a per-object
 	// metadata budget, so the tail stays small.
 	lastLogsMaxBytes = 16 * 1024
@@ -62,19 +74,85 @@ const (
 	failureTargetGrace = 5 * time.Minute
 )
 
+// JobReconciler drives package-stage Jobs on their own watch and workqueue. It is a real
+// controller rather than a prefixed request routed through SkyhookReconciler (the shape the
+// pod path used): JobReconcile is already per-object and returns a per-object Result, so a
+// real controller gives it a real requeue and per-object backoff instead of folding both into
+// the whole-world pass.
+//
+// It holds its own dependencies rather than embedding SkyhookReconciler: embedding would inherit
+// the heavy pass's entire method set, including a Reconcile this one has to shadow — so deleting
+// the shadow would still compile and quietly run the whole-world pass on every Job event.
+//
+// Running concurrently with the heavy pass means both write nodewright.nvidia.com/nodeState_<name>,
+// so every node-state write on both sides carries an optimistic-lock precondition.
+type JobReconciler struct {
+	client.Client
+	// uncached reads straight from the apiserver, used only to re-read a Node after a patch
+	// conflict; see patchNodeState.
+	uncached client.Reader
+	recorder events.EventRecorder
+	opts     JobOperatorOptions
+	dal      dal.DAL
+}
+
+func NewJobReconciler(c client.Client, uncached client.Reader, clientset kubernetes.Interface, recorder events.EventRecorder, opts JobOperatorOptions) *JobReconciler {
+	return &JobReconciler{
+		Client:   c,
+		uncached: uncached,
+		recorder: recorder,
+		opts:     opts,
+		dal:      dal.New(c, clientset),
+	}
+}
+
+// ownedJob gates on nodewright.nvidia.com/name so foreign Jobs in the namespace (a CronJob's,
+// say) stay out of the workqueue entirely, rather than being filtered after the fact in Reconcile.
+func ownedJob() predicate.Predicate {
+	return predicate.NewPredicateFuncs(func(o client.Object) bool {
+		return labels.Set(o.GetLabels()).Has(fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX))
+	})
+}
+
+func (r *JobReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		Named("job").
+		For(&batchv1.Job{}, builder.WithPredicates(ownedJob())).
+		Complete(r)
+}
+
+func (r *JobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	job, err := r.dal.GetJob(ctx, req.Namespace, req.Name)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("getting job %s: %w", req.Name, err)
+	}
+	// Deleted between the event and this read: nothing to record, and the node state it
+	// would have written is re-derived by the heavy pass anyway.
+	if job == nil {
+		return ctrl.Result{}, nil
+	}
+	return r.JobReconcile(ctx, job)
+}
+
 // JobReconcile records the outcome of a package/interrupt stage Job into node state,
 // exactly once, and manages the finished Job's failure archive and deadline snapshot.
 // It is the Job analogue of PodReconcile and the completion authority for the Jobs
 // execution path (the Pod watch keeps reporting only in-flight erroring for Job-owned
-// pods). Not wired into Reconcile yet; the swap lands in #303.
-func (r *SkyhookReconciler) JobReconcile(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
+// pods). Driven by JobReconciler above, one call per Job event.
+func (r *JobReconciler) JobReconcile(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
+	// A terminating Job is already being reaped (foreground delete keeps it visible until its
+	// children are gone); never record its completion onto node state that a sweep just reset.
+	if job.DeletionTimestamp != nil {
+		return ctrl.Result{}, nil
+	}
+
 	// A package invalidated mid-flight (spec drift) is torn down, mirroring
 	// HandleInvalidPackage for raw pods. Foreground so the deterministic name frees only
 	// once the child pods are gone.
 	if invalid, err := IsInvalidPackage(job); err != nil {
 		return ctrl.Result{}, fmt.Errorf("checking invalid package on job %s: %w", job.Name, err)
 	} else if invalid {
-		return ctrl.Result{}, r.deleteJobForeground(ctx, job)
+		return ctrl.Result{}, deleteJobForeground(ctx, r.Client, job)
 	}
 
 	// Already processed: a persisted marker, not pod deletion, is the processed-once
@@ -96,7 +174,7 @@ func (r *SkyhookReconciler) JobReconcile(ctx context.Context, job *batchv1.Job) 
 // the success TTL. The record is skipped (only marked) when the node is gone or the
 // completion is already reflected, so a re-served event after a crash between the two
 // writes cannot double-apply a non-idempotent transition.
-func (r *SkyhookReconciler) handleCompleteJob(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
+func (r *JobReconciler) handleCompleteJob(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
 	pkg, err := GetPackage(job)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("getting package from job %s: %w", job.Name, err)
@@ -119,14 +197,8 @@ func (r *SkyhookReconciler) handleCompleteJob(ctx context.Context, job *batchv1.
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLSucceeded)
 	}
 
-	record, err := r.shouldRecordCompletion(job, pkg, node)
-	if err != nil {
+	if err := r.recordJobCompletion(ctx, job, pkg); err != nil {
 		return ctrl.Result{}, err
-	}
-	if record {
-		if err := r.recordJobCompletion(ctx, job, pkg, node); err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLSucceeded)
@@ -138,7 +210,7 @@ func (r *SkyhookReconciler) handleCompleteJob(ctx context.Context, job *batchv1.
 // entry, or an entry that has advanced past this stage all mean recording would resurrect,
 // duplicate, or regress state; the marker alone suffices. Interrupt completions also promote
 // packages skipped during interrupt sequencing, so they re-run while any remain skipped.
-func (r *SkyhookReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *PackageSkyhook, node *corev1.Node) (bool, error) {
+func (r *JobReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *PackageSkyhook, node *corev1.Node) (bool, error) {
 	skyhookNode, err := wrapper.NewSkyhookNodeOnly(node, pkg.Skyhook)
 	if err != nil {
 		return false, fmt.Errorf("creating node wrapper for job %s: %w", job.Name, err)
@@ -162,45 +234,200 @@ func (r *SkyhookReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *Packag
 	return present && status.Stage == pkg.Stage && status.State != v1alpha1.StateComplete, nil
 }
 
+// patchNodeState re-reads the node, applies mutate, and patches under an optimistic-lock
+// precondition, retrying the whole read-modify-write on conflict. JobReconciler and PodReconciler
+// both run concurrently with the heavy pass and all three write
+// nodewright.nvidia.com/nodeState_<name> (one annotation key holding every package), so an
+// unconditional patch would silently drop whichever write landed second. mutate re-evaluates its
+// own guards on every attempt: a retry starts from state some other writer just changed, so a
+// decision made against the previous read is not reusable.
+//
+// A free function rather than a method so both per-object controllers can call it while owning
+// their dependencies outright, instead of embedding SkyhookReconciler to reach it.
+//
+// The first read comes from the cache, but every retry after a conflict reads uncached. dal reads
+// through the manager's cached client, and the informer has usually not seen the write that just
+// beat us, so a cached re-read rebuilds the identical resourceVersion precondition and loses
+// again — burning all of RetryOnConflict's attempts on a copy that cannot succeed. Going to the
+// apiserver only on retry keeps the hot path cached while letting the read-modify-write actually
+// converge; without it the conflict escapes to the workqueue and only a requeue clears it.
+func patchNodeState(ctx context.Context, d dal.DAL, uncached client.Reader, c client.Client, nodeName string, mutate func(*corev1.Node) (bool, error)) error {
+	attempt := 0
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		node, err := readNodeForPatch(ctx, d, uncached, nodeName, attempt)
+		attempt++
+		if err != nil {
+			return fmt.Errorf("getting node %s: %w", nodeName, err)
+		}
+		if node == nil {
+			return nil
+		}
+
+		patch := client.StrategicMergeFrom(node.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		changed, err := mutate(node)
+		if err != nil || !changed {
+			return err
+		}
+		return c.Patch(ctx, node, patch)
+	})
+}
+
+// readNodeForPatch serves attempt 0 from the cache and every retry from the apiserver. A nil
+// uncached reader falls back to the cache throughout, which is what the fake-client tests use.
+func readNodeForPatch(ctx context.Context, d dal.DAL, uncached client.Reader, nodeName string, attempt int) (*corev1.Node, error) {
+	if attempt == 0 || uncached == nil {
+		return d.GetNode(ctx, nodeName)
+	}
+
+	var node corev1.Node
+	if err := uncached.Get(ctx, types.NamespacedName{Name: nodeName}, &node); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &node, nil
+}
+
 // recordJobCompletion writes the StateComplete transition through the existing node-state
 // path (HandleCompletePod carries the upgrade/uninstall/interrupt special cases unchanged),
 // sourced from the Job rather than a pod so it still works after the child pod is GC'd.
-func (r *SkyhookReconciler) recordJobCompletion(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook, node *corev1.Node) error {
-	patch := client.StrategicMergeFrom(node.DeepCopy())
-
-	skyhookNode, err := wrapper.NewSkyhookNodeOnly(node, pkg.Skyhook)
-	if err != nil {
-		return fmt.Errorf("creating node wrapper for job %s: %w", job.Name, err)
-	}
-
-	// HandleCompletePod only compares containerName against InterruptContainerName, so the
-	// Job's interrupt label determines it; no child pod needed. For non-interrupt stages the
-	// exact name is cosmetic; read it from the succeeded pod when present, else leave it empty.
-	containerName := ""
-	if isInterruptJob(job) {
-		containerName = InterruptContainerName
-	} else {
-		containerName = r.succeededContainerName(ctx, job)
-	}
-
-	updated, err := r.HandleCompletePod(ctx, skyhookNode, pkg, containerName)
-	if err != nil {
-		return fmt.Errorf("recording completion for job %s: %w", job.Name, err)
-	}
-	if !updated {
-		if err := skyhookNode.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, pkg.Stage, job.Status.Failed, pkg.ContainerSHA); err != nil {
-			return fmt.Errorf("upserting complete state for job %s: %w", job.Name, err)
+func (r *JobReconciler) recordJobCompletion(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook) error {
+	return patchNodeState(ctx, r.dal, r.uncached, r.Client, jobNodeName(job), func(node *corev1.Node) (bool, error) {
+		record, err := r.shouldRecordCompletion(job, pkg, node)
+		if err != nil || !record {
+			return false, err
 		}
-	}
 
-	if skyhookNode.Changed() {
-		if err := r.Patch(ctx, node, patch); err != nil {
-			return fmt.Errorf("patching node %s for job %s completion: %w", node.Name, job.Name, err)
+		skyhookNode, err := wrapper.NewSkyhookNodeOnly(node, pkg.Skyhook)
+		if err != nil {
+			return false, fmt.Errorf("creating node wrapper for job %s: %w", job.Name, err)
+		}
+
+		// HandleCompletePod only compares containerName against InterruptContainerName, so the
+		// Job's interrupt label determines it; no child pod needed. For non-interrupt stages the
+		// exact name is cosmetic; read it from the succeeded pod when present, else leave it empty.
+		containerName := ""
+		if isInterruptJob(job) {
+			containerName = InterruptContainerName
+		} else {
+			containerName = r.succeededContainerName(ctx, job)
+		}
+
+		updated, err := r.HandleCompletePod(ctx, skyhookNode, pkg, containerName)
+		if err != nil {
+			return false, fmt.Errorf("recording completion for job %s: %w", job.Name, err)
+		}
+		if !updated {
+			if err := skyhookNode.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, pkg.Stage, job.Status.Failed, pkg.ContainerSHA); err != nil {
+				return false, fmt.Errorf("upserting complete state for job %s: %w", job.Name, err)
+			}
+		}
+
+		if !skyhookNode.Changed() {
+			return false, nil
 		}
 		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobComplete",
 			"Package [%s:%s] state %s on [skyhook:%s]", pkg.Name, pkg.Version, v1alpha1.StateComplete, pkg.Skyhook)
+		return true, nil
+	})
+}
+
+// HandleCompletePod applies the StateComplete transition, including the interrupt, upgrade and
+// uninstall special cases. The name is historical: JobReconcile is the completion authority now
+// and the pod watch never records completion.
+func (r *JobReconciler) HandleCompletePod(ctx context.Context, skyhookNode wrapper.SkyhookNodeOnly, packagePtr *PackageSkyhook, containerName string) (bool, error) {
+	updated := false
+
+	if containerName == InterruptContainerName {
+		// in this one case do we need a skyhook instance to get packages
+		// kind of sucks, but does not update, just reads so that is better
+		// seems safer to leave it this way unfortunately.
+		// by passing in packages we can not update load packages
+		skyhook, err := r.dal.GetSkyhook(ctx, packagePtr.Skyhook)
+		if err != nil {
+			return false, err
+		}
+
+		upgraded, err := wrapper.Convert(skyhookNode, skyhook)
+		if err != nil {
+			return false, fmt.Errorf("error converting node wrapper: %w", err)
+		}
+
+		// progress forward any skipped packages that this interrupt completed
+		if err := upgraded.ProgressSkipped(); err != nil {
+			return false, fmt.Errorf("error progressing skipped packages: %w", err)
+		}
+	} else if packagePtr.Stage == v1alpha1.StageUpgrade {
+		nodeState, err := skyhookNode.State()
+		if err != nil {
+			return false, fmt.Errorf("error getting node state: %w", err)
+		}
+
+		// go through and remove all the old node states for the package
+		// after upgrade has finished
+		for _, packageStatus := range nodeState {
+			if packageStatus.Name == packagePtr.Name && packageStatus.Version != packagePtr.Version {
+				packageStatusRef := v1alpha1.PackageRef{
+					Name:    packageStatus.Name,
+					Version: packageStatus.Version,
+				}
+
+				err = skyhookNode.RemoveState(packageStatusRef)
+				if err != nil {
+					return false, fmt.Errorf("error removing node state: %w", err)
+				}
+			}
+		}
+	} else if packagePtr.Stage == v1alpha1.StageUninstall {
+		skyhook, err := r.dal.GetSkyhook(ctx, packagePtr.Skyhook)
+		if err != nil {
+			return false, err
+		}
+
+		if skyhook != nil {
+			_package, exists := skyhook.Spec.Packages[packagePtr.Name]
+
+			if !exists {
+				// Package removed from spec — clean up node state.
+				if err = skyhookNode.RemoveState(packagePtr.PackageRef); err != nil {
+					return false, fmt.Errorf("error removing state for removed package: %w", err)
+				}
+				updated = true
+				return updated, nil
+			}
+
+			if _package.Version != packagePtr.Version {
+				// Defensive: webhook rejects version changes unless the package is
+				// already fully uninstalled, so the uninstall pod shouldn't complete
+				// for a version that's not in spec. Clean up defensively.
+				if err = skyhookNode.RemoveState(packagePtr.PackageRef); err != nil {
+					return false, fmt.Errorf("error cleaning up stale uninstall: %w", err)
+				}
+				updated = true
+				return updated, nil
+			}
+
+			// Same version in spec: explicit or finalizer-driven uninstall.
+			if _package.HasInterrupt() {
+				// Package has an interrupt — advance to the uninstall-interrupt stage
+				// so ProcessInterrupt fires the interrupt pod on the next reconcile.
+				if err = skyhookNode.Upsert(packagePtr.PackageRef, packagePtr.Image,
+					v1alpha1.StateInProgress, v1alpha1.StageUninstallInterrupt, 0, packagePtr.ContainerSHA); err != nil {
+					return false, fmt.Errorf("error transitioning to uninstall-interrupt: %w", err)
+				}
+			} else {
+				// No interrupt — remove state immediately (absent = uninstalled per D2).
+				if err = skyhookNode.RemoveState(packagePtr.PackageRef); err != nil {
+					return false, fmt.Errorf("error removing uninstalled package state: %w", err)
+				}
+				zeroOutSkyhookPackageMetrics(packagePtr.Skyhook, packagePtr.Name, packagePtr.Version)
+			}
+			updated = true
+		}
 	}
-	return nil
+
+	return updated, nil
 }
 
 // handleFailedJob handles a terminal Failed Job. DeadlineExceeded is a genuine failure:
@@ -209,7 +436,7 @@ func (r *SkyhookReconciler) recordJobCompletion(ctx context.Context, job *batchv
 // it. Any other reason is a backstop that unlimited backoff plus the deadline should make
 // unreachable: no node-state write (a vanished pod self-heals invisibly, as today), just
 // the marker and failure TTL.
-func (r *SkyhookReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, reason string) (ctrl.Result, error) {
+func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, reason string) (ctrl.Result, error) {
 	if reason != batchv1.JobReasonDeadlineExceeded {
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 	}
@@ -230,7 +457,7 @@ func (r *SkyhookReconciler) handleFailedJob(ctx context.Context, job *batchv1.Jo
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 	}
 
-	if err := r.recordJobErroring(ctx, job, pkg, node); err != nil {
+	if err := r.recordJobErroring(ctx, job, pkg); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -241,43 +468,41 @@ func (r *SkyhookReconciler) handleFailedJob(ctx context.Context, job *batchv1.Jo
 // path: only the stage the Job actually ran is touched, and never regressed to a later stage
 // or resurrected onto a removed package. This is also the state-only write for a stale
 // FailureTarget on an unreachable node (no marker/TTL there; those wait for terminal Failed).
-func (r *SkyhookReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook, node *corev1.Node) error {
-	patch := client.StrategicMergeFrom(node.DeepCopy())
+func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook) error {
+	return patchNodeState(ctx, r.dal, r.uncached, r.Client, jobNodeName(job), func(node *corev1.Node) (bool, error) {
+		skyhookNode, err := wrapper.NewSkyhookNodeOnly(node, pkg.Skyhook)
+		if err != nil {
+			return false, fmt.Errorf("creating node wrapper for job %s: %w", job.Name, err)
+		}
+		state, err := skyhookNode.State()
+		if err != nil {
+			return false, fmt.Errorf("reading node state for job %s: %w", job.Name, err)
+		}
 
-	skyhookNode, err := wrapper.NewSkyhookNodeOnly(node, pkg.Skyhook)
-	if err != nil {
-		return fmt.Errorf("creating node wrapper for job %s: %w", job.Name, err)
-	}
-	state, err := skyhookNode.State()
-	if err != nil {
-		return fmt.Errorf("reading node state for job %s: %w", job.Name, err)
-	}
+		status, present := state[pkg.GetUniqueName()]
+		if !present || status.Stage != pkg.Stage || status.State == v1alpha1.StateErroring {
+			return false, nil
+		}
 
-	status, present := state[pkg.GetUniqueName()]
-	if !present || status.Stage != pkg.Stage || status.State == v1alpha1.StateErroring {
-		return nil
-	}
+		if err := skyhookNode.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateErroring, pkg.Stage, job.Status.Failed, pkg.ContainerSHA); err != nil {
+			return false, fmt.Errorf("upserting erroring state for job %s: %w", job.Name, err)
+		}
+		skyhookNode.SetStatus(v1alpha1.StatusErroring)
 
-	if err := skyhookNode.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateErroring, pkg.Stage, job.Status.Failed, pkg.ContainerSHA); err != nil {
-		return fmt.Errorf("upserting erroring state for job %s: %w", job.Name, err)
-	}
-	skyhookNode.SetStatus(v1alpha1.StatusErroring)
-
-	if skyhookNode.Changed() {
-		if err := r.Patch(ctx, node, patch); err != nil {
-			return fmt.Errorf("patching node %s for job %s deadline: %w", node.Name, job.Name, err)
+		if !skyhookNode.Changed() {
+			return false, nil
 		}
 		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobDeadlineExceeded",
 			"Package [%s:%s] exceeded its stage deadline on [skyhook:%s]", pkg.Name, pkg.Version, pkg.Skyhook)
-	}
-	return nil
+		return true, nil
+	})
 }
 
 // handleActiveJob runs on a non-terminal Job: it takes the best-effort deadline log snapshot
 // when the Job is at FailureTarget (and records erroring if that state has gone stale on an
 // unreachable node), then prunes failed attempts to a single archive. Completion itself waits
 // for the terminal Complete/Failed condition.
-func (r *SkyhookReconciler) handleActiveJob(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
+func (r *JobReconciler) handleActiveJob(ctx context.Context, job *batchv1.Job) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("job-reconcile")
 
 	result := ctrl.Result{}
@@ -311,7 +536,7 @@ func (r *SkyhookReconciler) handleActiveJob(ctx context.Context, job *batchv1.Jo
 // recordStaleFailureTarget records erroring (state only) for a Job stuck at FailureTarget on
 // an unreachable node, where the Job controller can never delete the pod to reach terminal
 // Failed. Terminal handling (marker, TTL, park) still waits for Failed.
-func (r *SkyhookReconciler) recordStaleFailureTarget(ctx context.Context, job *batchv1.Job) error {
+func (r *JobReconciler) recordStaleFailureTarget(ctx context.Context, job *batchv1.Job) error {
 	pkg, err := GetPackage(job)
 	if err != nil {
 		return fmt.Errorf("getting package from job %s: %w", job.Name, err)
@@ -319,14 +544,7 @@ func (r *SkyhookReconciler) recordStaleFailureTarget(ctx context.Context, job *b
 	if pkg == nil {
 		return nil
 	}
-	node, err := r.dal.GetNode(ctx, jobNodeName(job))
-	if err != nil {
-		return fmt.Errorf("getting node for job %s: %w", job.Name, err)
-	}
-	if node == nil {
-		return nil
-	}
-	return r.recordJobErroring(ctx, job, pkg, node)
+	return r.recordJobErroring(ctx, job, pkg)
 }
 
 // snapshotFailureLogs captures the last evidence of a deadline-bound stage before its pod is
@@ -334,7 +552,7 @@ func (r *SkyhookReconciler) recordStaleFailureTarget(ctx context.Context, job *b
 // logs and survives the deadline) or when the snapshot is already taken. A never-started
 // container has no logs, so its waiting reason/message is recorded instead. Any error is
 // swallowed by the caller; this must never delay the erroring/park path.
-func (r *SkyhookReconciler) snapshotFailureLogs(ctx context.Context, job *batchv1.Job) error {
+func (r *JobReconciler) snapshotFailureLogs(ctx context.Context, job *batchv1.Job) error {
 	if _, ok := job.Annotations[annotationLastLogs]; ok {
 		return nil
 	}
@@ -390,7 +608,7 @@ func (r *SkyhookReconciler) snapshotFailureLogs(ctx context.Context, job *batchv
 // DisruptionTarget) has no failure verdict and must neither be kept nor deleted, so it must
 // not shadow a real one. Normal deletion only: the Job-tracking finalizer guarantees a failure
 // is counted and policy-classified before its pod is removed.
-func (r *SkyhookReconciler) pruneFailedAttempts(ctx context.Context, job *batchv1.Job) error {
+func (r *JobReconciler) pruneFailedAttempts(ctx context.Context, job *batchv1.Job) error {
 	pods, err := r.childPods(ctx, job)
 	if err != nil {
 		return err
@@ -425,8 +643,10 @@ func (r *SkyhookReconciler) pruneFailedAttempts(ctx context.Context, job *batchv
 
 // deleteJobForeground deletes a Job with foreground propagation so its deterministic name is
 // freed only after the child pods are gone.
-func (r *SkyhookReconciler) deleteJobForeground(ctx context.Context, job *batchv1.Job) error {
-	if err := r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); client.IgnoreNotFound(err) != nil {
+// A free function because both JobReconciler and the heavy pass delete Jobs, and neither
+// should have to reach through the other to do it.
+func deleteJobForeground(ctx context.Context, c client.Client, job *batchv1.Job) error {
+	if err := c.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("deleting job %s: %w", job.Name, err)
 	}
 	return nil
@@ -435,7 +655,7 @@ func (r *SkyhookReconciler) deleteJobForeground(ctx context.Context, job *batchv
 // markJobProcessed sets the state-recorded marker and the outcome TTL in one Update, run after
 // the node-state write so a crash can never mark a Job whose state is still in_progress. TTL is
 // unset at creation, so the TTL controller cannot race this.
-func (r *SkyhookReconciler) markJobProcessed(ctx context.Context, job *batchv1.Job, ttl time.Duration) error {
+func (r *JobReconciler) markJobProcessed(ctx context.Context, job *batchv1.Job, ttl time.Duration) error {
 	if job.Annotations == nil {
 		job.Annotations = map[string]string{}
 	}
@@ -451,7 +671,7 @@ func (r *SkyhookReconciler) markJobProcessed(ctx context.Context, job *batchv1.J
 
 // succeededContainerName returns the last init-container name of the Job's succeeded child pod
 // (selected by controller UID, never job-name), or "" if the pod was already GC'd.
-func (r *SkyhookReconciler) succeededContainerName(ctx context.Context, job *batchv1.Job) string {
+func (r *JobReconciler) succeededContainerName(ctx context.Context, job *batchv1.Job) string {
 	pods, err := r.childPods(ctx, job)
 	if err != nil {
 		return ""
@@ -469,7 +689,7 @@ func (r *SkyhookReconciler) succeededContainerName(ctx context.Context, job *bat
 
 // childPods lists a Job's own pods by controller UID (job-name is ambiguous across reruns of a
 // deterministic name).
-func (r *SkyhookReconciler) childPods(ctx context.Context, job *batchv1.Job) ([]corev1.Pod, error) {
+func (r *JobReconciler) childPods(ctx context.Context, job *batchv1.Job) ([]corev1.Pod, error) {
 	list, err := r.dal.GetPods(ctx, client.InNamespace(job.Namespace), client.MatchingLabels{batchControllerUIDLabel: string(job.UID)})
 	if err != nil {
 		return nil, fmt.Errorf("listing child pods for job %s: %w", job.Name, err)
@@ -514,6 +734,24 @@ func jobFailure(job *batchv1.Job) (bool, string) {
 		}
 	}
 	return false, ""
+}
+
+// isParkedJob reports whether a Job is a parked deadline failure — a genuine step failure that
+// the finished-Job rules deliberately leave in place while its stage sits erroring, so nothing
+// recreates the stage until a rerun/reset/config-change/TTL clears it.
+func isParkedJob(job *batchv1.Job) bool {
+	failed, reason := jobFailure(job)
+	return failed && reason == batchv1.JobReasonDeadlineExceeded
+}
+
+// jobFinished reports whether the Job has reached a terminal state (Complete or Failed).
+// An unfinished Job is what gates re-creating a stage; a finished one no longer does.
+func jobFinished(job *batchv1.Job) bool {
+	if hasJobCondition(job, batchv1.JobComplete) {
+		return true
+	}
+	failed, _ := jobFailure(job)
+	return failed
 }
 
 // failureTargetStale reports whether the Job has sat at FailureTarget past the grace window

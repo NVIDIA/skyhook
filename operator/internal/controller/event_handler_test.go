@@ -20,7 +20,6 @@ package controller
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +27,6 @@ import (
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	dalmock "github.com/NVIDIA/nodewright/operator/internal/dal/mock"
 	"github.com/NVIDIA/nodewright/operator/internal/mocks/workqueue"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -92,48 +90,14 @@ var _ = Describe("Global delay handler", func() {
 		handler.Create(ctx, event.CreateEvent{Object: skyhook}, queue)
 	})
 
-	It("enqueues the global key for a job we own, on every event type", func() {
-
-		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
-		// dal is intentionally nil: a job event must not need to list skyhooks.
-		handler := &globalDelayHandler{logger: GinkgoLogr, delay: delay}
-
-		job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
-			Name:      "gpu-init-tuning-1-0-0-apply-worker-7",
-			Namespace: "skyhook",
-			Labels:    map[string]string{fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX): "gpu-init"},
-		}}
-
-		queue.EXPECT().AddAfter(globalReconcileKey, delay).Times(4)
-
-		handler.Create(ctx, event.CreateEvent{Object: job}, queue)
-		handler.Update(ctx, event.UpdateEvent{ObjectNew: job, ObjectOld: job}, queue)
-		handler.Delete(ctx, event.DeleteEvent{Object: job}, queue)
-		handler.Generic(ctx, event.GenericEvent{Object: job}, queue)
-	})
-
-	It("does not enqueue for a job we do not own", func() {
-
-		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
-		handler := &globalDelayHandler{logger: GinkgoLogr, delay: delay}
-
-		job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{
-			Name:      "some-cronjob-28234",
-			Namespace: "skyhook",
-			Labels:    map[string]string{"foo": "bar"},
-		}}
-
-		// no AddAfter expectation: the mock fails the test if AddAfter is called.
-		handler.Create(ctx, event.CreateEvent{Object: job}, queue)
-	})
-
 	It("does not enqueue for a type relevance does not opt in", func() {
 
 		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
 		handler := &globalDelayHandler{logger: GinkgoLogr, delay: delay}
 
 		// relevant() defaults to false, so a watch added without a matching case here
-		// silently drops every event. This pins that default down.
+		// silently drops every event. This pins that default down. Jobs land here now:
+		// JobReconciler owns them, and its node write is itself a Node event.
 		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "foopod", Namespace: "skyhook"}}
 
 		handler.Create(ctx, event.CreateEvent{Object: pod}, queue)

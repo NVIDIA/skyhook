@@ -6,16 +6,21 @@ Validates that the operator correctly cleans up pods when a node's state is rese
 
 ## Test Scenario
 
-1. Create a nodewright with package dependencies (A depends on B)
+1. Create a nodewright with package dependencies (`bb` depends on `aa`)
 2. Wait for the nodewright to complete
-3. Trigger an update to force a config cycle on package B
-4. Once config is complete, update again to make the package error
-5. Clear out the node annotation to trigger cleanup
-6. Verify that pods that should not be running are removed
+3. Trigger an update to force a config cycle on package `bb`
+4. Once config is complete, update again to make `bb` error
+5. Clear out the node annotation on `kind-worker` to trigger cleanup
+6. Verify `bb`'s erroring config Job from before the reset does not survive on that node. This is
+   the mechanism the rest of the test depends on: the Job is unfinished, so it is only reaped if
+   the reset is actually observed, and while it lives `JobExists` gates the package
+7. Verify the packages re-run from `apply` on that node, with fresh Job-owned pods
 
 ## Key Features Tested
 
-- Pod cleanup after node state reset
+- Executor cleanup after node state reset (Jobs; pods follow by ownership)
+- Node state stays cleared after a reset: the pod watch reports in-flight erroring but must not
+  write back an entry the reset removed
 - Handling of erroring packages
 - Package dependency handling during cleanup
 - Orphan pod detection and removal
