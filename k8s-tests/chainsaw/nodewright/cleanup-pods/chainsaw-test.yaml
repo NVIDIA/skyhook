@@ -62,9 +62,12 @@ spec:
             name: cleanup-pods
           status:
             status: erroring
-    ## Pin the precondition before resetting: bb's config Job must actually be on kind-worker and
-    ## unfinished. Without this the negative assertion below passes vacuously whenever the Job was
-    ## never created, and the test would prove nothing about reset or reaping.
+    ## Pin the precondition before resetting: bb's config Job must actually exist on kind-worker.
+    ## Without this the negative assertion below passes vacuously whenever the Job was never
+    ## created, and the test would prove nothing about reset or reaping. Existence is the whole
+    ## precondition — the step above already waits for the Skyhook to report erroring, so this Job
+    ## cannot have completed. Do not add a status.conditions clause here: an active Job has no
+    ## conditions field at all, so any filter over it evaluates to null rather than an empty list.
     - assert:
         resource:
           apiVersion: batch/v1
@@ -76,8 +79,6 @@ spec:
               nodewright.nvidia.com/package: bb-1.2
               nodewright.nvidia.com/node: kind-worker
               nodewright.nvidia.com/stage: config
-          status:
-            (conditions[?type == 'Complete' && status == 'True']): []
     - script:
         content: |
           ## delete the node annotation on one node to trigger cleanup
