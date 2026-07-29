@@ -45,14 +45,13 @@ func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 		The plugin version is always shown. By default, the command also queries the cluster
 		to discover the NodeWright operator version. Use --client-only to skip the cluster query.`,
 		Example: `  # Show both plugin and operator versions
-		skyhook version
 		kubectl nodewright version
 
 		# Show only the plugin version (no cluster query)
-		skyhook version --client-only
+		kubectl nodewright version --client-only
 
 		# Query operator in a specific namespace
-		skyhook version -n skyhook-system`,
+		kubectl nodewright version -n skyhook`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright plugin:\t%s\n", version.Summary())
 
