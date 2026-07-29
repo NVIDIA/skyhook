@@ -53,9 +53,11 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 		AgentImage:           "foo:bar",
 		PauseImage:           "foo:bar",
 		AgentLogRoot:         "/log",
-		JobTTLSucceeded:      time.Hour,
-		JobTTLFailed:         24 * time.Hour,
-		JobStageTimeout:      time.Hour,
+		JobOperatorOptions: JobOperatorOptions{
+			JobTTLSucceeded: time.Hour,
+			JobTTLFailed:    24 * time.Hour,
+			JobStageTimeout: time.Hour,
+		},
 	}
 
 	buildClient := func(objs ...client.Object) client.Client {
