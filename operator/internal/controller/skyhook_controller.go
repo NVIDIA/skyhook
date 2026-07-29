@@ -999,8 +999,15 @@ func (r *SkyhookReconciler) resumeSuspendedJobs(ctx context.Context, skyhook Sky
 }
 
 // setSuspendOnUnfinishedJobs sets spec.suspend to the given value on every unfinished, valid Job of
-// the Skyhook, skipping Jobs already in the desired state. suspend is a mutable Job field, so an
-// Update touching only it is accepted where a full spec Update would be rejected as immutable.
+// the Skyhook, skipping Jobs already in the desired state. suspend is a mutable Job field, so a
+// write touching only it is accepted where a full spec write would be rejected as immutable.
+//
+// Merge-patched rather than Updated, and deliberately without an optimistic lock: these Jobs come
+// from a cached list, and the Job controller rewrites Job status constantly — flipping suspend
+// itself deletes the pod and produces more status writes — so a full Update would carry a
+// resourceVersion that is already stale and 409 for no reason. The operator is the only writer of
+// spec.suspend and sets it to an absolute value rather than a read-modify-write, so last-write-wins
+// is the correct semantic here. Same tradeoff the Node patches document in TrackReboots below.
 func (r *SkyhookReconciler) setSuspendOnUnfinishedJobs(ctx context.Context, skyhook SkyhookNodes, suspend bool) error {
 	jobs, err := r.dal.GetJobs(ctx,
 		client.InNamespace(r.opts.Namespace),
@@ -1032,8 +1039,9 @@ func (r *SkyhookReconciler) setSuspendOnUnfinishedJobs(ctx context.Context, skyh
 		if current == suspend {
 			continue
 		}
+		patch := client.MergeFrom(job.DeepCopy())
 		job.Spec.Suspend = ptr(suspend)
-		if err := r.Update(ctx, job); err != nil {
+		if err := r.Patch(ctx, job, patch); err != nil {
 			return fmt.Errorf("setting suspend=%t on job %s: %w", suspend, job.Name, err)
 		}
 	}
