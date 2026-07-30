@@ -266,7 +266,7 @@ jobs:
           echo "📊 Total Combined Coverage:"
           go tool cover -func reporting/cover.out | grep total
       - name: Upload to Coveralls
-        uses: coverallsapp/github-action@v2.3.6
+        uses: coverallsapp/github-action@v2.3.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: operator/reporting/cover.out
