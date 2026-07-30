@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -23,6 +23,9 @@ resources:
 - service_account.yaml
 - role.yaml
 - role_binding.yaml
+# Binds the namespaced Role (batch/jobs + pods/log) that controller-gen emits from the
+# namespace= rbac markers; controller-gen generates roles but never bindings.
+- namespaced_role_binding.yaml
 - leader_election_role.yaml
 - leader_election_role_binding.yaml
 # Comment the following 4 lines if you want to disable

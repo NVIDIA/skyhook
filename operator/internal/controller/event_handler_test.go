@@ -90,6 +90,19 @@ var _ = Describe("Global delay handler", func() {
 		handler.Create(ctx, event.CreateEvent{Object: skyhook}, queue)
 	})
 
+	It("does not enqueue for a type relevance does not opt in", func() {
+
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
+		handler := &globalDelayHandler{logger: GinkgoLogr, delay: delay}
+
+		// relevant() defaults to false, so a watch added without a matching case here
+		// silently drops every event. This pins that default down. Jobs land here now:
+		// JobReconciler owns them, and its node write is itself a Node event.
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "foopod", Namespace: "skyhook"}}
+
+		handler.Create(ctx, event.CreateEvent{Object: pod}, queue)
+	})
+
 	It("does not enqueue when listing skyhooks errors", func() {
 
 		dalMock := &dalmock.MockDAL{}

@@ -1,0 +1,161 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: pause-suspends-jobs
+  labels:
+    pool: lifecycle
+spec:
+  timeouts:
+    assert: 240s
+  catch:
+    - get:
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
+        name: pause-suspends-jobs
+        format: yaml
+    - script:
+        content: |
+          kubectl get jobs -n skyhook -l nodewright.nvidia.com/name=pause-suspends-jobs -o yaml || true
+          kubectl get pods -n skyhook -l nodewright.nvidia.com/name=pause-suspends-jobs -o yaml || true
+          kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o yaml || true
+  steps:
+  - name: start-a-long-stage
+    description: >
+      Install a package whose apply stage runs long enough to still be executing when we
+      pause. Unit tests cover the decision to set spec.suspend; only a real cluster runs
+      the Job controller, so only here can we observe what suspension actually does.
+    try:
+    - script:
+        content: |
+          ../nodewright-cli reset pause-suspends-jobs --confirm 2>/dev/null || true
+    - create:
+        file: nodewright.yaml
+    ## Wait until the apply stage is genuinely executing. Without this the negative assertion
+    ## after the pause passes vacuously against a pod that never started.
+    ##
+    ## A polling script rather than an assert, matching the event poll in
+    ## delete-blocked-when-paused. An assert here has to wait for a resource that does not
+    ## exist yet — the operator must reconcile first — and a resource assert carrying a status
+    ## expression has nothing to evaluate against an empty match, so it fails on the first poll
+    ## instead of retrying. That passed locally only because a warm empty cluster produced the
+    ## pod before the first poll.
+    ##
+    ## Do NOT check status.phase: package work runs in init containers, so the pod stays Pending
+    ## for the whole stage and only reaches Running once apply has finished — the opposite of
+    ## the state this test needs. Init containers run one at a time, so a running entry means a
+    ## step is in flight.
+    - script:
+        timeout: 240s
+        content: |
+          for i in $(seq 1 80); do
+            running=$(kubectl get pods -n skyhook \
+              -l nodewright.nvidia.com/name=pause-suspends-jobs,nodewright.nvidia.com/package=slowpoke-1.2.3,nodewright.nvidia.com/stage=apply \
+              -o jsonpath='{.items[*].status.initContainerStatuses[*].state.running.startedAt}' 2>/dev/null)
+            if [ -n "$running" ]; then
+              echo "apply stage is executing (startedAt: $running)"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "no apply pod reached a running init container within timeout"
+          kubectl get jobs,pods -n skyhook -l nodewright.nvidia.com/name=pause-suspends-jobs -o wide || true
+          exit 1
+
+  - name: pause-suspends-the-job-and-kills-the-pod
+    description: >
+      Pausing sets spec.suspend=true, which makes the Job controller delete the running
+      pod. Node state must stay in_progress: the killed pod carries a DeletionTimestamp,
+      and PodReconcile skips those, so a pause must never be recorded as a package failure.
+    try:
+    - script:
+        content: |
+          kubectl annotate nodewright pause-suspends-jobs \
+            nodewright.nvidia.com/pause=true --overwrite
+    - assert:
+        ## The Job itself is suspended rather than deleted, so resume can restart it.
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            namespace: skyhook
+            labels:
+              nodewright.nvidia.com/name: pause-suspends-jobs
+              nodewright.nvidia.com/package: slowpoke-1.2.3
+              nodewright.nvidia.com/stage: apply
+          spec:
+            suspend: true
+    - error:
+        ## The Job controller SIGTERMs the pod on suspend; no apply pod may survive.
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: skyhook
+            labels:
+              nodewright.nvidia.com/name: pause-suspends-jobs
+              nodewright.nvidia.com/package: slowpoke-1.2.3
+              nodewright.nvidia.com/stage: apply
+    - script:
+        ## The regression this test exists for. A pod deleted by suspension looks exactly
+        ## like a failed attempt to the pod watch, so without the DeletionTimestamp guard
+        ## every pause would mark its packages erroring. Assert the negative directly.
+        content: |
+          state=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e \
+            -o jsonpath='{.items[*].metadata.annotations.nodewright\.nvidia\.com/nodeState_pause-suspends-jobs}')
+          echo "node state: $state"
+          if echo "$state" | grep -q "erroring"; then
+            echo "FAIL: pausing recorded the package as erroring; the suspension-killed pod was treated as a failure"
+            exit 1
+          fi
+          echo "OK: no package marked erroring by the pause"
+
+  - name: resume-restarts-the-stage
+    description: >
+      Clearing pause clears spec.suspend, and the Job controller starts a fresh pod that
+      re-runs the interrupted stage through to completion.
+    try:
+    - script:
+        content: |
+          kubectl annotate nodewright pause-suspends-jobs \
+            nodewright.nvidia.com/pause- --overwrite
+    - assert:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            namespace: skyhook
+            labels:
+              nodewright.nvidia.com/name: pause-suspends-jobs
+              nodewright.nvidia.com/package: slowpoke-1.2.3
+              nodewright.nvidia.com/stage: apply
+          spec:
+            ## Cleared, not merely absent: resume writes false rather than dropping the field.
+            suspend: false
+    - assert:
+        ## A fresh attempt pod exists again for the same stage.
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: skyhook
+            labels:
+              nodewright.nvidia.com/name: pause-suspends-jobs
+              nodewright.nvidia.com/package: slowpoke-1.2.3
+              nodewright.nvidia.com/stage: apply

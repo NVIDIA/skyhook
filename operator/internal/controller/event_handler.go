@@ -52,7 +52,8 @@ var globalReconcileKey = reconcile.Request{
 // watched event that is relevant to at least one Skyhook. A Skyhook event is
 // always relevant; a Node event is relevant only if some Skyhook's node
 // selector matches it — without that filter every kubelet heartbeat across the
-// cluster would wake the heavy reconcile.
+// cluster would wake the heavy reconcile. Job events are not routed here at all:
+// JobReconciler owns them, and the node-state write it makes is itself a Node event.
 //
 // We enqueue via AddAfter rather than a plain EnqueueRequestsFromMapFunc because
 // the controller's priority queue only applies a delay on AddAfter/AddRateLimited:
