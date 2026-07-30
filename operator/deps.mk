@@ -61,6 +61,7 @@ CHAINSAW_VERSION ?= v0.2.15
 HELM_VERSION ?= v4.1.4
 HELMIFY_VERSION ?= v0.4.12
 GO_LICENSES_VERSION ?= v1.6.0
+ADDLICENSE_VERSION ?= v1.2.0
 GOVULNCHECK_VERSION ?= v1.3.0
 YQ_VERSION ?= v4.44.3
 
@@ -70,7 +71,7 @@ CTLPTL_VERSION ?= v0.9.4
 
 
 .PHONY: install-deps
-install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-licenses govulncheck ctlptl yq ## Install all dependencies
+install-deps: golangci-lint kustomize controller-gen envtest gocover-cobertura ginkgo mockery chainsaw helm helmify go-licenses addlicense govulncheck ctlptl yq ## Install all dependencies
 
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 golangci-lint: ## Download golangci locally if necessary. 
@@ -150,6 +151,11 @@ helmify: $(LOCALBIN)  ## Download helmify locally if necessary.
 .PHONY: go-licenses
 go-licenses: $(LOCALBIN)  ## Download  go-licenses locally if necessary.
 	test -s $(LOCALBIN)/go-licenses || GOBIN=$(LOCALBIN) go install github.com/google/go-licenses@$(GO_LICENSES_VERSION)
+
+ADDLICENSE ?= $(LOCALBIN)/addlicense
+.PHONY: addlicense
+addlicense: $(LOCALBIN)  ## Download addlicense locally if necessary.
+	test -s $(ADDLICENSE) || GOBIN=$(LOCALBIN) go install github.com/google/addlicense@$(ADDLICENSE_VERSION)
 
 GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 .PHONY: govulncheck
