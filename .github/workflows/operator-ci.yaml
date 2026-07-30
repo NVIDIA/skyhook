@@ -223,7 +223,7 @@ jobs:
       # Save coverage artifacts from any test suite that generates them
       - name: Upload coverage artifact
         if: hashFiles('operator/reporting/cover.out') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: coverage-${{ matrix.test-suite }}${{ matrix.pool && format('-{0}', matrix.pool) || '' }}-k8s-${{ matrix.k8s-version }}
           path: operator/reporting/cover.out
