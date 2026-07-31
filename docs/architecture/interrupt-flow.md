@@ -108,17 +108,17 @@ and then drained together on the following pass.
 
 ### Shared Cordon Ownership
 
-Each NodeWright that cordons a node records ownership with a `nodewright.nvidia.com/cordon_<nodewright-name>` annotation. When that NodeWright completes, it removes only its own cordon annotation. The node is marked schedulable only after no `nodewright.nvidia.com/cordon_*` annotations remain, so one NodeWright cannot uncordon a node that another NodeWright is still preparing for interrupt work.
+Each NodeWright that cordons a node records ownership with a `nodewright.nvidia.com/cordon_<nodewright-name>` annotation. When that NodeWright completes, it removes only its own cordon annotation. The node is marked schedulable only after no `nodewright.nvidia.com/cordon_*` annotations remain, so one NodeWright cannot uncordon a node that another NodeWright is still preparing for interrupt work. Additionally, if a persistent cordon was previously applied from a NodeWright which set `runtimeRequiredCordonAfter` to true, the cordon will persist even after all `nodewright.nvidia.com/cordon_*` annotations are removed.
 
-Other NodeWright annotations, such as `status_*`, `nodeState_*`, and `version_*`, do not keep a node cordoned. Only the `cordon_*` annotation family participates in shared cordon ownership.
+Other NodeWright annotations, such as `status_*`, `nodeState_*`, and `version_*`, do not keep a node cordoned. Only the `cordon_*` annotation family and `runtimeRequiredCordon` participate in shared cordon ownership.
 
 ### Orphaned Cordon Recovery
 
 If a NodeWright is force-deleted in a way that bypasses finalizer cleanup, or cleanup fails after the node was cordoned, its `cordon_<nodewright-name>` annotation can be left behind. That stale annotation will keep the node unschedulable from the operator's point of view until it is removed.
 
-Use `kubectl nodewright reset <nodewright-name> --confirm` to clear NodeWright metadata for affected nodes that still have `nodeState_<nodewright-name>` annotations, or `kubectl nodewright node reset <node-name> --nodewright <nodewright-name> --confirm` for a specific node. These reset commands remove the matching `cordon_<nodewright-name>` annotation, but they do not clear `spec.unschedulable`. After the stale cordon annotation is removed, if no other `nodewright.nvidia.com/cordon_*` annotations remain and no live NodeWright is expected to uncordon the node, run `kubectl uncordon <node-name>` to make it schedulable again.
+Use `kubectl nodewright reset <nodewright-name> --confirm` to clear NodeWright metadata for affected nodes that still have `nodeState_<nodewright-name>` annotations, or `kubectl nodewright node reset <node-name> --nodewright <nodewright-name> --confirm` for a specific node. These reset commands remove the matching `cordon_<nodewright-name>` annotation, but they do not clear `spec.unschedulable`. After the stale cordon annotation is removed, if no other `nodewright.nvidia.com/cordon_*` annotations remain and no live NodeWright is expected to uncordon the node, check for the `runtimeRequiredCordon` annotation before running `kubectl uncordon <node-name>`. If the annotation is absent, uncordoning is a safe recovery step. If the annotation is present, it means a NodeWright intentionally applied a persistent cordon, and `kubectl uncordon` is not a recovery step unless removing the persistent cordon is intentional.
 
-If the node only has a stale `cordon_<nodewright-name>` annotation and its `nodeState_<nodewright-name>` annotation has already been removed, `kubectl nodewright reset` will not discover the node. In that case, remove the orphaned annotation manually, then uncordon the node as above if no other NodeWright still owns a cordon.
+If the node only has a stale `cordon_<nodewright-name>` annotation and its `nodeState_<nodewright-name>` annotation has already been removed, `kubectl nodewright reset` will not discover the node. In that case, remove the orphaned annotation manually, then uncordon the node as above, subject to the same `runtimeRequiredCordon` check.
 
 ## Drain Configuration
 

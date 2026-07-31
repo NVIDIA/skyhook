@@ -1540,6 +1540,171 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(to_remove).To(HaveLen(1))
 		Expect(to_remove[0].UID).To(BeEquivalentTo(nodeA.UID))
 	})
+	It("runtimeRequiredCordonAfterEnabled should return false for no skyhooks", func() {
+		Expect(runtimeRequiredCordonAfterEnabled(nil)).To(BeFalse())
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{})).To(BeFalse())
+	})
+	It("runtimeRequiredCordonAfterEnabled should return false when no skyhook has it enabled", func() {
+		sh := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, RuntimeRequiredCordonAfter: false},
+		})}
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{sh})).To(BeFalse())
+	})
+	It("runtimeRequiredCordonAfterEnabled should return false when RuntimeRequiredCordonAfter is true but RuntimeRequired is false", func() {
+		sh := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: false, RuntimeRequiredCordonAfter: true},
+		})}
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{sh})).To(BeFalse())
+	})
+	It("runtimeRequiredCordonAfterEnabled should return true when any skyhook has it enabled", func() {
+		sh1 := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, RuntimeRequiredCordonAfter: false},
+		})}
+		sh2 := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, RuntimeRequiredCordonAfter: true},
+		})}
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{sh1, sh2})).To(BeTrue())
+	})
+	Context("HandleRuntimeRequired with runtimeRequiredCordonAfter", func() {
+		It("should cordon the node and remove the taint when runtimeRequiredCordonAfter is true", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "rr-cordon-after-node",
+					Labels: map[string]string{"nodewright.nvidia.com/rr-cordon-after-test": "true"},
+				},
+				Spec: corev1.NodeSpec{Taints: []corev1.Taint{opts.GetRuntimeRequiredTaint()}},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-cordon-after"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: true,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-cordon-after-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			for _, t := range updated.Spec.Taints {
+				Expect(t.Key).ToNot(Equal(opts.GetRuntimeRequiredTaint().Key), "runtime-required taint should have been removed")
+			}
+			Expect(updated.Spec.Unschedulable).To(BeTrue())
+			Expect(updated.Annotations).To(HaveKeyWithValue(v1alpha1.RuntimeRequiredCordonAnnotation, "true"))
+		})
+
+		It("should remove the taint without cordoning when runtimeRequiredCordonAfter is false", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "rr-no-cordon-node",
+					Labels: map[string]string{"nodewright.nvidia.com/rr-no-cordon-test": "true"},
+				},
+				Spec: corev1.NodeSpec{Taints: []corev1.Taint{opts.GetRuntimeRequiredTaint()}},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-no-cordon"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: false,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-no-cordon-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			for _, t := range updated.Spec.Taints {
+				Expect(t.Key).ToNot(Equal(opts.GetRuntimeRequiredTaint().Key), "runtime-required taint should have been removed")
+			}
+			Expect(updated.Spec.Unschedulable).To(BeFalse())
+			Expect(updated.Annotations).ToNot(HaveKey(v1alpha1.RuntimeRequiredCordonAnnotation))
+		})
+
+		It("should not cordon a node that does not have the runtime-required taint", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "rr-no-taint-node",
+					Labels: map[string]string{"nodewright.nvidia.com/rr-no-taint-test": "true"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-no-taint"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: true,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-no-taint-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			Expect(updated.Spec.Unschedulable).To(BeFalse())
+			Expect(updated.Annotations).ToNot(HaveKey(v1alpha1.RuntimeRequiredCordonAnnotation))
+		})
+
+		It("should remove the runtimeRequiredCordon annotation without re-cordoning when the node has been manually uncordoned", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "rr-manual-uncordon-node",
+					Labels:      map[string]string{"nodewright.nvidia.com/rr-manual-uncordon-test": "true"},
+					Annotations: map[string]string{v1alpha1.RuntimeRequiredCordonAnnotation: "true"},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: false},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-manual-uncordon"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: true,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-manual-uncordon-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			Expect(updated.Spec.Unschedulable).To(BeFalse(), "manual uncordon should not be undone")
+			Expect(updated.Annotations).ToNot(HaveKey(v1alpha1.RuntimeRequiredCordonAnnotation))
+		})
+	})
+
 	It("CreateTolerationForTaint should tolerate both the configured and the legacy taint", func() {
 		tolerations := opts.GetRuntimeRequiredTolerations()
 
@@ -4465,7 +4630,7 @@ var _ = Describe("HandleRuntimeRequired legacy taint removal", func() {
 		pkg := skyhook.Spec.Packages[pkgRef.Name]
 		Expect(nodeWrapper.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, v1alpha1.StageConfig, int32(0), "")).To(Succeed())
 
-		Expect(r.HandleRuntimeRequired(ctx, clusterState)).To(Succeed())
+		Expect(r.HandleRuntimeRequired(ctx, clusterState, &corev1.NodeList{Items: []corev1.Node{*node.DeepCopy()}})).To(Succeed())
 
 		live := &corev1.Node{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())

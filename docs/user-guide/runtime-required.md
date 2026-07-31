@@ -130,7 +130,25 @@ This per-node behavior prevents deadlocks where a few bad nodes would block all 
 
 ## What happens when the taint is removed
 
-1. The node becomes available for general workload scheduling (pods without the runtime-required toleration can now be scheduled on it).
+- If `runtimeRequiredCordonAfter` is false on all `runtimeRequired` NodeWrights, the node is eligible for general workload scheduling (pods without the runtime-required toleration can now be scheduled on it), unless another NodeWright's `cordon_*` annotation is still holding it.
+- If `runtimeRequiredCordonAfter` is true on one or more `runtimeRequired` NodeWrights, the node will be cordoned at the same time the runtime-required taint is removed. The operator will also set the `nodewright.nvidia.com/runtimeRequiredCordon` annotation on each cordoned node. Note that this setting is only respected on a given NodeWright if `runtimeRequired` is also true. The cordon is only applied to nodes that currently hold the runtime-required taint. Recall that the runtime-required taint could be applied externally of NodeWright for new nodes or via the autoTaintNewNodes feature described above. As a result, when the operator is configured with `REAPPLY_ON_REBOOT=true` and a NodeWright has `runtimeRequired: true`, `autoTaintNewNodes: true`, and `runtimeRequiredCordonAfter: true`, the cordon would be re-applied after the reboot and re-run complete.
+
+```yaml
+spec:
+  runtimeRequired: true
+  runtimeRequiredCordonAfter: true
+```
+
+An external actor can clear the node cordon by setting `unschedulable` to false and removing the annotation. If a node is uncordoned but the external actor does not remove the `runtimeRequiredCordon` annotation, the operator will automatically remove the annotation from the node.
+
+```bash
+kubectl patch node <node-name> --type=merge \
+  -p '{"metadata":{"annotations":{"nodewright.nvidia.com/runtimeRequiredCordon":null}},"spec":{"unschedulable":false}}'
+```
+
+Note that a cordon applied via `runtimeRequiredCordonAfter` will persist after running the reset CLI command: `kubectl nodewright reset`
+
+`kubectl nodewright node status` reports `CORDONED` and `RUNTIME-REQUIRED-CORDON` for each node, so you can tell whether a cordoned node needs an external actor to uncordon it, as described above.
 
 ## Why would you use runtime required
 

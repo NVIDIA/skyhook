@@ -628,7 +628,13 @@ func hasSkyhookCordon(annotations map[string]string) bool {
 			return true
 		}
 	}
-	return false
+	// If a non-runtime-required Skyhook with an interrupt runs after all runtime-required Skyhooks and one of the
+	// runtime-required Skyhooks sets runtimeRequiredCordonAfter (and the runtime-required taint still exists),
+	// preserve the persistent cordon. Note that any runtime-required Skyhooks that run initially are free to
+	// add and remove the interrupt cordon because the persistent cordon is only applied when the runtime-required
+	// taint is removed.
+	_, ok := annotations[v1alpha1.RuntimeRequiredCordonAnnotation]
+	return ok
 }
 
 // Reset clears Skyhook-related state and annotations so the node can be reconfigured from scratch.
