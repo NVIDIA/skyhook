@@ -223,7 +223,7 @@ jobs:
       # Save coverage artifacts from any test suite that generates them
       - name: Upload coverage artifact
         if: hashFiles('operator/reporting/cover.out') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: coverage-${{ matrix.test-suite }}${{ matrix.pool && format('-{0}', matrix.pool) || '' }}-k8s-${{ matrix.k8s-version }}
           path: operator/reporting/cover.out
@@ -266,7 +266,7 @@ jobs:
           echo "📊 Total Combined Coverage:"
           go tool cover -func reporting/cover.out | grep total
       - name: Upload to Coveralls
-        uses: coverallsapp/github-action@v2.3.6
+        uses: coverallsapp/github-action@v2.3.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: operator/reporting/cover.out

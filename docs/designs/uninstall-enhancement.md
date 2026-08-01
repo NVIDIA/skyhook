@@ -128,7 +128,7 @@ Implement **validating admission** in [`SkyhookWebhook.ValidateUpdate`](../../op
 ## Label and annotation cleanup
 
 - **Per package**: After successful uninstall, if **`uninstall.enabled` was true**:
-  - remove operator-managed keys **scoped to that package** where they exist. Today much of node metadata is **per Skyhook** (`skyhook.nvidia.com/status_<skyhook>`, `nodeState_<skyhook>`, etc. in [`wrapper/node.go`](../../operator/internal/wrapper/node.go)); the implementation should enumerate which keys are truly per-package (e.g. pod labels `skyhook.nvidia.com/package`) vs per-SCR and only remove what is correct.
+  - remove operator-managed keys **scoped to that package** where they exist. Today much of node metadata is **per Skyhook** (`nodewright.nvidia.com/status_<name>`, `nodeState_<name>`, etc. in [`wrapper/node.go`](../../operator/internal/wrapper/node.go)); the implementation should enumerate which keys are truly per-package (e.g. pod labels `nodewright.nvidia.com/package`) vs per-SCR and only remove what is correct.
   - zero out metrics related to that package and remove them from being reported.
 - **Skyhook (SCR)**: When **all** packages are uninstalled / absent from node state per policy, either **remove** SCR labels/annotations the operator owns for rollout.
 

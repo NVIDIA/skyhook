@@ -80,7 +80,7 @@ helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
   --create-namespace
 ```
 
-> **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/skyhook/agent` (agent path migration to `nodewright` is pending). NGC / `nvcr.io` distribution is paused — see [docs/release-process.md#distribution-ghcrio-only-for-now](docs/release-process.md#distribution-ghcrio-only-for-now).
+> **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`. NGC / `nvcr.io` distribution is paused — see [docs/release-process.md#distribution-ghcrio-only-for-now](docs/release-process.md#distribution-ghcrio-only-for-now).
 >
 > **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above. If you also want to keep the existing in-cluster release name (e.g. `skyhook`), substitute it for `nodewright` in the `helm install` command — the chart works either way.
 
@@ -305,17 +305,24 @@ cd operator
 make build-cli
 
 # Install as kubectl plugin
-cp bin/skyhook /usr/local/bin/kubectl-skyhook # other another directory in $PATH with write access
+cp bin/nodewright /usr/local/bin/kubectl-nodewright # or another directory in $PATH with write access
 
 # Verify installation
-kubectl skyhook version
+kubectl nodewright version
 ```
 
 See the [full CLI documentation](docs/cli.md) for detailed usage and examples.
 
 ## Contributing
 
-Start here: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Start here: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+
+## Governance & Maintainers
+
+- Governance: [GOVERNANCE.md](GOVERNANCE.md) - roles, how decisions get made, how maintainers join and leave
+- Maintainers: [MAINTAINERS.md](MAINTAINERS.md) - current roster and how to become one
+- Review ownership: [`.github/CODEOWNERS`](.github/CODEOWNERS)
 
 ## Security
 

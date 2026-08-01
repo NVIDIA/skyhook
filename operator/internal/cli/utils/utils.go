@@ -344,7 +344,7 @@ const (
 	MinAnnotationSupportVersion = "v0.8.0"
 	// MinNodeStateSupportVersion is the lowest operator version known to use
 	// the current map[string]PackageStatus shape for the
-	// nodewright.nvidia.com/nodeState_<skyhook> annotation. The shape itself has
+	// nodewright.nvidia.com/nodeState_<name> annotation. The shape itself has
 	// been stable since this version; what has evolved in later releases is
 	// the set of recognized stage / state values (e.g. uninstall and
 	// uninstall-interrupt were added in v0.16.0). Users targeting an older

@@ -14,7 +14,7 @@
 
 VENV := ./venv/bin/
 REGISTRY ?= ghcr.io
-AGENT_IMAGE ?= nvidia/skyhook/agent
+AGENT_IMAGE ?= nvidia/nodewright/agent
 DOCKER_CMD ?= docker
 PYTHON_VERSION ?= 3.13
 DEBIAN_VERSION ?= trixie

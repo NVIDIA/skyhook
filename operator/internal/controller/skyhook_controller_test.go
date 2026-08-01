@@ -1866,6 +1866,14 @@ var _ = Describe("skyhook controller tests", func() {
 				Expect(k8sClient.Delete(ctx, existingCM)).To(Succeed())
 			})
 
+			// Wait for the reconciler's cached client (a separate client from
+			// k8sClient) to observe the CM before asserting on it. Without this,
+			// UpsertConfigmaps' r.List can race the watch and miss existingCM,
+			// silently taking the "create" branch instead of HandleConfigUpdates.
+			Eventually(func() error {
+				return operator.Get(ctx, client.ObjectKeyFromObject(existingCM), &corev1.ConfigMap{})
+			}).Should(Succeed())
+
 			shouldReturn, pendingSync, _, err := operator.validateAndUpsertSkyhookData(ctx, skyhook, clusterState)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(shouldReturn).To(BeFalse(), "a deferred sync must not skip processSkyhooksPerNode")
