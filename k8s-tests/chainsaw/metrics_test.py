@@ -61,6 +61,18 @@ def main():
     parser.add_argument('metric_value', help='Value the metric should have (exact match)')
     parser.add_argument('-t', '--tag', action='append', default=[], help='Tag filter in key=value format (can be used multiple times)')
     parser.add_argument('--url', default='https://127.0.0.1:8443/metrics', help='Metrics endpoint URL')
+    parser.add_argument(
+        '--token-from-serviceaccount',
+        default=os.environ.get('METRICS_TEST_SERVICE_ACCOUNT'),
+        metavar='NAME',
+        help='Request a bearer token for this Kubernetes ServiceAccount',
+    )
+    parser.add_argument(
+        '--token-namespace',
+        default=os.environ.get('SKYHOOK_NAMESPACE', 'default'),
+        metavar='NAMESPACE',
+        help='Namespace of --token-from-serviceaccount (default: $SKYHOOK_NAMESPACE or default)',
+    )
     parser.add_argument('--not-found', action='store_true', help='Succeed if the metric is NOT found (invert match logic)')
     args = parser.parse_args()
 
@@ -86,17 +98,25 @@ def main():
     request = args.url
     ssl_context = None
     if mode == 'url' and args.url.startswith('https://'):
-        token = subprocess.check_output(
-            ['kubectl', '-n', 'skyhook', 'create', 'token', 'metrics-test'],
-            text=True,
-        ).strip()
-        request = urllib.request.Request(
-            args.url,
-            headers={'Authorization': f'Bearer {token}'},
-        )
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
+        if args.token_from_serviceaccount:
+            token = subprocess.check_output(
+                [
+                    'kubectl',
+                    '-n',
+                    args.token_namespace,
+                    'create',
+                    'token',
+                    args.token_from_serviceaccount,
+                ],
+                text=True,
+            ).strip()
+            request = urllib.request.Request(
+                args.url,
+                headers={'Authorization': f'Bearer {token}'},
+            )
 
     while True:
         if mode == 'stdin':

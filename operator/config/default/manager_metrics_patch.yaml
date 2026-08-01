@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -31,10 +31,6 @@ spec:
         env:
           - name: METRICS_PORT
             value: ":8443"
-          - name: METRICS_SECRET_NAME
-            value: metrics-cert
-          - name: METRICS_SERVICE_NAME
-            value: skyhook-operator-controller-manager-metrics-service
           - name: PROBE_PORT
             value: ":8081"
           - name: LEADER_ELECTION

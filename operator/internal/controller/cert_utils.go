@@ -161,9 +161,9 @@ func generateCert(serviceName, namespace string, duration time.Duration) (*webho
 	}, nil
 }
 
-// EnsureDummyCert ensures that a dummy cert is present in the certDir
+// ensureDummyCert ensures that a dummy cert is present in the certDir
 // this is used to test the webhook server without having to create a real cert
-func EnsureDummyCert(certDir string) error {
+func ensureDummyCert(certDir string) error {
 	if certDir == "" {
 		return fmt.Errorf("certDir is required")
 	}

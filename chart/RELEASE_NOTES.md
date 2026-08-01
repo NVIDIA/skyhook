@@ -40,9 +40,14 @@ For the full commit-level log see CHANGELOG.md.
 
 - Remove any overrides under `controllerManager.kubeRbacProxy`; that values
   block no longer exists. Metrics remain available on HTTPS port `8443`.
+  If you override `controllerManager.manager.env.metricsPort`, update it from
+  `:8080` to `:8443`; the value remains supported, but the Service now targets
+  `8443` exclusively.
   Scrapers that used the chart's former unauthenticated HTTP `:8080` service
-  port must switch to `:8443`, trust the metrics serving certificate (or opt
-  into TLS verification skipping), and provide a Kubernetes bearer token.
+  port must switch to `:8443`, disable TLS certificate verification, and
+  provide a Kubernetes bearer token authorized for the `/metrics`
+  non-resource URL. controller-runtime generates an in-memory self-signed
+  certificate for each operator pod, so there is no stable CA to trust.
 
 - No action is required: the selector-migration hook runs automatically on
   `helm upgrade` and only recreates the Deployment when its selector is stale.

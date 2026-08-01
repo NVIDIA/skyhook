@@ -28,11 +28,6 @@ controllerManager:
   #     - gpu-workload
   nodeAffinity:
     matchExpressions: []
-  ## Secure controller-runtime metrics endpoint.
-  metrics:
-    bindAddress: :8443
-    secretName: metrics-cert
-    serviceName: skyhook-operator-controller-manager-metrics-service
   manager:
     containerSecurityContext:
       allowPrivilegeEscalation: false
@@ -53,6 +48,7 @@ controllerManager:
       ## logLevel: "info" is the log level for the operator controller.
       ## If you want more or less logs, change this value to "debug" or "error".
       logLevel: info
+      metricsPort: :8443
       probePort: :8081
       ## reapplyOnReboot: "true" will reapply the packages on reboot. This is useful for systems that are read-only.
       reapplyOnReboot: "false"

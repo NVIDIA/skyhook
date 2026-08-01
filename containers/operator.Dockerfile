@@ -63,6 +63,6 @@ WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532
 
-EXPOSE 8080 8081
+EXPOSE 8443 8081
 
 ENTRYPOINT ["/manager"]

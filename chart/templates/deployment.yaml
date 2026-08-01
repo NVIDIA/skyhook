@@ -76,11 +76,7 @@ spec:
         - /manager
         env:
         - name: METRICS_PORT
-          value: {{ quote .Values.controllerManager.metrics.bindAddress }}
-        - name: METRICS_SECRET_NAME
-          value: {{ quote .Values.controllerManager.metrics.secretName }}
-        - name: METRICS_SERVICE_NAME
-          value: {{ quote .Values.controllerManager.metrics.serviceName }}
+          value: {{ quote .Values.controllerManager.manager.env.metricsPort }}
         - name: PROBE_PORT
           value: {{ quote .Values.controllerManager.manager.env.probePort }}
         - name: LEADER_ELECTION
@@ -124,13 +120,11 @@ spec:
           name: webhook-server
           protocol: TCP
         volumeMounts:
-        - mountPath: /tmp/k8s-metrics-server
-          name: metrics-certs
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: kube-api-access
           readOnly: true
         {{- if .Values.webhook.enable }}
-        - mountPath: /tmp/k8s-webhook-server
+        - mountPath: /tmp
           name: webhook-certs
         {{- end }}
         readinessProbe:
@@ -157,8 +151,6 @@ spec:
         - name: {{ quote .Values.imagePullSecret }}
       {{- end }}
       volumes:
-      - emptyDir: {}
-        name: metrics-certs
       - name: kube-api-access
         projected:
           defaultMode: 420
