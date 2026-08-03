@@ -111,7 +111,8 @@ spec:
           # JobTTLSucceeded/JobTTLFailed set ttlSecondsAfterFinished on completed
           # package-stage Jobs by outcome; JobStageTimeout is the default per-attempt
           # deadline when a package sets no stageTimeout (0 removes the time bound);
-          # JobBackoffLimit is how many attempts a package stage gets before it parks.
+          # JobBackoffLimit is how many retries a package stage gets after its first attempt
+          # before it parks, so a stage runs at most JobBackoffLimit+1 times.
           - name: JOB_TTL_SUCCEEDED
             value: "1h"
           - name: JOB_TTL_FAILED

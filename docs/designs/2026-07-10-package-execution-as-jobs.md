@@ -76,7 +76,7 @@ metadata:
 spec:
   parallelism: 1
   completions: 1
-  backoffLimit: <JOB_BACKOFF_LIMIT>               # attempts before the stage parks (interrupt Jobs: unlimited)
+  backoffLimit: <JOB_BACKOFF_LIMIT>               # retries after the first attempt (interrupt Jobs: unlimited)
   podFailurePolicy:                               # package Jobs only (the API forbids it with OnFailure)
     rules:
     - action: Ignore
@@ -170,7 +170,7 @@ Unset falls back to an operator default (`JOB_STAGE_TIMEOUT`, chart value `contr
 
 **Interrupt Jobs keep the Job-level bound** and take no per-attempt one: a reboot interrupt's deadline has to span the reboot, and `StartTime` does not reset when the kubelet restarts its containers after the node returns, so a per-attempt clock sized for normal work would kill a legitimate reboot.
 
-**Log visibility.** Deadline expiry deletes the running pod — the only way Kubernetes can stop a hung container — and the kubelet garbage-collects its logs with it. To keep the last evidence queryable, the operator reacts to the pre-terminal `FailureTarget` condition with a **best-effort log-tail snapshot** into the `skyhook.nvidia.com/last-logs` Job annotation:
+**Log visibility.** A per-attempt expiry terminates the pod's containers and marks the pod `Failed` with reason `DeadlineExceeded`; it does **not** delete the pod object, so a timed-out attempt survives as an ordinary failed-attempt archive with its logs intact, subject to the usual Job and pod GC. The Job-level ceiling is the case that loses evidence: there the Job controller deletes the active pod, and the kubelet garbage-collects its logs with it. To keep that last evidence queryable, the operator reacts to the pre-terminal `FailureTarget` condition with a **best-effort log-tail snapshot** into the `skyhook.nvidia.com/last-logs` Job annotation:
 
 - if a failed-attempt archive pod already exists, the snapshot is unnecessary — the archive carries full logs and survives the deadline;
 - otherwise it tails the stuck container's logs (a small byte cap, because annotations share a per-object metadata budget), sanitized to valid UTF-8;

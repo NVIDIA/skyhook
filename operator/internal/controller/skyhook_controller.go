@@ -148,8 +148,9 @@ type JobOperatorOptions struct {
 	// JobTTLSucceeded / JobTTLFailed set ttlSecondsAfterFinished at completion time by
 	// outcome so failure logs outlive success logs; JobStageTimeout is the default
 	// per-attempt deadline for a package stage Job when the package sets no stageTimeout
-	// (0 removes the time bound); JobBackoffLimit is how many attempts a package stage gets
-	// before the Job goes terminal and the stage parks (0 means a single attempt).
+	// (0 removes the time bound); JobBackoffLimit is how many *retries* a package stage gets
+	// after its first attempt before the Job goes terminal and the stage parks, so the stage
+	// runs at most JobBackoffLimit+1 times (0 means a single attempt, no retry).
 	JobTTLSucceeded time.Duration `env:"JOB_TTL_SUCCEEDED, default=1h"`
 	JobTTLFailed    time.Duration `env:"JOB_TTL_FAILED, default=24h"`
 	JobStageTimeout time.Duration `env:"JOB_STAGE_TIMEOUT, default=1h"`

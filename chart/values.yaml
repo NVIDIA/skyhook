@@ -89,10 +89,11 @@ controllerManager:
       ## package itself sets no stageTimeout. "0" removes the time bound, leaving jobBackoffLimit
       ## as the only limit.
       jobStageTimeout: "1h"
-      ## jobBackoffLimit is how many retries a package stage gets before its Job goes terminal
-      ## and the stage parks as erroring, awaiting a rerun/reset/config change. It bounds every
-      ## failure class, not just timeouts, so raising it buys a crash-looping package more time
-      ## to self-heal. "0" gives a stage a single attempt with no retry.
+      ## jobBackoffLimit is how many retries a package stage gets after its first attempt before
+      ## its Job goes terminal and the stage parks as erroring, awaiting a rerun/reset/config
+      ## change — so a stage runs at most jobBackoffLimit+1 times. It bounds every failure class,
+      ## not just timeouts, so raising it buys a crash-looping package more time to self-heal.
+      ## "0" gives a stage a single attempt with no retry.
       jobBackoffLimit: "3"
       ## runtimeRequiredTaint: This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag.
       ## This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete.

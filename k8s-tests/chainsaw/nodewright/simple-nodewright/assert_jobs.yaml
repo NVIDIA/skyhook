@@ -37,7 +37,8 @@ spec:
   parallelism: 1
   completions: 1
   # A timeout is a retryable failure like any other, so the bound is per attempt (on the pod
-  # template below) and this is how many attempts the stage gets before it parks.
+  # template below) and this is how many retries the stage gets after its first attempt
+  # before it parks — 3 retries, so 4 attempts in total.
   backoffLimit: 3
   # Replace only once the previous pod is fully gone, so two executors never share the hostPath.
   podReplacementPolicy: Failed
