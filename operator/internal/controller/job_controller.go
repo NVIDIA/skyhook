@@ -482,6 +482,14 @@ func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, r
 // The pruner keeps only the first and most recent genuine failures, so a real failure sandwiched
 // between rejections can be pruned before this runs. That errs toward re-running the stage instead
 // of parking it, which is the safe direction.
+//
+// Losing the archives entirely (terminated-pod GC on a large cluster) does not by itself lose the
+// park. This is the second of two writers that put an entry at (stage, erroring), and the park
+// predicate reads only that entry plus terminal Failed — never this verdict. The Pod watch is the
+// first writer and runs live, while the archives still exist; this one runs at terminal, from
+// archives, and so covers the window where the operator was down for the Pod watch. Both use the
+// same classification, so they agree. Both must miss to lose a park, and the stage then re-runs
+// and parks on the next cycle rather than churning.
 func (r *JobReconciler) jobFailureIsGenuine(ctx context.Context, job *batchv1.Job, reason string) (bool, error) {
 	if reason != batchv1.JobReasonBackoffLimitExceeded {
 		return true, nil
