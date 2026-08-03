@@ -149,8 +149,11 @@ type JobOperatorOptions struct {
 	// outcome so failure logs outlive success logs; JobStageTimeout is the default
 	// per-attempt deadline for a package stage Job when the package sets no stageTimeout
 	// (0 removes the time bound); JobBackoffLimit is how many *retries* a package stage gets
-	// after its first attempt before the Job goes terminal and the stage parks, so the stage
-	// runs at most JobBackoffLimit+1 times (0 means a single attempt, no retry).
+	// after its first attempt before its Job goes terminal, so the stage runs at most
+	// JobBackoffLimit+1 times (0 means a single attempt, no retry). Exhausting the budget is
+	// not by itself a park: the stage parks as erroring only if a retained attempt genuinely
+	// failed, since attempts the kubelet refused to admit spend the budget without ever
+	// running the package.
 	JobTTLSucceeded time.Duration `env:"JOB_TTL_SUCCEEDED, default=1h"`
 	JobTTLFailed    time.Duration `env:"JOB_TTL_FAILED, default=24h"`
 	JobStageTimeout time.Duration `env:"JOB_STAGE_TIMEOUT, default=1h"`
