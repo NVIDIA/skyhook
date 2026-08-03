@@ -57,6 +57,7 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 			JobTTLSucceeded: time.Hour,
 			JobTTLFailed:    24 * time.Hour,
 			JobStageTimeout: time.Hour,
+			JobBackoffLimit: 3,
 		},
 	}
 

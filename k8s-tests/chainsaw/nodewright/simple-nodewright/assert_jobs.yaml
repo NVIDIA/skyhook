@@ -36,16 +36,20 @@ metadata:
 spec:
   parallelism: 1
   completions: 1
-  # A package Job must never give up before the operator does: the deadline below is the bound,
-  # not the retry count.
-  backoffLimit: 2147483647
+  # A timeout is a retryable failure like any other, so the bound is per attempt (on the pod
+  # template below) and this is how many attempts the stage gets before it parks.
+  backoffLimit: 3
   # Replace only once the previous pod is fully gone, so two executors never share the hostPath.
   podReplacementPolicy: Failed
-  # Operator default JOB_STAGE_TIMEOUT (1h); no package here sets stageTimeout.
-  activeDeadlineSeconds: 3600
+  # The Job-level ceiling the operator derives, for the case a per-attempt clock cannot see (a
+  # pod the kubelet never acknowledges never gets a StartTime):
+  # (backoffLimit+1) * (stageTimeout + gracefulShutdown + 10m backoff cap) = 4 * (3600+0+600).
+  activeDeadlineSeconds: 16800
   template:
     spec:
       restartPolicy: Never
+      # Operator default JOB_STAGE_TIMEOUT (1h); no package here sets stageTimeout.
+      activeDeadlineSeconds: 3600
 ---
 kind: Job
 apiVersion: batch/v1
@@ -62,8 +66,9 @@ metadata:
       controller: true
       blockOwnerDeletion: true
 spec:
-  activeDeadlineSeconds: 3600
+  activeDeadlineSeconds: 16800
   template:
     spec:
       restartPolicy: Never
+      activeDeadlineSeconds: 3600
 ---

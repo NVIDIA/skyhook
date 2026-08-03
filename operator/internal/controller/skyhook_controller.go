@@ -147,11 +147,13 @@ type SkyhookOperatorOptions struct {
 type JobOperatorOptions struct {
 	// JobTTLSucceeded / JobTTLFailed set ttlSecondsAfterFinished at completion time by
 	// outcome so failure logs outlive success logs; JobStageTimeout is the default
-	// activeDeadlineSeconds for a package stage Job when the package sets no stageTimeout
-	// (0 disables the deadline).
+	// per-attempt deadline for a package stage Job when the package sets no stageTimeout
+	// (0 removes the time bound); JobBackoffLimit is how many attempts a package stage gets
+	// before the Job goes terminal and the stage parks (0 means a single attempt).
 	JobTTLSucceeded time.Duration `env:"JOB_TTL_SUCCEEDED, default=1h"`
 	JobTTLFailed    time.Duration `env:"JOB_TTL_FAILED, default=24h"`
 	JobStageTimeout time.Duration `env:"JOB_STAGE_TIMEOUT, default=1h"`
+	JobBackoffLimit int32         `env:"JOB_BACKOFF_LIMIT, default=3"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {
@@ -211,6 +213,11 @@ func (o *SkyhookOperatorOptions) Validate() error {
 	// 0 disables the stage deadline; negatives are meaningless.
 	if o.JobStageTimeout < 0 {
 		messages = append(messages, "job stage timeout must be greater than or equal to 0")
+	}
+
+	// 0 gives a stage a single attempt with no retry; negatives are meaningless.
+	if o.JobBackoffLimit < 0 {
+		messages = append(messages, "job backoff limit must be greater than or equal to 0")
 	}
 
 	if len(messages) > 0 {
@@ -2472,7 +2479,7 @@ func (r *SkyhookReconciler) JobExists(ctx context.Context, nodeName, skyhookName
 
 // handleExistingJob resolves an AlreadyExists on create against the deterministic Job name. It
 // never records in_progress (the create did not happen this pass): an unfinished Job that matches
-// is a benign race won by another pass; a parked deadline failure whose entry sits erroring is
+// is a benign race won by another pass; a parked failure whose entry sits erroring is
 // left in place to absorb the recreate; an unprocessed completion is left for JobReconcile; and a
 // stale-spec unfinished Job or a processed finished Job is foreground-deleted so the stage can
 // re-run next pass.
@@ -2502,14 +2509,14 @@ func (r *SkyhookReconciler) handleExistingJob(ctx context.Context, want *batchv1
 }
 
 // entryErroringAtStage reports whether this package's node-state entry sits at (stage, erroring),
-// the parked state a DeadlineExceeded Job represents.
+// the parked state a terminally Failed Job represents.
 func (r *SkyhookReconciler) entryErroringAtStage(skyhookNode wrapper.SkyhookNode, _package *v1alpha1.Package, stage v1alpha1.Stage) bool {
 	status, found := skyhookNode.PackageStatus(_package.GetUniqueName())
 	return found && status.Stage == stage && status.State == v1alpha1.StateErroring
 }
 
 // deleteConfigUpdateExecutors clears a package's in-flight work on a node so a config change
-// re-runs it: its unfinished or parked (DeadlineExceeded) Jobs. Retained successful Jobs for
+// re-runs it: its unfinished or parked (terminally Failed) Jobs. Retained successful Jobs for
 // other stages are left in place — a literal port of the old delete-all-matching loop would gut
 // retention on every config update.
 func (r *SkyhookReconciler) deleteConfigUpdateExecutors(ctx context.Context, node wrapper.SkyhookNode, skyhookName string, _package *v1alpha1.Package) error {
@@ -2635,7 +2642,7 @@ func FilterEnv(envs []corev1.EnvVar, exclude ...string) []corev1.EnvVar {
 
 // ValidateRunningPackages reconciles a Skyhook's package executor Jobs against spec and node
 // state: it sweeps Jobs whose node is gone, deletes processed finished Jobs once their stage
-// should re-run (leaving a parked deadline failure and any unprocessed completion in place), and
+// should re-run (leaving a parked failure and any unprocessed finished Job in place), and
 // invalidates unfinished Jobs whose spec or stage no longer matches. A legacy raw-pod sweep runs
 // alongside during the one-minor migration window.
 func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook SkyhookNodes) (bool, error) {
@@ -2714,13 +2721,17 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 	return update, utilerrors.NewAggregate(errs)
 }
 
-// shouldDeleteFinishedJob is the rerun predicate: a processed finished Job (Failed, or Complete
-// and state-recorded) is deleted once node state no longer records its stage as done, so a reset
-// or config change re-runs the stage. Two carve-outs: an unprocessed completion is left for
-// JobReconcile, and a parked deadline failure stays while its entry sits (stage, erroring) — that
-// pair is the park that keeps the stage from churning.
+// shouldDeleteFinishedJob is the rerun predicate: a state-recorded finished Job is deleted once
+// node state no longer records its stage as done, so a reset or config change re-runs the stage.
+// Two carve-outs: a finished Job JobReconcile has not processed yet is left alone, and a parked
+// failure stays while its entry sits (stage, erroring) — that pair is the park that keeps the
+// stage from churning.
 func (r *SkyhookReconciler) shouldDeleteFinishedJob(job *batchv1.Job, pkg *PackageSkyhook, nodeState v1alpha1.NodeState) bool {
-	if hasJobCondition(job, batchv1.JobComplete) && !jobProcessed(job) {
+	// Both outcomes wait for the marker. A Complete Job holds an unrecorded completion; a Failed
+	// one has not yet had its chance to write erroring, and a finite backoffLimit can take a Job
+	// from first failure to terminal in about a minute — well inside one pass of this sweep — so
+	// deleting first would race the park into a fresh, equally doomed attempt.
+	if !jobProcessed(job) {
 		return false
 	}
 

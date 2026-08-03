@@ -365,10 +365,13 @@ type Package struct {
 	//+optional
 	GracefulShutdown *metav1.Duration `json:"gracefulShutdown,omitempty"`
 
-	// StageTimeout bounds the wall-clock runtime of each of this package's stage Jobs
-	// (mapped to the Job's activeDeadlineSeconds), all retries and reboot time included.
-	// A stage that runs past it is failed and surfaced as erroring. Unset uses the
-	// operator default (JOB_STAGE_TIMEOUT); "0" disables the deadline for this package.
+	// StageTimeout bounds the wall-clock runtime of one attempt at each of this package's
+	// stages (the stage Job pod's activeDeadlineSeconds). An attempt that runs past it is
+	// killed and retried like any other failed attempt, and the package surfaces as erroring
+	// once the operator's retry budget (JOB_BACKOFF_LIMIT) is spent. Interrupt stages are the
+	// exception: their attempt must span a reboot, so it bounds the whole stage instead.
+	// Unset uses the operator default (JOB_STAGE_TIMEOUT); "0" removes the time bound for this
+	// package, leaving the retry budget as its only limit.
 	//+optional
 	StageTimeout *metav1.Duration `json:"stageTimeout,omitempty"`
 

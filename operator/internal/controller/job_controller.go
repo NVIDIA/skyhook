@@ -430,14 +430,18 @@ func (r *JobReconciler) HandleCompletePod(ctx context.Context, skyhookNode wrapp
 	return updated, nil
 }
 
-// handleFailedJob handles a terminal Failed Job. DeadlineExceeded is a genuine failure:
-// record erroring, mark with the failure TTL, and leave the Job in place as the park marker
-// so the main pass does not recreate the stage until a rerun/reset/config-change/TTL clears
-// it. Any other reason is a backstop that unlimited backoff plus the deadline should make
-// unreachable: no node-state write (a vanished pod self-heals invisibly, as today), just
-// the marker and failure TTL.
+// handleFailedJob handles a terminal Failed Job. A genuine failure — attempts exhausted on real
+// step failures or timeouts, or the Job-level ceiling — records erroring, marks with the failure
+// TTL, and leaves the Job in place as the park marker so the main pass does not recreate the stage
+// until a rerun/reset/config-change/TTL clears it. A Job that only ever lost pods the package
+// never ran in is not the package's failure: mark it and let the sweep clear it so the stage
+// re-runs, matching the invisible self-heal a vanished pod gets today.
 func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, reason string) (ctrl.Result, error) {
-	if reason != batchv1.JobReasonDeadlineExceeded {
+	genuine, err := r.jobFailureIsGenuine(ctx, job, reason)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !genuine {
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 	}
 
@@ -457,18 +461,53 @@ func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, r
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 	}
 
-	if err := r.recordJobErroring(ctx, job, pkg); err != nil {
+	if err := r.recordJobErroring(ctx, job, pkg, reason); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 }
 
+// jobFailureIsGenuine reports whether a terminal Failed Job represents a real package failure.
+//
+// backoffLimit is finite, and these pods carry spec.nodeName rather than going through the
+// scheduler, so kubelet admission is the only gate they face: a node at capacity or on its way
+// back from a reboot can reject several node-pinned replacements in a row, each Failed with no
+// container statuses and no DisruptionTarget for the podFailurePolicy to ignore. Under the old
+// unbounded limit those only cost an archive slot; under a finite one they can exhaust the budget
+// in about a minute and park a package that never ran a line of script. So BackoffLimitExceeded is
+// believed only when a retained attempt actually failed. Any other terminal reason is the
+// Job-level ceiling, genuine on its own: nothing finished inside the entire retry budget.
+//
+// The pruner keeps only the first and most recent genuine failures, so a real failure sandwiched
+// between rejections can be pruned before this runs. That errs toward re-running the stage instead
+// of parking it, which is the safe direction.
+func (r *JobReconciler) jobFailureIsGenuine(ctx context.Context, job *batchv1.Job, reason string) (bool, error) {
+	if reason != batchv1.JobReasonBackoffLimitExceeded {
+		return true, nil
+	}
+
+	pods, err := r.childPods(ctx, job)
+	if err != nil {
+		return false, err
+	}
+	for i := range pods {
+		if pods[i].Status.Phase != corev1.PodFailed || hasDisruptionTarget(&pods[i]) {
+			continue
+		}
+		if podDeadlineExceeded(&pods[i]) || podFailureIsGenuine(&pods[i]) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // recordJobErroring parks the stage at (stage, erroring). It is guarded like the completion
 // path: only the stage the Job actually ran is touched, and never regressed to a later stage
 // or resurrected onto a removed package. This is also the state-only write for a stale
 // FailureTarget on an unreachable node (no marker/TTL there; those wait for terminal Failed).
-func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook) error {
+// reason is the Job's failure reason, carried into the event so the park names what ended it.
+func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook, reason string) error {
 	return patchNodeState(ctx, r.dal, r.uncached, r.Client, jobNodeName(job), func(node *corev1.Node) (bool, error) {
 		skyhookNode, err := wrapper.NewSkyhookNodeOnly(node, pkg.Skyhook)
 		if err != nil {
@@ -492,8 +531,8 @@ func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job,
 		if !skyhookNode.Changed() {
 			return false, nil
 		}
-		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobDeadlineExceeded",
-			"Package [%s:%s] exceeded its stage deadline on [skyhook:%s]", pkg.Name, pkg.Version, pkg.Skyhook)
+		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobFailed",
+			"Package [%s:%s] stage %s failed on [skyhook:%s]: %s", pkg.Name, pkg.Version, pkg.Stage, pkg.Skyhook, reason)
 		return true, nil
 	})
 }
@@ -544,7 +583,7 @@ func (r *JobReconciler) recordStaleFailureTarget(ctx context.Context, job *batch
 	if pkg == nil {
 		return nil
 	}
-	return r.recordJobErroring(ctx, job, pkg)
+	return r.recordJobErroring(ctx, job, pkg, string(batchv1.JobFailureTarget))
 }
 
 // snapshotFailureLogs captures the last evidence of a deadline-bound stage before its pod is
@@ -736,12 +775,17 @@ func jobFailure(job *batchv1.Job) (bool, string) {
 	return false, ""
 }
 
-// isParkedJob reports whether a Job is a parked deadline failure — a genuine step failure that
-// the finished-Job rules deliberately leave in place while its stage sits erroring, so nothing
+// isParkedJob reports whether a Job is a parked failure — a terminal Failed Job that the
+// finished-Job rules deliberately leave in place while its stage sits erroring, so nothing
 // recreates the stage until a rerun/reset/config-change/TTL clears it.
+//
+// Every terminal failure qualifies, deliberately: with a finite backoffLimit the reason no longer
+// separates a real failure from a backstop. jobFailureIsGenuine draws that line instead, and only
+// a genuine failure leaves the entry at (stage, erroring) — the other half of every park
+// predicate, without which a non-genuine failure is swept and the stage re-runs.
 func isParkedJob(job *batchv1.Job) bool {
-	failed, reason := jobFailure(job)
-	return failed && reason == batchv1.JobReasonDeadlineExceeded
+	failed, _ := jobFailure(job)
+	return failed
 }
 
 // jobFinished reports whether the Job has reached a terminal state (Complete or Failed).

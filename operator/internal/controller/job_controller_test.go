@@ -65,6 +65,7 @@ var _ = Describe("JobReconcile", func() {
 				JobTTLSucceeded: time.Hour,
 				JobTTLFailed:    24 * time.Hour,
 				JobStageTimeout: time.Hour,
+				JobBackoffLimit: 3,
 			},
 		}
 	}
@@ -207,7 +208,9 @@ var _ = Describe("JobReconcile", func() {
 		Expect(getJob(r, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
 	})
 
-	It("parks a DeadlineExceeded Job as erroring with the failure TTL, leaving it in place", func() {
+	It("parks a Job that hit the Job-level ceiling as erroring, leaving it in place", func() {
+		// The ceiling is the only bound that can fire with no failed attempt behind it (pods the
+		// kubelet never acknowledged), so DeadlineExceeded is genuine on its own evidence.
 		node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageConfig)
 		job := packageJob(v1alpha1.StageConfig, false,
 			trueCondition(batchv1.JobFailed, batchv1.JobReasonDeadlineExceeded))
@@ -223,16 +226,58 @@ var _ = Describe("JobReconcile", func() {
 		Expect(*parked.Spec.TTLSecondsAfterFinished).To(BeEquivalentTo(int32((24 * time.Hour).Seconds())))
 	})
 
-	It("writes no state for a Failed Job with a non-deadline reason (backstop)", func() {
+	DescribeTable("BackoffLimitExceeded parks only on genuine attempt evidence",
+		func(archive func(*batchv1.Job) *corev1.Pod, expected v1alpha1.State) {
+			node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageApply)
+			job := packageJob(v1alpha1.StageApply, false,
+				trueCondition(batchv1.JobFailed, batchv1.JobReasonBackoffLimitExceeded))
+			r := newReconciler(node, job, archive(job))
+
+			_, err := r.JobReconcile(ctx, job)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(getNodeState(r)[pkgRef.GetUniqueName()].State).To(Equal(expected))
+			Expect(getJob(r, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
+		},
+		Entry("a step that exited nonzero is the package's failure",
+			func(job *batchv1.Job) *corev1.Pod {
+				pod := failedChildPod(job, "attempt-exit-1", time.Minute, false)
+				pod.Status.InitContainerStatuses = []corev1.ContainerStatus{
+					{Name: "tuning-apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}}},
+				}
+				return pod
+			}, v1alpha1.StateErroring),
+		Entry("an attempt killed by its own deadline is the package's failure",
+			func(job *batchv1.Job) *corev1.Pod {
+				pod := failedChildPod(job, "attempt-timeout", time.Minute, false)
+				pod.Status.Reason = podReasonDeadlineExceeded
+				return pod
+			}, v1alpha1.StateErroring),
+		// These pods carry no container statuses: the kubelet refused them before the package
+		// ran. Finite backoff makes that reachable in about a minute on a rebooting node, so
+		// parking here would strand a package that never executed a line of script.
+		Entry("attempts the kubelet refused to admit are not the package's failure",
+			func(job *batchv1.Job) *corev1.Pod {
+				pod := failedChildPod(job, "attempt-outofpods", time.Minute, false)
+				pod.Status.Reason = "OutOfpods"
+				return pod
+			}, v1alpha1.StateInProgress),
+		Entry("a disruption casualty is not the package's failure",
+			func(job *batchv1.Job) *corev1.Pod {
+				return failedChildPod(job, "attempt-evicted", time.Minute, true)
+			}, v1alpha1.StateInProgress),
+	)
+
+	It("writes no state for a BackoffLimitExceeded Job whose attempts are already gone", func() {
+		// Nothing left to judge: the safe direction is to re-run the stage, not park it.
 		node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageApply)
 		job := packageJob(v1alpha1.StageApply, false,
-			trueCondition(batchv1.JobFailed, "BackoffLimitExceeded"))
+			trueCondition(batchv1.JobFailed, batchv1.JobReasonBackoffLimitExceeded))
 		r := newReconciler(node, job)
 
 		_, err := r.JobReconcile(ctx, job)
 		Expect(err).ToNot(HaveOccurred())
 
-		// unchanged (still in_progress), matching today's silent disruption behavior
 		Expect(getNodeState(r)[pkgRef.GetUniqueName()].State).To(Equal(v1alpha1.StateInProgress))
 		Expect(getJob(r, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
 	})

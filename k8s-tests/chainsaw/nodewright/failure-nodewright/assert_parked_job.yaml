@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# node-assert.yaml pins the erroring state the Pod watch reports while the stage is still
+# retrying. This pins the other end: the retry budget runs out, the Job goes terminal, and the
+# operator leaves it in place as the park marker rather than letting the stage churn forever.
+---
+kind: Job
+apiVersion: batch/v1
+metadata:
+  namespace: skyhook
+  labels:
+    nodewright.nvidia.com/name: failure-skyhook
+    nodewright.nvidia.com/package: failure-1.2.3
+    nodewright.nvidia.com/stage: apply
+  annotations:
+    ## JobReconcile recorded the erroring state before marking, so the park is real
+    nodewright.nvidia.com/state-recorded: "true"
+spec:
+  backoffLimit: 3
+  ## the failure TTL (JOB_TTL_FAILED 24h), set at completion so failure logs outlive success logs
+  ttlSecondsAfterFinished: 86400
+status:
+  ## every attempt ran the step and exited nonzero, so all of them count
+  failed: 4
+  (conditions[?type == 'Failed']):
+  - reason: BackoffLimitExceeded
+    status: "True"

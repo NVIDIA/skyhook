@@ -54,6 +54,7 @@ var _ = Describe("job builders", func() {
 			PauseImage:           "registry.k8s.io/pause:3.10",
 			JobOperatorOptions: JobOperatorOptions{
 				JobStageTimeout: time.Hour,
+				JobBackoffLimit: 3,
 			},
 		}
 		skyhook = wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
@@ -98,7 +99,6 @@ var _ = Describe("job builders", func() {
 		It("sets a run-to-completion spec with TTL unset at creation", func() {
 			Expect(*job.Spec.Parallelism).To(Equal(int32(1)))
 			Expect(*job.Spec.Completions).To(Equal(int32(1)))
-			Expect(*job.Spec.BackoffLimit).To(Equal(int32(math.MaxInt32)))
 			Expect(*job.Spec.PodReplacementPolicy).To(Equal(batchv1.Failed))
 			Expect(job.Spec.TTLSecondsAfterFinished).To(BeNil())
 		})
@@ -144,29 +144,54 @@ var _ = Describe("job builders", func() {
 			}
 		})
 
-		Describe("activeDeadlineSeconds", func() {
-			It("defaults to the operator JobStageTimeout", func() {
-				Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
-				Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(3600)))
+		Describe("stage bounds", func() {
+			// The ceiling the builder derives: (backoffLimit+1) attempts, each allowed its
+			// deadline, its shutdown window, and a capped backoff gap.
+			ceiling := func(attemptSeconds, graceSeconds int64) int64 {
+				return 4 * (attemptSeconds + graceSeconds + int64(jobRetryBackoffCap.Seconds()))
+			}
+
+			It("bounds one attempt on the pod template and the whole retry budget on the Job", func() {
+				Expect(*job.Spec.BackoffLimit).To(Equal(int32(3)))
+				Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
+				Expect(*job.Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(int64(3600)))
+				Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(ceiling(3600, 0)))
+			})
+
+			It("keeps the ceiling above the retry budget so it can never truncate it", func() {
+				attempts := int64(*job.Spec.BackoffLimit) + 1
+				Expect(*job.Spec.ActiveDeadlineSeconds).To(BeNumerically(">",
+					attempts**job.Spec.Template.Spec.ActiveDeadlineSeconds))
 			})
 
 			When("the package sets its own stageTimeout", func() {
 				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 2 * time.Hour} })
-				It("uses the package value", func() {
-					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(7200)))
+				It("uses the package value for both bounds", func() {
+					Expect(*job.Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(int64(7200)))
+					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(ceiling(7200, 0)))
 				})
 			})
 
-			When("the package disables the deadline with 0", func() {
+			When("the package sets a gracefulShutdown", func() {
+				BeforeEach(func() { pkg.GracefulShutdown = &metav1.Duration{Duration: 5 * time.Minute} })
+				It("widens the ceiling, since podReplacementPolicy Failed waits out every shutdown", func() {
+					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(ceiling(3600, 300)))
+				})
+			})
+
+			When("the package removes the time bound with 0", func() {
 				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 0} })
-				It("omits activeDeadlineSeconds", func() {
+				It("omits both deadlines but keeps the retry budget", func() {
+					Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).To(BeNil())
 					Expect(job.Spec.ActiveDeadlineSeconds).To(BeNil())
+					Expect(*job.Spec.BackoffLimit).To(Equal(int32(3)))
 				})
 			})
 
 			When("the operator default is also 0", func() {
 				BeforeEach(func() { opts.JobStageTimeout = 0 })
-				It("omits activeDeadlineSeconds", func() {
+				It("omits both deadlines", func() {
+					Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).To(BeNil())
 					Expect(job.Spec.ActiveDeadlineSeconds).To(BeNil())
 				})
 			})
@@ -174,8 +199,15 @@ var _ = Describe("job builders", func() {
 			When("the package sets a positive sub-second stageTimeout", func() {
 				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 500 * time.Millisecond} })
 				It("rounds up to at least one second, never 0 (which would insta-fail)", func() {
-					Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
-					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(1)))
+					Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
+					Expect(*job.Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(int64(1)))
+				})
+			})
+
+			When("the stageTimeout is large enough to overflow the ceiling", func() {
+				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 500000 * time.Hour} })
+				It("clamps instead of wrapping negative, which the apiserver would reject outright", func() {
+					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(math.MaxInt32)))
 				})
 			})
 		})
@@ -221,9 +253,14 @@ var _ = Describe("job builders", func() {
 			Expect(job.Spec.PodFailurePolicy).To(BeNil())
 		})
 
-		It("applies the stage deadline to the interrupt Job too (reboot time included)", func() {
+		It("keeps unbounded backoff and bounds the whole stage, unlike a package Job", func() {
+			// Under OnFailure backoffLimit counts container restarts, so a finite limit would be
+			// spent by the in-place restart that *is* the reboot recovery; and the bound has to
+			// span the reboot, which a per-attempt clock cannot (StartTime does not reset).
+			Expect(*job.Spec.BackoffLimit).To(Equal(int32(math.MaxInt32)))
 			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
 			Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(3600)))
+			Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).To(BeNil())
 		})
 
 		It("still replaces the pause container with an exit-0 container", func() {
@@ -899,6 +936,7 @@ var _ = Describe("jobMatchesPackage", func() {
 			PauseImage:           "registry.k8s.io/pause:3.10",
 			JobOperatorOptions: JobOperatorOptions{
 				JobStageTimeout: time.Hour,
+				JobBackoffLimit: 3,
 			},
 		}
 		skyhook = wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{

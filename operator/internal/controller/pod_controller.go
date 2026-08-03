@@ -37,9 +37,9 @@ import (
 
 // PodReconciler watches package pods on their own watch and workqueue. It reports one thing: a
 // package step that has failed while its Job is still retrying. The Job is the completion
-// authority, but with an effectively unbounded backoffLimit a Job whose step keeps failing never
-// reaches terminal Failed, so without this watch a crash-looping package would read in_progress
-// until the stage deadline hours later.
+// authority, but it stays Active until the whole retry budget is spent — attempts paced by
+// backoff, each bounded by its own deadline — so without this watch a crash-looping or hung
+// package would read in_progress for hours before anything surfaced.
 //
 // It holds its own dependencies rather than embedding SkyhookReconciler: embedding would inherit
 // the heavy pass's entire method set, including a Reconcile this one has to shadow — so deleting
@@ -115,11 +115,28 @@ func (r *PodReconciler) PodReconcile(ctx context.Context, pod *corev1.Pod) (ctrl
 	}
 
 	_, state, restarts := containerExitedSuccessfully(pod)
-	if state != containerStateFailed || !podFailureIsGenuine(pod) {
+	if !podDeadlineExceeded(pod) && (state != containerStateFailed || !podFailureIsGenuine(pod)) {
 		return ctrl.Result{}, nil
 	}
 
 	return ctrl.Result{}, r.recordPodErroring(ctx, pod, restarts)
+}
+
+// podReasonDeadlineExceeded is the pod-level status reason the kubelet's active-deadline handler
+// sets when a pod outlives its own spec.activeDeadlineSeconds. Nothing else sets it.
+const podReasonDeadlineExceeded = "DeadlineExceeded"
+
+// podDeadlineExceeded reports whether the pod was killed by its own per-attempt deadline.
+//
+// This is evidence the container statuses cannot carry, which is why it is checked separately
+// rather than folded into podFailureIsGenuine. When the stuck container never started — an
+// unpullable image, a missing configmap, exactly the hung-stage case the deadline exists for —
+// the pod is Failed with that container still Waiting, or with the kubelet's
+// ContainerStatusUnknown rewrite on termination, and podFailureIsGenuine rejects both shapes.
+// Without this the first timeout would write nothing and a hang would read in_progress until the
+// entire retry budget burned down.
+func podDeadlineExceeded(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodFailed && pod.Status.Reason == podReasonDeadlineExceeded
 }
 
 // recordPodErroring parks the package at (stage, erroring) from a failed attempt pod. The write
