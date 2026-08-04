@@ -540,7 +540,7 @@ func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job,
 			return false, nil
 		}
 		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobFailed",
-			"Package [%s:%s] stage %s failed on [skyhook:%s]: %s", pkg.Name, pkg.Version, pkg.Stage, pkg.Skyhook, reason)
+			"Package [%s:%s] stage %s failed on [nodewright:%s]: %s", pkg.Name, pkg.Version, pkg.Stage, pkg.Skyhook, reason)
 		return true, nil
 	})
 }
