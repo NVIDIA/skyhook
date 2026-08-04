@@ -71,6 +71,9 @@ jobs:
         with:
           go-version-file: agent/go/go.mod
           cache-dependency-path: agent/go/go.sum
+      - name: Check license headers
+        working-directory: agent/go
+        run: make license-header-check
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
