@@ -2506,8 +2506,14 @@ func (r *SkyhookReconciler) handleExistingJob(ctx context.Context, want *batchv1
 	if isParkedJob(existing) && r.entryErroringAtStage(skyhookNode, _package, stage) {
 		return nil // parked: the finished Job is doing its job, absorb this recreate attempt
 	}
-	if hasJobCondition(existing, batchv1.JobComplete) && !jobProcessed(existing) {
-		return nil // unrecorded completion; JobReconcile owns it, do not discard it
+	// Any finished Job JobReconcile has not processed yet is left alone, the same rule
+	// shouldDeleteFinishedJob applies: a Complete one holds an unrecorded completion, and a
+	// Failed one has not yet had its chance to write erroring. Deleting the Failed case here
+	// would take its retained attempts with it and restart the stage on a fresh budget, and
+	// this path is reachable in exactly that window — a finished Job does not satisfy
+	// JobExists, so the next pass tries to create over its deterministic name.
+	if !jobProcessed(existing) {
+		return nil
 	}
 	return deleteJobForeground(ctx, r.Client, existing)
 }

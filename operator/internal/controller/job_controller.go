@@ -439,7 +439,7 @@ func (r *JobReconciler) HandleCompletePod(ctx context.Context, skyhookNode wrapp
 func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, reason string) (ctrl.Result, error) {
 	genuine, err := r.jobFailureIsGenuine(ctx, job, reason)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("classifying failed job %s: %w", job.Name, err)
 	}
 	if !genuine {
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
@@ -462,7 +462,7 @@ func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, r
 	}
 
 	if err := r.recordJobErroring(ctx, job, pkg, reason); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("recording failure for job %s: %w", job.Name, err)
 	}
 
 	return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)

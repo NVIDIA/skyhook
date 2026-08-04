@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -280,6 +281,66 @@ var _ = Describe("Jobs execution swap", func() {
 				Expect(sn.Upsert(pkg.PackageRef, image, v1alpha1.StateComplete, v1alpha1.StageApply, 0, "")).To(Succeed())
 			}),
 		)
+	})
+
+	// handleExistingJob is the AlreadyExists-on-create path, and it must reach the same verdict
+	// as shouldDeleteFinishedJob for the same Job — the two are mirrors, and this path is the one
+	// that runs first: a finished Job does not satisfy JobExists, so the next pass tries to create
+	// over its deterministic name while JobReconcile may not have processed it yet.
+	Describe("handleExistingJob", func() {
+		nodeWithEntry := func(state v1alpha1.State, stage v1alpha1.Stage) (*corev1.Node, *v1alpha1.NodeWright) {
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+			scr := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: namespace, Generation: 1},
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{"tuning": *pkg}},
+			}
+			sn, err := wrapper.NewSkyhookNodeOnly(node, skyhookName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sn.Upsert(pkg.PackageRef, image, state, stage, 0, "")).To(Succeed())
+			return node, scr
+		}
+
+		resolve := func(existing *batchv1.Job, state v1alpha1.State) bool {
+			node, scr := nodeWithEntry(state, v1alpha1.StageApply)
+			r, c := newReconciler(node, scr, existing)
+			skyhookNode, err := wrapper.NewSkyhookNode(node, scr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(r.handleExistingJob(ctx, existing, pkg, skyhookNode, v1alpha1.StageApply)).To(Succeed())
+
+			var got batchv1.Job
+			err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: existing.Name}, &got)
+			if apierrors.IsNotFound(err) {
+				return false
+			}
+			Expect(err).ToNot(HaveOccurred())
+			// foreground deletion leaves the object visible until its children are gone
+			return got.DeletionTimestamp == nil
+		}
+
+		failed := func(processed bool) *batchv1.Job {
+			job := stageJob(v1alpha1.StageApply, batchv1.JobCondition{
+				Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: batchv1.JobReasonBackoffLimitExceeded,
+			})
+			if processed {
+				job.Annotations = map[string]string{annotationStateRecorded: annotationValueTrue}
+			}
+			return job
+		}
+
+		It("keeps a terminal Failed Job JobReconcile has not processed yet", func() {
+			// Deleting here would take the retained attempts with it and restart the stage on a
+			// fresh budget, before anything had a chance to write erroring.
+			Expect(resolve(failed(false), v1alpha1.StateInProgress)).To(BeTrue())
+		})
+		It("keeps a parked Job while its entry sits erroring", func() {
+			Expect(resolve(failed(true), v1alpha1.StateErroring)).To(BeTrue())
+		})
+		It("deletes a processed Failed Job whose entry never reached erroring", func() {
+			// The kubelet-refused-every-attempt case: nothing parked it, so the name frees and
+			// the stage re-runs.
+			Expect(resolve(failed(true), v1alpha1.StateInProgress)).To(BeFalse())
+		})
 	})
 
 	Describe("rerun predicate", func() {
