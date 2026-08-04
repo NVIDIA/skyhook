@@ -61,12 +61,13 @@ jobs:
       distroless-digest: ${{ steps.fetch.outputs.distroless-digest }}
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-oras
       - name: Resolve newest published distroless/python
         id: fetch
         run: |
           # distroless/python tags carry the interpreter version, e.g. 3.13-v4.0.8.
           ./scripts/latest-distroless.sh \
-            --repo nvidia/distroless/python \
+            --repo nvcr.io/nvidia/distroless/python \
             --major 4 \
             --tag-prefix "${PYTHON_VERSION}-" \
             --print | tee -a "$GITHUB_OUTPUT"

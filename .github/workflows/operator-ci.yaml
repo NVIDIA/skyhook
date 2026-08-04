@@ -98,13 +98,14 @@ jobs:
       distroless-digest: ${{ steps.fetch.outputs.distroless-digest }}
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-oras
       - name: Resolve newest published distroless/static
         id: fetch
         run: |
           # The operator Dockerfile bases on distroless/static, so resolve the
           # static repository, not go.
           ./scripts/latest-distroless.sh \
-            --repo nvidia/distroless/static \
+            --repo nvcr.io/nvidia/distroless/static \
             --major 4 \
             --print | tee -a "$GITHUB_OUTPUT"
   

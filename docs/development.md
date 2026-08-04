@@ -59,11 +59,11 @@ When updating supported test versions, edit `operator/versions.yaml` first, then
 
 The operator and agent images build `FROM` NVIDIA's distroless bases (`nvcr.io/nvidia/distroless/static` and `nvcr.io/nvidia/distroless/python`). CI picks the version with `scripts/latest-distroless.sh`, which asks the registry directly instead of reading `https://developer.download.nvidia.com/distroless-oss/versions.json`. That file advertises a release days before the matching image is pushed, so a build that trusts it fails with a 404 on the base image for as long as the two are out of step; the registry's tag list cannot be ahead of the images it lists.
 
-nvcr.io serves the standard OCI Registry v2 API and issues anonymous pull tokens, so resolving needs no NGC credentials:
+The distroless repositories are public, so the script reads them with [`oras`](https://oras.land) anonymously and no NGC credentials are involved. CI installs `oras` through `.github/actions/setup-oras`; install it locally to run the script yourself.
 
 ```bash
-scripts/latest-distroless.sh --repo nvidia/distroless/static --major 4
-scripts/latest-distroless.sh --repo nvidia/distroless/python --major 4 --tag-prefix 3.13- --print
+scripts/latest-distroless.sh --repo nvcr.io/nvidia/distroless/static --major 4
+scripts/latest-distroless.sh --repo nvcr.io/nvidia/distroless/python --major 4 --tag-prefix 3.13- --print
 ```
 
 `--major` is required. A new distroless major is a base-OS change that should be reviewed, not something a build picks up on its own, so raising it is a deliberate edit to the workflow.
