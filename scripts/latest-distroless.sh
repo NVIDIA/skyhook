@@ -121,8 +121,11 @@ _main() {
 
 	# A tag whose push only half-finished resolves fine above and then fails on one
 	# architecture's build runner much later, so check the index covers them now.
-	manifest="$("${ORAS}" manifest fetch "${repo}:${tag}")" ||
-		_die "could not read the manifest for ${repo}:${tag}"
+	# Read it back by digest rather than by tag: the tag is mutable, and a re-push
+	# between the two requests would have this validate a manifest other than the
+	# one resolved above, which is the only one the build ever sees.
+	manifest="$("${ORAS}" manifest fetch "${repo}@${digest}")" ||
+		_die "could not read the manifest for ${repo}:${tag} (${digest})"
 	for platform in ${platforms//,/ }; do
 		printf '%s' "${manifest}" | jq -e --arg p "${platform}" \
 			'[.manifests[]? | select(.platform.os + "/" + .platform.architecture == $p)] | length > 0' \
