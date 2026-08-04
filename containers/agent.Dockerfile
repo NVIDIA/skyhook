@@ -72,4 +72,3 @@ USER 0:0
 
 # Use Python to run the controller script
 ENTRYPOINT [ "python", "-m", "skyhook_agent.controller" ]
-
