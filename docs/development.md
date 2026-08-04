@@ -55,6 +55,23 @@ make validate-kind-node-image KIND_NODE_IMAGE_VERSION=1.35.0
 
 When updating supported test versions, edit `operator/versions.yaml` first, then run the validation target and the relevant tests.
 
+## Distroless Base Images
+
+The operator and agent images build `FROM` NVIDIA's distroless bases (`nvcr.io/nvidia/distroless/static` and `nvcr.io/nvidia/distroless/python`). CI picks the version with `scripts/latest-distroless.sh`, which asks the registry directly instead of reading `https://developer.download.nvidia.com/distroless-oss/versions.json`. That file advertises a release days before the matching image is pushed, so a build that trusts it fails with a 404 on the base image for as long as the two are out of step; the registry's tag list cannot be ahead of the images it lists.
+
+nvcr.io serves the standard OCI Registry v2 API and issues anonymous pull tokens, so resolving needs no NGC credentials:
+
+```bash
+scripts/latest-distroless.sh --repo nvidia/distroless/static --major 4
+scripts/latest-distroless.sh --repo nvidia/distroless/python --major 4 --tag-prefix 3.13- --print
+```
+
+`--major` is required. A new distroless major is a base-OS change that should be reviewed, not something a build picks up on its own, so raising it is a deliberate edit to the workflow.
+
+The script also resolves the tag to a digest, which CI passes to `docker buildx build` as `DISTROLESS_DIGEST_SUFFIX=@sha256:…`. Every architecture's build then pins to the byte-identical base even if the tag is re-pushed mid-run, and the `org.opencontainers.image.base.name` label records exactly what was built on. That build arg defaults to empty, so a build that does not set it still resolves the base by tag.
+
+Local image builds do not call the script: `operator/Makefile` and `agent/Makefile` each carry a `DISTROLESS_VERSION ?=` default so a build works offline. Refresh it with the command above when it drifts, or override it per build (`make docker-build DISTROLESS_VERSION=4.0.8`).
+
 ## Local Cluster
 
 Bring up the kind cluster and local registry:

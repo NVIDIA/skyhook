@@ -27,6 +27,7 @@ on:
       - operator/deps.mk
       - operator/versions.yaml
       - operator/versions.sh
+      - scripts/latest-distroless.sh
       - operator/config/**
       - containers/operator.Dockerfile
       - .github/actions/**
@@ -45,6 +46,7 @@ on:
       - operator/deps.mk
       - operator/versions.yaml
       - operator/versions.sh
+      - scripts/latest-distroless.sh
       - operator/config/**
       - containers/operator.Dockerfile
       - .github/actions/**
@@ -87,24 +89,24 @@ jobs:
           YQ="$PWD/bin/yq" ./versions.sh --print >> "$GITHUB_OUTPUT"
 
   fetch-distroless-versions:
-    name: Fetch Latest Distroless Versions
+    name: Resolve Distroless Base Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
-      go-version: ${{ steps.fetch.outputs.go-version }}
+      distroless-version: ${{ steps.fetch.outputs.distroless-version }}
+      distroless-digest: ${{ steps.fetch.outputs.distroless-digest }}
     steps:
-      - name: Fetch versions from NVIDIA CDN
+      - uses: actions/checkout@v7
+      - name: Resolve newest published distroless/static
         id: fetch
         run: |
-          # Fetch the versions.json file
-          VERSIONS_JSON=$(curl -fsSL https://developer.download.nvidia.com/distroless-oss/versions.json)
-          
-          # Extract latest static v4 version (format: "v4.0.1" -> "4.0.1").
-          # The operator Dockerfile bases on distroless/static, so use the
-          # static channel, not go.
-          GO_DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r '.v4.static.static' | sed 's/^v//')
-
-          echo "go-version=${GO_DISTROLESS_VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Static v4 Distroless Version: ${GO_DISTROLESS_VERSION}"
+          # The operator Dockerfile bases on distroless/static, so resolve the
+          # static repository, not go.
+          ./scripts/latest-distroless.sh \
+            --repo nvidia/distroless/static \
+            --major 4 \
+            --print | tee -a "$GITHUB_OUTPUT"
   
   # Test operator across supported Kubernetes versions and test suites
   tests:
@@ -376,7 +378,8 @@ jobs:
             --build-arg VERSION=${VERSION} \
             --build-arg GO_VERSION="${GO_VERSION}" \
             --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
-            --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.go-version }} \
+            --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }} \
+            --build-arg DISTROLESS_DIGEST_SUFFIX="@${{ needs.fetch-distroless-versions.outputs.distroless-digest }}" \
             ${PUSH_OR_LOAD} \
             --platform "$PLATFORM" \
             --provenance=false \
