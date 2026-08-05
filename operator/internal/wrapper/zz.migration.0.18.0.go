@@ -59,20 +59,79 @@ const legacySkyhookMetadataPrefix = "skyhook.nvidia.com"
 // ("skyhook.nvidia.com", no trailing slash, and a taint not an annotation/label)
 // intentionally does not match and is left untouched: that key did not move in the
 // rename.
+// operatorOwnedAnnotationSuffixes are the node-annotation key shapes the operator
+// writes under its own metadata prefix. Each is a prefix of the part AFTER
+// "<group>/": nodeState_<name>, autoTaint_<taintKey>, and so on.
+//
+// WHY a list instead of sweeping the whole prefix: the prefix is the product's
+// domain name, so users legitimately put their OWN keys under it (a
+// skyhook.nvidia.com/pool node label feeding a nodeSelector, say). Those are not
+// the operator's to migrate. Copying them would duplicate user data into the
+// operator's namespace unasked, and pruning them later would silently delete a
+// label the user still depends on, a day after an unrelated upgrade.
+var operatorOwnedAnnotationSuffixes = []string{
+	"nodeState_",
+	"status_",
+	"version_",
+	"cordon_",
+	"drainStart_",
+	"autoTaint_",
+}
+
+// operatorOwnedLabelSuffixes is the same idea for node labels. SetStatus mirrors
+// the status annotation into a label; "ignore" is user-SET but operator-DEFINED
+// (CheckNodeIgnoreLabel reads it), so it must move with the rename or a user's
+// opt-out would silently stop working.
+var operatorOwnedLabelSuffixes = []string{
+	"status_",
+}
+
+const operatorOwnedIgnoreLabel = "ignore"
+
+func isOperatorOwnedAnnotation(suffix string) bool {
+	for _, p := range operatorOwnedAnnotationSuffixes {
+		if strings.HasPrefix(suffix, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOperatorOwnedLabel(suffix string) bool {
+	if suffix == operatorOwnedIgnoreLabel {
+		return true
+	}
+	for _, p := range operatorOwnedLabelSuffixes {
+		if strings.HasPrefix(suffix, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// isOperatorOwnedCondition matches the condition types UpdateCondition writes, whose
+// suffix is "<skyhookName>/<Type>". It reuses the constants from node.go rather than
+// repeating the literals so a new condition type cannot be added there while silently
+// dropping out of the migration here.
+func isOperatorOwnedCondition(suffix string) bool {
+	return strings.HasSuffix(suffix, "/"+conditionTypeNotReady) ||
+		strings.HasSuffix(suffix, "/"+conditionTypeErroring)
+}
+
 func migrateNodePrefixToNodeWright(node *skyhookNode, logger logr.Logger) error {
 	oldPrefix := legacySkyhookMetadataPrefix + "/"
 	newPrefix := v1alpha1.METADATA_PREFIX + "/"
 
 	changed := false
-	copyPrefixedMap(node.Annotations, oldPrefix, newPrefix, &changed)
-	copyPrefixedMap(node.Labels, oldPrefix, newPrefix, &changed)
+	copyPrefixedMap(node.Annotations, oldPrefix, newPrefix, isOperatorOwnedAnnotation, &changed)
+	copyPrefixedMap(node.Labels, oldPrefix, newPrefix, isOperatorOwnedLabel, &changed)
 
 	// Add a nodewright-prefixed copy of each legacy condition, keeping the legacy one.
 	conditions := node.GetNode().Status.Conditions
 	var added []corev1.NodeCondition
 	for i := range conditions {
 		suffix, ok := strings.CutPrefix(string(conditions[i].Type), oldPrefix)
-		if !ok {
+		if !ok || !isOperatorOwnedCondition(suffix) {
 			continue
 		}
 		newType := corev1.NodeConditionType(newPrefix + suffix)
@@ -104,13 +163,13 @@ func pruneLegacyNodePrefix(node *skyhookNode) bool {
 	oldPrefix := legacySkyhookMetadataPrefix + "/"
 
 	changed := false
-	dropPrefixedKeys(node.Annotations, oldPrefix, &changed)
-	dropPrefixedKeys(node.Labels, oldPrefix, &changed)
+	dropPrefixedKeys(node.Annotations, oldPrefix, isOperatorOwnedAnnotation, &changed)
+	dropPrefixedKeys(node.Labels, oldPrefix, isOperatorOwnedLabel, &changed)
 
 	conditions := node.GetNode().Status.Conditions
 	kept := conditions[:0]
 	for _, c := range conditions {
-		if strings.HasPrefix(string(c.Type), oldPrefix) {
+		if suffix, ok := strings.CutPrefix(string(c.Type), oldPrefix); ok && isOperatorOwnedCondition(suffix) {
 			changed = true
 			continue
 		}
@@ -124,14 +183,16 @@ func pruneLegacyNodePrefix(node *skyhookNode) bool {
 	return changed
 }
 
-// copyPrefixedMap copies every key in m from oldPrefix to newPrefix, KEEPING the
-// legacy key. A key already present under newPrefix is left as-is (explicit new value
-// wins). Sets *changed when it added a new-prefix key. A nil map is a no-op.
-func copyPrefixedMap(m map[string]string, oldPrefix, newPrefix string, changed *bool) {
+// copyPrefixedMap copies every OPERATOR-OWNED key in m from oldPrefix to newPrefix,
+// KEEPING the legacy key. isOwned decides ownership from the part after oldPrefix;
+// keys it rejects are the user's and are left untouched. A key already present under
+// newPrefix is left as-is (explicit new value wins). Sets *changed when it added a
+// new-prefix key. A nil map is a no-op.
+func copyPrefixedMap(m map[string]string, oldPrefix, newPrefix string, isOwned func(suffix string) bool, changed *bool) {
 	// Collect legacy keys first so we do not mutate the map while ranging it.
 	var legacy []string
 	for k := range m {
-		if strings.HasPrefix(k, oldPrefix) {
+		if suffix, ok := strings.CutPrefix(k, oldPrefix); ok && isOwned(suffix) {
 			legacy = append(legacy, k)
 		}
 	}
@@ -144,11 +205,13 @@ func copyPrefixedMap(m map[string]string, oldPrefix, newPrefix string, changed *
 	}
 }
 
-// dropPrefixedKeys deletes every key in m under prefix, in place. Sets *changed when
-// anything was deleted. A nil map is a no-op.
-func dropPrefixedKeys(m map[string]string, prefix string, changed *bool) {
+// dropPrefixedKeys deletes every OPERATOR-OWNED key in m under prefix, in place.
+// Keys isOwned rejects belong to the user and are preserved: the prune must not
+// delete metadata the operator never created. Sets *changed when anything was
+// deleted. A nil map is a no-op.
+func dropPrefixedKeys(m map[string]string, prefix string, isOwned func(suffix string) bool, changed *bool) {
 	for k := range m {
-		if strings.HasPrefix(k, prefix) {
+		if suffix, ok := strings.CutPrefix(k, prefix); ok && isOwned(suffix) {
 			delete(m, k)
 			*changed = true
 		}

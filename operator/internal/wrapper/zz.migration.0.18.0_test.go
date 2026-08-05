@@ -186,6 +186,61 @@ var _ = Describe("migrateNodePrefixToNodeWright", func() {
 		Expect(conditionTypes(node)).ToNot(ContainElement(oldKey("myskyhook/NotReady")))
 	})
 
+	// The metadata prefix is the product's domain name, so users legitimately put
+	// their own keys under it. Those are not the operator's to migrate or delete.
+	It("leaves user-owned keys under the legacy prefix completely alone", func() {
+		node := &skyhookNode{
+			skyhookName: "myskyhook",
+			Node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker",
+					Annotations: map[string]string{
+						oldKey("nodeState_myskyhook"): `{"pkg":"state"}`,
+						oldKey("owner"):               "platform-team",
+					},
+					Labels: map[string]string{
+						oldKey("status_myskyhook"): "complete",
+						oldKey("pool"):             "gpu",
+						oldKey("ignore"):           "true",
+					},
+				},
+				Status: corev1.NodeStatus{
+					Conditions: []corev1.NodeCondition{
+						{Type: corev1.NodeConditionType(oldKey("myskyhook/NotReady")), Status: corev1.ConditionFalse},
+						{Type: corev1.NodeConditionType(oldKey("SomeUserCondition")), Status: corev1.ConditionTrue},
+					},
+				},
+			},
+		}
+
+		Expect(migrateNodePrefixToNodeWright(node, logr.Discard())).To(Succeed())
+
+		By("not copying a user annotation or label into the operator's namespace")
+		Expect(node.Annotations).ToNot(HaveKey(newKey("owner")))
+		Expect(node.Labels).ToNot(HaveKey(newKey("pool")))
+		Expect(node.Annotations).To(HaveKeyWithValue(oldKey("owner"), "platform-team"))
+		Expect(node.Labels).To(HaveKeyWithValue(oldKey("pool"), "gpu"))
+
+		By("still migrating the operator's own keys, including the operator-defined ignore label")
+		Expect(node.Annotations).To(HaveKeyWithValue(newKey("nodeState_myskyhook"), `{"pkg":"state"}`))
+		Expect(node.Labels).To(HaveKeyWithValue(newKey("status_myskyhook"), "complete"))
+		Expect(node.Labels).To(HaveKeyWithValue(newKey("ignore"), "true"))
+
+		By("not copying a condition type the operator does not write")
+		Expect(conditionTypes(node)).ToNot(ContainElement(newKey("SomeUserCondition")))
+		Expect(conditionTypes(node)).To(ContainElement(newKey("myskyhook/NotReady")))
+
+		By("pruning only the operator's own keys, leaving the user's behind")
+		Expect(node.PruneLegacyMetadata()).To(BeTrue())
+		Expect(node.Annotations).To(HaveKeyWithValue(oldKey("owner"), "platform-team"))
+		Expect(node.Labels).To(HaveKeyWithValue(oldKey("pool"), "gpu"))
+		Expect(node.Annotations).ToNot(HaveKey(oldKey("nodeState_myskyhook")))
+		Expect(node.Labels).ToNot(HaveKey(oldKey("status_myskyhook")))
+		Expect(node.Labels).ToNot(HaveKey(oldKey("ignore")))
+		Expect(conditionTypes(node)).To(ContainElement(oldKey("SomeUserCondition")))
+		Expect(conditionTypes(node)).ToNot(ContainElement(oldKey("myskyhook/NotReady")))
+	})
+
 	It("PruneLegacyMetadata is a no-op when no legacy keys remain", func() {
 		node := &skyhookNode{
 			skyhookName: "myskyhook",

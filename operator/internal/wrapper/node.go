@@ -122,7 +122,15 @@ var _ SkyhookNode = &skyhookNode{}
 
 const (
 	cordonAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/cordon_"
-	cordonAnnotationValue  = "true"
+
+	// The node-condition types UpdateCondition writes, as the trailing segment of
+	// "<prefix>/<skyhookName>/<type>". Named because the 0.18.0 migration shim has to
+	// recognise exactly this set when deciding which conditions are the operator's to
+	// migrate; a new type added here without updating that shim would silently stop
+	// being carried across the rename.
+	conditionTypeNotReady = "NotReady"
+	conditionTypeErroring = "Erroring"
+	cordonAnnotationValue = "true"
 )
 
 // NewSkyhookNodeOnly most of use cases for the wrapper just needs name, so this stub is for making helpers for those use cases,
@@ -642,7 +650,7 @@ func (node *skyhookNode) UpdateCondition() {
 	}
 
 	cond := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/NotReady", v1alpha1.METADATA_PREFIX, node.skyhookName)),
+		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/%s", v1alpha1.METADATA_PREFIX, node.skyhookName, conditionTypeNotReady)),
 		Status:             condStatus,
 		LastHeartbeatTime:  metav1.Now(),
 		LastTransitionTime: metav1.Now(),
@@ -651,7 +659,7 @@ func (node *skyhookNode) UpdateCondition() {
 	}
 
 	errorCond := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/Erroring", v1alpha1.METADATA_PREFIX, node.skyhookName)),
+		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/%s", v1alpha1.METADATA_PREFIX, node.skyhookName, conditionTypeErroring)),
 		Status:             errorStatus,
 		LastHeartbeatTime:  metav1.Now(),
 		LastTransitionTime: metav1.Now(),
