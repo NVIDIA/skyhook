@@ -870,13 +870,13 @@ func (r *SkyhookReconciler) reconcileLegacyMigratedStamp(ctx context.Context, sk
 	name := skyhook.GetSkyhook().Name
 
 	if prune {
-		if stamp != "" && !hadLegacyWorkloads && !anyNodeHasLegacyMetadata(skyhook.GetNodes()) {
+		if stamp != "" && !hadLegacyWorkloads && !anyNodeHasLegacyMetadata(skyhook.GetNodes(), name) {
 			return true, r.patchLegacyMigratedStamp(ctx, name, "", true)
 		}
 		return false, nil
 	}
 
-	if stamp == "" && (hadLegacyWorkloads || anyNodeHasLegacyMetadata(skyhook.GetNodes())) {
+	if stamp == "" && (hadLegacyWorkloads || anyNodeHasLegacyMetadata(skyhook.GetNodes(), name)) {
 		return true, r.patchLegacyMigratedStamp(ctx, name, time.Now().Format(time.RFC3339), false)
 	}
 	return false, nil
@@ -910,25 +910,18 @@ func (r *SkyhookReconciler) patchLegacyMigratedStamp(ctx context.Context, name, 
 	return nil
 }
 
-// anyNodeHasLegacyMetadata reports whether any node still carries a legacy
-// skyhook.nvidia.com-prefixed annotation, label, or condition.
-func anyNodeHasLegacyMetadata(nodes []wrapper.SkyhookNode) bool {
+// anyNodeHasLegacyMetadata reports whether any node still carries legacy
+// skyhook.nvidia.com metadata that the operator owns for the named skyhook.
+//
+// Ownership is decided by wrapper.HasOperatorOwnedLegacyMetadata rather than a
+// prefix match here, so the rule lives next to the migration that applies it. A
+// whole-prefix scan answers the wrong question on two counts: the prune deliberately
+// preserves a user's own skyhook.nvidia.com/* keys, so the stamp could never clear,
+// and it would also count another skyhook's keys on a shared node against this one.
+func anyNodeHasLegacyMetadata(nodes []wrapper.SkyhookNode, skyhookName string) bool {
 	for _, node := range nodes {
-		n := node.GetNode()
-		for k := range n.Annotations {
-			if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
-				return true
-			}
-		}
-		for k := range n.Labels {
-			if strings.HasPrefix(k, legacyMetadataPrefix+"/") {
-				return true
-			}
-		}
-		for _, c := range n.Status.Conditions {
-			if strings.HasPrefix(string(c.Type), legacyMetadataPrefix+"/") {
-				return true
-			}
+		if wrapper.HasOperatorOwnedLegacyMetadata(node.GetNode(), skyhookName) {
+			return true
 		}
 	}
 	return false

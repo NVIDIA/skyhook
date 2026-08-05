@@ -40,10 +40,19 @@ source "$SUITE_DIR/lib.sh"
 FROM_PHASE=1
 TO_PHASE=8
 
+## Each flag checks that a value follows. Without it, `set -u` aborts on the unset $2
+## with "unbound variable" instead of the message below, which is the one input error
+## in this block that would bypass fail().
 while [ $# -gt 0 ]; do
 	case "$1" in
-		--from-phase) FROM_PHASE="$2"; shift 2 ;;
-		--to-phase) TO_PHASE="$2"; shift 2 ;;
+		--from-phase|--to-phase)
+			[ $# -ge 2 ] || fail "$1 requires a phase number"
+			case "$1" in
+				--from-phase) FROM_PHASE="$2" ;;
+				--to-phase) TO_PHASE="$2" ;;
+			esac
+			shift 2
+			;;
 		*) fail "unknown argument: $1" ;;
 	esac
 done
@@ -431,9 +440,13 @@ legacy_annotations_gone() {
 	local node_json
 	node_json=$($KUBECTL get node "$TEST_NODE" -o json 2>/dev/null) || return 1
 	[ -n "$node_json" ] || return 1
+	## Scoped to THIS skyhook's own keys, not the whole prefix. The prune now
+	## deliberately preserves both user-owned keys under the legacy prefix and other
+	## NodeWrights' state on a shared node, so a zero-keys-remain gate would encode
+	## the pre-PR contract and hang forever on any cluster exercising either case.
 	local remaining
-	remaining=$(echo "$node_json" | jq -r --arg p "$LEGACY_PREFIX/" \
-		'.metadata.annotations // {} | keys[] | select(startswith($p))') || return 1
+	remaining=$(echo "$node_json" | jq -r --arg p "$LEGACY_PREFIX/" --arg s "_$TEST_NAME" \
+		'.metadata.annotations // {} | keys[] | select(startswith($p)) | select(endswith($s))') || return 1
 	[ -z "$remaining" ]
 }
 
@@ -462,6 +475,10 @@ phase_7() {
 		|| fail "no legacy labels were ever captured; the prune label check would be vacuous"
 	[ ! -s "$FINGERPRINT_DIR/labels.legacy.after7pre" ] \
 		|| fail "operator-owned legacy labels survived the prune: $(cat "$FINGERPRINT_DIR/labels.legacy.after7pre")"
+	## Same baseline guard as the labels above: an empty "after" only proves a prune
+	## happened if something was there to prune.
+	[ -s "$FINGERPRINT_DIR/conditions.legacy.before" ] \
+		|| fail "no legacy conditions were ever captured; the prune condition check would be vacuous"
 	[ ! -s "$FINGERPRINT_DIR/conditions.legacy.after7pre" ] \
 		|| fail "operator-owned legacy conditions survived the prune: $(cat "$FINGERPRINT_DIR/conditions.legacy.after7pre")"
 	log "operator-owned legacy labels and conditions pruned"
@@ -504,12 +521,10 @@ phase_7() {
 phase_8() {
 	log_phase 8 "assert an in-flight legacy Skyhook holds the cutover"
 
-	## Anchor before creating the object so a hold line from an earlier run of this
-	## phase cannot satisfy the assertion.
-	local startedAt
-	startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-	sleep 1
-
+	## No timestamp anchor is needed: the assertion below reads the pods created by the
+	## restart that follows, so their logs contain only this phase's output. That also
+	## replaces the earlier --since-time approach, which was both stale-prone and
+	## silently capped at ten lines per pod by kubectl's selector default.
 	$KUBECTL apply -f "$SUITE_DIR/skyhook-hold.yaml" >/dev/null
 
 	## A legacy Skyhook's status is frozen once nothing reconciles that kind, which is
@@ -534,9 +549,12 @@ phase_8() {
 	## which is exactly a fresh process finding a non-complete legacy Skyhook.
 	restart_operator "with $HOLD_NAME parked in_progress"
 
-	wait_for "migration hold engaged naming $HOLD_NAME" 180 \
-		bash -c "$KUBECTL logs -n $NAMESPACE -l control-plane=controller-manager -c manager --since-time='$startedAt' \
-			| grep 'holding NodeWright reconcile' | grep -q '$HOLD_NAME'"
+	## Read the pods by name, not with a selector: `kubectl logs -l` silently defaults
+	## to --tail=10 ("Defaults to -1 with no selector ... otherwise 10, if a selector is
+	## provided"), so ten ordinary lines after the hold line would hide it and fail this
+	## wait spuriously. The restart above guarantees a fresh pod log, so no time filter
+	## is needed either.
+	wait_for "migration hold engaged naming $HOLD_NAME" 180 operator_logged_hold_for "$HOLD_NAME"
 
 	$KUBECTL delete skyhook.skyhook.nvidia.com "$HOLD_NAME" >/dev/null
 	log "deleted $HOLD_NAME"

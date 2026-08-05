@@ -229,6 +229,14 @@ operator_started_workers() {
 	operator_logs_since_restart | grep -q 'Starting workers'
 }
 
+# operator_logged_hold_for <skyhook-name>: true once the migration hold has fired
+# naming that object. Reads the post-restart pods by name for the same reason
+# operator_logs_since_restart exists, and additionally because `kubectl logs -l`
+# silently caps output at ten lines per pod.
+operator_logged_hold_for() {
+	operator_logs_since_restart | grep 'holding NodeWright reconcile' | grep -q "$1"
+}
+
 # configmap_uid <fingerprint-file> <configmap-name>
 #
 # Extracts a ConfigMap's uid from a capture, or empty if absent.
