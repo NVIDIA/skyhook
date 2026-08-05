@@ -17,6 +17,12 @@
 ARG PYTHON_VERSION
 ARG DEBIAN_VERSION
 ARG DISTROLESS_VERSION
+# Digest of the distroless base as an "@sha256:..." suffix, so the tag stays
+# readable in the FROM. CI resolves the tag to a digest once and passes it to
+# every architecture's build, which pins them all to the byte-identical base even
+# if the tag is re-pushed mid-run. Empty by default so a local build still works
+# from the tag alone.
+ARG DISTROLESS_DIGEST_SUFFIX=
 
 FROM python:${PYTHON_VERSION}-${DEBIAN_VERSION} AS builder
 
@@ -40,15 +46,16 @@ RUN make build build_version=${AGENT_VERSION}
 # Install the wheel in the builder stage
 RUN python3 -m venv venv && ./venv/bin/pip install /code/skyhook-agent/dist/skyhook_agent*.whl
 
-FROM nvcr.io/nvidia/distroless/python:${PYTHON_VERSION}-v${DISTROLESS_VERSION}
+FROM nvcr.io/nvidia/distroless/python:${PYTHON_VERSION}-v${DISTROLESS_VERSION}${DISTROLESS_DIGEST_SUFFIX}
 
 ARG PYTHON_VERSION
 ARG DISTROLESS_VERSION
+ARG DISTROLESS_DIGEST_SUFFIX
 ARG AGENT_VERSION
 ARG GIT_SHA
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/python:${PYTHON_VERSION}-v${DISTROLESS_VERSION}" \
+LABEL org.opencontainers.image.base.name="nvcr.io/nvidia/distroless/python:${PYTHON_VERSION}-v${DISTROLESS_VERSION}${DISTROLESS_DIGEST_SUFFIX}" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="skyhook-agent" \
       org.opencontainers.image.version="${AGENT_VERSION}" \
