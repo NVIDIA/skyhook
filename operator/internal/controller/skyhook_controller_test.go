@@ -872,7 +872,7 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drained).To(BeFalse())
 			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
-			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [skyhook:drain-timeout]")))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [nodewright:drain-timeout]")))
 			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0]")))
 		})
 	})

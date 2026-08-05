@@ -647,7 +647,7 @@ func (node *skyhookNode) UpdateCondition() {
 		LastHeartbeatTime:  metav1.Now(),
 		LastTransitionTime: metav1.Now(),
 		Reason:             readyReason,
-		Message:            fmt.Sprintf("Skyhook %s Ready", node.skyhookName),
+		Message:            fmt.Sprintf("NodeWright %s Ready", node.skyhookName),
 	}
 
 	errorCond := corev1.NodeCondition{
