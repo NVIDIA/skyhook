@@ -19,7 +19,9 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
@@ -33,8 +35,35 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
+
+// countingReader stands in for the apiserver-direct reader, recording that it was consulted and
+// serving a node the cached client does not have. That difference is what proves which branch of
+// readNodeForPatch a given attempt took.
+type countingReader struct {
+	client.Reader
+	node  *corev1.Node
+	calls int
+}
+
+func (c *countingReader) Get(_ context.Context, _ client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+	c.calls++
+	if c.node == nil {
+		return apierrors.NewNotFound(schema.GroupResource{Resource: "nodes"}, "missing")
+	}
+	node, ok := obj.(*corev1.Node)
+	if !ok {
+		return apierrors.NewBadRequest("not a node")
+	}
+	c.node.DeepCopyInto(node)
+	return nil
+}
 
 var _ = Describe("node state delta merge", func() {
 	const skyhookName = "gpu-init"
@@ -339,5 +368,128 @@ var _ = Describe("saveNodeChanges", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cached["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete),
 			"the wrapper must re-read the merged annotation, not serve its pre-merge cache")
+	})
+})
+
+var _ = Describe("saveNodeChanges conflict retry", func() {
+	const skyhookName = "gpu-init"
+	const nodeName = "worker-1"
+	key := nodeStateAnnotationKey(skyhookName)
+
+	status := func(name string, state v1alpha1.State) v1alpha1.PackageStatus {
+		return v1alpha1.PackageStatus{Name: name, Version: "1.0.0", Image: "img", State: state, Stage: v1alpha1.StageApply}
+	}
+	stateJSON := func(state v1alpha1.NodeState) string {
+		raw, err := json.Marshal(state)
+		Expect(err).ToNot(HaveOccurred())
+		return string(raw)
+	}
+	opts := func() SkyhookOperatorOptions {
+		return SkyhookOperatorOptions{
+			Namespace: "skyhook", CopyDirRoot: "/var/lib/skyhook", AgentLogRoot: "/var/log/skyhook",
+			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:           "ghcr.io/nvidia/skyhook/agent:1.2.3",
+			PauseImage:           "registry.k8s.io/pause:3.10", MaxInterval: 10 * time.Minute,
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour, JobTTLFailed: 24 * time.Hour, JobStageTimeout: time.Hour,
+			},
+		}
+	}
+
+	// The optimistic lock only helps if a conflict is actually retried AND the retry re-derives
+	// against a fresh read. Both were previously uncovered: nothing in the suite forced a
+	// conflict, so RetryOnConflict and the uncached branch of readNodeForPatch never ran.
+	It("retries a conflict, re-reads uncached, and re-merges against what it finds", func() {
+		snapshot := v1alpha1.NodeState{
+			"a|1.0.0": status("a", v1alpha1.StateInProgress),
+			"b|1.0.0": status("b", v1alpha1.StateInProgress),
+		}
+		original := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName, ResourceVersion: "100",
+			Annotations: map[string]string{key: stateJSON(snapshot)},
+		}}
+
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		scr := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: "skyhook"}}
+		stored := original.DeepCopy()
+		base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stored, scr).Build()
+
+		// Attempt 0 conflicts, as it would when another writer landed first.
+		patches := 0
+		c := interceptor.NewClient(base, interceptor.Funcs{
+			Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, p client.Patch, o ...client.PatchOption) error {
+				patches++
+				if patches == 1 {
+					return apierrors.NewConflict(schema.GroupResource{Resource: "nodes"}, nodeName,
+						fmt.Errorf("simulated concurrent write"))
+				}
+				return cl.Patch(ctx, obj, p, o...)
+			},
+		})
+
+		// What only the apiserver knows: JobReconciler completed package a.
+		uncachedState := snapshot.DeepCopy()
+		uncachedState["a|1.0.0"] = status("a", v1alpha1.StateComplete)
+		fromAPIServer := original.DeepCopy()
+		fromAPIServer.Annotations[key] = stateJSON(uncachedState)
+		reader := &countingReader{node: fromAPIServer}
+
+		r, err := NewSkyhookReconciler(scheme, c, reader, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts())
+		Expect(err).ToNot(HaveOccurred())
+
+		// The pass advanced package b only.
+		passNode := original.DeepCopy()
+		passState := snapshot.DeepCopy()
+		passState["b|1.0.0"] = status("b", v1alpha1.StateComplete)
+		passNode.Annotations[key] = stateJSON(passState)
+		sn, err := wrapper.NewSkyhookNode(passNode, scr)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(r.saveNodeChanges(ctx, original, sn, skyhookName)).To(Succeed())
+
+		Expect(patches).To(BeNumerically(">=", 2), "the conflict must be retried, not surfaced")
+		Expect(reader.calls).To(Equal(1), "attempt 0 reads cached; only the retry goes to the apiserver")
+
+		final, err := parseNodeState(sn.GetNode(), key)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(final["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete),
+			"the retry must merge onto the uncached read, keeping the completion only it could see")
+		Expect(final["b|1.0.0"].State).To(Equal(v1alpha1.StateComplete), "the pass's own transition must still land")
+	})
+
+	It("stops without error when the retry finds the node deleted", func() {
+		original := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName, ResourceVersion: "100",
+			Annotations: map[string]string{key: stateJSON(v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress)})},
+		}}
+
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		scr := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: "skyhook"}}
+		base := fake.NewClientBuilder().WithScheme(scheme).WithObjects(original.DeepCopy(), scr).Build()
+		c := interceptor.NewClient(base, interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				return apierrors.NewConflict(schema.GroupResource{Resource: "nodes"}, nodeName, fmt.Errorf("gone"))
+			},
+		})
+
+		reader := &countingReader{node: nil} // apiserver says NotFound
+		r, err := NewSkyhookReconciler(scheme, c, reader, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts())
+		Expect(err).ToNot(HaveOccurred())
+
+		passNode := original.DeepCopy()
+		sn, err := wrapper.NewSkyhookNode(passNode, scr)
+		Expect(err).ToNot(HaveOccurred())
+
+		// A node that went away mid-pass has no state to resurrect; that is not an error.
+		Expect(r.saveNodeChanges(ctx, original, sn, skyhookName)).To(Succeed())
+		Expect(reader.calls).To(BeNumerically(">=", 1))
 	})
 })
