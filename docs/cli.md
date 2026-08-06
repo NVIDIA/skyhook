@@ -285,15 +285,31 @@ to overwrite the existing entry).
 There is no dedicated migrate command: the conversion is a mechanical group and
 kind swap with no change to the spec body. Both `Skyhook` and `DeploymentPolicy`
 change API group to `nodewright.nvidia.com/v1alpha1`; `Skyhook` additionally
-changes its kind to `NodeWright`, while `DeploymentPolicy` keeps its kind. Any
-`skyhook.nvidia.com/*` annotation or label keys become `nodewright.nvidia.com/*`.
+changes its kind to `NodeWright`, while `DeploymentPolicy` keeps its kind.
 
 For a source manifest, that is:
 
 ```bash
-sed -e 's|skyhook\.nvidia\.com/|nodewright.nvidia.com/|g' \
-    -e 's|kind: Skyhook|kind: NodeWright|' skyhook.yaml > nodewright.yaml
+sed -e '/^ *apiVersion:/ s|skyhook\.nvidia\.com/|nodewright.nvidia.com/|' \
+    -e 's|^\( *kind: *\)Skyhook[[:space:]]*$|\1NodeWright|' skyhook.yaml > nodewright.yaml
 ```
+
+**Rewrite `apiVersion` and `kind` only.** A blanket
+`s|skyhook\.nvidia\.com/|nodewright.nvidia.com/|g` is tempting but wrong: it also
+rewrites key names inside the spec body that are **yours**, not the operator's.
+`nodeSelectors.matchLabels` and `podNonInterruptLabels` refer to labels on your
+own nodes and pods; the rename does not touch those labels, so rewriting the
+selector points the CR at a key nothing carries and it silently matches nothing.
+It also makes the re-apply a real spec change rather than the no-op adoption of
+the mirrored object that the migration flow expects.
+
+The one thing to rename by hand, if your manifest sets it, is the operator's own
+lifecycle annotations on the CR: `skyhook.nvidia.com/pause` and
+`skyhook.nvidia.com/disable` become `nodewright.nvidia.com/*`.
+
+Leave everything else alone. In particular the runtime-required **taint** key is
+the bare string `skyhook.nvidia.com` (no trailing slash) and did **not** move in
+the rename, so any `additionalTolerations` entry referencing it stays as-is.
 
 The operator's mirror controller already converts the live objects in the
 cluster automatically; the edit above is only for the manifests in your source

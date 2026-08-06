@@ -26,6 +26,43 @@ The `POOL` variable is honored by `operator/Makefile`'s `e2e-tests`
 target. `POOL=core` uses a `pool notin (...)` selector so unlabeled
 tests still run.
 
+## Suites that are not pools
+
+Not every matrix row is a chainsaw pool. Pools only subdivide
+`k8s-tests/chainsaw/nodewright/`; the other rows in the `tests` matrix are
+separate suites selected by `test-suite` and run via their own make target
+(`unit-tests`, `helm-tests`, `cli-e2e`, `deployment-policy`, `migration`).
+
+Two of them, `helm-tests` and `migration`, build their cluster with
+`make create-kind-cluster` (ctlptl) rather than `helm/kind-action`, because they
+need ctlptl's local image registry to serve the operator image under test. The
+three cluster-setup steps key off a shared list, so adding another registry-needing
+suite means adding its name to that list in all three places.
+
+### `migration`
+
+Runs `k8s-tests/migration/run.sh`: installs the last pre-rename release
+(`chart/v0.17.1` at operator `v0.17.0`) and upgrades to the commit under test,
+asserting per-node state migrates and no package re-runs. See
+`k8s-tests/migration/README.md`.
+
+Two requirements it does not share with the other suites:
+
+- **Full history with tags.** It materializes the old chart with
+  `git archive chart/v0.17.1`, so the checkout needs `fetch-depth: 0` and
+  `fetch-tags: true` (both already set for the whole `tests` job). Without them
+  the run fails early with an explicit message rather than a bare git error.
+- **A clean cluster.** Phase 1 refuses to run if `nodewright.nvidia.com` CRDs
+  already exist, since a pre-rename baseline is the point. It gets a fresh
+  cluster per run, so this only bites when running locally against a reused one.
+
+It runs on the primary Kind node image only. The upgrade path it exercises is the
+operator's own, not Kubernetes-version sensitive, and the run is long enough
+(cluster create, two helm installs, a real package rollout, a prune, two operator
+restarts) that a matrix over every supported version would not pay for itself.
+This row is the longest in the matrix and exceeds the ~18 min per-row target the
+pools are sized against.
+
 ## Adding a new pool
 
 Three-file change, no branch-protection edits:

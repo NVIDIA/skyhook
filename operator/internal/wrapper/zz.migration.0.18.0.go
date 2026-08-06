@@ -59,20 +59,147 @@ const legacySkyhookMetadataPrefix = "skyhook.nvidia.com"
 // ("skyhook.nvidia.com", no trailing slash, and a taint not an annotation/label)
 // intentionally does not match and is left untouched: that key did not move in the
 // rename.
+// operatorOwnedAnnotationSuffixes are the node-annotation key shapes the operator
+// writes under its own metadata prefix. Each is a prefix of the part AFTER
+// "<group>/": nodeState_<name>, autoTaint_<taintKey>, and so on.
+//
+// WHY a list instead of sweeping the whole prefix: the prefix is the product's
+// domain name, so users legitimately put their OWN keys under it (a
+// skyhook.nvidia.com/pool node label feeding a nodeSelector, say). Those are not
+// the operator's to migrate. Copying them would duplicate user data into the
+// operator's namespace unasked, and pruning them later would silently delete a
+// label the user still depends on, a day after an unrelated upgrade.
+// nameScopedAnnotationPrefixes are the per-skyhook annotation kinds: the full suffix
+// is "<kind><skyhookName>", so exactly one NodeWright owns each of these keys.
+var nameScopedAnnotationPrefixes = []string{
+	"nodeState_",
+	statusPrefix,
+	"version_",
+	"cordon_",
+	"drainStart_",
+}
+
+// nodeScopedAnnotationPrefixes are operator-owned but belong to NO single skyhook:
+// autoTaint_<taintKey> is keyed by the runtime-required taint, not by a skyhook name.
+var nodeScopedAnnotationPrefixes = []string{
+	"autoTaint_",
+}
+
+const (
+	// statusPrefix is shared: SetStatus mirrors the status annotation into a label
+	// of the same shape.
+	statusPrefix = "status_"
+	// ignoreLabel is user-SET but operator-DEFINED (CheckNodeIgnoreLabel reads it),
+	// so it must be copied with the rename or a user's opt-out silently stops
+	// working. It is node-scoped: no single skyhook owns it.
+	ignoreLabel = "ignore"
+)
+
+// isOperatorOwnedAnnotation / isOperatorOwnedLabel decide what the CONVERGE copies to
+// the new prefix: everything the operator wrote, whether or not it belongs to one
+// skyhook, since the post-rename operator reads all of it under the new prefix.
+func isOperatorOwnedAnnotation(suffix string) bool {
+	for _, p := range append(append([]string{}, nameScopedAnnotationPrefixes...), nodeScopedAnnotationPrefixes...) {
+		if strings.HasPrefix(suffix, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOperatorOwnedLabel(suffix string) bool {
+	return suffix == ignoreLabel || strings.HasPrefix(suffix, statusPrefix)
+}
+
+// The ownedBy* predicates decide what the PRUNE deletes, and are deliberately
+// narrower than the isOperatorOwned* pair above.
+//
+// WHY: the prune runs per NodeWright, once that object's own rollback window has
+// elapsed, but the keys live on a shared Node. Deleting every operator-owned legacy
+// key would destroy the rollback state of every OTHER NodeWright selecting that node,
+// including ones still inside their window. Only keys this skyhook owns are its to
+// remove.
+//
+// Node-scoped keys (autoTaint_, ignore) are therefore never pruned here: no single
+// NodeWright owns them, so none may decide they are finished with. That also means the
+// migration never destroys the user-set ignore label, only copies it forward.
+func ownedByAnnotation(skyhookName string) func(string) bool {
+	return func(suffix string) bool {
+		for _, p := range nameScopedAnnotationPrefixes {
+			if suffix == p+skyhookName {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func ownedByLabel(skyhookName string) func(string) bool {
+	return func(suffix string) bool { return suffix == statusPrefix+skyhookName }
+}
+
+// ownedByCondition matches the condition types UpdateCondition writes, whose suffix is
+// "<skyhookName>/<Type>". It reuses the constants from node.go rather than repeating
+// the literals so a new condition type cannot be added there while silently dropping
+// out of the migration here.
+func ownedByCondition(skyhookName string) func(string) bool {
+	return func(suffix string) bool {
+		return suffix == skyhookName+"/"+conditionTypeNotReady ||
+			suffix == skyhookName+"/"+conditionTypeErroring
+	}
+}
+
+// isOperatorOwnedCondition is the converge-side counterpart: any skyhook's condition.
+func isOperatorOwnedCondition(suffix string) bool {
+	return strings.HasSuffix(suffix, "/"+conditionTypeNotReady) ||
+		strings.HasSuffix(suffix, "/"+conditionTypeErroring)
+}
+
+// HasOperatorOwnedLegacyMetadata reports whether the node still carries legacy
+// skyhook.nvidia.com metadata that the operator owns FOR THE NAMED SKYHOOK.
+//
+// The controller uses this to decide the rollback-window stamp, which is per
+// NodeWright. A whole-prefix scan would answer a different question: it returns true
+// for a user's own skyhook.nvidia.com/* key, which the prune deliberately preserves,
+// so the stamp could never clear and would be set on clusters that never ran the
+// pre-rename operator at all.
+func HasOperatorOwnedLegacyMetadata(n *corev1.Node, skyhookName string) bool {
+	oldPrefix := legacySkyhookMetadataPrefix + "/"
+	ownsAnnotation, ownsLabel := ownedByAnnotation(skyhookName), ownedByLabel(skyhookName)
+	ownsCondition := ownedByCondition(skyhookName)
+
+	for k := range n.Annotations {
+		if suffix, ok := strings.CutPrefix(k, oldPrefix); ok && ownsAnnotation(suffix) {
+			return true
+		}
+	}
+	for k := range n.Labels {
+		if suffix, ok := strings.CutPrefix(k, oldPrefix); ok && ownsLabel(suffix) {
+			return true
+		}
+	}
+	for _, c := range n.Status.Conditions {
+		if suffix, ok := strings.CutPrefix(string(c.Type), oldPrefix); ok && ownsCondition(suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 func migrateNodePrefixToNodeWright(node *skyhookNode, logger logr.Logger) error {
 	oldPrefix := legacySkyhookMetadataPrefix + "/"
 	newPrefix := v1alpha1.METADATA_PREFIX + "/"
 
 	changed := false
-	copyPrefixedMap(node.Annotations, oldPrefix, newPrefix, &changed)
-	copyPrefixedMap(node.Labels, oldPrefix, newPrefix, &changed)
+	copyPrefixedMap(node.Annotations, oldPrefix, newPrefix, isOperatorOwnedAnnotation, &changed)
+	copyPrefixedMap(node.Labels, oldPrefix, newPrefix, isOperatorOwnedLabel, &changed)
 
 	// Add a nodewright-prefixed copy of each legacy condition, keeping the legacy one.
 	conditions := node.GetNode().Status.Conditions
 	var added []corev1.NodeCondition
 	for i := range conditions {
 		suffix, ok := strings.CutPrefix(string(conditions[i].Type), oldPrefix)
-		if !ok {
+		if !ok || !isOperatorOwnedCondition(suffix) {
 			continue
 		}
 		newType := corev1.NodeConditionType(newPrefix + suffix)
@@ -103,14 +230,17 @@ func migrateNodePrefixToNodeWright(node *skyhookNode, logger logr.Logger) error 
 func pruneLegacyNodePrefix(node *skyhookNode) bool {
 	oldPrefix := legacySkyhookMetadataPrefix + "/"
 
+	// Scoped to THIS skyhook's keys: see the ownedBy* comment. A node is shared, and
+	// the prune decision is per NodeWright.
 	changed := false
-	dropPrefixedKeys(node.Annotations, oldPrefix, &changed)
-	dropPrefixedKeys(node.Labels, oldPrefix, &changed)
+	dropPrefixedKeys(node.Annotations, oldPrefix, ownedByAnnotation(node.skyhookName), &changed)
+	dropPrefixedKeys(node.Labels, oldPrefix, ownedByLabel(node.skyhookName), &changed)
 
+	ownsCondition := ownedByCondition(node.skyhookName)
 	conditions := node.GetNode().Status.Conditions
 	kept := conditions[:0]
 	for _, c := range conditions {
-		if strings.HasPrefix(string(c.Type), oldPrefix) {
+		if suffix, ok := strings.CutPrefix(string(c.Type), oldPrefix); ok && ownsCondition(suffix) {
 			changed = true
 			continue
 		}
@@ -124,14 +254,16 @@ func pruneLegacyNodePrefix(node *skyhookNode) bool {
 	return changed
 }
 
-// copyPrefixedMap copies every key in m from oldPrefix to newPrefix, KEEPING the
-// legacy key. A key already present under newPrefix is left as-is (explicit new value
-// wins). Sets *changed when it added a new-prefix key. A nil map is a no-op.
-func copyPrefixedMap(m map[string]string, oldPrefix, newPrefix string, changed *bool) {
+// copyPrefixedMap copies every OPERATOR-OWNED key in m from oldPrefix to newPrefix,
+// KEEPING the legacy key. isOwned decides ownership from the part after oldPrefix;
+// keys it rejects are the user's and are left untouched. A key already present under
+// newPrefix is left as-is (explicit new value wins). Sets *changed when it added a
+// new-prefix key. A nil map is a no-op.
+func copyPrefixedMap(m map[string]string, oldPrefix, newPrefix string, isOwned func(suffix string) bool, changed *bool) {
 	// Collect legacy keys first so we do not mutate the map while ranging it.
 	var legacy []string
 	for k := range m {
-		if strings.HasPrefix(k, oldPrefix) {
+		if suffix, ok := strings.CutPrefix(k, oldPrefix); ok && isOwned(suffix) {
 			legacy = append(legacy, k)
 		}
 	}
@@ -144,11 +276,13 @@ func copyPrefixedMap(m map[string]string, oldPrefix, newPrefix string, changed *
 	}
 }
 
-// dropPrefixedKeys deletes every key in m under prefix, in place. Sets *changed when
-// anything was deleted. A nil map is a no-op.
-func dropPrefixedKeys(m map[string]string, prefix string, changed *bool) {
+// dropPrefixedKeys deletes every OPERATOR-OWNED key in m under prefix, in place.
+// Keys isOwned rejects belong to the user and are preserved: the prune must not
+// delete metadata the operator never created. Sets *changed when anything was
+// deleted. A nil map is a no-op.
+func dropPrefixedKeys(m map[string]string, prefix string, isOwned func(suffix string) bool, changed *bool) {
 	for k := range m {
-		if strings.HasPrefix(k, prefix) {
+		if suffix, ok := strings.CutPrefix(k, prefix); ok && isOwned(suffix) {
 			delete(m, k)
 			*changed = true
 		}
