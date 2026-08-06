@@ -424,6 +424,15 @@ var _ = Describe("saveNodeChanges", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cached["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete),
 			"the wrapper must re-read the merged annotation, not serve its pre-merge cache")
+
+		// State() re-parses when the cache is nil, so asserting only through it would pass even
+		// with the cache nilled out. IsComplete, NextStage, GetComplete and PackageStatus read the
+		// cache field DIRECTLY, so they are what actually pins the re-seed: a nil cache reads as
+		// "no package has any state", a completed node reports incomplete, and the rollout stalls.
+		// That escaped unit coverage once and only cli-e2e caught it.
+		gotStatus, found := sn.PackageStatus("a|1.0.0")
+		Expect(found).To(BeTrue(), "the direct-cache accessors must see the merged state")
+		Expect(gotStatus.State).To(Equal(v1alpha1.StateComplete))
 	})
 })
 

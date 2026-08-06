@@ -1386,11 +1386,14 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 		}
 		// Hand the server's answer back to the wrapper so the condition patch that follows, and
 		// anything else downstream in this pass, works against the object that actually landed.
-		// The parsed cache has to go with it: State() serves that cache when it is non-nil, so
-		// leaving it would keep IsComplete/NextStage/UpdateCondition answering from the pass's
-		// pre-merge map instead of the merged annotation now on the object.
+		// The parsed cache has to go with it: the accessors read that cache, so leaving it would
+		// keep IsComplete/NextStage/UpdateCondition answering from the pass's pre-merge map
+		// instead of the merged annotation now on the object. Re-seeded, never nilled — see
+		// ReloadState for why a nil cache stalls the rollout.
 		*node.GetNode() = *target
-		node.InvalidateStateCache()
+		if err := node.ReloadState(); err != nil {
+			return fmt.Errorf("reloading node state for %s after merge: %w", node.GetNode().Name, err)
+		}
 		return nil
 	})
 }
