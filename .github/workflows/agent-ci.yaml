@@ -26,6 +26,7 @@ on:
       - .github/actions/**
       - operator/versions.yaml
       - operator/versions.sh
+      - scripts/latest-distroless.sh
       - .github/workflows/agent-ci.yaml
   push:
     branches:
@@ -39,6 +40,7 @@ on:
       - .github/actions/**
       - operator/versions.yaml
       - operator/versions.sh
+      - scripts/latest-distroless.sh
       - .github/workflows/agent-ci.yaml
 env:
   REGISTRY: ghcr.io
@@ -50,22 +52,25 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   fetch-distroless-versions:
-    name: Fetch Latest Distroless Versions
+    name: Resolve Distroless Base Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       distroless-version: ${{ steps.fetch.outputs.distroless-version }}
+      distroless-digest: ${{ steps.fetch.outputs.distroless-digest }}
     steps:
-      - name: Fetch versions from NVIDIA CDN
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-oras
+      - name: Resolve newest published distroless/python
         id: fetch
         run: |
-          # Fetch the versions.json file
-          VERSIONS_JSON=$(curl -fsSL https://developer.download.nvidia.com/distroless-oss/versions.json)
-          
-          # Extract latest Python v4 version (format: "v4.0.1" -> "4.0.1")
-          DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r ".v4.python.\"${PYTHON_VERSION}\"" | sed 's/^v//')
-          
-          echo "distroless-version=${DISTROLESS_VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Python ${PYTHON_VERSION} v4 Distroless Version: ${DISTROLESS_VERSION}"
+          # distroless/python tags carry the interpreter version, e.g. 3.13-v4.0.8.
+          ./scripts/latest-distroless.sh \
+            --repo nvcr.io/nvidia/distroless/python \
+            --major 4 \
+            --tag-prefix "${PYTHON_VERSION}-" \
+            --print | tee -a "$GITHUB_OUTPUT"
   
   compute-metadata:
     name: Compute Image Metadata
@@ -207,6 +212,7 @@ jobs:
             --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} \
             --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
             --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }} \
+            --build-arg DISTROLESS_DIGEST_SUFFIX="@${{ needs.fetch-distroless-versions.outputs.distroless-digest }}" \
             ${PUSH_OR_LOAD} \
             --platform "$PLATFORM" \
             --provenance=false \
