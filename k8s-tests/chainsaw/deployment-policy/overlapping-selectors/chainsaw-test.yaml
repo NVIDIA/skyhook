@@ -79,6 +79,7 @@ spec:
           echo "✓ Overlapping nodes correctly assigned using safety-first strategy (Fixed > Linear > Exponential)"
     - script:
         content: |
+          set -e
           echo "=== Verifying compartment metrics ==="
           
           # Verify matched nodes for each compartment
@@ -113,6 +114,7 @@ spec:
     try:
     - script:
         content: |
+          set -e
           echo "=== Verifying final metrics ==="
           
           # All compartments should be 100% complete

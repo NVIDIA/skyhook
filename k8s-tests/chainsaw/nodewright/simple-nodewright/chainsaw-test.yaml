@@ -24,7 +24,7 @@ metadata:
 spec:
   timeouts:
     assert: 240s
-    exec: 90s
+    exec: 120s ## metrics_test.py waits internally up to TIMEOUT per check
     cleanup: 120s ## finalizer needs time to uncordon, remove labels/annotations, and GC pods
   catch: ## if errors, print the most important info
     - get:
@@ -57,6 +57,10 @@ spec:
         file: nodewright.yaml
     - script:
         content: |
+          set -e
+          ## package stage transitions gate on pod and container startup, which can
+          ## stall well past the 30s default on a loaded runner
+          export TIMEOUT=90
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=simple-skyhook
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t stage=config
@@ -66,6 +70,10 @@ spec:
         file: assert_jobs.yaml
     - script:
         content: |
+          set -e
+          ## package stage transitions gate on pod and container startup, which can
+          ## stall well past the 30s default on a loaded runner
+          export TIMEOUT=90
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=complete
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=foobar -t skyhook_name=simple-skyhook -t state=in_progress
@@ -79,6 +87,7 @@ spec:
           kubectl wait --for=condition=Ready nodewright/simple-skyhook --timeout=30s
     - script:
         content: |
+          set -e
           ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=simple-skyhook -t status=complete
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook -t state=complete
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=foobar -t skyhook_name=simple-skyhook -t state=complete
