@@ -669,7 +669,7 @@ func (node *skyhookNode) UpdateCondition() {
 			}
 		case cond.Type:
 			condFound = true
-			if condition.Reason != cond.Reason && condition.Message == cond.Message {
+			if condition.Reason != cond.Reason || condition.Message != cond.Message {
 				node.Node.Status.Conditions[i] = cond // update it with the new condition
 				node.updated = true
 			}
