@@ -1479,8 +1479,12 @@ func applyTaintChanges(fresh, original, modified []corev1.Taint) []corev1.Taint 
 		// concurrently. Replay it only when the pass has something to say — it added the taint,
 		// or it changed the value of one it inherited. An identity the pass left exactly as it
 		// found it is not its to resurrect, so the concurrent deletion stands.
+		// Compared by Value, not with !=: corev1.Taint carries TimeAdded *metav1.Time, and
+		// original/modified are separate DeepCopies, so a struct compare tests pointer identity
+		// and reports every TimeAdded-carrying taint as edited — resurrecting ones the pass never
+		// touched. Key and Effect are the identity, so Value is the only thing an edit can change.
 		originalTaint, wasThere := originalByID[id]
-		if !wasThere || originalTaint != taint {
+		if !wasThere || originalTaint.Value != taint.Value {
 			result = append(result, taint)
 		}
 	}

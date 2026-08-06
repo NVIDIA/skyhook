@@ -283,6 +283,26 @@ var _ = Describe("node state delta merge", func() {
 			Expect(target.Spec.Taints[0].Value).To(Equal("new"), "the pass's edit must survive the concurrent delete")
 		})
 
+		// TimeAdded is a *metav1.Time and DeepCopy allocates a fresh one, so a struct-level compare
+		// reports an untouched taint as edited and resurrects it. The fixtures above all leave
+		// TimeAdded nil, where two nil pointers compare equal, so only this one catches it.
+		It("lets a concurrent delete stand for an untouched taint that carries TimeAdded", func() {
+			added := metav1.NewTime(time.Now().Truncate(time.Second))
+			taint := corev1.Taint{Key: "example.com/maintenance", Effect: corev1.TaintEffectNoExecute, TimeAdded: &added}
+
+			original := nodeWith(nil)
+			original.Spec.Taints = []corev1.Taint{taint}
+			modified := original.DeepCopy() // separate DeepCopy: distinct TimeAdded pointer, same instant
+
+			fresh := original.DeepCopy()
+			fresh.Spec.Taints = nil // deleted concurrently
+
+			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(target.Spec.Taints).To(BeEmpty(),
+				"a taint the pass never edited must not be resurrected by a pointer comparison")
+		})
+
 		It("lets a concurrent delete stand for a taint the pass never touched", func() {
 			taint := corev1.Taint{Key: "other", Value: "1", Effect: corev1.TaintEffectNoSchedule}
 			original := nodeWith(nil)
