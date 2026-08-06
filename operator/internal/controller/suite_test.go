@@ -119,6 +119,7 @@ var _ = BeforeSuite(func() {
 	operator, err = NewSkyhookReconciler(
 		k8sManager.GetScheme(),
 		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(),
 		k8sfake.NewClientset(),
 		k8sManager.GetEventRecorder("skyhook-controller"),
 		opts,

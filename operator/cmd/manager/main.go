@@ -197,6 +197,7 @@ func main() {
 	cont, err := controller.NewSkyhookReconciler(
 		mgr.GetScheme(),
 		mgr.GetClient(),
+		mgr.GetAPIReader(),
 		clientset,
 		mgr.GetEventRecorder("skyhook-controller"),
 		options.SkyhookOperatorOptions)

@@ -82,7 +82,7 @@ var _ = Describe("Jobs execution swap", func() {
 				}
 				return []string{pod.Spec.NodeName}
 			}).Build()
-		r, err := NewSkyhookReconciler(scheme, c, k8sfake.NewClientset(), events.NewFakeRecorder(50), validOpts())
+		r, err := NewSkyhookReconciler(scheme, c, c, k8sfake.NewClientset(), events.NewFakeRecorder(50), validOpts())
 		Expect(err).ToNot(HaveOccurred())
 		return r, c
 	}

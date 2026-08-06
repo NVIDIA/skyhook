@@ -581,7 +581,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
@@ -645,7 +645,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			force := false
@@ -717,7 +717,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
@@ -787,7 +787,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{
@@ -850,7 +850,7 @@ var _ = Describe("skyhook controller tests", func() {
 			})
 
 			recorder := events.NewFakeRecorder(10)
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, k8sfake.NewClientset(), recorder, opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), recorder, opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{

@@ -50,6 +50,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/kubernetes/pkg/util/taints"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -244,7 +245,7 @@ func (o *SkyhookOperatorOptions) GetRuntimeRequiredToleration() corev1.Toleratio
 // force type checking against this interface
 var _ reconcile.Reconciler = &SkyhookReconciler{}
 
-func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, clientset kubernetes.Interface, recorder events.EventRecorder, opts SkyhookOperatorOptions) (*SkyhookReconciler, error) {
+func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, uncached client.Reader, clientset kubernetes.Interface, recorder events.EventRecorder, opts SkyhookOperatorOptions) (*SkyhookReconciler, error) {
 
 	err := opts.Validate()
 	if err != nil {
@@ -253,6 +254,7 @@ func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, clientset kub
 
 	return &SkyhookReconciler{
 		Client:    c,
+		uncached:  uncached,
 		scheme:    schema,
 		recorder:  recorder,
 		opts:      opts,
@@ -264,6 +266,10 @@ func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, clientset kub
 // SkyhookReconciler reconciles a Skyhook object
 type SkyhookReconciler struct {
 	client.Client
+	// uncached reads straight from the apiserver, used only to re-read a Node after a patch
+	// conflict; see saveNodeChanges. Nil falls back to the cached client, which is what the
+	// fake-client tests use.
+	uncached  client.Reader
 	scheme    *runtime.Scheme
 	recorder  events.EventRecorder
 	opts      SkyhookOperatorOptions
@@ -1253,6 +1259,209 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 	return nil, utilerrors.NewAggregate(errs)
 }
 
+// nodeStateAnnotationKey is the single annotation holding every package's status for one
+// NodeWright on one node.
+func nodeStateAnnotationKey(skyhookName string) string {
+	return fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, skyhookName)
+}
+
+// nodeStateDelta is the set of package entries one heavy pass changed, derived by diffing the
+// pass's starting snapshot against the state it ended up with. A nil value marks a removal.
+//
+// This exists because the pass cannot write the value it computed. Its result was built from a
+// snapshot taken at cluster-state build time, and JobReconciler/PodReconciler write the same
+// annotation concurrently; writing the whole value back would revert a completion recorded in
+// between. Only the entries the pass actually touched are its to apply.
+type nodeStateDelta map[string]*v1alpha1.PackageStatus
+
+// computeNodeStateDelta diffs before against after. Entries equal in both are omitted: the pass
+// did not change them, so it has no opinion to impose on whatever the annotation holds now.
+func computeNodeStateDelta(before, after v1alpha1.NodeState) nodeStateDelta {
+	delta := make(nodeStateDelta)
+	for key, afterStatus := range after {
+		beforeStatus, existed := before[key]
+		if !existed || beforeStatus != afterStatus {
+			status := afterStatus
+			delta[key] = &status
+		}
+	}
+	for key := range before {
+		if _, stillThere := after[key]; !stillThere {
+			delta[key] = nil
+		}
+	}
+	return delta
+}
+
+// apply lays the delta over whatever state is current, leaving every untouched entry alone.
+func (d nodeStateDelta) apply(current v1alpha1.NodeState) v1alpha1.NodeState {
+	merged := make(v1alpha1.NodeState, len(current)+len(d))
+	for key, status := range current {
+		merged[key] = status
+	}
+	for key, status := range d {
+		if status == nil {
+			delete(merged, key)
+			continue
+		}
+		merged[key] = *status
+	}
+	return merged
+}
+
+// parseNodeState reads a node-state annotation. An absent key is an empty state, not an error.
+func parseNodeState(node *corev1.Node, key string) (v1alpha1.NodeState, error) {
+	raw, ok := node.Annotations[key]
+	if !ok || raw == "" {
+		return v1alpha1.NodeState{}, nil
+	}
+	state := v1alpha1.NodeState{}
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		return nil, fmt.Errorf("unmarshalling node state from %s: %w", key, err)
+	}
+	return state, nil
+}
+
+// saveNodeChanges persists one node's changes from this pass under an optimistic lock, re-merging
+// the contended node-state annotation onto a freshly read object on every attempt.
+//
+// The heavy pass, JobReconciler and PodReconciler are three separate controllers with three
+// workqueues, all writing nodewright.nvidia.com/nodeState_<name> — one annotation whose value is a
+// single JSON document covering every package. Before the Job and Pod watches became their own
+// controllers, pod events rode this controller's queue at MaxConcurrentReconciles 1 and could not
+// interleave; now they can, and an unconditional patch of a snapshot-derived value silently
+// reverts a completion recorded mid-pass. The Job is already marked state-recorded by then, so
+// nothing re-records it: the stage only recovers by being torn down and re-run.
+//
+// Locking the write alone would not fix that. The value is computed long before the write, so a
+// lock would just serialize a stale value into place. What closes it is applying only this pass's
+// delta on top of whatever the annotation holds at write time.
+//
+// The patch target is built from the freshly read node rather than the pass's own object,
+// deliberately: the pass's object predates any concurrent write, so diffing against it would emit
+// deletions for keys another writer added since the snapshot — another NodeWright's nodeState_*
+// among them.
+func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev1.Node, node wrapper.SkyhookNode, skyhookName string) error {
+	if original == nil {
+		// Untracked (a node added to the pass after the snapshot): nothing to diff against, so
+		// fall back to the plain patch rather than guessing at a delta.
+		return r.Patch(ctx, node.GetNode(), client.StrategicMergeFrom(node.GetNode().DeepCopy()))
+	}
+
+	key := nodeStateAnnotationKey(skyhookName)
+	before, err := parseNodeState(original, key)
+	if err != nil {
+		return err
+	}
+	after, err := parseNodeState(node.GetNode(), key)
+	if err != nil {
+		return err
+	}
+	delta := computeNodeStateDelta(before, after)
+
+	attempt := 0
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fresh, err := r.readNodeForSave(ctx, node.GetNode().Name, attempt)
+		attempt++
+		if err != nil {
+			return err
+		}
+		if fresh == nil {
+			return nil // node went away mid-pass; its state is not ours to resurrect
+		}
+
+		target, err := applyPassChanges(fresh, original, node.GetNode(), key, delta)
+		if err != nil {
+			return err
+		}
+
+		patch := client.StrategicMergeFrom(fresh.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		if err := r.Patch(ctx, target, patch); err != nil {
+			return err
+		}
+		// Hand the server's answer back to the wrapper so the condition patch that follows, and
+		// anything else downstream in this pass, works against the object that actually landed.
+		*node.GetNode() = *target
+		return nil
+	})
+}
+
+// readNodeForSave serves the first attempt from the cache and every retry from the apiserver. A
+// cached re-read would rebuild the same resourceVersion precondition that just lost and burn every
+// remaining attempt; this is the same split patchNodeState makes, for the same reason.
+func (r *SkyhookReconciler) readNodeForSave(ctx context.Context, nodeName string, attempt int) (*corev1.Node, error) {
+	if attempt == 0 || r.uncached == nil {
+		return r.dal.GetNode(ctx, nodeName)
+	}
+
+	var node corev1.Node
+	if err := r.uncached.Get(ctx, types.NamespacedName{Name: nodeName}, &node); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &node, nil
+}
+
+// applyPassChanges rebuilds the pass's intent on top of a freshly read node: every annotation,
+// label, taint and cordon change it made, with the contended node-state key merged rather than
+// overwritten.
+func applyPassChanges(fresh, original, modified *corev1.Node, nodeStateKey string, delta nodeStateDelta) (*corev1.Node, error) {
+	target := fresh.DeepCopy()
+
+	applyMapChanges(&target.Annotations, original.Annotations, modified.Annotations, nodeStateKey)
+	applyMapChanges(&target.Labels, original.Labels, modified.Labels, "")
+
+	if len(delta) > 0 {
+		current, err := parseNodeState(fresh, nodeStateKey)
+		if err != nil {
+			return nil, err
+		}
+		merged := delta.apply(current)
+		raw, err := json.Marshal(merged)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling merged node state: %w", err)
+		}
+		if target.Annotations == nil {
+			target.Annotations = map[string]string{}
+		}
+		target.Annotations[nodeStateKey] = string(raw)
+	}
+
+	// Cordon and taints are this controller's alone to set, so the pass's value stands.
+	target.Spec.Unschedulable = modified.Spec.Unschedulable
+	target.Spec.Taints = modified.Spec.Taints
+
+	return target, nil
+}
+
+// applyMapChanges replays the pass's additions, edits and deletions for one metadata map onto the
+// target, skipping `except`. Keys the pass never touched are left as the fresh read found them,
+// which is what keeps a concurrent writer's key from being clobbered.
+func applyMapChanges(target *map[string]string, original, modified map[string]string, except string) {
+	for key, value := range modified {
+		if key == except {
+			continue
+		}
+		if originalValue, existed := original[key]; existed && originalValue == value {
+			continue // untouched by this pass
+		}
+		if *target == nil {
+			*target = map[string]string{}
+		}
+		(*target)[key] = value
+	}
+	for key := range original {
+		if key == except {
+			continue
+		}
+		if _, stillThere := modified[key]; !stillThere {
+			delete(*target, key)
+		}
+	}
+}
+
 // SaveNodesAndSkyhook saves nodes and skyhook and will update the events if the skyhook status changes
 func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterState *clusterState, skyhook SkyhookNodes) (bool, []error) {
 	saved := false
@@ -1262,7 +1471,8 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 	for _, node := range skyhook.GetNodes() {
 		patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()))
 		if node.Changed() {
-			err := r.Patch(ctx, node.GetNode(), patch)
+			originalNode, _ := clusterState.tracker.GetOriginal(node.GetNode()).(*corev1.Node)
+			err := r.saveNodeChanges(ctx, originalNode, node, skyhook.GetSkyhook().Name)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error patching node [%s]: %w", node.GetNode().Name, err))
 			}
