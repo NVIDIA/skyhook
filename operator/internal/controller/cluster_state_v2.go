@@ -1563,7 +1563,7 @@ func (skyhook *skyhookNodes) Migrate(logger logr.Logger) error {
 	}
 
 	if err := skyhook.skyhook.Migrate(logger); err != nil {
-		return fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.skyhook.Name, err)
+		return fmt.Errorf("error migrating nodewright [%s]: %w", skyhook.skyhook.Name, err)
 	}
 
 	if from == "" { // before this was a thing v0.4.0 and before
@@ -1587,7 +1587,7 @@ func (skyhook *skyhookNodes) AddCompartment(name string, compartment *wrapper.Co
 func (skyhook *skyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) error {
 	compartment, ok := skyhook.compartments[name]
 	if !ok {
-		return fmt.Errorf("compartment %q not found for skyhook %q - missing deployment policy", name, skyhook.skyhook.Name)
+		return fmt.Errorf("compartment %q not found for nodewright %q - missing deployment policy", name, skyhook.skyhook.Name)
 	}
 	compartment.AddNode(node)
 	return nil
