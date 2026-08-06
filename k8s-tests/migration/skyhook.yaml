@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+## Seed CR for the upgrade migration test, applied against the PRE-RENAME
+## operator, so it is deliberately a legacy skyhook.nvidia.com/v1alpha1 Skyhook.
+##
+## The nodeSelector uses the LEGACY label key on purpose: the mirror copies
+## nodeSelectors verbatim, and kind-worker carries both the skyhook and
+## nodewright test-node labels, so the migrated NodeWright keeps matching.
+##
+## Package body matches k8s-tests/operator-agent/simple so the same host-side
+## flag files and logs are produced, which is what proves a package did not re-run.
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: migration-upgrade-test
+spec:
+  nodeSelectors:
+    matchLabels:
+      skyhook.nvidia.com/test-node: skyhooke2e
+  packages:
+    shellscript:
+      version: "1.1.1"
+      image: ghcr.io/nvidia/skyhook-packages/shellscript
+      configMap:
+        apply.sh: |
+          #!/bin/bash
+          echo "Hello, world!"
+          cat $SKYHOOK_DIR/configmaps/extra.txt
+        extra.txt: |
+          This is a test
