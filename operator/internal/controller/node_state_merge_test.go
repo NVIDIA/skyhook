@@ -261,6 +261,42 @@ var _ = Describe("node state delta merge", func() {
 			Expect(target.Spec.Taints[0].Key).To(Equal("node-problem-detector"), "only the pass's own taint is removed")
 		})
 
+		// The operator has no code path that edits a taint's value in place — Taint() early-returns
+		// if the key is present and RemoveTaint() only removes — so this is a latent trap rather
+		// than a live defect. Pinned so it stays closed if a value-editing path ever appears.
+		It("replays a pass-owned taint edit that a concurrent delete removed", func() {
+			id := func(v string) corev1.Taint {
+				return corev1.Taint{Key: "skyhook.nvidia.com", Value: v, Effect: corev1.TaintEffectNoSchedule}
+			}
+			original := nodeWith(nil)
+			original.Spec.Taints = []corev1.Taint{id("old")}
+
+			modified := original.DeepCopy()
+			modified.Spec.Taints = []corev1.Taint{id("new")} // the pass edited the value
+
+			fresh := original.DeepCopy()
+			fresh.Spec.Taints = nil // someone deleted it meanwhile
+
+			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(target.Spec.Taints).To(HaveLen(1))
+			Expect(target.Spec.Taints[0].Value).To(Equal("new"), "the pass's edit must survive the concurrent delete")
+		})
+
+		It("lets a concurrent delete stand for a taint the pass never touched", func() {
+			taint := corev1.Taint{Key: "other", Value: "1", Effect: corev1.TaintEffectNoSchedule}
+			original := nodeWith(nil)
+			original.Spec.Taints = []corev1.Taint{taint}
+			modified := original.DeepCopy() // pass left it exactly as found
+
+			fresh := original.DeepCopy()
+			fresh.Spec.Taints = nil
+
+			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(target.Spec.Taints).To(BeEmpty(), "the pass has no opinion, so the deletion stands")
+		})
+
 		It("is a no-op on node state when the pass changed none of it", func() {
 			state := v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress, v1alpha1.StageApply)}
 			original := nodeWith(state)
@@ -459,6 +495,32 @@ var _ = Describe("saveNodeChanges conflict retry", func() {
 		Expect(final["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete),
 			"the retry must merge onto the uncached read, keeping the completion only it could see")
 		Expect(final["b|1.0.0"].State).To(Equal(v1alpha1.StateComplete), "the pass's own transition must still land")
+	})
+
+	// CodeRabbit asked for a test asserting the node still changed here. That was right for the
+	// original code, which diffed the object against a copy of itself — an empty patch that
+	// silently dropped the write. The branch now returns an error instead, because BuildState
+	// tracks and adds a node in the same step so a nil snapshot means a broken invariant, and the
+	// one thing it must not do is look like success.
+	It("errors rather than silently dropping the write when a node has no snapshot", func() {
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+
+		scr := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: "skyhook"}}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(node, scr).Build()
+
+		r, err := NewSkyhookReconciler(scheme, c, c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts())
+		Expect(err).ToNot(HaveOccurred())
+
+		sn, err := wrapper.NewSkyhookNode(node.DeepCopy(), scr)
+		Expect(err).ToNot(HaveOccurred())
+
+		err = r.saveNodeChanges(ctx, nil, sn, skyhookName)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no tracked snapshot"))
 	})
 
 	It("stops without error when the retry finds the node deleted", func() {

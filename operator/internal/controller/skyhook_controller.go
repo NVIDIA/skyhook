@@ -1353,11 +1353,11 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 	key := nodeStateAnnotationKey(skyhookName)
 	before, err := parseNodeState(original, key)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading the pass's starting node state for %s: %w", node.GetNode().Name, err)
 	}
 	after, err := parseNodeState(node.GetNode(), key)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading the pass's resulting node state for %s: %w", node.GetNode().Name, err)
 	}
 	delta := computeNodeStateDelta(before, after)
 
@@ -1366,7 +1366,7 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 		fresh, err := readNodeForPatch(ctx, r.dal, r.uncached, node.GetNode().Name, attempt)
 		attempt++
 		if err != nil {
-			return err
+			return fmt.Errorf("re-reading node %s before patching: %w", node.GetNode().Name, err)
 		}
 		if fresh == nil {
 			return nil // node went away mid-pass; its state is not ours to resurrect
@@ -1374,12 +1374,15 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 
 		target, err := applyPassChanges(fresh, original, node.GetNode(), key, delta)
 		if err != nil {
-			return err
+			return fmt.Errorf("merging this pass's changes onto node %s: %w", node.GetNode().Name, err)
 		}
 
 		patch := client.StrategicMergeFrom(fresh.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		// Wrapped with %w deliberately: RetryOnConflict decides via apierrors.IsConflict, which
+		// unwraps, so the retry keeps working. The conflict-retry spec fails if that ever stops
+		// being true.
 		if err := r.Patch(ctx, target, patch); err != nil {
-			return err
+			return fmt.Errorf("patching node %s: %w", node.GetNode().Name, err)
 		}
 		// Hand the server's answer back to the wrapper so the condition patch that follows, and
 		// anything else downstream in this pass, works against the object that actually landed.
@@ -1472,8 +1475,13 @@ func applyTaintChanges(fresh, original, modified []corev1.Taint) []corev1.Taint 
 		if _, alreadyThere := freshByID[id]; alreadyThere {
 			continue
 		}
-		if _, wasThere := originalByID[id]; !wasThere {
-			result = append(result, taint) // the pass added it
+		// Absent from the fresh read, so either the pass added it or someone deleted it
+		// concurrently. Replay it only when the pass has something to say — it added the taint,
+		// or it changed the value of one it inherited. An identity the pass left exactly as it
+		// found it is not its to resurrect, so the concurrent deletion stands.
+		originalTaint, wasThere := originalByID[id]
+		if !wasThere || originalTaint != taint {
+			result = append(result, taint)
 		}
 	}
 	return result
