@@ -208,7 +208,7 @@ func NewSkyhookReconciler(schema *runtime.Scheme, c client.Client, recorder even
 
 	err := opts.Validate()
 	if err != nil {
-		return nil, fmt.Errorf("invalid skyhook operator options: %w", err)
+		return nil, fmt.Errorf("invalid nodewright operator options: %w", err)
 	}
 
 	return &SkyhookReconciler{
@@ -506,7 +506,7 @@ func (r *SkyhookReconciler) processSkyhooksPerNode(ctx context.Context, clusterS
 		}
 		hasWork, err := skyhook.HasUninstallWork()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("error checking uninstall work for skyhook %s: %w", skyhook.GetSkyhook().Name, err))
+			errs = append(errs, fmt.Errorf("error checking uninstall work for nodewright %s: %w", skyhook.GetSkyhook().Name, err))
 			continue
 		}
 		if skyhook.IsComplete() && !hasWork {
@@ -516,7 +516,7 @@ func (r *SkyhookReconciler) processSkyhooksPerNode(ctx context.Context, clusterS
 		// Check if any nodes are ready for this skyhook
 		ready, err := hasReadyNodesForSkyhook(skyhook, clusterState.skyhooks)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("error checking ready nodes for skyhook %s: %w", skyhook.GetSkyhook().Name, err))
+			errs = append(errs, fmt.Errorf("error checking ready nodes for nodewright %s: %w", skyhook.GetSkyhook().Name, err))
 			continue
 		}
 		if !ready {
@@ -582,11 +582,11 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 
 		err := skyhook.Migrate(logger)
 		if err != nil {
-			return false, fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+			return false, fmt.Errorf("error migrating nodewright [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
 		if err := skyhook.GetSkyhook().NodeWright.Validate(); err != nil {
-			return false, fmt.Errorf("error validating skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+			return false, fmt.Errorf("error validating nodewright [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 
 		// MIGRATION-SHIM: rollback-safe legacy cleanup. skyhook.Migrate above adopts
@@ -623,7 +623,7 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 		// the legacy skyhook.nvidia.com labels.
 		hadLegacyWorkloads, workloadsChanged, err := r.reconcileLegacyLabeledWorkloads(ctx, skyhook.GetSkyhook().Name, prune)
 		if err != nil {
-			return false, fmt.Errorf("error reconciling legacy-labeled workloads for skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+			return false, fmt.Errorf("error reconciling legacy-labeled workloads for nodewright [%s]: %w", skyhook.GetSkyhook().Name, err)
 		}
 		if workloadsChanged {
 			updates = true
@@ -634,7 +634,7 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			// additionally it needs to be an update, a patch nils out the annotations for some reason, which the save function does a patch
 
 			if err = r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
-				return false, fmt.Errorf("error updating during migration skyhook status [%s]: %w", skyhook.GetSkyhook().Name, err)
+				return false, fmt.Errorf("error updating during migration nodewright status [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 
 			// because of conflict issues (409) we need to do things a bit differently here.
@@ -646,7 +646,7 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 
 			newskyhook, err := r.dal.GetSkyhook(ctx, skyhook.GetSkyhook().Name)
 			if err != nil {
-				return false, fmt.Errorf("error getting skyhook to migrate [%s]: %w", skyhook.GetSkyhook().Name, err)
+				return false, fmt.Errorf("error getting nodewright to migrate [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 			newPatch := client.MergeFrom(newskyhook.DeepCopy())
 
@@ -654,7 +654,7 @@ func (r *SkyhookReconciler) HandleMigrations(ctx context.Context, clusterState *
 			wrapper.NewSkyhookWrapper(newskyhook).SetVersion()
 
 			if err = r.Patch(ctx, newskyhook, newPatch); err != nil {
-				return false, fmt.Errorf("error updating during migration skyhook [%s]: %w", skyhook.GetSkyhook().Name, err)
+				return false, fmt.Errorf("error updating during migration nodewright [%s]: %w", skyhook.GetSkyhook().Name, err)
 			}
 
 			updates = true
@@ -729,7 +729,7 @@ func (r *SkyhookReconciler) reconcileLegacyLabeledWorkloads(ctx context.Context,
 	pods := &corev1.PodList{}
 	if err := r.List(ctx, pods, client.InNamespace(r.opts.Namespace),
 		client.MatchingLabels{fmt.Sprintf("%s/name", legacyMetadataPrefix): skyhookName}); err != nil {
-		return false, false, fmt.Errorf("listing legacy-labeled pods for skyhook [%s]: %w", skyhookName, err)
+		return false, false, fmt.Errorf("listing legacy-labeled pods for nodewright [%s]: %w", skyhookName, err)
 	}
 	if len(pods.Items) > 0 {
 		hadLegacy = true
@@ -749,7 +749,7 @@ func (r *SkyhookReconciler) reconcileLegacyLabeledWorkloads(ctx context.Context,
 	cms := &corev1.ConfigMapList{}
 	if err := r.List(ctx, cms, client.InNamespace(r.opts.Namespace),
 		client.MatchingLabels{fmt.Sprintf("%s/skyhook-node-meta", legacyMetadataPrefix): skyhookName}); err != nil {
-		return false, false, fmt.Errorf("listing legacy-labeled configmaps for skyhook [%s]: %w", skyhookName, err)
+		return false, false, fmt.Errorf("listing legacy-labeled configmaps for nodewright [%s]: %w", skyhookName, err)
 	}
 	if len(cms.Items) > 0 {
 		hadLegacy = true
@@ -982,7 +982,7 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 			updates = true
 			err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("error updating skyhook status after reboot [%s]: %w", skyhook.GetSkyhook().Name, err))
+				errs = append(errs, fmt.Errorf("error updating nodewright status after reboot [%s]: %w", skyhook.GetSkyhook().Name, err))
 			}
 		}
 	}
@@ -1774,7 +1774,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 			controllerutil.AddFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
 
 			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
-				return false, fmt.Errorf("error updating skyhook to add finalizer: %w", err)
+				return false, fmt.Errorf("error updating nodewright to add finalizer: %w", err)
 			}
 		}
 	} else { // being deleted
@@ -1946,12 +1946,12 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 			// re-triggering add-finalizer logic.)
 			skyhook.GetSkyhook().Status.ObservedGeneration = skyhook.GetSkyhook().Status.ObservedGeneration + 1
 			if err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
-				return false, fmt.Errorf("error updating skyhook status: %w", err)
+				return false, fmt.Errorf("error updating nodewright status: %w", err)
 			}
 
 			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
 			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
-				return false, fmt.Errorf("error updating skyhook removing finalizer: %w", err)
+				return false, fmt.Errorf("error updating nodewright removing finalizer: %w", err)
 			}
 
 			return true, nil
@@ -2279,7 +2279,7 @@ func (r *SkyhookReconciler) ValidateNodeConfigmaps(ctx context.Context, skyhookN
 	// Ensure packages.json is present and up-to-date for expected configmaps
 	skyhookCR, err := r.dal.GetSkyhook(ctx, skyhookName)
 	if err != nil {
-		return update, fmt.Errorf("error getting skyhook for metadata validation: %w", err)
+		return update, fmt.Errorf("error getting nodewright for metadata validation: %w", err)
 	}
 	skyhookWrapper := wrapper.NewSkyhookWrapper(skyhookCR)
 	metadata := NewSkyhookMetadata(r.opts, skyhookWrapper)
