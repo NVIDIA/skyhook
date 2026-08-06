@@ -358,6 +358,15 @@ operator-agent-tests: chainsaw install ## Run operator agent tests.
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
+.PHONY: migration-test
+migration-test: helm push-local-image ## Run the Skyhook->NodeWright upgrade migration test (needs a fresh kind cluster).
+	## Requires a CLEAN cluster: the test refuses to run if nodewright CRDs already
+	## exist, since a pre-rename baseline is the whole point. Run
+	## `make create-kind-cluster` first, and note push-local-image must come AFTER
+	## cluster creation because ctlptl recreates the local registry with the cluster.
+	LOCAL_OPERATOR_IMG=$(LOCAL_OPERATOR_IMG) HELM=$(HELM) KUBECTL=$(KUBECTL) \
+		../k8s-tests/migration/run.sh
+
 deployment-policy-tests: chainsaw install run ensure-test-symlinks ## Run all deployment policy E2E tests (requires 15-node cluster).
 	## requires a 15-node cluster to be running with access
 	## use 'make create-deployment-policy-cluster' to create the cluster
