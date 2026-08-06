@@ -1343,9 +1343,11 @@ func parseNodeState(node *corev1.Node, key string) (v1alpha1.NodeState, error) {
 // among them.
 func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev1.Node, node wrapper.SkyhookNode, skyhookName string) error {
 	if original == nil {
-		// Untracked (a node added to the pass after the snapshot): nothing to diff against, so
-		// fall back to the plain patch rather than guessing at a delta.
-		return r.Patch(ctx, node.GetNode(), client.StrategicMergeFrom(node.GetNode().DeepCopy()))
+		// Unreachable: BuildState tracks and adds a node in the same step, so every node in
+		// GetNodes() has a snapshot. Say so instead of guessing at a delta — the old fallback
+		// here diffed the object against a copy of itself, which is an empty patch, so a broken
+		// invariant would have silently dropped the write rather than surfacing.
+		return fmt.Errorf("no tracked snapshot for node %s; cannot derive its node-state delta", node.GetNode().Name)
 	}
 
 	key := nodeStateAnnotationKey(skyhookName)
@@ -1361,7 +1363,7 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 
 	attempt := 0
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		fresh, err := r.readNodeForSave(ctx, node.GetNode().Name, attempt)
+		fresh, err := readNodeForPatch(ctx, r.dal, r.uncached, node.GetNode().Name, attempt)
 		attempt++
 		if err != nil {
 			return err
@@ -1381,27 +1383,13 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 		}
 		// Hand the server's answer back to the wrapper so the condition patch that follows, and
 		// anything else downstream in this pass, works against the object that actually landed.
+		// The parsed cache has to go with it: State() serves that cache when it is non-nil, so
+		// leaving it would keep IsComplete/NextStage/UpdateCondition answering from the pass's
+		// pre-merge map instead of the merged annotation now on the object.
 		*node.GetNode() = *target
+		node.InvalidateStateCache()
 		return nil
 	})
-}
-
-// readNodeForSave serves the first attempt from the cache and every retry from the apiserver. A
-// cached re-read would rebuild the same resourceVersion precondition that just lost and burn every
-// remaining attempt; this is the same split patchNodeState makes, for the same reason.
-func (r *SkyhookReconciler) readNodeForSave(ctx context.Context, nodeName string, attempt int) (*corev1.Node, error) {
-	if attempt == 0 || r.uncached == nil {
-		return r.dal.GetNode(ctx, nodeName)
-	}
-
-	var node corev1.Node
-	if err := r.uncached.Get(ctx, types.NamespacedName{Name: nodeName}, &node); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &node, nil
 }
 
 // applyPassChanges rebuilds the pass's intent on top of a freshly read node: every annotation,
@@ -1429,11 +1417,66 @@ func applyPassChanges(fresh, original, modified *corev1.Node, nodeStateKey strin
 		target.Annotations[nodeStateKey] = string(raw)
 	}
 
-	// Cordon and taints are this controller's alone to set, so the pass's value stands.
-	target.Spec.Unschedulable = modified.Spec.Unschedulable
-	target.Spec.Taints = modified.Spec.Taints
+	// Spec gets the same delta discipline as the maps, and for the same reason: the patch base
+	// is the fresh read, so assigning the pass's value outright turns an untouched field into an
+	// explicit write. Taints are +listType=atomic (strategic merge replaces the whole list) and
+	// Unschedulable is omitempty (false diffs as an explicit null), so a restamp here would
+	// delete an autoscaler/GPU-operator taint or uncordon a node another Skyhook is draining.
+	if modified.Spec.Unschedulable != original.Spec.Unschedulable {
+		target.Spec.Unschedulable = modified.Spec.Unschedulable
+	}
+	target.Spec.Taints = applyTaintChanges(fresh.Spec.Taints, original.Spec.Taints, modified.Spec.Taints)
 
 	return target, nil
+}
+
+// taintID identifies a taint the way Kubernetes does, by key and effect; the value rides along.
+type taintID struct {
+	key    string
+	effect corev1.TaintEffect
+}
+
+func taintIDs(taints []corev1.Taint) map[taintID]corev1.Taint {
+	byID := make(map[taintID]corev1.Taint, len(taints))
+	for _, taint := range taints {
+		byID[taintID{key: taint.Key, effect: taint.Effect}] = taint
+	}
+	return byID
+}
+
+// applyTaintChanges replays the taints the pass added and removed onto the fresh list, leaving
+// every taint neither side touched alone. Taints this operator does not own are common — the
+// cluster autoscaler, node-problem-detector and a human with kubectl all write them — so the pass
+// only gets to speak about the ones it actually changed.
+func applyTaintChanges(fresh, original, modified []corev1.Taint) []corev1.Taint {
+	originalByID, modifiedByID := taintIDs(original), taintIDs(modified)
+
+	result := make([]corev1.Taint, 0, len(fresh)+len(modifiedByID))
+	for _, taint := range fresh {
+		id := taintID{key: taint.Key, effect: taint.Effect}
+		if _, wasThere := originalByID[id]; wasThere {
+			if _, stillThere := modifiedByID[id]; !stillThere {
+				continue // the pass removed it
+			}
+		}
+		if updated, ok := modifiedByID[id]; ok {
+			result = append(result, updated) // the pass may have changed its value
+			continue
+		}
+		result = append(result, taint)
+	}
+
+	freshByID := taintIDs(fresh)
+	for _, taint := range modified {
+		id := taintID{key: taint.Key, effect: taint.Effect}
+		if _, alreadyThere := freshByID[id]; alreadyThere {
+			continue
+		}
+		if _, wasThere := originalByID[id]; !wasThere {
+			result = append(result, taint) // the pass added it
+		}
+	}
+	return result
 }
 
 // applyMapChanges replays the pass's additions, edits and deletions for one metadata map onto the
@@ -1469,7 +1512,6 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 	logger := log.FromContext(ctx)
 
 	for _, node := range skyhook.GetNodes() {
-		patch := client.StrategicMergeFrom(clusterState.tracker.GetOriginal(node.GetNode()))
 		if node.Changed() {
 			originalNode, _ := clusterState.tracker.GetOriginal(node.GetNode()).(*corev1.Node)
 			err := r.saveNodeChanges(ctx, originalNode, node, skyhook.GetSkyhook().Name)
@@ -1492,10 +1534,18 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 		}
 
 		// updates node's condition
+		//
+		// The base is snapshotted here, after saveNodeChanges has replaced the object with the one
+		// the apiserver returned, so the diff is exactly the conditions UpdateCondition touches.
+		// Basing it on the pass's original snapshot instead would re-send whatever the kubelet
+		// changed to .status in the meantime, and would carry that snapshot's resourceVersion into
+		// the patch body, where the apiserver reads it as a precondition — turning every
+		// concurrent write into a 409 that suppresses the whole Skyhook's status update.
+		statusBase := node.GetNode().DeepCopy()
 		node.UpdateCondition()
 		if node.Changed() {
 			// conditions are in status
-			err := r.Status().Patch(ctx, node.GetNode(), patch)
+			err := r.Status().Patch(ctx, node.GetNode(), client.StrategicMergeFrom(statusBase))
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error patching node status [%s]: %w", node.GetNode().Name, err))
 			}

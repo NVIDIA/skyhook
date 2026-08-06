@@ -533,6 +533,39 @@ func (_c *MockSkyhookNode_HasSkyhookAnnotations_Call) RunAndReturn(run func() bo
 	return _c
 }
 
+// InvalidateStateCache provides a mock function for the type MockSkyhookNode
+func (_mock *MockSkyhookNode) InvalidateStateCache() {
+	_mock.Called()
+	return
+}
+
+// MockSkyhookNode_InvalidateStateCache_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'InvalidateStateCache'
+type MockSkyhookNode_InvalidateStateCache_Call struct {
+	*mock.Call
+}
+
+// InvalidateStateCache is a helper method to define mock.On call
+func (_e *MockSkyhookNode_Expecter) InvalidateStateCache() *MockSkyhookNode_InvalidateStateCache_Call {
+	return &MockSkyhookNode_InvalidateStateCache_Call{Call: _e.mock.On("InvalidateStateCache")}
+}
+
+func (_c *MockSkyhookNode_InvalidateStateCache_Call) Run(run func()) *MockSkyhookNode_InvalidateStateCache_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNode_InvalidateStateCache_Call) Return() *MockSkyhookNode_InvalidateStateCache_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNode_InvalidateStateCache_Call) RunAndReturn(run func()) *MockSkyhookNode_InvalidateStateCache_Call {
+	_c.Run(run)
+	return _c
+}
+
 // IsComplete provides a mock function for the type MockSkyhookNode
 func (_mock *MockSkyhookNode) IsComplete() bool {
 	ret := _mock.Called()

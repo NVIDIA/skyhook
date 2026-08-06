@@ -184,6 +184,54 @@ var _ = Describe("node state delta merge", func() {
 			Expect(target.Labels).To(HaveKeyWithValue("touched", "1"))
 		})
 
+		// Regression: the patch base is the fresh read, so assigning the pass's spec value
+		// outright turned an untouched field into an explicit write — deleting an autoscaler
+		// taint, or uncordoning a node another Skyhook was draining.
+		It("leaves a cordon and taints the pass never touched alone", func() {
+			original := nodeWith(v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress, v1alpha1.StageApply)})
+			modified := original.DeepCopy() // pass changed neither cordon nor taints
+
+			fresh := original.DeepCopy()
+			fresh.Spec.Unschedulable = true
+			fresh.Spec.Taints = []corev1.Taint{
+				{Key: "ToBeDeletedByClusterAutoscaler", Value: "1", Effect: corev1.TaintEffectNoSchedule},
+			}
+
+			before, err := parseNodeState(original, key)
+			Expect(err).ToNot(HaveOccurred())
+			afterState, err := parseNodeState(modified, key)
+			Expect(err).ToNot(HaveOccurred())
+
+			target, err := applyPassChanges(fresh, original, modified, key, computeNodeStateDelta(before, afterState))
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(target.Spec.Unschedulable).To(BeTrue(), "another writer's cordon must survive")
+			Expect(target.Spec.Taints).To(HaveLen(1), "an outside taint must survive")
+			Expect(target.Spec.Taints[0].Key).To(Equal("ToBeDeletedByClusterAutoscaler"))
+		})
+
+		It("applies the pass's own cordon and taint changes without disturbing others", func() {
+			runtimeRequired := corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
+			foreign := corev1.Taint{Key: "node-problem-detector", Value: "1", Effect: corev1.TaintEffectNoSchedule}
+
+			original := nodeWith(nil)
+			original.Spec.Taints = []corev1.Taint{runtimeRequired}
+
+			modified := original.DeepCopy()
+			modified.Spec.Taints = nil // the pass removed the runtime-required taint
+			modified.Spec.Unschedulable = true
+
+			fresh := original.DeepCopy()
+			fresh.Spec.Taints = []corev1.Taint{runtimeRequired, foreign} // someone added a taint meanwhile
+
+			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(target.Spec.Unschedulable).To(BeTrue(), "the pass's cordon must land")
+			Expect(target.Spec.Taints).To(HaveLen(1))
+			Expect(target.Spec.Taints[0].Key).To(Equal("node-problem-detector"), "only the pass's own taint is removed")
+		})
+
 		It("is a no-op on node state when the pass changed none of it", func() {
 			state := v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress, v1alpha1.StageApply)}
 			original := nodeWith(state)
@@ -282,5 +330,14 @@ var _ = Describe("saveNodeChanges", func() {
 
 		Expect(final["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete), "concurrent completion must survive the pass write")
 		Expect(final["b|1.0.0"].State).To(Equal(v1alpha1.StateComplete), "the pass's own transition must land")
+
+		// The wrapper caches a parsed copy of node state and State() serves it whenever it is
+		// non-nil, so the merged annotation has to invalidate it. Without that, IsComplete,
+		// NextStage and UpdateCondition keep answering from the pass's pre-merge map — and the
+		// condition patch that runs next in SaveNodesAndSkyhook publishes the wrong answer.
+		cached, err := sn.State()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cached["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete),
+			"the wrapper must re-read the merged annotation, not serve its pre-merge cache")
 	})
 })

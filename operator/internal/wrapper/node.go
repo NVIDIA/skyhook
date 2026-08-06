@@ -90,6 +90,7 @@ type SkyhookNodeOnly interface {
 	PruneLegacyMetadata() bool
 	// State returns the persisted NodeState for this node (from memory or annotations).
 	State() (v1alpha1.NodeState, error)
+	InvalidateStateCache()
 	// SetState persists the given NodeState to the node's annotations and in-memory state.
 	SetState(state v1alpha1.NodeState) error
 	// RemoveState removes persisted state for the given package ref and updates annotations.
@@ -230,6 +231,15 @@ func (node *skyhookNode) Status() v1alpha1.Status {
 		return v1alpha1.StatusUnknown
 	}
 	return v1alpha1.GetStatus(status)
+}
+
+// InvalidateStateCache drops the parsed node-state cache so the next State() re-reads the
+// annotation. Callers use it after replacing the underlying Node with one the apiserver returned:
+// State() serves the cache whenever it is non-nil, so without this the wrapper would keep
+// answering from the value the caller computed rather than the one that actually landed — and
+// IsComplete, NextStage and UpdateCondition all read through it.
+func (node *skyhookNode) InvalidateStateCache() {
+	node.nodeState = nil
 }
 
 // State returns the persisted NodeState for this node (from memory or annotations).
