@@ -168,8 +168,11 @@ func NewPauseCmd(ctx *cliContext.CLIContext) *cobra.Command {
 		short: "Pause a NodeWright from processing",
 		long: `Pause a NodeWright by setting the pause annotation.
 
-When a NodeWright is paused, the operator will stop processing new nodes
-but will not interrupt any currently running operations.`,
+No new stages are scheduled while paused. On operators that run package stages
+as Jobs, the stage currently executing is suspended too: its pod is signalled to
+stop, and on resume the stage re-runs from the start of its current phase (the
+agent skips steps it already completed). On older operators a stage already in
+flight finishes its current run first, and pause only blocks what comes after.`,
 		example: `  # Pause a NodeWright
   kubectl nodewright pause gpu-init
 
@@ -237,7 +240,9 @@ func NewEnableCmd(ctx *cliContext.CLIContext) *cobra.Command {
 		short: "Enable a disabled NodeWright",
 		long: `Enable a disabled NodeWright by removing the disable annotation.
 
-The operator will resume normal processing after this command.`,
+The operator schedules work for it again — unless it is also paused. Stages that
+pause suspended resume only once BOTH the disable and the pause annotations are
+cleared, so enabling a NodeWright that is still paused changes nothing on its own.`,
 		example: `  # Enable a disabled NodeWright
   kubectl nodewright enable gpu-init
 
