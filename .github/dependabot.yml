@@ -25,6 +25,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    rebase-strategy: "rebase"
     labels: ["dependencies", "component/operator"]
     commit-message:
       prefix: "chore"
@@ -47,6 +48,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    rebase-strategy: "rebase"
     labels: ["dependencies", "component/agent"]
     commit-message:
       prefix: "chore"
@@ -68,6 +70,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    rebase-strategy: "rebase"
     labels: ["dependencies", "component/agent"]
     commit-message:
       prefix: "chore"
@@ -79,6 +82,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    rebase-strategy: "rebase"
     labels: ["dependencies", "component/ci"]
     commit-message:
       prefix: "chore"
@@ -91,6 +95,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    rebase-strategy: "rebase"
     labels: ["dependencies", "component/ci"]
     commit-message:
       prefix: "chore"
