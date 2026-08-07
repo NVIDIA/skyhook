@@ -208,11 +208,15 @@ The operator will resume processing nodes after this command.`,
 func NewDisableCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	return newLifecycleCmd(ctx, lifecycleConfig{
 		use:   "disable <nodewright-name>",
-		short: "Disable a NodeWright completely",
+		short: "Disable a NodeWright so no new work is scheduled",
 		long: `Disable a NodeWright by setting the disable annotation.
 
-When a NodeWright is disabled, the operator will completely stop processing
-and the NodeWright will be effectively inactive.`,
+The operator schedules no new work for a disabled NodeWright. A stage already
+under way is NOT stopped and runs to completion — use pause for that.
+
+Disable never restarts work that pause stopped: a paused NodeWright's suspended
+stages stay suspended. They resume only once BOTH the disable and the pause
+annotations are cleared.`,
 		example: `  # Disable a NodeWright
   kubectl nodewright disable gpu-init
 
