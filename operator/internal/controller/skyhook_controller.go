@@ -2648,8 +2648,10 @@ func FilterEnv(envs []corev1.EnvVar, exclude ...string) []corev1.EnvVar {
 // ValidateRunningPackages reconciles a Skyhook's package executor Jobs against spec and node
 // state: it sweeps Jobs whose node is gone, deletes processed finished Jobs once their stage
 // should re-run (leaving a parked deadline failure and any unprocessed completion in place), and
-// invalidates unfinished Jobs whose spec or stage no longer matches. A legacy raw-pod sweep runs
-// alongside during the one-minor migration window.
+// invalidates unfinished Jobs whose spec or stage no longer matches. Jobs only, deliberately:
+// this change ships with the nodewright rename, so legacyMigrationHold stops a NodeWright
+// reconcile while any pre-rename Skyhook is still rolling out, and the two execution models never
+// run side by side. See the design doc's Upgrade section.
 func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook SkyhookNodes) (bool, error) {
 
 	update := false
