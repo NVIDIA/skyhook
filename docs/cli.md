@@ -511,11 +511,15 @@ kubectl nodewright reset my-skyhook --package my-package:1.0 --confirm
 
 > **Note:** Requires operator v0.8.0+. For older operators, use `kubectl edit skyhook my-skyhook` and set `spec.pause: true`.
 
+**`pause` and `disable` stop different things.** `pause` is the one that halts work already running — it suspends the executing stage (see the version note below). `disable` takes the NodeWright out of processing so no *new* work is scheduled, but it does not stop a stage already under way; that stage runs to completion.
+
+They compose safely in either order: disabling a paused NodeWright leaves its suspended stages suspended rather than resuming them, and re-enabling resumes them. If you want everything stopped *now*, `pause` is the command.
+
 ```bash
 # Pause all processing
 kubectl nodewright pause my-skyhook --confirm
 
-# Or disable completely
+# Or stop it being processed at all
 kubectl nodewright disable my-skyhook --confirm
 ```
 

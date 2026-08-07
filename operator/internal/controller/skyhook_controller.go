@@ -460,6 +460,8 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		// Resume: validation above invalidated any Job whose spec changed while paused; now clear
 		// suspend on the survivors. Ordered after validation so no stale-spec attempt launches first.
+		//
+		// A disabled Skyhook is skipped inside resumeSuspendedJobs; see there for why.
 		if err := r.resumeSuspendedJobs(ctx, skyhook); err != nil {
 			return ctrl.Result{RequeueAfter: time.Second * 2}, fmt.Errorf("resuming suspended jobs for skyhook %s: %w", skyhook.GetSkyhook().Name, err)
 		}
@@ -994,7 +996,17 @@ func (r *SkyhookReconciler) suspendUnfinishedJobs(ctx context.Context, skyhook S
 // it. On resume the Job controller starts a fresh pod that re-runs the interrupted stage (the same
 // recovery shape as an eviction mid-stage), and because suspension cleared the Job's start time the
 // stage deadline restarts from full.
+//
+// A disabled Skyhook is never resumed. Disable does not claim to stop work already in flight, but it
+// must never RESTART work that pause stopped: clearing the pause annotation and setting disable in
+// one edit would otherwise un-suspend everything pause had suspended, so disabling a paused Skyhook
+// would resume it — making disable strictly weaker than pause. Re-enabling resumes them.
+//
+// The guard lives here rather than at the call site so it holds for every caller.
 func (r *SkyhookReconciler) resumeSuspendedJobs(ctx context.Context, skyhook SkyhookNodes) error {
+	if skyhook.IsDisabled() {
+		return nil
+	}
 	return r.setSuspendOnUnfinishedJobs(ctx, skyhook, false)
 }
 
