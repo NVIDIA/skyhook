@@ -11,7 +11,8 @@ What we **CI-test and officially support is the latest four Kubernetes minor ver
 | Kubernetes Version | Status |
 |--------------------|--------|
 | 1.36, 1.35, 1.34, 1.33 | ✅ Supported and CI-tested |
-| 1.29 – 1.32 | 🟡 Untested, expected to work — every Job feature we use is at least beta-on-by-default |
+| 1.31 – 1.32 | 🟡 Untested, expected to work — every Job feature we use is at least beta-on-by-default |
+| 1.29 – 1.30 | 🟡 Untested; the deadline log snapshot and the unreachable-node signal are lost (see below) |
 | 1.23 – 1.28 | ⚠️ Degrades silently — see [What older clusters lose](#what-older-clusters-lose) |
 | Older than 1.23 | ❌ Unverified |
 
@@ -28,9 +29,10 @@ Read top-down and the losses accumulate: 1.26 loses everything listed for 1.26 *
 | Going below | What stops working | What that costs NodeWright |
 |---|---|---|
 | **1.33** | — (support floor; everything below is untested) | Nothing known. This is where CI coverage stops, not where features stop. |
-| **1.29** | `podReplacementPolicy` becomes alpha (off by default) in 1.28 | Replacement pods can start while the previous attempt is still terminating. Both mount the host root and share one `copyDir` on that node, so two executors can write the same host directory at once. The agent's flag files keep re-execution idempotent, so this is a race not a corruption — accepted risk, but the guarantee is gone. |
-| **1.27** | `batch.kubernetes.io/controller-uid` and `batch.kubernetes.io/job-name` pod labels (added in 1.27) | The operator finds a Job's own pods by controller UID, so without those labels it finds none. Failed-attempt pruning no-ops, and archive pods **accumulate** instead of being trimmed to two per stage. The `last-logs` deadline snapshot never fires, so a stage whose container never started loses the one record of why. Stage **completion is unaffected** — it is read from the Job's `Complete` condition, never from pods. |
-| **1.26** | `podFailurePolicy` and the `DisruptionTarget` pod condition become alpha (off by default) in 1.25; the `FailureTarget` Job condition is absent | **The sharpest loss.** The `Ignore`-on-`DisruptionTarget` rule disappears, so evictions, preemptions and taint-manager kills start counting toward `backoffLimit` like genuine failures. With a finite `JOB_BACKOFF_LIMIT` (default 3) a couple of unrelated disruptions can exhaust the budget and park a package that never failed. No `FailureTarget` also means the deadline log snapshot never fires. |
+| **1.31** | The `FailureTarget` Job condition is not set for a deadline expiry. 1.29–1.30 report it directly as `JobFailed`; the delayed-terminal behaviour that raises `FailureTarget` first arrives in 1.31 | Everything the operator hangs off that condition stops: the `last-logs` deadline snapshot never fires, and the stale-`FailureTarget` path that surfaces `erroring` for a Job wedged on an unreachable node never triggers either. The Job still fails correctly; only the evidence and the unreachable-node signal are lost. |
+| **1.29** | `podReplacementPolicy` becomes alpha (off by default) in 1.28 | Replacement pods can start while the previous attempt is still terminating. Both mount the host root and share one `copyDir` on that node, so two `cp -r` runs can write the same host directory concurrently. The agent's flag files make *re-execution* idempotent, but they are not a lock and do not order those writes — a step script can read a file another attempt is mid-way through overwriting. Treat this as a possible-corruption configuration, not a benign race. |
+| **1.27** | `batch.kubernetes.io/controller-uid` and `batch.kubernetes.io/job-name` pod labels (added in 1.27) | The operator finds a Job's own pods by controller UID, so without those labels it finds none. Failed-attempt pruning no-ops, and archive pods **accumulate** instead of being trimmed to two per stage. (The `last-logs` snapshot is already gone by this point — see the 1.31 row.) Stage **completion is unaffected** — it is read from the Job's `Complete` condition, never from pods. |
+| **1.26** | `podFailurePolicy` and the `DisruptionTarget` pod condition become alpha (off by default) in 1.25 | **The sharpest loss.** The `Ignore`-on-`DisruptionTarget` rule disappears, so evictions, preemptions and taint-manager kills start counting toward `backoffLimit` like genuine failures. While `backoffLimit` is effectively unlimited that only costs an archive slot; once it is a finite budget, a couple of unrelated disruptions can exhaust the retries and park a package that never failed. |
 | **1.23** | Job tracking with finalizers is not yet on by default | Attempt accounting becomes unreliable: failures can be missed or double-counted, so `backoffLimit` no longer means what it says. |
 | **1.22** | `ttlSecondsAfterFinished` (TTL-after-finished GA'd in 1.23) | Finished Jobs are never garbage collected. Retained Jobs and their pods accumulate until something else removes them. |
 | **1.21** | `spec.suspend` (Job suspend, beta-on in 1.22) | `nodewright.nvidia.com/pause` loses its teeth: it blocks new stages from being scheduled but cannot stop a stage that is already running. |
@@ -93,7 +95,7 @@ We understand many installations run slightly older Kubernetes versions. Our str
 
 Use the **latest release**. It is CI-tested against the latest four Kubernetes minor versions (currently 1.33 through 1.36).
 
-Below that range the operator will very likely still *run* — but "runs" and "behaves as documented" diverge as you go back, because the Job features it leans on drop out silently rather than failing loudly. [What older clusters lose](#what-older-clusters-lose) says which property goes at which version. Down to 1.29 the losses are theoretical (every field is at least beta-on-by-default); from 1.28 down they are real.
+Below that range the operator will very likely still *run* — but "runs" and "behaves as documented" diverge as you go back, because the Job features it leans on drop out silently rather than failing loudly. [What older clusters lose](#what-older-clusters-lose) says which property goes at which version. Down to 1.31 the losses are theoretical (every field is at least beta-on-by-default); 1.29–1.30 lose the deadline evidence path; from 1.28 down the losses are structural.
 
 Upgrade into 1.33 – 1.36 when you can for the fully supported, CI-tested experience.
 
