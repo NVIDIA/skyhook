@@ -533,6 +533,12 @@ spec:
                         exception: their attempt must span a reboot, so it bounds the whole stage instead.
                         Unset uses the operator default (JOB_STAGE_TIMEOUT); "0" removes the time bound for this
                         package, leaving the retry budget as its only limit.
+
+                        The value is fixed when a stage's Job is created. Editing it does not change a Job already
+                        running, because the bound lives on that Job's pod template and a Job's template is
+                        immutable. To apply a new value to work already under way, clear that Job — `kubectl
+                        nodewright package rerun <package>`, or deleting the Job directly — and the stage restarts
+                        under the new value. Otherwise it takes effect at the package's next stage.
                       type: string
                     uninstall:
                       description: Uninstall configures explicit uninstall support

@@ -88,6 +88,9 @@ controllerManager:
       ## jobStageTimeout is the default per-attempt deadline for a package stage Job when the
       ## package itself sets no stageTimeout. "0" removes the time bound, leaving jobBackoffLimit
       ## as the only limit.
+      ## Like jobBackoffLimit below, this is fixed when a stage's Job is created: changing it does
+      ## not affect Jobs already running. Clear those Jobs (`kubectl nodewright package rerun`) to
+      ## apply a new value to work already under way.
       jobStageTimeout: "1h"
       ## jobBackoffLimit is how many retries a package stage gets after its first attempt before
       ## its Job goes terminal — so a stage runs at most jobBackoffLimit+1 times. If a retained
