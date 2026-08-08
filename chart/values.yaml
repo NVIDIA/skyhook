@@ -92,10 +92,10 @@ controllerManager:
     annotations: {}
 kubernetesClusterDomain: cluster.local
 metricsService:
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8443"
-    prometheus.io/scheme: "https"
+  ## The HTTPS endpoint requires bearer authentication and uses per-pod
+  ## self-signed certificates. Add discovery annotations only when the scraper
+  ## is configured for both; the chart does not advertise an unusable target.
+  annotations: {}
   ports:
   - name: metrics
     port: 8443

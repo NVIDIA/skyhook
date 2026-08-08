@@ -32,7 +32,7 @@ LOCAL_OPERATOR_IMG ?= $(LOCAL_REGISTRY)/skyhook-operator:testing
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
 SKYHOOK_NAMESPACE ?= skyhook
-METRICS_TEST_SERVICE_ACCOUNT ?= metrics-test
+METRICS_TEST_SERVICE_ACCOUNT ?= metrics-reader
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))

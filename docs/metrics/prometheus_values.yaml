@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Example of scraping the authenticated HTTPS endpoint. The Prometheus
+# Example of scraping each authenticated HTTPS pod endpoint. The Prometheus
 # ServiceAccount must be bound to skyhook-operator-metrics-reader.
 extraScrapeConfigs: |
   - job_name: 'nodewright'
@@ -25,9 +25,18 @@ extraScrapeConfigs: |
       # each operator pod, so there is no stable CA for Prometheus to trust.
       insecure_skip_verify: true
     bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-    static_configs:
-      - targets:
-        - skyhook-operator-controller-manager-metrics-service.skyhook.svc.cluster.local:8443
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+            - skyhook
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        regex: skyhook-operator-controller-manager-metrics-service
+      - source_labels: [__meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: metrics
 
 serviceAccounts:
   server:

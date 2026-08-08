@@ -19,13 +19,13 @@
 
 import argparse
 import os
+import re
 import ssl
 import subprocess
 import sys
 import time
-import re
-import urllib.request
 import urllib.error
+import urllib.request
 
 # Helper to parse Prometheus metrics lines
 # Example: metric_name{key1="val1",key2="val2"} 123
@@ -97,11 +97,13 @@ def main():
 
     request = args.url
     ssl_context = None
+    minted_token = None
     if mode == 'url' and args.url.startswith('https://'):
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-        if args.token_from_serviceaccount:
+        token = os.environ.get('METRICS_TOKEN')
+        if not token and args.token_from_serviceaccount:
             token = subprocess.check_output(
                 [
                     'kubectl',
@@ -113,11 +115,14 @@ def main():
                 ],
                 text=True,
             ).strip()
+            minted_token = token
+        if token:
             request = urllib.request.Request(
                 args.url,
                 headers={'Authorization': f'Bearer {token}'},
             )
 
+    last_fetch_error = None
     while True:
         if mode == 'stdin':
             lines = sys.stdin.readlines()
@@ -126,8 +131,9 @@ def main():
                 with urllib.request.urlopen(request, context=ssl_context) as resp:
                     content = resp.read().decode('utf-8')
                     lines = content.splitlines()
+                    last_fetch_error = None
             except Exception as e:
-                print(f"Error fetching metrics: {e}", file=sys.stderr)
+                last_fetch_error = e
                 lines = []
         found = False
         for line in lines:
@@ -139,6 +145,8 @@ def main():
 
         success = (found and not args.not_found) or (not found and args.not_found)
         if success:
+            if minted_token:
+                sys.stderr.write(minted_token)
             sys.exit(0)
 
         msg = f"Metric {args.metric_name} with tags {tags} and value {args.metric_value}"
@@ -152,6 +160,8 @@ def main():
        
         if time.time() >= end_time:
             msg += f" after {TIMEOUT} seconds"
+            if last_fetch_error:
+                msg += f"; last fetch error: {last_fetch_error}"
             print(msg, file=sys.stderr)
             sys.exit(1)
         time.sleep(PERIOD)

@@ -48,6 +48,11 @@ For the full commit-level log see CHANGELOG.md.
   provide a Kubernetes bearer token authorized for the `/metrics`
   non-resource URL. controller-runtime generates an in-memory self-signed
   certificate for each operator pod, so there is no stable CA to trust.
+  The chart no longer adds `prometheus.io/*` discovery annotations by default,
+  because standard annotation-based jobs cannot supply that authentication or
+  trust configuration and would continuously report a failed target. Configure
+  an authenticated endpoints-discovery job as shown in
+  `docs/metrics/prometheus_values.yaml` instead.
 
 - No action is required: the selector-migration hook runs automatically on
   `helm upgrade` and only recreates the Deployment when its selector is stale.
