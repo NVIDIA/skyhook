@@ -20,6 +20,7 @@
 
 GOLANGCI_LINT_VERSION ?= v2.12.2
 GINKGO_VERSION ?= v2.32.0
+ADDLICENSE_VERSION ?= v1.2.0
 
 ## Location to install dependencies to
 LOCALBIN ?= $(shell pwd)/bin
@@ -28,9 +29,10 @@ $(LOCALBIN):
 
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 GINKGO = $(LOCALBIN)/ginkgo
+ADDLICENSE = $(LOCALBIN)/addlicense
 
 .PHONY: install-deps
-install-deps: golangci-lint ginkgo ## Install all dependencies.
+install-deps: golangci-lint ginkgo addlicense ## Install all dependencies.
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN) ## Download golangci-lint locally if necessary.
@@ -44,3 +46,7 @@ ginkgo: $(LOCALBIN) ## Download ginkgo locally if necessary.
 	@test -x $(GINKGO) \
 		&& [ "$$($(GINKGO) version)" = "Ginkgo Version $(patsubst v%,%,$(GINKGO_VERSION))" ] \
 		|| GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION)
+
+.PHONY: addlicense
+addlicense: $(LOCALBIN) ## Download addlicense locally if necessary.
+	test -s $(ADDLICENSE) || GOBIN=$(LOCALBIN) go install github.com/google/addlicense@$(ADDLICENSE_VERSION)

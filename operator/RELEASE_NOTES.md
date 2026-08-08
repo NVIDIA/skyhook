@@ -15,9 +15,11 @@ For the full commit-level log see CHANGELOG.md.
     both API groups. A mirror controller imports every existing `skyhook.nvidia.com`
     `Skyhook`/`DeploymentPolicy` into its `nodewright.nvidia.com` equivalent and
     reconciles the NodeWright as the source of truth. Per-node package state is
-    re-keyed in place (`skyhook.nvidia.com/*` node annotations become
-    `nodewright.nvidia.com/*`), so **packages are not re-run** and in-progress
-    rollouts keep their position.
+    **copied** to the new prefix (`skyhook.nvidia.com/*` node annotations, labels,
+    and conditions gain `nodewright.nvidia.com/*` equivalents) while the legacy
+    keys are **kept** for a rollback window, so **packages are not re-run** and
+    in-progress rollouts keep their position. The legacy copies are pruned only
+    after `LEGACY_CLEANUP_DELAY` (default 24h) has elapsed.
   - **Legacy `Skyhook`/`DeploymentPolicy` objects become read-only once migrated:**
     the admission webhook rejects spec and `pause`/`disable` edits (deletions and
     identical re-applies are still allowed) and emits a deprecation warning.
@@ -34,6 +36,35 @@ For the full commit-level log see CHANGELOG.md.
     full migration guide, the pre-upgrade check, and a verification checklist.
 
 ### Bug Fixes
+
+- **The migration now touches only the keys the operator owns, not the whole
+  `skyhook.nvidia.com/` prefix.** The metadata prefix is the product's domain name,
+  so users legitimately carry their own node labels and annotations under it. The
+  migration previously copied *every* prefixed key to `nodewright.nvidia.com/*` and
+  then deleted every prefixed key at prune time, which silently duplicated user data
+  into the operator's namespace and destroyed the originals 24h after an upgrade. It
+  now migrates only the operator's own keys (`nodeState_`, `status_`, `version_`,
+  `cordon_`, `drainStart_`, `autoTaint_` annotations; the `status_` and
+  operator-defined `ignore` labels; the `<name>/NotReady` and `<name>/Erroring`
+  conditions) and leaves everything else under the prefix untouched.
+
+- **Deleting a migrated legacy `Skyhook` no longer cascade-deletes the
+  `NodeWright`'s ConfigMaps.** The migration relabelled the pre-rename ConfigMaps but
+  left their `ownerReferences` pointing at the legacy `Skyhook`, so the documented
+  "delete the old CRs" step garbage-collected the package and per-node metadata
+  ConfigMaps out from under the live `NodeWright`. The operator recreated the package
+  ConfigMap, but a package pod scheduled in that window would reference a missing
+  one. The converge now re-parents these ConfigMaps onto the `NodeWright`.
+
+- **Upgrading from a pre-rename operator no longer wedges on the package
+  ConfigMap.** The migration relabelled only the per-node metadata ConfigMaps
+  (`skyhook.nvidia.com/skyhook-node-meta`) and missed the package ConfigMaps,
+  which carry `skyhook.nvidia.com/name`. Because the post-rename reconciler lists
+  package ConfigMaps by the new `nodewright.nvidia.com/name` label, it could not
+  see the existing one, tried to create it, and failed permanently with
+  `configmaps "<name>-<package>-<version>" already exists` - leaving the
+  `NodeWright` stuck short of `complete` behind an exponential backoff. Both
+  legacy label keys now converge (and both are dropped at prune time).
 
 - **Package `image` must be a bare registry/repository reference; inline tags
   and digests are now rejected.** `image` carries neither a tag nor a digest:

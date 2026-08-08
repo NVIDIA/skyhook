@@ -40,12 +40,35 @@ test: venv ## Test using hatch, prints coverage and outputs a report to coverage
 	$(VENV)coverage report --show-missing --data-file=skyhook-agent/.coverage
 	$(VENV)coverage xml --data-file=skyhook-agent/.coverage
 
+## The agent target owns both the legacy Python sources and the Go rewrite.
+## Enumerating tracked files avoids rewriting vendored dependencies or local virtualenvs.
+LICENSE_HOLDER ?= NVIDIA CORPORATION & AFFILIATES
+LICENSE_TEMPLATE ?= ../scripts/license-header.tmpl
+ADDLICENSE ?= $(CURDIR)/go/bin/addlicense
+license_files = git ls-files -- '*.go' '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*.Dockerfile' \
+	| grep -vE '^vendor/'
+
+.PHONY: addlicense
+addlicense:
+	$(MAKE) -C go addlicense
+
 .PHONY: license-fmt
-license-fmt: ## Run add license header to code.
-	python3 ../scripts/format_license.py --root-dir . --license-file ../LICENSE
+license-fmt: addlicense ## Add the Apache-2.0 header to tracked agent source files.
+	$(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+
+.PHONY: license-header-check
+license-header-check: addlicense ## Fail if a tracked agent source file is missing an Apache-2.0 header.
+	$(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	@wrong=$$($(license_files) | while read -r f; do \
+		grep -qE '^.{1,2} Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
+		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "  $$f"; \
+	done); \
+	if [ -n "$$wrong" ]; then \
+		echo "ERROR: header present but not Apache-2.0:"; echo "$$wrong"; exit 1; \
+	fi
 
 .PHONY: fmt
-fmt: license-fmt ## Run go fmt against code.
+fmt: license-fmt ## Format agent source files.
 	@echo "formattted"
 
 ##@ Build

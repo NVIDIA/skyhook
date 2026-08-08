@@ -20,3 +20,8 @@ __pycache__/
 
 .triage
 .cr-review/
+
+# Working state from the upgrade migration test (k8s-tests/migration)
+k8s-tests/migration/.fingerprint/
+k8s-tests/migration/.old-chart/
+k8s-tests/migration/nodewright.yaml
