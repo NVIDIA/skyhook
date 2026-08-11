@@ -223,6 +223,9 @@ func (r *JobReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *PackageSky
 	if isInterruptJob(job) {
 		// ProgressSkipped promotes only StageInterrupt-skipped packages, so re-run the record
 		// only while such a package remains, matching what the promotion can actually advance.
+		//
+		// This authorizes the write on a SIBLING's state, so it says nothing about this Job's own
+		// package — recordJobCompletion gates its self-write on entryAwaitsCompletion separately.
 		for _, s := range state {
 			if s.Stage == v1alpha1.StageInterrupt && s.State == v1alpha1.StateSkipped {
 				return true, nil
@@ -230,8 +233,16 @@ func (r *JobReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *PackageSky
 		}
 	}
 
+	return entryAwaitsCompletion(state, pkg), nil
+}
+
+// entryAwaitsCompletion reports whether the package's entry is in the only shape a completion may
+// be written onto: present, still at this Job's stage, and not already complete. Absent means
+// removed (rerun, reset, uninstall) and writing would resurrect it; a later stage or an existing
+// complete would regress or duplicate.
+func entryAwaitsCompletion(state v1alpha1.NodeState, pkg *PackageSkyhook) bool {
 	status, present := state[pkg.GetUniqueName()]
-	return present && status.Stage == pkg.Stage && status.State != v1alpha1.StateComplete, nil
+	return present && status.Stage == pkg.Stage && status.State != v1alpha1.StateComplete
 }
 
 // patchNodeState re-reads the node, applies mutate, and patches under an optimistic-lock
@@ -318,7 +329,20 @@ func (r *JobReconciler) recordJobCompletion(ctx context.Context, job *batchv1.Jo
 		if err != nil {
 			return false, fmt.Errorf("recording completion for job %s: %w", job.Name, err)
 		}
-		if !updated {
+
+		// Read after HandleCompletePod: its interrupt branch promotes skipped packages, which can
+		// move this package's own entry.
+		state, err := skyhookNode.State()
+		if err != nil {
+			return false, fmt.Errorf("reading node state for job %s: %w", job.Name, err)
+		}
+
+		// Upsert creates, so it must never run on an entry that is not there. An interrupt Job
+		// reaches this on a sibling's behalf (see shouldRecordCompletion), so its own package may
+		// have been removed by a rerun, reset or uninstall since the Job started; re-creating it
+		// at (interrupt, complete) would then make the rerun predicate keep the Job, and the stage
+		// would never run again. The promotion above still lands either way.
+		if !updated && entryAwaitsCompletion(state, pkg) {
 			if err := skyhookNode.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, pkg.Stage, job.Status.Failed, pkg.ContainerSHA); err != nil {
 				return false, fmt.Errorf("upserting complete state for job %s: %w", job.Name, err)
 			}
