@@ -61,8 +61,11 @@ minute. So the cached Job count is in-flight plus retained, and neither term alo
    inside `jobTtlSucceeded` peaks around `N × P × stages-per-package`; a longer rollout sheds its oldest
    Jobs as it goes, and NodeWrights rolling out concurrently each add their own population.
 
-Each retained Job also keeps at most **two** failed child pods (the first genuine failure and the most
-recent); successful child pods are deleted with their Job.
+Each retained Job also keeps at most **two genuine** failed child pods — the first genuine failure and
+the most recent. Two things sit outside that cap: a disruption casualty (a pod carrying
+`DisruptionTarget` — evicted, preempted, or lost with its node) has no failure verdict, so it is neither
+counted nor pruned; and the pruner runs on active Jobs, so a Job that goes terminal before its next
+reconcile can keep extras. Successful child pods are deleted with their Job.
 
 If the operator's memory is the constraint at scale, `jobTtlSucceeded` is the first lever — successful
 stages are the bulk of the population and the least interesting to keep. Note that the equations above
