@@ -342,17 +342,33 @@ func (r *JobReconciler) recordJobCompletion(ctx context.Context, job *batchv1.Jo
 		// have been removed by a rerun, reset or uninstall since the Job started; re-creating it
 		// at (interrupt, complete) would then make the rerun predicate keep the Job, and the stage
 		// would never run again. The promotion above still lands either way.
+		//
+		// Both guards are kept deliberately: updated says HandleCompletePod already wrote this
+		// entry, entryAwaitsCompletion says there is an entry to write onto. They agree today —
+		// every branch that sets updated leaves the entry absent or at another stage — and neither
+		// is safe to drop on the strength of the other.
+		recorded := false
 		if !updated && entryAwaitsCompletion(state, pkg) {
 			if err := skyhookNode.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, pkg.Stage, job.Status.Failed, pkg.ContainerSHA); err != nil {
 				return false, fmt.Errorf("upserting complete state for job %s: %w", job.Name, err)
 			}
+			recorded = true
 		}
 
 		if !skyhookNode.Changed() {
 			return false, nil
 		}
-		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobComplete",
-			"Package [%s:%s] state %s on [skyhook:%s]", pkg.Name, pkg.Version, v1alpha1.StateComplete, pkg.Skyhook)
+
+		// The event follows what was actually written. An interrupt Job can reach here purely on a
+		// sibling's promotion with its own entry gone, and announcing that package complete would
+		// name the one a reset just cleared.
+		if recorded || updated {
+			r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobComplete",
+				"Package [%s:%s] state %s on [skyhook:%s]", pkg.Name, pkg.Version, v1alpha1.StateComplete, pkg.Skyhook)
+		} else {
+			r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobComplete",
+				"Interrupt complete on [skyhook:%s]: promoted packages skipped during interrupt sequencing", pkg.Skyhook)
+		}
 		return true, nil
 	})
 }
@@ -373,14 +389,20 @@ func (r *JobReconciler) HandleCompletePod(ctx context.Context, skyhookNode wrapp
 			return false, err
 		}
 
-		upgraded, err := wrapper.Convert(skyhookNode, skyhook)
-		if err != nil {
-			return false, fmt.Errorf("error converting node wrapper: %w", err)
-		}
+		// A deleted CR reads as (nil, nil), and Convert dereferences it. That is reachable in the
+		// same window this stage's guards are about: the CR removed while a completed interrupt
+		// Job is still unprocessed. Nothing is left to promote then, so skip the branch rather
+		// than panic — matching the nil check the uninstall branch below already does.
+		if skyhook != nil {
+			upgraded, err := wrapper.Convert(skyhookNode, skyhook)
+			if err != nil {
+				return false, fmt.Errorf("error converting node wrapper: %w", err)
+			}
 
-		// progress forward any skipped packages that this interrupt completed
-		if err := upgraded.ProgressSkipped(); err != nil {
-			return false, fmt.Errorf("error progressing skipped packages: %w", err)
+			// progress forward any skipped packages that this interrupt completed
+			if err := upgraded.ProgressSkipped(); err != nil {
+				return false, fmt.Errorf("error progressing skipped packages: %w", err)
+			}
 		}
 	} else if packagePtr.Stage == v1alpha1.StageUpgrade {
 		nodeState, err := skyhookNode.State()
@@ -546,6 +568,9 @@ func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job,
 			return false, fmt.Errorf("reading node state for job %s: %w", job.Name, err)
 		}
 
+		// Deliberately NOT entryAwaitsCompletion: the completion guard excludes an entry that is
+		// already complete, this one excludes an entry that is already erroring, for idempotence
+		// on a re-served terminal event. Same shape, different exclusion — do not unify them.
 		status, present := state[pkg.GetUniqueName()]
 		if !present || status.Stage != pkg.Stage || status.State == v1alpha1.StateErroring {
 			return false, nil
