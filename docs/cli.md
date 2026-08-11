@@ -43,10 +43,18 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `reset --package` | ✅ Full (v0.7.5+) | ✅ Full |
 | `update-state` | ✅ Full (v0.7.5+) — see note | ✅ Full — see note |
 | `deployment-policy reset` | ❌ Not supported | ✅ Full |
-| `pause` | ❌ Not supported | ✅ Full |
+| `pause` | ❌ Not supported | ✅ Full — stop strength varies, see note |
 | `resume` | ❌ Not supported | ✅ Full |
 | `disable` | ❌ Not supported | ✅ Full |
 | `enable` | ❌ Not supported | ✅ Full |
+
+> **Note on `pause` stop strength:** the command works on every v0.8.0+ operator,
+> but *how hard it stops* is version-dependent, so the column above is about
+> availability only. On operators that run package stages as Jobs, pause suspends
+> the stage that is currently executing; on earlier ones it blocks new stage
+> scheduling and lets an in-flight stage finish. `disable` never stops in-flight
+> work on any version. See [Emergency Stop](#emergency-stop) for the full
+> semantics and for what `resume` re-runs.
 
 > **Note on `update-state` and `reset --package`:** These commands edit the
 > `nodewright.nvidia.com/nodeState_<nodewright>` annotation in-place. The
