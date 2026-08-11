@@ -371,7 +371,12 @@ type Package struct {
 	// once the operator's retry budget (JOB_BACKOFF_LIMIT) is spent. Interrupt stages are the
 	// exception: their attempt must span a reboot, so it bounds the whole stage instead.
 	// Unset uses the operator default (JOB_STAGE_TIMEOUT); "0" removes the time bound for this
-	// package, leaving the retry budget as its only limit.
+	// package, leaving the retry budget as its only limit. Note what that does NOT bound: the
+	// budget is only spent by attempts that fail, so with "0" an attempt that hangs hangs
+	// forever. There is also no bound on a pod the kubelet never acknowledges — the attempt clock
+	// runs from the pod's start time, which such a pod never gets — so that case is unbounded at
+	// any stageTimeout. It surfaces as a stage stuck in_progress with a Pending pod, and is node
+	// health rather than stage health.
 	//
 	// The value is fixed when a stage's Job is created. Editing it does not change a Job already
 	// running, because the bound lives on that Job's pod template and a Job's template is
