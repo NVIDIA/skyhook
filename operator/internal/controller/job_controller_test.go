@@ -145,6 +145,17 @@ var _ = Describe("JobReconcile", func() {
 		return pod
 	}
 
+	// failedChildPod alone is the kubelet-rejection shape: Failed with no container statuses, so
+	// no verdict. The pruner, the classifier and the log snapshot all ignore those, so a spec that
+	// needs a real archive has to say a step actually failed.
+	genuineFailedChildPod := func(job *batchv1.Job, name string, ageAgo time.Duration) *corev1.Pod {
+		pod := failedChildPod(job, name, ageAgo, false)
+		pod.Status.InitContainerStatuses = []corev1.ContainerStatus{
+			{Name: "tuning-apply", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}}},
+		}
+		return pod
+	}
+
 	exists := func(r client.Client, name string) bool {
 		err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &corev1.Pod{})
 		if apierrors.IsNotFound(err) {
@@ -208,9 +219,9 @@ var _ = Describe("JobReconcile", func() {
 		Expect(getJob(r, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
 	})
 
-	It("parks a Job that hit the Job-level ceiling as erroring, leaving it in place", func() {
-		// The ceiling is the only bound that can fire with no failed attempt behind it (pods the
-		// kubelet never acknowledged), so DeadlineExceeded is genuine on its own evidence.
+	It("records a whole-stage DeadlineExceeded as erroring, leaving the Job in place", func() {
+		// Only interrupt Jobs carry a Job-level deadline, and it can fire with no failed attempt
+		// behind it, so DeadlineExceeded is genuine on its own evidence.
 		node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageConfig)
 		job := packageJob(v1alpha1.StageConfig, false,
 			trueCondition(batchv1.JobFailed, batchv1.JobReasonDeadlineExceeded))
@@ -221,12 +232,12 @@ var _ = Describe("JobReconcile", func() {
 
 		Expect(getNodeState(r)[pkgRef.GetUniqueName()].State).To(Equal(v1alpha1.StateErroring))
 
-		parked := getJob(r, job.Name) // still present (park marker), marked with failure TTL
-		Expect(parked.Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
-		Expect(*parked.Spec.TTLSecondsAfterFinished).To(BeEquivalentTo(int32((24 * time.Hour).Seconds())))
+		timedOut := getJob(r, job.Name) // still present (timeout marker), marked with failure TTL
+		Expect(timedOut.Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
+		Expect(*timedOut.Spec.TTLSecondsAfterFinished).To(BeEquivalentTo(int32((24 * time.Hour).Seconds())))
 	})
 
-	DescribeTable("BackoffLimitExceeded parks only on genuine attempt evidence",
+	DescribeTable("BackoffLimitExceeded times a stage out only on genuine attempt evidence",
 		func(archive func(*batchv1.Job) *corev1.Pod, expected v1alpha1.State) {
 			node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageApply)
 			job := packageJob(v1alpha1.StageApply, false,
@@ -255,7 +266,7 @@ var _ = Describe("JobReconcile", func() {
 			}, v1alpha1.StateErroring),
 		// These pods carry no container statuses: the kubelet refused them before the package
 		// ran. Finite backoff makes that reachable in about a minute on a rebooting node, so
-		// parking here would strand a package that never executed a line of script.
+		// timing out here would strand a package that never executed a line of script.
 		Entry("attempts the kubelet refused to admit are not the package's failure",
 			func(job *batchv1.Job) *corev1.Pod {
 				pod := failedChildPod(job, "attempt-outofpods", time.Minute, false)
@@ -269,7 +280,7 @@ var _ = Describe("JobReconcile", func() {
 	)
 
 	It("writes no state for a BackoffLimitExceeded Job whose attempts are already gone", func() {
-		// Nothing left to judge: the safe direction is to re-run the stage, not park it.
+		// Nothing left to judge: the safe direction is to re-run the stage, not time it out.
 		node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageApply)
 		job := packageJob(v1alpha1.StageApply, false,
 			trueCondition(batchv1.JobFailed, batchv1.JobReasonBackoffLimitExceeded))
@@ -348,9 +359,9 @@ var _ = Describe("JobReconcile", func() {
 
 	It("keeps the first and most-recent genuine failures, pruning those in between", func() {
 		job := packageJob(v1alpha1.StageApply, false) // active (no terminal condition)
-		first := failedChildPod(job, "attempt-first", 3*time.Hour, false)
-		middle := failedChildPod(job, "attempt-middle", 2*time.Hour, false)
-		newest := failedChildPod(job, "attempt-newest", time.Hour, false)
+		first := genuineFailedChildPod(job, "attempt-first", 3*time.Hour)
+		middle := genuineFailedChildPod(job, "attempt-middle", 2*time.Hour)
+		newest := genuineFailedChildPod(job, "attempt-newest", time.Hour)
 		r := newReconciler(job, first, middle, newest)
 
 		_, err := r.JobReconcile(ctx, job)
@@ -363,8 +374,8 @@ var _ = Describe("JobReconcile", func() {
 
 	It("keeps both archives when there are only two genuine failures", func() {
 		job := packageJob(v1alpha1.StageApply, false)
-		first := failedChildPod(job, "attempt-first", 2*time.Hour, false)
-		newest := failedChildPod(job, "attempt-newest", time.Hour, false)
+		first := genuineFailedChildPod(job, "attempt-first", 2*time.Hour)
+		newest := genuineFailedChildPod(job, "attempt-newest", time.Hour)
 		r := newReconciler(job, first, newest)
 
 		_, err := r.JobReconcile(ctx, job)
@@ -449,9 +460,9 @@ var _ = Describe("JobReconcile", func() {
 	It("does not count or delete disruption casualties when pruning", func() {
 		job := packageJob(v1alpha1.StageApply, false)
 		disruption := failedChildPod(job, "attempt-disrupted", 4*time.Hour, true)
-		first := failedChildPod(job, "attempt-first", 3*time.Hour, false)
-		middle := failedChildPod(job, "attempt-middle", 2*time.Hour, false)
-		newest := failedChildPod(job, "attempt-newest", time.Hour, false)
+		first := genuineFailedChildPod(job, "attempt-first", 3*time.Hour)
+		middle := genuineFailedChildPod(job, "attempt-middle", 2*time.Hour)
+		newest := genuineFailedChildPod(job, "attempt-newest", time.Hour)
 		r := newReconciler(job, disruption, first, middle, newest)
 
 		_, err := r.JobReconcile(ctx, job)
@@ -465,20 +476,42 @@ var _ = Describe("JobReconcile", func() {
 		Expect(exists(r, "attempt-newest")).To(BeTrue())
 	})
 
-	It("does not snapshot logs when a genuine failed archive already carries them", func() {
-		job := packageJob(v1alpha1.StageConfig, false, trueCondition(batchv1.JobFailureTarget, ""))
-		archive := &corev1.Pod{
+	stuckChildPod := func(job *batchv1.Job, name string) *corev1.Pod {
+		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "archive-pod", Namespace: namespace,
+				Name: name, Namespace: namespace,
 				Labels: map[string]string{batchControllerUIDLabel: string(job.UID)},
 			},
-			Status: corev1.PodStatus{Phase: corev1.PodFailed}, // genuine failure, no DisruptionTarget
+			Spec: corev1.PodSpec{NodeName: nodeName},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodPending,
+				InitContainerStatuses: []corev1.ContainerStatus{
+					{Name: "config", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+						Reason: "ImagePullBackOff", Message: "back-off pulling image",
+					}}},
+				},
+			},
 		}
-		r := newReconciler(job, archive)
+	}
+
+	It("does not snapshot logs when a genuine failed archive already carries them", func() {
+		job := packageJob(v1alpha1.StageConfig, false, trueCondition(batchv1.JobFailureTarget, ""))
+		r := newReconciler(job, genuineFailedChildPod(job, "archive-pod", time.Hour), stuckChildPod(job, "stuck-pod"))
 
 		_, err := r.JobReconcile(ctx, job)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(getJob(r, job.Name).Annotations).ToNot(HaveKey(annotationLastLogs))
+	})
+
+	It("still snapshots when the only failed attempt is one the kubelet refused", func() {
+		// A rejected attempt is Failed but carries no container statuses and no logs. Treating it
+		// as the archive would leave the timed-out stage with no evidence at all.
+		job := packageJob(v1alpha1.StageConfig, false, trueCondition(batchv1.JobFailureTarget, ""))
+		r := newReconciler(job, failedChildPod(job, "rejected-pod", time.Hour, false), stuckChildPod(job, "stuck-pod"))
+
+		_, err := r.JobReconcile(ctx, job)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(getJob(r, job.Name).Annotations[annotationLastLogs]).To(ContainSubstring("ImagePullBackOff"))
 	})
 
 	It("returns an error (for a backoff retry) when stale-FailureTarget recording fails", func() {

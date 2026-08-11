@@ -124,6 +124,12 @@ func (r *PodReconciler) PodReconcile(ctx context.Context, pod *corev1.Pod) (ctrl
 
 // podReasonDeadlineExceeded is the pod-level status reason the kubelet's active-deadline handler
 // sets when a pod outlives its own spec.activeDeadlineSeconds. Nothing else sets it.
+//
+// Declared here rather than taken from the SDK, which has no constant for it: core/v1 exports
+// PodReason* only for the PodScheduled and DisruptionTarget conditions, and this is a
+// status.reason the kubelet writes. batchv1.JobReasonDeadlineExceeded happens to carry the same
+// string but is the Job controller's condition reason on a different object — binding to it would
+// couple this check to an unrelated surface that is free to diverge.
 const podReasonDeadlineExceeded = "DeadlineExceeded"
 
 // podDeadlineExceeded reports whether the pod was killed by its own per-attempt deadline.
@@ -139,7 +145,7 @@ func podDeadlineExceeded(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodFailed && pod.Status.Reason == podReasonDeadlineExceeded
 }
 
-// recordPodErroring parks the package at (stage, erroring) from a failed attempt pod. The write
+// recordPodErroring puts the package's entry at (stage, erroring) from a failed attempt pod. The write
 // is optimistic-locked and retried because this controller runs concurrently with the heavy pass
 // and both write nodewright.nvidia.com/nodeState_<name>, the single annotation key holding every
 // package; an unconditional patch would silently drop whichever write landed second.
@@ -197,6 +203,22 @@ func podFailureIsGenuine(pod *corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// podFailedGenuinely reports whether a Failed pod carries the package's own failure verdict — a
+// per-attempt deadline kill, or a genuine terminal step failure — rather than a disruption
+// casualty or a kubelet admission rejection.
+//
+// Every site that asks "which attempts are the package's failures?" must use this one predicate,
+// or they disagree about the same pod. When the archive pruner used the looser
+// Failed-and-not-disrupted test, a real failure sandwiched between two admission rejections was
+// prunable while both rejections survived; the terminal classifier then saw only rejections, took
+// the Job for a non-failure, and cleared a genuinely failing stage to run again.
+func podFailedGenuinely(pod *corev1.Pod) bool {
+	if pod.Status.Phase != corev1.PodFailed || hasDisruptionTarget(pod) {
+		return false
+	}
+	return podDeadlineExceeded(pod) || podFailureIsGenuine(pod)
 }
 
 // shouldRecordPodErroring is the pod watch's write guard, the analogue of JobReconcile's
