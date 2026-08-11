@@ -231,23 +231,24 @@ as-is** and do **not** need to be enabled or unpaused first: the mirror carries 
 state onto the `NodeWright`, which then does not roll out, so they migrate in that state.
 
 > [!WARNING]
-> **Do not unpause a migrated `NodeWright` until its pre-upgrade package pods are gone.** Pause on the
-> pre-rename operator blocked *new* scheduling but never stopped a pod that was already running, so a
-> Skyhook paused shortly before the upgrade can still have one. Unpausing while that pod runs is
-> **unsupported**: the new operator's in-flight gate counts Jobs, not raw pods, so it can start a stage
-> Job alongside the running pod. Both mount the host root and share one package directory, and nothing
-> serializes their writes.
+> **Do not unpause or enable a migrated `NodeWright` until its pre-upgrade package pods are gone.**
+> Pause and disable on the pre-rename operator both blocked *new* scheduling but neither stopped a pod
+> that was already running, so a Skyhook paused or disabled shortly before the upgrade can still have
+> one. Unpausing or enabling while that pod runs is **unsupported**: the new operator's in-flight gate
+> counts Jobs, not raw pods, so it can start a stage Job alongside the running pod. Both mount the host
+> root and share one package directory, and nothing serializes their writes.
 >
-> Leaving it paused is safe indefinitely — the new operator suspends and skips it, creating no Jobs.
-> Check before unpausing, and wait for the list to come back empty:
+> Leaving it paused or disabled is safe indefinitely — the new operator creates no Jobs for it.
+> Check before unpausing or enabling, and wait for the list to come back empty:
 >
 > ```bash
 > kubectl get pods -n skyhook -l skyhook.nvidia.com/name=<skyhook-name>
 > ```
 >
 > These pods are not reaped by the new operator; they finish on their own and are cleaned up by the
-> legacy sweep once the rollback window (`LEGACY_CLEANUP_DELAY`) elapses. The runtime hold
-only waits on Skyhooks whose rollout is genuinely in flight (`in_progress`, `erroring`, `blocked`,
+> legacy sweep once the rollback window (`LEGACY_CLEANUP_DELAY`) elapses.
+
+The runtime hold only waits on Skyhooks whose rollout is genuinely in flight (`in_progress`, `erroring`, `blocked`,
 `waiting`, `unknown`). Finish, roll back, or delete those before upgrading (they show up in the `STATUS`
 column above). If you have already upgraded and one is wedging the migration, **delete** the offending
 legacy `Skyhook` (its status cannot advance without the old operator, and it is read-only) or roll back to
