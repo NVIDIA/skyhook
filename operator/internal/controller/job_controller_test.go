@@ -467,7 +467,13 @@ var _ = Describe("JobReconcile", func() {
 		_, err = r.JobReconcile(ctx, job)
 		Expect(err).ToNot(HaveOccurred())
 
-		entry := getNodeState(r)[pkgRef.GetUniqueName()]
+		state := getNodeState(r)
+		// The sibling's promotion is what proves the interrupt completion path actually ran:
+		// without it this spec would pass on a reconcile that did nothing at all.
+		Expect(state[sibling.GetUniqueName()].State).To(Equal(v1alpha1.StateComplete))
+		Expect(getJob(r, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
+
+		entry := state[pkgRef.GetUniqueName()]
 		Expect(entry.Stage).To(Equal(v1alpha1.StagePostInterrupt))
 		Expect(entry.State).To(Equal(v1alpha1.StateComplete))
 	})
