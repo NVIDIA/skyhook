@@ -467,7 +467,9 @@ var _ = Describe("JobReconcile", func() {
 		_, err = r.JobReconcile(ctx, job)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(getNodeState(r)[pkgRef.GetUniqueName()].Stage).To(Equal(v1alpha1.StagePostInterrupt))
+		entry := getNodeState(r)[pkgRef.GetUniqueName()]
+		Expect(entry.Stage).To(Equal(v1alpha1.StagePostInterrupt))
+		Expect(entry.State).To(Equal(v1alpha1.StateComplete))
 	})
 
 	It("marks an interrupt completion without panicking when the CR is already gone", func() {

@@ -242,7 +242,7 @@ func shouldRecordPodErroring(skyhookNode wrapper.SkyhookNodeOnly, packagePtr *Pa
 		return false, fmt.Errorf("error reading node state for package %s: %w", packagePtr.GetUniqueName(), err)
 	}
 
-	return entryAwaitsCompletion(state, packagePtr), nil
+	return entryOpenAtStage(state, packagePtr), nil
 }
 
 const (

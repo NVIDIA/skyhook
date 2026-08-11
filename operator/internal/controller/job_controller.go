@@ -225,7 +225,7 @@ func (r *JobReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *PackageSky
 		// only while such a package remains, matching what the promotion can actually advance.
 		//
 		// This authorizes the write on a SIBLING's state, so it says nothing about this Job's own
-		// package — recordJobCompletion gates its self-write on entryAwaitsCompletion separately.
+		// package — recordJobCompletion gates its self-write on entryOpenAtStage separately.
 		for _, s := range state {
 			if s.Stage == v1alpha1.StageInterrupt && s.State == v1alpha1.StateSkipped {
 				return true, nil
@@ -233,14 +233,20 @@ func (r *JobReconciler) shouldRecordCompletion(job *batchv1.Job, pkg *PackageSky
 		}
 	}
 
-	return entryAwaitsCompletion(state, pkg), nil
+	return entryOpenAtStage(state, pkg), nil
 }
 
-// entryAwaitsCompletion reports whether the package's entry is in the only shape a completion may
-// be written onto: present, still at this Job's stage, and not already complete. Absent means
-// removed (rerun, reset, uninstall) and writing would resurrect it; a later stage or an existing
-// complete would regress or duplicate.
-func entryAwaitsCompletion(state v1alpha1.NodeState, pkg *PackageSkyhook) bool {
+// entryOpenAtStage reports whether the package's entry is present, still at the stage the caller
+// is reporting on, and not already complete — the only shape an executor may write onto at all.
+// Absent means removed (rerun, reset, uninstall) and writing would resurrect it; a later stage or
+// an existing complete would regress or duplicate.
+//
+// Named for the shape it tests, not for one caller's use: both the completion write and the Pod
+// watch's erroring write require exactly this, and the two must not drift. It deliberately does
+// not exclude an already-erroring entry — the Pod watch re-reports erroring so a rising restart
+// count still lands, and an otherwise identical write is a no-op the Changed() check drops.
+// recordJobErroring adds that exclusion itself; see the note there.
+func entryOpenAtStage(state v1alpha1.NodeState, pkg *PackageSkyhook) bool {
 	status, present := state[pkg.GetUniqueName()]
 	return present && status.Stage == pkg.Stage && status.State != v1alpha1.StateComplete
 }
@@ -344,11 +350,11 @@ func (r *JobReconciler) recordJobCompletion(ctx context.Context, job *batchv1.Jo
 		// would never run again. The promotion above still lands either way.
 		//
 		// Both guards are kept deliberately: updated says HandleCompletePod already wrote this
-		// entry, entryAwaitsCompletion says there is an entry to write onto. They agree today —
+		// entry, entryOpenAtStage says there is an entry to write onto. They agree today —
 		// every branch that sets updated leaves the entry absent or at another stage — and neither
 		// is safe to drop on the strength of the other.
 		recorded := false
-		if !updated && entryAwaitsCompletion(state, pkg) {
+		if !updated && entryOpenAtStage(state, pkg) {
 			if err := skyhookNode.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, pkg.Stage, job.Status.Failed, pkg.ContainerSHA); err != nil {
 				return false, fmt.Errorf("upserting complete state for job %s: %w", job.Name, err)
 			}
@@ -568,7 +574,7 @@ func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job,
 			return false, fmt.Errorf("reading node state for job %s: %w", job.Name, err)
 		}
 
-		// Deliberately NOT entryAwaitsCompletion: the completion guard excludes an entry that is
+		// Deliberately NOT entryOpenAtStage: the completion guard excludes an entry that is
 		// already complete, this one excludes an entry that is already erroring, for idempotence
 		// on a re-served terminal event. Same shape, different exclusion — do not unify them.
 		status, present := state[pkg.GetUniqueName()]
