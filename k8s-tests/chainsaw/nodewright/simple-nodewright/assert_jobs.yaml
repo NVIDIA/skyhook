@@ -36,16 +36,17 @@ metadata:
 spec:
   parallelism: 1
   completions: 1
-  # A package Job must never give up before the operator does: the deadline below is the bound,
-  # not the retry count.
-  backoffLimit: 2147483647
+  # A timeout is a retryable failure like any other, so the bound is per attempt (on the pod
+  # template below) and this is how many retries the stage gets after its first attempt
+  # before it times out — 3 retries, so 4 attempts in total.
+  backoffLimit: 3
   # Replace only once the previous pod is fully gone, so two executors never share the hostPath.
   podReplacementPolicy: Failed
-  # Operator default JOB_STAGE_TIMEOUT (1h); no package here sets stageTimeout.
-  activeDeadlineSeconds: 3600
   template:
     spec:
       restartPolicy: Never
+      # Operator default JOB_STAGE_TIMEOUT (1h); no package here sets stageTimeout.
+      activeDeadlineSeconds: 3600
 ---
 kind: Job
 apiVersion: batch/v1
@@ -62,8 +63,8 @@ metadata:
       controller: true
       blockOwnerDeletion: true
 spec:
-  activeDeadlineSeconds: 3600
   template:
     spec:
       restartPolicy: Never
+      activeDeadlineSeconds: 3600
 ---

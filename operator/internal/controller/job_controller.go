@@ -52,7 +52,7 @@ const (
 	annotationValueTrue     = "true"
 
 	// annotationLastLogs holds a best-effort tail of a deadline-killed stage's stuck
-	// container, or its waiting reason when the container never started, so a parked
+	// container, or its waiting reason when the container never started, so a timed-out
 	// tombstone still names the problem after the kubelet garbage-collects the pod's logs.
 	annotationLastLogs = v1alpha1.METADATA_PREFIX + "/last-logs"
 
@@ -430,14 +430,18 @@ func (r *JobReconciler) HandleCompletePod(ctx context.Context, skyhookNode wrapp
 	return updated, nil
 }
 
-// handleFailedJob handles a terminal Failed Job. DeadlineExceeded is a genuine failure:
-// record erroring, mark with the failure TTL, and leave the Job in place as the park marker
-// so the main pass does not recreate the stage until a rerun/reset/config-change/TTL clears
-// it. Any other reason is a backstop that unlimited backoff plus the deadline should make
-// unreachable: no node-state write (a vanished pod self-heals invisibly, as today), just
-// the marker and failure TTL.
+// handleFailedJob handles a terminal Failed Job. A genuine failure — attempts exhausted on real
+// step failures or timeouts, or the Job-level ceiling — records erroring, marks with the failure
+// TTL, and leaves the Job in place as the timeout marker so the main pass does not recreate the stage
+// until a rerun/reset/config-change/TTL clears it. A Job that only ever lost pods the package
+// never ran in is not the package's failure: mark it and let the sweep clear it so the stage
+// re-runs, matching the invisible self-heal a vanished pod gets today.
 func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, reason string) (ctrl.Result, error) {
-	if reason != batchv1.JobReasonDeadlineExceeded {
+	genuine, err := r.jobFailureIsGenuine(ctx, job, reason)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("classifying failed job %s: %w", job.Name, err)
+	}
+	if !genuine {
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 	}
 
@@ -457,18 +461,57 @@ func (r *JobReconciler) handleFailedJob(ctx context.Context, job *batchv1.Job, r
 		return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 	}
 
-	if err := r.recordJobErroring(ctx, job, pkg); err != nil {
-		return ctrl.Result{}, err
+	if err := r.recordJobErroring(ctx, job, pkg, reason); err != nil {
+		return ctrl.Result{}, fmt.Errorf("recording failure for job %s: %w", job.Name, err)
 	}
 
 	return ctrl.Result{}, r.markJobProcessed(ctx, job, r.opts.JobTTLFailed)
 }
 
-// recordJobErroring parks the stage at (stage, erroring). It is guarded like the completion
+// jobFailureIsGenuine reports whether a terminal Failed Job represents a real package failure.
+//
+// backoffLimit is finite, and these pods carry spec.nodeName rather than going through the
+// scheduler, so kubelet admission is the only gate they face: a node at capacity or on its way
+// back from a reboot can reject several node-pinned replacements in a row, each Failed with no
+// container statuses and no DisruptionTarget for the podFailurePolicy to ignore. Under the old
+// unbounded limit those only cost an archive slot; under a finite one they can exhaust the budget
+// in about a minute and time out a package that never ran a line of script. So BackoffLimitExceeded is
+// believed only when a retained attempt actually failed. Any other terminal reason is the
+// Job-level ceiling, genuine on its own: nothing finished inside the entire retry budget.
+//
+// The archive pruner selects on the same podFailedGenuinely predicate, so a real failure is never
+// pruned out from under this classifier by rejections either side of it.
+//
+// Losing the archives entirely (terminated-pod GC on a large cluster) does not by itself lose the
+// timeout. This is the second of two writers that put an entry at (stage, erroring), and the
+// timeout predicate reads only that entry plus terminal Failed — never this verdict. The Pod watch
+// is the first writer and runs live, while the archives still exist; this one runs at terminal,
+// from archives, and so covers the window where the operator was down for the Pod watch. Both use
+// the same classification, so they agree. Both must miss to lose a timeout, and the stage re-runs
+// and times out on the next cycle rather than churning.
+func (r *JobReconciler) jobFailureIsGenuine(ctx context.Context, job *batchv1.Job, reason string) (bool, error) {
+	if reason != batchv1.JobReasonBackoffLimitExceeded {
+		return true, nil
+	}
+
+	pods, err := r.childPods(ctx, job)
+	if err != nil {
+		return false, err
+	}
+	for i := range pods {
+		if podFailedGenuinely(&pods[i]) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// recordJobErroring records the stage as timed out at (stage, erroring). It is guarded like the completion
 // path: only the stage the Job actually ran is touched, and never regressed to a later stage
 // or resurrected onto a removed package. This is also the state-only write for a stale
 // FailureTarget on an unreachable node (no marker/TTL there; those wait for terminal Failed).
-func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook) error {
+// reason is the Job's failure reason, carried into the event so the timeout names what ended it.
+func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job, pkg *PackageSkyhook, reason string) error {
 	return patchNodeState(ctx, r.dal, r.uncached, r.Client, jobNodeName(job), func(node *corev1.Node) (bool, error) {
 		skyhookNode, err := wrapper.NewSkyhookNodeOnly(node, pkg.Skyhook)
 		if err != nil {
@@ -492,8 +535,8 @@ func (r *JobReconciler) recordJobErroring(ctx context.Context, job *batchv1.Job,
 		if !skyhookNode.Changed() {
 			return false, nil
 		}
-		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobDeadlineExceeded",
-			"Package [%s:%s] exceeded its stage deadline on [skyhook:%s]", pkg.Name, pkg.Version, pkg.Skyhook)
+		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobFailed",
+			"Package [%s:%s] stage %s failed on [nodewright:%s]: %s", pkg.Name, pkg.Version, pkg.Stage, pkg.Skyhook, reason)
 		return true, nil
 	})
 }
@@ -535,7 +578,7 @@ func (r *JobReconciler) handleActiveJob(ctx context.Context, job *batchv1.Job) (
 
 // recordStaleFailureTarget records erroring (state only) for a Job stuck at FailureTarget on
 // an unreachable node, where the Job controller can never delete the pod to reach terminal
-// Failed. Terminal handling (marker, TTL, park) still waits for Failed.
+// Failed. Terminal handling (marker, TTL, timeout) still waits for Failed.
 func (r *JobReconciler) recordStaleFailureTarget(ctx context.Context, job *batchv1.Job) error {
 	pkg, err := GetPackage(job)
 	if err != nil {
@@ -544,14 +587,14 @@ func (r *JobReconciler) recordStaleFailureTarget(ctx context.Context, job *batch
 	if pkg == nil {
 		return nil
 	}
-	return r.recordJobErroring(ctx, job, pkg)
+	return r.recordJobErroring(ctx, job, pkg, string(batchv1.JobFailureTarget))
 }
 
 // snapshotFailureLogs captures the last evidence of a deadline-bound stage before its pod is
 // deleted. It is skipped when a failed-attempt archive already exists (that pod carries full
 // logs and survives the deadline) or when the snapshot is already taken. A never-started
 // container has no logs, so its waiting reason/message is recorded instead. Any error is
-// swallowed by the caller; this must never delay the erroring/park path.
+// swallowed by the caller; this must never delay the erroring/timeout path.
 func (r *JobReconciler) snapshotFailureLogs(ctx context.Context, job *batchv1.Job) error {
 	if _, ok := job.Annotations[annotationLastLogs]; ok {
 		return nil
@@ -564,8 +607,11 @@ func (r *JobReconciler) snapshotFailureLogs(ctx context.Context, job *batchv1.Jo
 
 	var target *corev1.Pod
 	for i := range pods {
-		// A genuine failed archive already holds full logs; nothing to snapshot.
-		if pods[i].Status.Phase == corev1.PodFailed && !hasDisruptionTarget(&pods[i]) {
+		// A genuine failed archive already holds full logs; nothing to snapshot. Judged on the
+		// same predicate as the pruner that keeps it: a pod the kubelet refused to admit is also
+		// Failed, but has no container statuses and no logs, so treating it as the archive would
+		// leave the timed-out stage with no evidence at all.
+		if podFailedGenuinely(&pods[i]) {
 			return nil
 		}
 		if target == nil && (pods[i].Status.Phase == corev1.PodRunning || pods[i].Status.Phase == corev1.PodPending) {
@@ -604,10 +650,13 @@ func (r *JobReconciler) snapshotFailureLogs(ctx context.Context, job *batchv1.Jo
 
 // pruneFailedAttempts keeps two archives: the first genuine failure (most likely the root
 // cause, before cascading errors obscure it) and the most recent, and deletes the genuine
-// failures in between. Only genuinely-Failed pods count: a disruption casualty (carrying
-// DisruptionTarget) has no failure verdict and must neither be kept nor deleted, so it must
-// not shadow a real one. Normal deletion only: the Job-tracking finalizer guarantees a failure
-// is counted and policy-classified before its pod is removed.
+// failures in between. Only pods that failed with a verdict count, on the same
+// podFailedGenuinely predicate the terminal classifier uses — anything else (a disruption
+// casualty, a kubelet admission rejection) has no failure verdict, so it must neither be kept
+// nor deleted, and above all must not shadow a real failure into the delete range. Those
+// leftovers are bounded by backoffLimit+1 and go with the Job at its TTL.
+// Normal deletion only: the Job-tracking finalizer guarantees a failure is counted and
+// policy-classified before its pod is removed.
 func (r *JobReconciler) pruneFailedAttempts(ctx context.Context, job *batchv1.Job) error {
 	pods, err := r.childPods(ctx, job)
 	if err != nil {
@@ -616,7 +665,7 @@ func (r *JobReconciler) pruneFailedAttempts(ctx context.Context, job *batchv1.Jo
 
 	archives := make([]corev1.Pod, 0, len(pods))
 	for i := range pods {
-		if pods[i].Status.Phase == corev1.PodFailed && !hasDisruptionTarget(&pods[i]) && pods[i].DeletionTimestamp == nil {
+		if podFailedGenuinely(&pods[i]) && pods[i].DeletionTimestamp == nil {
 			archives = append(archives, pods[i])
 		}
 	}
@@ -736,12 +785,18 @@ func jobFailure(job *batchv1.Job) (bool, string) {
 	return false, ""
 }
 
-// isParkedJob reports whether a Job is a parked deadline failure — a genuine step failure that
-// the finished-Job rules deliberately leave in place while its stage sits erroring, so nothing
-// recreates the stage until a rerun/reset/config-change/TTL clears it.
-func isParkedJob(job *batchv1.Job) bool {
-	failed, reason := jobFailure(job)
-	return failed && reason == batchv1.JobReasonDeadlineExceeded
+// jobFailedTerminally reports whether the Job has given up: a terminal Failed condition, whatever
+// the reason. That is all it reports — it is exactly jobFailure's first return, named for what it
+// tests rather than for what its callers conclude.
+//
+// A *timed-out stage* is this plus the node-state entry sitting at (stage, erroring), and it takes
+// both: with a finite backoffLimit the Job's reason no longer separates a real failure from a
+// backstop, so jobFailureIsGenuine draws that line, and only a genuine failure leaves the entry
+// erroring. Callers that mean "timed out" pair the two; deleteConfigUpdateExecutors means only
+// "terminally failed" and pairs it with nothing.
+func jobFailedTerminally(job *batchv1.Job) bool {
+	failed, _ := jobFailure(job)
+	return failed
 }
 
 // jobFinished reports whether the Job has reached a terminal state (Complete or Failed).
