@@ -42,10 +42,6 @@ spec:
   backoffLimit: 3
   # Replace only once the previous pod is fully gone, so two executors never share the hostPath.
   podReplacementPolicy: Failed
-  # The Job-level ceiling the operator derives, for the case a per-attempt clock cannot see (a
-  # pod the kubelet never acknowledges never gets a StartTime):
-  # (backoffLimit+1) * (stageTimeout + gracefulShutdown + 10m backoff cap) = 4 * (3600+0+600).
-  activeDeadlineSeconds: 16800
   template:
     spec:
       restartPolicy: Never
@@ -67,7 +63,6 @@ metadata:
       controller: true
       blockOwnerDeletion: true
 spec:
-  activeDeadlineSeconds: 16800
   template:
     spec:
       restartPolicy: Never
