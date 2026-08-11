@@ -171,12 +171,18 @@ func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.S
 		}
 		// A timeout is a retryable failure like any other, so the bound is per attempt, on the
 		// pod template: an expired pod is Failed and replaced rather than failing the Job
-		// outright. backoffLimit is what finally gives up, and the Job-level ceiling exists
-		// only for the case a per-attempt clock cannot see.
+		// outright. backoffLimit is what finally gives up.
+		//
+		// Deliberately no Job-level deadline here. A second clock over the same work can only
+		// disagree with the first — derived from the retry budget it is redundant, and set
+		// independently it truncates the budget into a DeadlineExceeded that reads as a hang.
+		// The cost is that the one case a per-attempt clock cannot see stays unbounded: that
+		// clock runs from pod.Status.StartTime, so a pod the kubelet never acknowledges never
+		// starts it, never fails, and never spends an attempt. Nothing the operator sets can
+		// bound a pod the kubelet has not accepted; see the stageTimeout docs.
 		spec.BackoffLimit = ptr(opts.JobBackoffLimit)
 		if timeout > 0 {
 			spec.Template.Spec.ActiveDeadlineSeconds = ptr(deadlineSeconds(timeout))
-			spec.ActiveDeadlineSeconds = ptr(jobCeilingSeconds(opts, _package, timeout))
 		}
 	}
 
@@ -201,39 +207,16 @@ func effectiveStageTimeout(opts SkyhookOperatorOptions, _package *v1alpha1.Packa
 	return opts.JobStageTimeout
 }
 
-// jobRetryBackoffCap is the Job controller's ceiling on the delay it paces pod-failure retries
-// with (upstream MaxJobPodFailureBackOff). It is slack in the Job-level deadline only: that
-// deadline must sit above everything the per-attempt deadlines plus the pacing between them can
-// legitimately consume.
-const jobRetryBackoffCap = 10 * time.Minute
-
 // deadlineSeconds rounds a timeout up to whole seconds. Truncating a positive sub-second timeout
-// to 0 would insta-fail every Job, so any positive value yields at least a 1s deadline.
+// to 0 would insta-fail every Job, so any positive value yields at least a 1s deadline. Clamped
+// because the apiserver rejects an activeDeadlineSeconds beyond int32, which would turn every
+// Create into an error loop rather than a validation failure the user sees.
 func deadlineSeconds(timeout time.Duration) int64 {
-	return int64(math.Ceil(timeout.Seconds()))
-}
-
-// jobCeilingSeconds is the Job-level deadline for a package Job: the whole retry budget, plus
-// slack. It exists for the one case the per-attempt deadline cannot bound — that clock runs from
-// pod.Status.StartTime, which a pod the kubelet never acknowledges never gets, so a Job whose pods
-// never start would otherwise stay Active forever.
-//
-// Deliberately generous: it counts a full backoff gap and shutdown window for every attempt, one
-// more gap than can actually elapse. Tightness buys nothing here, while a ceiling below the retry
-// budget would silently truncate it into a DeadlineExceeded that reads as a hang. Clamped because
-// the product of three independently settable values overflows.
-func jobCeilingSeconds(opts SkyhookOperatorOptions, _package *v1alpha1.Package, timeout time.Duration) int64 {
-	grace := time.Duration(0)
-	if _package.GracefulShutdown != nil {
-		grace = _package.GracefulShutdown.Duration
-	}
-
-	attempt := deadlineSeconds(timeout) + deadlineSeconds(grace) + int64(jobRetryBackoffCap.Seconds())
-	attempts := int64(opts.JobBackoffLimit) + 1
-	if attempt > math.MaxInt32/attempts {
+	seconds := math.Ceil(timeout.Seconds())
+	if seconds > math.MaxInt32 {
 		return math.MaxInt32
 	}
-	return attempt * attempts
+	return int64(seconds)
 }
 
 // createPodFromPackage creates a pod spec for a skyhook pod for a given package

@@ -145,43 +145,27 @@ var _ = Describe("job builders", func() {
 		})
 
 		Describe("stage bounds", func() {
-			// The ceiling the builder derives: (backoffLimit+1) attempts, each allowed its
-			// deadline, its shutdown window, and a capped backoff gap.
-			ceiling := func(attemptSeconds, graceSeconds int64) int64 {
-				return 4 * (attemptSeconds + graceSeconds + int64(jobRetryBackoffCap.Seconds()))
-			}
-
-			It("bounds one attempt on the pod template and the whole retry budget on the Job", func() {
+			It("bounds one attempt on the pod template, with the retry budget as the only other limit", func() {
 				Expect(*job.Spec.BackoffLimit).To(Equal(int32(3)))
 				Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
 				Expect(*job.Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(int64(3600)))
-				Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(ceiling(3600, 0)))
 			})
 
-			It("keeps the ceiling above the retry budget so it can never truncate it", func() {
-				attempts := int64(*job.Spec.BackoffLimit) + 1
-				Expect(*job.Spec.ActiveDeadlineSeconds).To(BeNumerically(">",
-					attempts**job.Spec.Template.Spec.ActiveDeadlineSeconds))
+			It("sets no Job-level deadline, so a second clock can never disagree with the per-attempt one", func() {
+				Expect(job.Spec.ActiveDeadlineSeconds).To(BeNil())
 			})
 
 			When("the package sets its own stageTimeout", func() {
 				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 2 * time.Hour} })
-				It("uses the package value for both bounds", func() {
+				It("uses the package value per attempt", func() {
 					Expect(*job.Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(int64(7200)))
-					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(ceiling(7200, 0)))
-				})
-			})
-
-			When("the package sets a gracefulShutdown", func() {
-				BeforeEach(func() { pkg.GracefulShutdown = &metav1.Duration{Duration: 5 * time.Minute} })
-				It("widens the ceiling, since podReplacementPolicy Failed waits out every shutdown", func() {
-					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(ceiling(3600, 300)))
+					Expect(job.Spec.ActiveDeadlineSeconds).To(BeNil())
 				})
 			})
 
 			When("the package removes the time bound with 0", func() {
 				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 0} })
-				It("omits both deadlines but keeps the retry budget", func() {
+				It("omits the deadline but keeps the retry budget", func() {
 					Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).To(BeNil())
 					Expect(job.Spec.ActiveDeadlineSeconds).To(BeNil())
 					Expect(*job.Spec.BackoffLimit).To(Equal(int32(3)))
@@ -190,7 +174,7 @@ var _ = Describe("job builders", func() {
 
 			When("the operator default is also 0", func() {
 				BeforeEach(func() { opts.JobStageTimeout = 0 })
-				It("omits both deadlines", func() {
+				It("omits the deadline", func() {
 					Expect(job.Spec.Template.Spec.ActiveDeadlineSeconds).To(BeNil())
 					Expect(job.Spec.ActiveDeadlineSeconds).To(BeNil())
 				})
@@ -204,10 +188,10 @@ var _ = Describe("job builders", func() {
 				})
 			})
 
-			When("the stageTimeout is large enough to overflow the ceiling", func() {
-				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 500000 * time.Hour} })
-				It("clamps instead of wrapping negative, which the apiserver would reject outright", func() {
-					Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(math.MaxInt32)))
+			When("the stageTimeout is larger than the apiserver accepts", func() {
+				BeforeEach(func() { pkg.StageTimeout = &metav1.Duration{Duration: 700000 * time.Hour} })
+				It("clamps to int32, which the apiserver takes, rather than erroring every create", func() {
+					Expect(*job.Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(int64(math.MaxInt32)))
 				})
 			})
 		})
