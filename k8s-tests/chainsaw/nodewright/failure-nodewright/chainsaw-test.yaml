@@ -53,7 +53,7 @@ spec:
     ## the whole test's.
     - assert:
         timeout: 300s
-        file: assert_parked_job.yaml
+        file: assert_timedout_job.yaml
     - script:
         content: |
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=failure-skyhook

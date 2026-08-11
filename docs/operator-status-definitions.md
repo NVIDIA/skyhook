@@ -110,7 +110,7 @@ New consumers should read the canonical bare condition types now. Existing consu
 | `complete`    | Package operation has finished successfully |
 | `in_progress` | Package is actively running (pod has started) |
 | `skipped`     | Package/stage was intentionally bypassed in the lifecycle |
-| `erroring`    | Package operation is experiencing failures. While the stage still has retries left this is in-flight evidence and clears on its own if an attempt succeeds; once the retry budget (`JOB_BACKOFF_LIMIT`) is spent the stage is **parked** here and will not retry until a `package rerun`/`reset`, a config or spec change, or the failed Job's TTL expiry |
+| `erroring`    | Package operation is experiencing failures. While the stage still has retries left this is in-flight evidence and clears on its own if an attempt succeeds; once the retry budget (`JOB_BACKOFF_LIMIT`) is spent the stage is **timed out** here and will not retry until a `package rerun`/`reset`, a config or spec change, or the failed Job's TTL expiry |
 | `unknown`     | Package state cannot be determined or is uninitialized |
 
 ## Stage

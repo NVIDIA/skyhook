@@ -16,7 +16,7 @@
 
 # node-assert.yaml pins the erroring state the Pod watch reports while the stage is still
 # retrying. This pins the other end: the retry budget runs out, the Job goes terminal, and the
-# operator leaves it in place as the park marker rather than letting the stage churn forever.
+# operator leaves it in place as the timeout marker rather than letting the stage churn forever.
 ---
 kind: Job
 apiVersion: batch/v1
@@ -27,7 +27,7 @@ metadata:
     nodewright.nvidia.com/package: failure-1.2.3
     nodewright.nvidia.com/stage: apply
   annotations:
-    ## JobReconcile recorded the erroring state before marking, so the park is real
+    ## JobReconcile recorded the erroring state before marking, so the timeout is real
     nodewright.nvidia.com/state-recorded: "true"
 spec:
   backoffLimit: 3
