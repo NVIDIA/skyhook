@@ -50,6 +50,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Set up Go for license tooling
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: operator/go.mod
+          cache: false
+      - name: Check license headers
+        run: make license-header-check
       - name: actionlint (workflow files)
         if: always()
         run: |

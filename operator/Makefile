@@ -148,25 +148,24 @@ vulncheck: govulncheck ## Run govulncheck against code; fails on any reachable v
 vulncheck-all: govulncheck ## Run govulncheck in verbose mode, including module-level vulns not reachable from this code.
 	GOFLAGS="$(GOFLAGS)" $(GOVULNCHECK) -mode source -show verbose ./...
 
-## addlicense takes explicit paths, so enumerate tracked sources from git rather than
-## letting it walk the tree: an untracked local git worktree under .claude/ or a stray
-## venv would otherwise be rewritten. vendor/ and chart/ carry upstream headers.
+## addlicense takes explicit paths, so enumerate only tracked operator sources and
+## leave repository-wide formatting to the root Makefile. vendor/ carries upstream headers.
 LICENSE_HOLDER ?= NVIDIA CORPORATION & AFFILIATES
-LICENSE_TEMPLATE ?= scripts/license-header.tmpl
+LICENSE_TEMPLATE ?= ../scripts/license-header.tmpl
 license_files = git ls-files -- '*.go' '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*.Dockerfile' \
-	| grep -vE '^(operator|agent)/vendor/|^chart/'
+	| grep -vE '^vendor/'
 
 .PHONY: license-fmt
 license-fmt: addlicense ## Add the Apache-2.0 header to any source file missing one.
-	cd .. && $(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	$(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
 
 ## addlicense -check only asserts that *some* license marker is present, so an MIT or
 ## malformed header would pass. The old format_license.py replaced a wrong header
 ## outright; assert the SPDX identifier explicitly to keep that guarantee.
 .PHONY: license-header-check
 license-header-check: addlicense ## Fail if any tracked source file is missing an Apache-2.0 header.
-	cd .. && $(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
-	@cd .. && wrong=$$($(license_files) | while read -r f; do \
+	$(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	@wrong=$$($(license_files) | while read -r f; do \
 		grep -qE '^.{1,2} Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
 		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "  $$f"; \
 	done); \
