@@ -240,9 +240,9 @@ func NewEnableCmd(ctx *cliContext.CLIContext) *cobra.Command {
 		short: "Enable a disabled NodeWright",
 		long: `Enable a disabled NodeWright by removing the disable annotation.
 
-The operator schedules work for it again — unless it is also paused. Stages that
-pause suspended resume only once BOTH the disable and the pause annotations are
-cleared, so enabling a NodeWright that is still paused changes nothing on its own.`,
+The operator schedules work for it again — unless it is also paused. Stages
+suspended by pause resume only once BOTH the disable and the pause annotations
+are cleared, so enabling a NodeWright that is still paused changes nothing on its own.`,
 		example: `  # Enable a disabled NodeWright
   kubectl nodewright enable gpu-init
 
