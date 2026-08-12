@@ -83,6 +83,8 @@ controllerManager:
       legacyCleanupDelay: "24h"
       ## jobTtlSucceeded / jobTtlFailed set ttlSecondsAfterFinished on completed package-stage
       ## Jobs by outcome, so failure logs outlive success logs.
+      ## Both have a hard floor of 1m: the operator fails validation at startup on anything
+      ## smaller, so "0" does NOT mean "keep forever" or "delete immediately" — it crashes.
       jobTtlSucceeded: "1h"
       jobTtlFailed: "24h"
       ## jobStageTimeout is the default per-attempt deadline for a package stage Job when the
