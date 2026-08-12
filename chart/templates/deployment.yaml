@@ -113,6 +113,9 @@ spec:
           periodSeconds: 20
         name: manager
         ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
         - containerPort: 9443
           name: webhook-server
           protocol: TCP
@@ -142,37 +145,6 @@ spec:
             memory: {{ maxf 256 (mulf 0.4 .Values.estimatedNodeCount) | int }}Mi
           {{- end }}
         securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
-          | nindent 10 }}
-      - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
-        env:
-        - name: KUBERNETES_CLUSTER_DOMAIN
-          value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}{{- if .Values.controllerManager.kubeRbacProxy.image.tag }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- end }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
-        imagePullPolicy: Always
-        livenessProbe:
-          tcpSocket:
-            port: 8443
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        readinessProbe:
-          tcpSocket:
-            port: 8443
-          initialDelaySeconds: 5
-          periodSeconds: 20
-          successThreshold: 1
-          failureThreshold: 2
-          timeoutSeconds: 3
-        name: kube-rbac-proxy
-        ports:
-        - containerPort: 8443
-          name: https
-          protocol: TCP
-        volumeMounts:
-        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          name: kube-api-access
-          readOnly: true
-        resources: {{- toYaml .Values.controllerManager.kubeRbacProxy.resources | nindent 10 }}
-        securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
           | nindent 10 }}
       imagePullSecrets:
       {{- if .Values.imagePullSecret }}

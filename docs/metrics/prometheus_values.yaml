@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -14,21 +14,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Example of scraping the https endpoint
-# extraScrapeConfigs: |
-#   - job_name: 'skyhook'
-#     metrics_path: /metrics
-#     scheme: https
-#     tls_config:
-#       # This is required because the operator controller is using a self-signed certificate
-#       # and the owner of the cert is the leader pod not the service
-#       insecure_skip_verify: true
-#     # tls_config:
-#     #   ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-#     bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-#     static_configs:
-#       - targets:
-#         - skyhook-operator-controller-manager-metrics-service.skyhook.svc.cluster.local:8443
+# Example of scraping each authenticated HTTPS pod endpoint. The Prometheus
+# ServiceAccount must be bound to skyhook-operator-metrics-reader.
+extraScrapeConfigs: |
+  - job_name: 'nodewright'
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      # controller-runtime generates an in-memory self-signed certificate for
+      # each operator pod, so there is no stable CA for Prometheus to trust.
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+            - skyhook
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        regex: skyhook-operator-controller-manager-metrics-service
+      - source_labels: [__meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: metrics
+
+serviceAccounts:
+  server:
+    create: true
+    name: prometheus
 
 global:
   scrape_interval: 5s

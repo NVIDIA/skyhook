@@ -49,8 +49,17 @@ spec:
     - assert:
         file: node-assert.yaml
     - script:
+        skipLogOutput: true
         content: |
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=failure-skyhook
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
           ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=failure-skyhook -t status=erroring
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=failure-skyhook -t state=complete
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=failure -t skyhook_name=failure-skyhook -t state=erroring

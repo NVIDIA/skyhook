@@ -56,13 +56,25 @@ spec:
     - apply:
         file: nodewright.yaml
     - script:
+        skipLogOutput: true
         content: |
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=simple-skyhook
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t stage=config
     - assert:
         file: assert_pods.yaml
     - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=complete
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook -t state=in_progress
@@ -76,6 +88,9 @@ spec:
         content: |
           kubectl wait --for=condition=Ready nodewright/simple-skyhook --timeout=30s
     - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=simple-skyhook -t status=complete
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=spencer -t skyhook_name=simple-skyhook -t state=complete

@@ -1,7 +1,21 @@
 #!/usr/bin/env bash
+
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Scale test for skyhook-operator: scale EKS node group stepwise, run a minimal
 # 10s Skyhook with exponential policy, record operator memory at each phase.
 #
@@ -15,12 +29,11 @@
 #   - kube (default): uses kubectl top for operator pod memory. Install metrics-server
 #     in the cluster, e.g.:
 #       kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-#   - prometheus: script port-forwards the operator pod :8080 to localhost:18080 and
-#     scrapes /metrics (process_resident_memory_bytes etc.). No extra install; operator
-#     exposes :8080/metrics. If using the Helm chart, the metrics service is
-#     skyhook-operator-controller-manager-metrics-service (see docs/metrics/README.md).
+#   - prometheus: script creates a dedicated metrics-reader ServiceAccount,
+#     port-forwards the operator pod :8443 to localhost:18080, and scrapes the
+#     authenticated HTTPS endpoint (process_resident_memory_bytes etc.).
 #
-# Requires: kubectl, aws CLI, jq.
+# Requires: kubectl, aws CLI, jq, curl.
 set -euo pipefail
 
 SKYHOOK_NAME="scale-test-skyhook"
@@ -41,6 +54,7 @@ SKYHOOK_YAML="${SCRIPT_DIR}/scale_test_skyhook.yaml"
 # Defaults
 NAMESPACE="${NAMESPACE:-skyhook-operator}"
 METRICS_SOURCE="${METRICS_SOURCE:-kube}"
+METRICS_SERVICE_ACCOUNT="${METRICS_SERVICE_ACCOUNT:-scale-test-metrics}"
 OUTPUT_FILE=""
 CLEAR_ANNOTATIONS=1
 FAKE_LABELS=0
@@ -63,7 +77,7 @@ Required:
 
 Options:
   --namespace           Operator namespace (default: skyhook-operator)
-  --metrics-source      kube|prometheus (default: kube). kube uses kubectl top; prometheus uses operator :8080/metrics.
+  --metrics-source      kube|prometheus (default: kube). kube uses kubectl top; prometheus uses authenticated HTTPS on operator :8443/metrics.
   --output               Write CSV results to this path (default: ./scale_test_results_<timestamp>.csv)
   --no-clear-annotations Do not remove skyhook annotations/labels from nodes (Skyhook/Policy CRs are still deleted)
   --fake-labels N        Add N fake labels to the node group at test start (skyhook/fake_1=1 .. skyhook/fake_N=N) to test operator scaling vs label count
@@ -158,20 +172,23 @@ get_memory_kube() {
 }
 
 get_memory_prometheus() {
-  local pod
+  local pod token
   pod="$(kubectl get pod -n "$NAMESPACE" -l "$OPERATOR_LABEL" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
   if [[ -z "$pod" ]]; then
     echo "0"
     return
   fi
-  kubectl port-forward -n "$NAMESPACE" "pod/$pod" 18080:8080 &>/dev/null &
+  token="$(kubectl -n "$NAMESPACE" create token "$METRICS_SERVICE_ACCOUNT")"
+  kubectl port-forward -n "$NAMESPACE" "pod/$pod" 18080:8443 &>/dev/null &
   local pf_pid=$!
   trap "kill $pf_pid 2>/dev/null || true" RETURN
   local mb=0
   local metrics
   for _ in 1 2 3 4 5; do
     sleep 2
-    metrics="$(curl -s "http://127.0.0.1:18080/metrics" 2>/dev/null)"
+    metrics="$(curl --fail --insecure --silent --show-error \
+      --header "Authorization: Bearer ${token}" \
+      "https://127.0.0.1:18080/metrics" 2>/dev/null || true)"
     # Prefer process RSS (matches kubectl top / container memory); then Go sys; then heap alloc
     local line
     line="$(echo "$metrics" | grep -E '^process_resident_memory_bytes ' | head -1)"
@@ -186,6 +203,15 @@ get_memory_prometheus() {
   kill $pf_pid 2>/dev/null || true
   trap - RETURN
   echo "${mb:-0}"
+}
+
+prepare_metrics_access() {
+  kubectl -n "$NAMESPACE" create serviceaccount "$METRICS_SERVICE_ACCOUNT" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl create clusterrolebinding scale-test-metrics-reader-access \
+    --clusterrole=skyhook-operator-metrics-reader \
+    --serviceaccount="${NAMESPACE}:${METRICS_SERVICE_ACCOUNT}" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
 get_memory_mb() {
@@ -437,6 +463,9 @@ run_one_iteration() {
 
 # Main
 echo "Scale test: cluster=$CLUSTER_NAME nodegroup=$NODEGROUP sizes $START_SIZE to $FINAL_SIZE step $STEP (metrics=$METRICS_SOURCE)"
+if [[ "$METRICS_SOURCE" == "prometheus" ]]; then
+  prepare_metrics_access
+fi
 if [[ "${FAKE_LABELS:-0}" -gt 0 ]]; then
   apply_fake_labels_to_node_group "$FAKE_LABELS"
 fi

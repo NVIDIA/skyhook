@@ -82,14 +82,48 @@ Note: When a NodeWright is deleted all metrics for that NodeWright are no longer
 
 ## Testing
 
-See the script [metrics_test.py](../../k8s-tests/chainsaw/metrics_test.py) that will let you test for the existence or absence of metrics based on name and labels. The metrics endpoint can also be hit directly at:
+See the script [metrics_test.py](../../k8s-tests/chainsaw/metrics_test.py) that will let you test for the existence or absence of metrics based on name and labels. The metrics endpoint requires a bearer token authorized for the `/metrics` non-resource URL. Create a scraper identity and bind it to the chart's metrics-reader role:
 ```bash
-curl http://localhost:8080/metrics
+kubectl -n skyhook create serviceaccount metrics-reader
+kubectl create clusterrolebinding metrics-reader-access \
+  --clusterrole=skyhook-operator-metrics-reader \
+  --serviceaccount=skyhook:metrics-reader
 ```
-Or you can port forward to it in kubernetes if installed via the chart
+
+Then port-forward the HTTPS Service and scrape it with a short-lived token. TLS verification must be skipped because controller-runtime generates an in-memory self-signed certificate for each operator pod and does not publish a stable CA:
+
 ```bash
-kubectl port-forward svc/skyhook-operator-controller-manager-metrics-service -n skyhook  8080:8080
+kubectl -n skyhook port-forward \
+  svc/skyhook-operator-controller-manager-metrics-service 8443:8443 &
+METRICS_TOKEN="$(kubectl -n skyhook create token metrics-reader)"
+curl --insecure --header "Authorization: Bearer ${METRICS_TOKEN}" \
+  https://127.0.0.1:8443/metrics
 ```
+
+`metrics_test.py` can request the same token when the ServiceAccount and
+namespace are provided by flags or environment variables:
+
+```bash
+SKYHOOK_NAMESPACE=skyhook \
+METRICS_TEST_SERVICE_ACCOUNT=metrics-reader \
+./k8s-tests/chainsaw/metrics_test.py \
+  skyhook_node_target_count 1 -t skyhook_name=my-nodewright
+```
+
+For repeated checks, mint one token and reuse it instead of making a
+TokenRequest for every invocation:
+
+```bash
+METRICS_TOKEN="$(kubectl -n skyhook create token metrics-reader)"
+export METRICS_TOKEN
+./k8s-tests/chainsaw/metrics_test.py \
+  skyhook_node_target_count 1 -t skyhook_name=my-nodewright
+```
+
+When it has to mint a token, the helper writes only that token to stderr so a
+Chainsaw script operation can capture `$stderr` as an output binding. Setting
+`METRICS_TOKEN` on following operations reuses the token without another
+process launch or TokenRequest.
 
 ## Visualization
 
@@ -143,7 +177,10 @@ make create-kind-cluster
 
 # Install the operator through the helm chart so that
 # the /metrics endpoint is setup
-helm install skyhook ../chart --namespace skyhook
+helm install skyhook ../chart --namespace skyhook \
+  --set metrics.addServiceAccountBinding=true \
+  --set metrics.serviceAccountName=prometheus \
+  --set metrics.serviceAccountNamespace=default
 
 # Setup prometheus and grafana on the cluster this will
 # automatically install the dashboard into the local Grafana
@@ -178,25 +215,29 @@ helm install prometheus prometheus-community/prometheus -f ../docs/metrics/prome
 
 ### Auto discovery
 
-The current values file for the operator helm chart sets prometheus auto-discovery annotations for the http endpoint. Copied below:
+The operator chart does not advertise the metrics Service through
+`prometheus.io/*` annotations by default:
+
 ```
 metricsService:
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8080"
-    prometheus.io/scheme: "http"
+  annotations: {}
   ports:
   - name: metrics
     port: 8443
     targetPort: 8443
     protocol: TCP
-  - name: metrics-http
-    port: 8080
-    targetPort: 8080
-    protocol: TCP
   type: ClusterIP
 ```
-To change to https set the scheme to `https` and the port to `8443` but you will need to set the prometheus auto-discovery to allow insecure tls. See the scrape directly example for known working values.
+
+The prometheus-community chart's default `kubernetes-service-endpoints`
+discovery job does not send a bearer token or disable certificate verification,
+so annotations would continuously advertise a target that fails with a 401 or
+x509 error. Use the explicit `role: endpoints` job in
+[prometheus_values.yaml](prometheus_values.yaml), and bind the Prometheus
+ServiceAccount to `skyhook-operator-metrics-reader`, as shown in the local
+dashboard setup above. Endpoint discovery scrapes each operator pod separately;
+this preserves the leader's reconcile metrics without intermittently routing a
+single Service target to an idle standby replica.
 
 ## Grafana configuration
 
