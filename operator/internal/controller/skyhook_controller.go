@@ -1323,7 +1323,7 @@ func parseNodeState(node *corev1.Node, key string) (v1alpha1.NodeState, error) {
 }
 
 // saveNodeChanges persists one node's changes from this pass under an optimistic lock, re-merging
-// the contended node-state annotation onto a freshly read object on every attempt.
+// the contended node-state annotation against whatever the annotation holds at write time.
 //
 // The heavy pass, JobReconciler and PodReconciler are three separate controllers with three
 // workqueues, all writing nodewright.nvidia.com/nodeState_<name> — one annotation whose value is a
@@ -1331,16 +1331,16 @@ func parseNodeState(node *corev1.Node, key string) (v1alpha1.NodeState, error) {
 // controllers, pod events rode this controller's queue at MaxConcurrentReconciles 1 and could not
 // interleave; now they can, and an unconditional patch of a snapshot-derived value silently
 // reverts a completion recorded mid-pass. The Job is already marked state-recorded by then, so
-// nothing re-records it: the stage only recovers by being torn down and re-run.
+// nothing re-records it; the divergence is only cleared by shouldDeleteFinishedJob tearing the
+// finished Job down so the stage runs a second time.
 //
 // Locking the write alone would not fix that. The value is computed long before the write, so a
-// lock would just serialize a stale value into place. What closes it is applying only this pass's
-// delta on top of whatever the annotation holds at write time.
+// lock would just serialize a stale value into place. What closes it is replacing that one value
+// with this pass's delta applied on top of what the annotation holds now.
 //
-// The patch target is built from the freshly read node rather than the pass's own object,
-// deliberately: the pass's object predates any concurrent write, so diffing against it would emit
-// deletions for keys another writer added since the snapshot — another NodeWright's nodeState_*
-// among them.
+// Only that one value is re-derived. Everything else the pass changed stays an ordinary diff
+// against the pass's own snapshot, which is what keeps the patch from mentioning any label,
+// annotation, taint or cordon this pass did not touch.
 func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev1.Node, node wrapper.SkyhookNode, skyhookName string) error {
 	if original == nil {
 		// Unreachable: BuildState tracks and adds a node in the same step, so every node in
@@ -1361,6 +1361,10 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 	}
 	delta := computeNodeStateDelta(before, after)
 
+	// A pass that deleted the annotation outright (Reset) means it, and the plain diff below
+	// carries that deletion. Re-merging would resurrect the key it just wiped.
+	_, passKeptState := node.GetNode().Annotations[key]
+
 	attempt := 0
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		fresh, err := readNodeForPatch(ctx, r.dal, r.uncached, node.GetNode().Name, attempt)
@@ -1372,152 +1376,43 @@ func (r *SkyhookReconciler) saveNodeChanges(ctx context.Context, original *corev
 			return nil // node went away mid-pass; its state is not ours to resurrect
 		}
 
-		target, err := applyPassChanges(fresh, original, node.GetNode(), key, delta)
-		if err != nil {
-			return fmt.Errorf("merging this pass's changes onto node %s: %w", node.GetNode().Name, err)
+		if passKeptState && len(delta) > 0 {
+			current, err := parseNodeState(fresh, key)
+			if err != nil {
+				return fmt.Errorf("reading current node state for %s: %w", node.GetNode().Name, err)
+			}
+			raw, err := json.Marshal(delta.apply(current))
+			if err != nil {
+				return fmt.Errorf("marshalling merged node state for %s: %w", node.GetNode().Name, err)
+			}
+			node.GetNode().Annotations[key] = string(raw)
 		}
 
-		patch := client.StrategicMergeFrom(fresh.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		// The base does two jobs, and they want different objects. It is the left-hand side of the
+		// diff, where the pass's own snapshot is what keeps the patch to the keys this pass
+		// actually changed — a key another writer added since is in neither side, so the diff
+		// cannot mention it. It is also where MergeFromWithOptimisticLock reads the
+		// resourceVersion, and that has to be the read we just merged against, or the precondition
+		// is stale before it is sent and every attempt loses.
+		base := original.DeepCopy()
+		base.SetResourceVersion(fresh.GetResourceVersion())
+
+		patch := client.StrategicMergeFrom(base, client.MergeFromWithOptimisticLock{})
 		// Wrapped with %w deliberately: RetryOnConflict decides via apierrors.IsConflict, which
 		// unwraps, so the retry keeps working. The conflict-retry spec fails if that ever stops
 		// being true.
-		if err := r.Patch(ctx, target, patch); err != nil {
+		if err := r.Patch(ctx, node.GetNode(), patch); err != nil {
 			return fmt.Errorf("patching node %s: %w", node.GetNode().Name, err)
 		}
-		// Hand the server's answer back to the wrapper so the condition patch that follows, and
-		// anything else downstream in this pass, works against the object that actually landed.
-		// The parsed cache has to go with it: the accessors read that cache, so leaving it would
-		// keep IsComplete/NextStage/UpdateCondition answering from the pass's pre-merge map
-		// instead of the merged annotation now on the object. Re-seeded, never nilled — see
-		// ReloadState for why a nil cache stalls the rollout.
-		*node.GetNode() = *target
+		// The wrapper caches a parsed copy of node state and the accessors read that cache
+		// directly, so the merged annotation has to be re-read into it — otherwise
+		// IsComplete/NextStage/UpdateCondition keep answering from the pass's pre-merge map.
+		// Re-seeded, never nilled — see ReloadState for why a nil cache stalls the rollout.
 		if err := node.ReloadState(); err != nil {
 			return fmt.Errorf("reloading node state for %s after merge: %w", node.GetNode().Name, err)
 		}
 		return nil
 	})
-}
-
-// applyPassChanges rebuilds the pass's intent on top of a freshly read node: every annotation,
-// label, taint and cordon change it made, with the contended node-state key merged rather than
-// overwritten.
-func applyPassChanges(fresh, original, modified *corev1.Node, nodeStateKey string, delta nodeStateDelta) (*corev1.Node, error) {
-	target := fresh.DeepCopy()
-
-	applyMapChanges(&target.Annotations, original.Annotations, modified.Annotations, nodeStateKey)
-	applyMapChanges(&target.Labels, original.Labels, modified.Labels, "")
-
-	if len(delta) > 0 {
-		current, err := parseNodeState(fresh, nodeStateKey)
-		if err != nil {
-			return nil, err
-		}
-		merged := delta.apply(current)
-		raw, err := json.Marshal(merged)
-		if err != nil {
-			return nil, fmt.Errorf("marshalling merged node state: %w", err)
-		}
-		if target.Annotations == nil {
-			target.Annotations = map[string]string{}
-		}
-		target.Annotations[nodeStateKey] = string(raw)
-	}
-
-	// Spec gets the same delta discipline as the maps, and for the same reason: the patch base
-	// is the fresh read, so assigning the pass's value outright turns an untouched field into an
-	// explicit write. Taints are +listType=atomic (strategic merge replaces the whole list) and
-	// Unschedulable is omitempty (false diffs as an explicit null), so a restamp here would
-	// delete an autoscaler/GPU-operator taint or uncordon a node another Skyhook is draining.
-	if modified.Spec.Unschedulable != original.Spec.Unschedulable {
-		target.Spec.Unschedulable = modified.Spec.Unschedulable
-	}
-	target.Spec.Taints = applyTaintChanges(fresh.Spec.Taints, original.Spec.Taints, modified.Spec.Taints)
-
-	return target, nil
-}
-
-// taintID identifies a taint the way Kubernetes does, by key and effect; the value rides along.
-type taintID struct {
-	key    string
-	effect corev1.TaintEffect
-}
-
-func taintIDs(taints []corev1.Taint) map[taintID]corev1.Taint {
-	byID := make(map[taintID]corev1.Taint, len(taints))
-	for _, taint := range taints {
-		byID[taintID{key: taint.Key, effect: taint.Effect}] = taint
-	}
-	return byID
-}
-
-// applyTaintChanges replays the taints the pass added and removed onto the fresh list, leaving
-// every taint neither side touched alone. Taints this operator does not own are common — the
-// cluster autoscaler, node-problem-detector and a human with kubectl all write them — so the pass
-// only gets to speak about the ones it actually changed.
-func applyTaintChanges(fresh, original, modified []corev1.Taint) []corev1.Taint {
-	originalByID, modifiedByID := taintIDs(original), taintIDs(modified)
-
-	result := make([]corev1.Taint, 0, len(fresh)+len(modifiedByID))
-	for _, taint := range fresh {
-		id := taintID{key: taint.Key, effect: taint.Effect}
-		if _, wasThere := originalByID[id]; wasThere {
-			if _, stillThere := modifiedByID[id]; !stillThere {
-				continue // the pass removed it
-			}
-		}
-		if updated, ok := modifiedByID[id]; ok {
-			result = append(result, updated) // the pass may have changed its value
-			continue
-		}
-		result = append(result, taint)
-	}
-
-	freshByID := taintIDs(fresh)
-	for _, taint := range modified {
-		id := taintID{key: taint.Key, effect: taint.Effect}
-		if _, alreadyThere := freshByID[id]; alreadyThere {
-			continue
-		}
-		// Absent from the fresh read, so either the pass added it or someone deleted it
-		// concurrently. Replay it only when the pass has something to say — it added the taint,
-		// or it changed the value of one it inherited. An identity the pass left exactly as it
-		// found it is not its to resurrect, so the concurrent deletion stands.
-		// Compared by Value, not with !=: corev1.Taint carries TimeAdded *metav1.Time, and
-		// original/modified are separate DeepCopies, so a struct compare tests pointer identity
-		// and reports every TimeAdded-carrying taint as edited — resurrecting ones the pass never
-		// touched. Key and Effect are the identity, so Value is the only thing an edit can change.
-		originalTaint, wasThere := originalByID[id]
-		if !wasThere || originalTaint.Value != taint.Value {
-			result = append(result, taint)
-		}
-	}
-	return result
-}
-
-// applyMapChanges replays the pass's additions, edits and deletions for one metadata map onto the
-// target, skipping `except`. Keys the pass never touched are left as the fresh read found them,
-// which is what keeps a concurrent writer's key from being clobbered.
-func applyMapChanges(target *map[string]string, original, modified map[string]string, except string) {
-	for key, value := range modified {
-		if key == except {
-			continue
-		}
-		if originalValue, existed := original[key]; existed && originalValue == value {
-			continue // untouched by this pass
-		}
-		if *target == nil {
-			*target = map[string]string{}
-		}
-		(*target)[key] = value
-	}
-	for key := range original {
-		if key == except {
-			continue
-		}
-		if _, stillThere := modified[key]; !stillThere {
-			delete(*target, key)
-		}
-	}
 }
 
 // SaveNodesAndSkyhook saves nodes and skyhook and will update the events if the skyhook status changes

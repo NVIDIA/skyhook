@@ -66,21 +66,8 @@ func (c *countingReader) Get(_ context.Context, _ client.ObjectKey, obj client.O
 }
 
 var _ = Describe("node state delta merge", func() {
-	const skyhookName = "gpu-init"
-	key := nodeStateAnnotationKey(skyhookName)
-
 	status := func(name string, state v1alpha1.State, stage v1alpha1.Stage) v1alpha1.PackageStatus {
 		return v1alpha1.PackageStatus{Name: name, Version: "1.0.0", Image: "img", State: state, Stage: stage}
-	}
-
-	nodeWith := func(state v1alpha1.NodeState) *corev1.Node {
-		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-1"}}
-		if state != nil {
-			raw, err := json.Marshal(state)
-			Expect(err).ToNot(HaveOccurred())
-			node.Annotations = map[string]string{key: string(raw)}
-		}
-		return node
 	}
 
 	Describe("computeNodeStateDelta", func() {
@@ -154,190 +141,6 @@ var _ = Describe("node state delta merge", func() {
 			Expect(merged).ToNot(HaveKey("a|1.0.0"))
 		})
 	})
-
-	Describe("applyPassChanges", func() {
-		It("merges node state while replaying the pass's other metadata edits", func() {
-			original := nodeWith(v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress, v1alpha1.StageApply)})
-			original.Labels = map[string]string{"keep": "yes", "drop": "soon"}
-
-			modified := original.DeepCopy()
-			raw, err := json.Marshal(v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateComplete, v1alpha1.StageApply)})
-			Expect(err).ToNot(HaveOccurred())
-			modified.Annotations[key] = string(raw)
-			modified.Labels["added"] = "1"
-			delete(modified.Labels, "drop")
-			modified.Spec.Unschedulable = true
-
-			// fresh carries a second NodeWright's key that the pass never saw
-			fresh := original.DeepCopy()
-			fresh.Annotations["nodewright.nvidia.com/nodeState_other"] = "{}"
-			fresh.Labels["set-by-someone-else"] = "1"
-
-			before, err := parseNodeState(original, key)
-			Expect(err).ToNot(HaveOccurred())
-			afterState, err := parseNodeState(modified, key)
-			Expect(err).ToNot(HaveOccurred())
-
-			target, err := applyPassChanges(fresh, original, modified, key, computeNodeStateDelta(before, afterState))
-			Expect(err).ToNot(HaveOccurred())
-
-			state, err := parseNodeState(target, key)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(state["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete))
-
-			Expect(target.Annotations).To(HaveKey("nodewright.nvidia.com/nodeState_other"), "another NodeWright's key must survive")
-			Expect(target.Labels).To(HaveKeyWithValue("set-by-someone-else", "1"), "a concurrent label must survive")
-			Expect(target.Labels).To(HaveKeyWithValue("added", "1"), "the pass's addition must land")
-			Expect(target.Labels).ToNot(HaveKey("drop"), "the pass's deletion must land")
-			Expect(target.Spec.Unschedulable).To(BeTrue(), "cordon is this controller's alone")
-		})
-
-		It("keeps a stale in-flight entry when the pass is the one that is behind", func() {
-			// The pass thinks a is still in_progress and says nothing about it; another writer
-			// completed it. The pass must not drag it back.
-			before := v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress, v1alpha1.StageApply)}
-			original := nodeWith(before)
-			modified := original.DeepCopy() // pass touched other things, not node state
-			modified.Labels = map[string]string{"touched": "1"}
-
-			fresh := nodeWith(v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateComplete, v1alpha1.StageApply)})
-
-			afterState, err := parseNodeState(modified, key)
-			Expect(err).ToNot(HaveOccurred())
-			target, err := applyPassChanges(fresh, original, modified, key, computeNodeStateDelta(before, afterState))
-			Expect(err).ToNot(HaveOccurred())
-
-			got, err := parseNodeState(target, key)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(got["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete))
-			Expect(target.Labels).To(HaveKeyWithValue("touched", "1"))
-		})
-
-		// Regression: the patch base is the fresh read, so assigning the pass's spec value
-		// outright turned an untouched field into an explicit write — deleting an autoscaler
-		// taint, or uncordoning a node another Skyhook was draining.
-		It("leaves a cordon and taints the pass never touched alone", func() {
-			original := nodeWith(v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress, v1alpha1.StageApply)})
-			modified := original.DeepCopy() // pass changed neither cordon nor taints
-
-			fresh := original.DeepCopy()
-			fresh.Spec.Unschedulable = true
-			fresh.Spec.Taints = []corev1.Taint{
-				{Key: "ToBeDeletedByClusterAutoscaler", Value: "1", Effect: corev1.TaintEffectNoSchedule},
-			}
-
-			before, err := parseNodeState(original, key)
-			Expect(err).ToNot(HaveOccurred())
-			afterState, err := parseNodeState(modified, key)
-			Expect(err).ToNot(HaveOccurred())
-
-			target, err := applyPassChanges(fresh, original, modified, key, computeNodeStateDelta(before, afterState))
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(target.Spec.Unschedulable).To(BeTrue(), "another writer's cordon must survive")
-			Expect(target.Spec.Taints).To(HaveLen(1), "an outside taint must survive")
-			Expect(target.Spec.Taints[0].Key).To(Equal("ToBeDeletedByClusterAutoscaler"))
-		})
-
-		It("applies the pass's own cordon and taint changes without disturbing others", func() {
-			runtimeRequired := corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
-			foreign := corev1.Taint{Key: "node-problem-detector", Value: "1", Effect: corev1.TaintEffectNoSchedule}
-
-			original := nodeWith(nil)
-			original.Spec.Taints = []corev1.Taint{runtimeRequired}
-
-			modified := original.DeepCopy()
-			modified.Spec.Taints = nil // the pass removed the runtime-required taint
-			modified.Spec.Unschedulable = true
-
-			fresh := original.DeepCopy()
-			fresh.Spec.Taints = []corev1.Taint{runtimeRequired, foreign} // someone added a taint meanwhile
-
-			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(target.Spec.Unschedulable).To(BeTrue(), "the pass's cordon must land")
-			Expect(target.Spec.Taints).To(HaveLen(1))
-			Expect(target.Spec.Taints[0].Key).To(Equal("node-problem-detector"), "only the pass's own taint is removed")
-		})
-
-		// The operator has no code path that edits a taint's value in place — Taint() early-returns
-		// if the key is present and RemoveTaint() only removes — so this is a latent trap rather
-		// than a live defect. Pinned so it stays closed if a value-editing path ever appears.
-		It("replays a pass-owned taint edit that a concurrent delete removed", func() {
-			id := func(v string) corev1.Taint {
-				return corev1.Taint{Key: "skyhook.nvidia.com", Value: v, Effect: corev1.TaintEffectNoSchedule}
-			}
-			original := nodeWith(nil)
-			original.Spec.Taints = []corev1.Taint{id("old")}
-
-			modified := original.DeepCopy()
-			modified.Spec.Taints = []corev1.Taint{id("new")} // the pass edited the value
-
-			fresh := original.DeepCopy()
-			fresh.Spec.Taints = nil // someone deleted it meanwhile
-
-			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(target.Spec.Taints).To(HaveLen(1))
-			Expect(target.Spec.Taints[0].Value).To(Equal("new"), "the pass's edit must survive the concurrent delete")
-		})
-
-		// TimeAdded is a *metav1.Time and DeepCopy allocates a fresh one, so a struct-level compare
-		// reports an untouched taint as edited and resurrects it. The fixtures above all leave
-		// TimeAdded nil, where two nil pointers compare equal, so only this one catches it.
-		It("lets a concurrent delete stand for an untouched taint that carries TimeAdded", func() {
-			added := metav1.NewTime(time.Now().Truncate(time.Second))
-			taint := corev1.Taint{Key: "example.com/maintenance", Effect: corev1.TaintEffectNoExecute, TimeAdded: &added}
-
-			original := nodeWith(nil)
-			original.Spec.Taints = []corev1.Taint{taint}
-			modified := original.DeepCopy() // separate DeepCopy: distinct TimeAdded pointer, same instant
-
-			fresh := original.DeepCopy()
-			fresh.Spec.Taints = nil // deleted concurrently
-
-			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(target.Spec.Taints).To(BeEmpty(),
-				"a taint the pass never edited must not be resurrected by a pointer comparison")
-		})
-
-		It("lets a concurrent delete stand for a taint the pass never touched", func() {
-			taint := corev1.Taint{Key: "other", Value: "1", Effect: corev1.TaintEffectNoSchedule}
-			original := nodeWith(nil)
-			original.Spec.Taints = []corev1.Taint{taint}
-			modified := original.DeepCopy() // pass left it exactly as found
-
-			fresh := original.DeepCopy()
-			fresh.Spec.Taints = nil
-
-			target, err := applyPassChanges(fresh, original, modified, key, nodeStateDelta{})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(target.Spec.Taints).To(BeEmpty(), "the pass has no opinion, so the deletion stands")
-		})
-
-		It("is a no-op on node state when the pass changed none of it", func() {
-			state := v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateInProgress, v1alpha1.StageApply)}
-			original := nodeWith(state)
-			modified := original.DeepCopy()
-
-			// another writer completed the package while this pass touched nothing
-			fresh := nodeWith(v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateComplete, v1alpha1.StageApply)})
-
-			before, err := parseNodeState(original, key)
-			Expect(err).ToNot(HaveOccurred())
-			afterState, err := parseNodeState(modified, key)
-			Expect(err).ToNot(HaveOccurred())
-
-			target, err := applyPassChanges(fresh, original, modified, key, computeNodeStateDelta(before, afterState))
-			Expect(err).ToNot(HaveOccurred())
-
-			got, err := parseNodeState(target, key)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(got["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete))
-		})
-	})
 })
 
 var _ = Describe("saveNodeChanges", func() {
@@ -364,14 +167,25 @@ var _ = Describe("saveNodeChanges", func() {
 			"b|1.0.0": status("b", v1alpha1.StateInProgress),
 		}
 		original := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
-			Name: nodeName, Annotations: map[string]string{key: stateJSON(snapshot)},
+			Name:        nodeName,
+			Annotations: map[string]string{key: stateJSON(snapshot)},
+			Labels:      map[string]string{"keep": "yes", "pass-drops": "soon"},
 		}}
 
-		// what is actually stored by the time the pass writes: package a completed by JobReconcile
+		// what is actually stored by the time the pass writes: package a completed by JobReconcile,
+		// plus a pile of metadata this Skyhook has no business touching that landed after the
+		// snapshot — a foreign label, another NodeWright's state key, a foreign taint, and a cordon
+		// somebody else applied.
 		storedState := snapshot.DeepCopy()
 		storedState["a|1.0.0"] = status("a", v1alpha1.StateComplete)
 		stored := original.DeepCopy()
 		stored.Annotations[key] = stateJSON(storedState)
+		stored.Annotations["nodewright.nvidia.com/nodeState_other"] = "{}"
+		stored.Labels["foo"] = "bar"
+		stored.Spec.Unschedulable = true
+		stored.Spec.Taints = []corev1.Taint{
+			{Key: "ToBeDeletedByClusterAutoscaler", Value: "1", Effect: corev1.TaintEffectNoSchedule},
+		}
 
 		scr := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: "skyhook"}}
 
@@ -398,11 +212,13 @@ var _ = Describe("saveNodeChanges", func() {
 			})
 		Expect(err).ToNot(HaveOccurred())
 
-		// the pass advanced package b, still believing a is in_progress
+		// the pass advanced package b, still believing a is in_progress, and made its own label edits
 		passNode := original.DeepCopy()
 		passState := snapshot.DeepCopy()
 		passState["b|1.0.0"] = status("b", v1alpha1.StateComplete)
 		passNode.Annotations[key] = stateJSON(passState)
+		passNode.Labels["pass-adds"] = "1"
+		delete(passNode.Labels, "pass-drops")
 		sn, err := wrapper.NewSkyhookNode(passNode, scr)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -415,6 +231,20 @@ var _ = Describe("saveNodeChanges", func() {
 
 		Expect(final["a|1.0.0"].State).To(Equal(v1alpha1.StateComplete), "concurrent completion must survive the pass write")
 		Expect(final["b|1.0.0"].State).To(Equal(v1alpha1.StateComplete), "the pass's own transition must land")
+
+		// The diff is taken against the pass's own snapshot, so anything in neither side is not in
+		// the patch and cannot be disturbed. These assertions are what pins that: basing the diff on
+		// the fresh read instead makes every one of them a deletion the pass never intended, and
+		// then needs a hand-rolled replay of each metadata surface to undo it. Verified — swapping
+		// the base back to the fresh read fails this spec.
+		Expect(got.Labels).To(HaveKeyWithValue("foo", "bar"), "a foreign label must survive")
+		Expect(got.Annotations).To(HaveKey("nodewright.nvidia.com/nodeState_other"), "another NodeWright's key must survive")
+		Expect(got.Spec.Taints).To(HaveLen(1), "a foreign taint must survive")
+		Expect(got.Spec.Taints[0].Key).To(Equal("ToBeDeletedByClusterAutoscaler"))
+		Expect(got.Spec.Unschedulable).To(BeTrue(), "a cordon this pass never touched must survive")
+
+		Expect(got.Labels).To(HaveKeyWithValue("pass-adds", "1"), "the pass's own addition must land")
+		Expect(got.Labels).ToNot(HaveKey("pass-drops"), "the pass's own deletion must land")
 
 		// The wrapper caches a parsed copy of node state and State() serves it whenever it is
 		// non-nil, so the merged annotation has to invalidate it. Without that, IsComplete,
