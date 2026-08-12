@@ -264,6 +264,55 @@ var _ = Describe("saveNodeChanges", func() {
 		Expect(found).To(BeTrue(), "the direct-cache accessors must see the merged state")
 		Expect(gotStatus.State).To(Equal(v1alpha1.StateComplete))
 	})
+
+	// Reset() deletes the annotation outright and means it. Merging is keyed on the pass having
+	// kept the key, because a delta of pure removals would otherwise be re-marshalled and written
+	// back as "{}" — resurrecting the key the pass just wiped, and leaving a node that reads as
+	// tracked-with-no-packages instead of untracked.
+	It("carries the pass's deletion instead of re-merging when the annotation was wiped", func() {
+		snapshot := v1alpha1.NodeState{"a|1.0.0": status("a", v1alpha1.StateComplete)}
+		original := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName, Annotations: map[string]string{key: stateJSON(snapshot)},
+		}}
+		stored := original.DeepCopy()
+
+		scr := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: "skyhook"}}
+
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+		Expect(v1alpha1.AddToScheme(scheme)).To(Succeed())
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stored, scr).Build()
+
+		r, err := NewSkyhookReconciler(scheme, c, c, k8sfake.NewClientset(), events.NewFakeRecorder(10),
+			SkyhookOperatorOptions{
+				Namespace:            "skyhook",
+				CopyDirRoot:          "/var/lib/skyhook",
+				AgentLogRoot:         "/var/log/skyhook",
+				RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+				AgentImage:           "ghcr.io/nvidia/skyhook/agent:1.2.3",
+				PauseImage:           "registry.k8s.io/pause:3.10",
+				MaxInterval:          10 * time.Minute,
+				JobOperatorOptions: JobOperatorOptions{
+					JobTTLSucceeded: time.Hour,
+					JobTTLFailed:    24 * time.Hour,
+					JobStageTimeout: time.Hour,
+				},
+			})
+		Expect(err).ToNot(HaveOccurred())
+
+		// what Reset() leaves behind: the key gone from the pass's object
+		passNode := original.DeepCopy()
+		delete(passNode.Annotations, key)
+		sn, err := wrapper.NewSkyhookNode(passNode, scr)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(r.saveNodeChanges(ctx, original, sn, skyhookName)).To(Succeed())
+
+		var got corev1.Node
+		Expect(c.Get(ctx, types.NamespacedName{Name: nodeName}, &got)).To(Succeed())
+		Expect(got.Annotations).ToNot(HaveKey(key), "the pass's wipe must land, not come back as {}")
+	})
 })
 
 var _ = Describe("saveNodeChanges conflict retry", func() {
