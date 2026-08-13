@@ -24,7 +24,8 @@ Metrics:
 
 The following taints are always tolerated by NodeWright
 
- * Runtime Required
+ * Runtime Required (`controllerManager.manager.env.runtimeRequiredTaint`, default `nodewright.nvidia.com=runtime-required:NoSchedule`)
+ * Runtime Required, legacy key: `skyhook.nvidia.com=runtime-required:NoSchedule`. Tolerated and removed for the rename deprecation window, never applied. See [runtime_required.md](runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
  * Cordon taint: `node.kubernetes.io/unschedulable`
 
 # Common Symptoms

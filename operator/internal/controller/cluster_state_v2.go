@@ -34,7 +34,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	k8staints "k8s.io/kubernetes/pkg/util/taints"
 )
 
 // tracks original objects
@@ -227,9 +226,12 @@ func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1al
 // getAutoTaintNodes returns nodes that should be auto-tainted with the runtime-required taint.
 // A node should be auto-tainted if:
 // 1. It matches a Skyhook with RuntimeRequired=true AND AutoTaintNewNodes=true
-// 2. It doesn't already have the runtime-required taint
+// 2. It doesn't already carry any recognised runtime-required taint (the configured one
+// or the legacy skyhook.nvidia.com one a provisioner may still be stamping) — a node
+// pre-tainted with the legacy key is already gated, so adding a second taint would only
+// make it harder to reason about
 // 3. It has no Skyhook annotations (it's a "new" node)
-func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
+func (cs *clusterState) getAutoTaintNodes(recognised []corev1.Taint) []*corev1.Node {
 	seen := make(map[types.UID]bool)
 	result := make([]*corev1.Node, 0)
 	for _, skyhook := range cs.skyhooks {
@@ -242,7 +244,7 @@ func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
 				continue
 			}
 			seen[node.UID] = true
-			if k8staints.TaintExists(node.Spec.Taints, &taint) {
+			if hasAnyTaint(node, recognised) {
 				continue
 			}
 			if nodeWrapper.HasSkyhookAnnotations() {
@@ -950,16 +952,16 @@ func (s *skyhookNodes) UpdateCondition(logger logr.Logger) bool {
 }
 
 type NodePicker struct {
-	logger                    logr.Logger
-	priorityNodes             map[string]time.Time
-	runtimeRequiredToleration corev1.Toleration
+	logger                     logr.Logger
+	priorityNodes              map[string]time.Time
+	runtimeRequiredTolerations []corev1.Toleration
 }
 
-func NewNodePicker(logger logr.Logger, runtimeRequiredToleration corev1.Toleration) *NodePicker {
+func NewNodePicker(logger logr.Logger, runtimeRequiredTolerations []corev1.Toleration) *NodePicker {
 	return &NodePicker{
-		logger:                    logger,
-		priorityNodes:             make(map[string]time.Time),
-		runtimeRequiredToleration: runtimeRequiredToleration,
+		logger:                     logger,
+		priorityNodes:              make(map[string]time.Time),
+		runtimeRequiredTolerations: runtimeRequiredTolerations,
 	}
 }
 
@@ -1039,7 +1041,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 	}, s.GetSkyhook().Spec.AdditionalTolerations...)
 
 	if s.GetSkyhook().Spec.RuntimeRequired {
-		tolerations = append(tolerations, np.runtimeRequiredToleration)
+		tolerations = append(tolerations, np.runtimeRequiredTolerations...)
 	}
 
 	// All skyhooks now use compartments (with a default 100% compartment if none specified)

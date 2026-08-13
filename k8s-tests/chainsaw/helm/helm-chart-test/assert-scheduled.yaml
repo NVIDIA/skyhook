@@ -48,7 +48,7 @@ spec:
   containers:
   - command:
     - /manager
-    ((env[?name == 'RUNTIME_REQUIRED_TAINT'].value)[0] == 'skyhook.nvidia.com=runtime-required:NoSchedule'): true
+    ((env[?name == 'RUNTIME_REQUIRED_TAINT'].value)[0] == 'nodewright.nvidia.com=runtime-required:NoSchedule'): true
     (image == 'ghcr.io/nvidia/nodewright/operator:latest' || contains(image, 'localhost:5005/skyhook-operator:')): true
     livenessProbe:
       failureThreshold: 3

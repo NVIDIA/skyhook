@@ -1,8 +1,9 @@
 # Migrating from Skyhook to NodeWright
 
 > **STATUS: DRAFT.** This guide describes the in-progress `skyhook.nvidia.com` -> `nodewright.nvidia.com`
-> API rename. It is written against the mirror-based upgrade flow. Do not treat version numbers here as
-> final.
+> API rename. It is written against the mirror-based upgrade flow. The rename ships in operator v0.18.0
+> and the legacy group is removed in **v0.20.0**; treat those two as firm, since the deprecation windows
+> below are the deadline users plan against.
 >
 > **BREAKING CHANGE.** The primary CRD moves group and Kind: `skyhook.nvidia.com/v1alpha1 Skyhook` ->
 > `nodewright.nvidia.com/v1alpha1 NodeWright`. `DeploymentPolicy` moves group (same Kind name). The
@@ -17,7 +18,7 @@
 > **not** re-run), the deferred rollback-safe cleanup of the legacy-labeled package pods and per-node
 > ConfigMaps (gated by `LEGACY_CLEANUP_DELAY`), the runtime migration hold that waits while any legacy
 > `Skyhook` is non-complete, the renamed CLI plugin (binary `kubectl-nodewright`), and the Helm chart shipping both groups'
-> CRDs and RBAC. **Not yet available** (planned for the removal release, do not rely on it today): the
+> CRDs and RBAC. **Not yet available** (planned for v0.20.0, do not rely on it today): the
 > chart's pre-upgrade safety hook that refuses to drop the legacy CRD while legacy objects remain. Sections
 > below flag this inline.
 
@@ -122,7 +123,7 @@ If you keep CRDs in a separate Argo Application: during the transition it should
 operator Helm chart ships both groups' CRDs and RBAC, so an operator upgrade installs the
 `nodewright.nvidia.com` CRDs for you. Do not remove the `skyhook.nvidia.com` CRD until every `Skyhook` is
 migrated and deleted (removing the CRD cascade-deletes any remaining `Skyhook`s). See
-[Removal](#removal-future-release).
+[Removal](#removal-operator-v0200).
 
 ---
 
@@ -276,11 +277,18 @@ name, so you may well have your own labels or annotations under it (a `skyhook.n
 `nodeSelectors`, say). The migration only copies and later prunes the keys the operator itself writes:
 the `nodeState_`, `status_`, `version_`, `cordon_`, `drainStart_`, and `autoTaint_` annotations, the
 `status_` label, the operator-defined `ignore` label, and the `<name>/NotReady` and `<name>/Erroring`
-conditions. Anything else under the prefix is yours and is left exactly as it is, on both halves. The
-runtime-required **taint** key is likewise untouched: it did not move in the rename.
+conditions. Anything else under the prefix is yours and is left exactly as it is, on both halves.
 
-This is transition-only behavior and is removed together with the `skyhook.nvidia.com` group at the
-removal release.
+The runtime-required **taint** key is not part of this copy-and-prune flow, and taints already on nodes
+are never rewritten. Its default did move in the rename, from
+`skyhook.nvidia.com=runtime-required:NoSchedule` to `nodewright.nvidia.com=runtime-required:NoSchedule`.
+The operator applies only the configured key, but tolerates and removes **both** for the deprecation
+window, so nodes stamped with the legacy key by an autoscaler or node template are not stranded
+unschedulable. Update your provisioning config before operator v0.20.0; see
+[runtime_required.md](runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
+
+This is transition-only behavior and is removed together with the `skyhook.nvidia.com` group in
+operator v0.20.0.
 
 ## Install namespace (`skyhook` -> `nodewright`)
 
@@ -344,16 +352,21 @@ These land as a **companion PR in the consumer repo**, timed with (or shortly af
 - After you delete the old CRs, the `NodeWright` objects remain and reconcile normally.
 - Legacy `Skyhook`/`DeploymentPolicy` writes emit the deprecation warning.
 
-## Removal (future release)
+## Removal (operator v0.20.0)
 
-The legacy `skyhook.nvidia.com` group is kept for a multi-release migration window (targeting roughly two
-releases, adoption-gated - not a fixed release number). In the removal release:
+The legacy `skyhook.nvidia.com` group is kept for a two-minor-release migration window and is removed in
+**operator v0.20.0**. The rename ships in v0.18.0, so the window spans v0.18.x and v0.19.x.
+
+This is the single date every transition-only behavior keys off: the legacy API group, the per-node
+metadata prune, and the legacy runtime-required taint key (see
+[runtime_required.md](runtime_required.md#deprecation-window)) all end together in v0.20.0. In the
+removal release:
 
 - The legacy admission webhook flips from warning to **denying** writes.
 - The legacy CRDs are removed from the chart/manifests, sequenced behind a preflight that refuses removal
   while any legacy objects remain (the Helm/Argo pre-upgrade hook, planned above).
-- Removing the `skyhook.nvidia.com` CRD cascade-deletes any remaining `Skyhook`s, so **migrate before the
-  removal release**.
+- Removing the `skyhook.nvidia.com` CRD cascade-deletes any remaining `Skyhook`s, so **migrate before
+  operator v0.20.0**.
 
 ## FAQ
 

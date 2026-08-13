@@ -108,8 +108,8 @@ spec:
           # immediately. Remove with the legacy group at the removal release.
           - name: LEGACY_CLEANUP_DELAY
             value: "24h"
-          - name: RUNTIME_REQUIRED_TAINT_KEY
-            value: skyhook.nvidia.com=runtime-required:NoSchedule
+          - name: RUNTIME_REQUIRED_TAINT
+            value: nodewright.nvidia.com=runtime-required:NoSchedule
           - name: PAUSE_IMAGE
             value: registry.k8s.io/pause:3.10
           - name: AGENT_IMAGE

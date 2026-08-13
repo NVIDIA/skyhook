@@ -5,16 +5,36 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
-### Other Changes
+### Breaking Changes
 
-- **The documented install namespace for new installs is now `nodewright`.** This is a
-  documentation and example change only: the chart has always sourced the namespace from
-  `.Release.Namespace` and installs cleanly into any namespace. **An existing release in
-  the `skyhook` namespace needs no action** — a namespace cannot be renamed in place and
-  Helm cannot move a release between namespaces, so `helm upgrade` there keeps working
-  unchanged and is supported indefinitely.
+- **`controllerManager.manager.env.runtimeRequiredTaint` now defaults to
+  `nodewright.nvidia.com=runtime-required:NoSchedule`** (was
+  `skyhook.nvidia.com=runtime-required:NoSchedule`). This is a coordinated change
+  with your provisioning stack, not a cosmetic default bump: the taint key is
+  named by cluster autoscaler / Karpenter node pools, machine templates,
+  `--register-with-taints` kubelet arguments, and your own workload tolerations.
+
+  The operator recognises both keys for the rename deprecation window — it applies
+  only the configured one, but tolerates and removes the legacy key as well — so
+  upgrading the chart without touching your provisioning config is safe. Update
+  that config before operator v0.20.0, or pin the old value explicitly:
+
+  ```yaml
+  controllerManager:
+    manager:
+      env:
+        runtimeRequiredTaint: skyhook.nvidia.com=runtime-required:NoSchedule
+  ```
+
+  See [docs/runtime_required.md](../docs/runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 ### Bug Fixes
+
+- **The kustomize manager manifest actually sets the runtime-required taint
+  again.** `operator/config/manager/manager.yaml` set `RUNTIME_REQUIRED_TAINT_KEY`,
+  which the operator does not read, so a kustomize-based install silently fell back
+  to the built-in default and ignored the value in the manifest. The variable is now
+  spelled `RUNTIME_REQUIRED_TAINT`, matching the operator and the chart.
 
 - **Helm upgrade no longer fails on the immutable Deployment selector after the
   skyhook -> nodewright rename.** A release first installed from a pre-rename
@@ -44,6 +64,13 @@ For the full commit-level log see CHANGELOG.md.
   withdrawn on 2025-08-28, leaving only an unversioned `:latest` with no
   security maintenance. If you had overridden `webhook.removalImage` to point at
   a private mirror, remirror from the new source (#207).
+  
+- **The documented install namespace for new installs is now `nodewright`.** This is a
+  documentation and example change only: the chart has always sourced the namespace from
+  `.Release.Namespace` and installs cleanly into any namespace. **An existing release in
+  the `skyhook` namespace needs no action** — a namespace cannot be renamed in place and
+  Helm cannot move a release between namespaces, so `helm upgrade` there keeps working
+  unchanged and is supported indefinitely.
 
 ### Upgrade notes
 

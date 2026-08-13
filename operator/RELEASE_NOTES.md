@@ -26,6 +26,33 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Breaking Changes
 
+- **The default runtime-required taint key moves from `skyhook.nvidia.com` to
+  `nodewright.nvidia.com`.** `RUNTIME_REQUIRED_TAINT` now defaults to
+  `nodewright.nvidia.com=runtime-required:NoSchedule`.
+
+  **This is a coordinated change, not a silent default bump.** The taint key is a
+  contract with infrastructure the operator cannot see: cluster autoscaler and
+  Karpenter node pools, machine/node templates, `--register-with-taints` kubelet
+  arguments, and tolerations on your own workloads all name it. A node that comes
+  up carrying a key the operator does not recognise is never untainted, and sits
+  unschedulable — a cluster-down failure mode for anyone using
+  `autoTaintNewNodes`, not a cosmetic break.
+
+  For the deprecation window the operator therefore recognises **both** keys. It
+  **applies** only the configured taint, but **tolerates** and **removes** the
+  legacy `skyhook.nvidia.com=runtime-required:NoSchedule` taint as well, and
+  treats a node already carrying either key as gated so `autoTaintNewNodes` does
+  not stamp a second taint. Existing taints on existing nodes are not rewritten.
+  A cluster whose provisioner still applies the legacy key keeps working with no
+  change on your side.
+
+  **What you must do:** update the taint key in your autoscaler / node-pool /
+  machine-template configuration, and in any workload tolerations that name it,
+  before operator v0.20.0, after which the legacy key is neither tolerated nor
+  removed. To stay on the old key in the meantime, set it explicitly via
+  `controllerManager.manager.env.runtimeRequiredTaint`. See
+  [docs/runtime_required.md](../docs/runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
+
 - **The primary CRD is renamed from `Skyhook` (`skyhook.nvidia.com/v1alpha1`) to
   `NodeWright` (`nodewright.nvidia.com/v1alpha1`), and `DeploymentPolicy` moves to
   the same `nodewright.nvidia.com` group.** This is the operator side of the
@@ -49,8 +76,8 @@ For the full commit-level log see CHANGELOG.md.
     is `complete` with no nodes in progress. In-flight stages resume idempotently
     (no double reboot), but upgrading idle avoids even the benign package-pod
     restart.
-  - The legacy `skyhook.nvidia.com` group remains available for a multi-release,
-    adoption-gated migration window and is removed in a later release.
+  - The legacy `skyhook.nvidia.com` group remains available for a two-minor-release
+    migration window spanning v0.18.x and v0.19.x, and is removed in operator v0.20.0.
   - **See [docs/nodewright-migration.md](../docs/nodewright-migration.md)** for the
     full migration guide, the pre-upgrade check, and a verification checklist.
 
