@@ -15,7 +15,9 @@
 # limitations under the License.
 
 # Example of scraping each authenticated HTTPS pod endpoint. The Prometheus
-# ServiceAccount must be bound to skyhook-operator-metrics-reader.
+# ServiceAccount must be bound to nodewright-metrics-reader (named
+# skyhook-operator-metrics-reader before the resource-name rename, so re-point an
+# existing binding). See docs/metrics/README.md.
 extraScrapeConfigs: |
   - job_name: 'nodewright'
     metrics_path: /metrics
@@ -29,11 +31,23 @@ extraScrapeConfigs: |
       - role: endpoints
         namespaces:
           names:
+            # New installs default to `nodewright`; installs predating that change
+            # stay in `skyhook` forever, since a namespace cannot be renamed in place.
+            - nodewright
             - skyhook
     relabel_configs:
       - source_labels: [__meta_kubernetes_service_name]
         action: keep
-        regex: skyhook-operator-controller-manager-metrics-service
+        # The metrics Service is named off the chart fullname. The alternation below
+        # covers the default (`nodewright-`) and the pre-rename name, so this example
+        # works against an operator that has not been upgraded yet.
+        # IF YOU SET fullnameOverride OR nameOverride, EDIT THIS REGEX: the Service is
+        # then `<your-override>-controller-manager-metrics-service` and this job will
+        # silently match zero targets. Confirm with:
+        #   kubectl -n <namespace> get svc -l control-plane=controller-manager
+        # e.g. for `fullnameOverride: skyhook-operator` the regex is already covered;
+        # for `fullnameOverride: acme` use `acme-controller-manager-metrics-service`.
+        regex: (nodewright|skyhook-operator)-controller-manager-metrics-service
       - source_labels: [__meta_kubernetes_endpoint_port_name]
         action: keep
         regex: metrics

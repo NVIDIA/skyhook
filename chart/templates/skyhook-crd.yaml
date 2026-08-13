@@ -13,7 +13,7 @@ spec:
     webhook:
       clientConfig:
         service:
-          name: skyhook-operator-webhook-service
+          name: {{ include "chart.webhookServiceName" . }}
           namespace: '{{ .Release.Namespace }}'
           path: /convert
       conversionReviewVersions:

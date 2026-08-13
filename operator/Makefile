@@ -336,8 +336,11 @@ push-local-image: docker-build ## Tag and push the locally-built operator image 
 
 .PHONY: rollout-local
 rollout-local: push-local-image ## push locally-built operator and restart the deployment
-	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout restart deployment -l app.kubernetes.io/name=skyhook-operator,control-plane=controller-manager
-	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout status deployment -l app.kubernetes.io/name=skyhook-operator,control-plane=controller-manager --timeout=60s
+	@# control-plane=controller-manager is the only label both install paths agree on:
+	@# the chart renders app.kubernetes.io/name=nodewright while the kustomize overlay
+	@# renders app.kubernetes.io/name=deployment (namePrefix renames resources, not labels).
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout restart deployment -l control-plane=controller-manager
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout status deployment -l control-plane=controller-manager --timeout=60s
 
 
 .PHONY: delete-kind-cluster

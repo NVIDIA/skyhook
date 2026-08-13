@@ -801,3 +801,262 @@ spec:
                 containers:
                 - name: cleanup
           EXPECTED
+
+  ## ── Resource names templated off chart.fullname (#440) ──────────────
+
+  - name: resource-names-follow-fullname
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## Nothing in the rendered chart may hardcode the pre-rename
+          ## `skyhook-operator-` prefix, with one intentional exception: the legacy
+          ## webhook configuration names the manager RBAC and the webhook cleanup job
+          ## still sweep during the rename window. Anything else is a name that
+          ## escaped templating.
+          helm template test-release ${CHART} -n nodewright \
+            | grep -n 'skyhook-operator' \
+            | grep -v 'skyhook-operator-validating-webhook' \
+            | grep -v 'skyhook-operator-mutating-webhook' \
+            > /tmp/leaked.txt || true
+          if [ -s /tmp/leaked.txt ]; then
+            echo "hardcoded skyhook-operator names leaked into the render:"
+            cat /tmp/leaked.txt
+            exit 1
+          fi
+
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## Every renamed object, by exact rendered name. Asserted with grep rather
+          ## than `chainsaw assert` because these templates emit several resources per
+          ## file and a file-scoped assert requires every resource in the file to match
+          ## the single expectation.
+          helm template test-release ${CHART} -n nodewright \
+            | grep -E '^  name: ' | sed 's/^  name: //' | tr -d '"' | sort -u > /tmp/names.txt
+          missing=0
+          for want in \
+            nodewright-controller-manager \
+            nodewright-leader-election-role \
+            nodewright-leader-election-rolebinding \
+            nodewright-manager-role \
+            nodewright-manager-rolebinding \
+            nodewright-metrics-reader \
+            nodewright-controller-manager-metrics-service \
+            nodewright-webhook-service \
+            nodewright-validating-webhook \
+            nodewright-mutating-webhook ; do
+            if ! grep -qx "$want" /tmp/names.txt; then
+              echo "missing expected resource name: $want"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## roleRef is immutable, so a renamed binding that still points at the old
+          ## role name would fail to apply rather than fail quietly.
+          helm template test-release ${CHART} -n nodewright \
+            -s templates/metrics-service.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: nodewright-controller-manager-metrics-service
+          EXPECTED
+
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          helm template test-release ${CHART} -n nodewright \
+            -s templates/webhook-service.yaml > /tmp/rendered.yaml
+          cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
+            --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: nodewright-webhook-service
+          EXPECTED
+
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## Both bindings must point at the renamed roles. roleRef is immutable, so a
+          ## binding left pointing at the old role name is rejected on apply.
+          rendered=$(helm template test-release ${CHART} -n nodewright \
+            -s templates/leader-election-rbac.yaml -s templates/manager-rbac.yaml)
+          echo "$rendered" | grep -A4 '^roleRef:' | grep -q 'name: nodewright-leader-election-role'
+          echo "$rendered" | grep -A4 '^roleRef:' | grep -q 'name: nodewright-manager-role'
+
+  - name: no-duplicate-resource-names-under-override
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## `fullnameOverride: skyhook-operator` is what chart/RELEASE_NOTES.md offers to
+          ## avoid the one-time admission gap, and it makes chart.fullname render the same
+          ## string the deprecated metrics-reader alias hardcodes. Two objects of the same
+          ## kind and name in one release is a silent overwrite, not an error, so assert
+          ## the rendered (kind, name) pairs are unique for the default AND the override.
+          ## Only metadata.name counts: roleRef.name and subjects[].name sit at the same
+          ## indent, so a naive `^  name:` match reports every RoleBinding as a duplicate.
+          for args in "" "--set fullnameOverride=skyhook-operator" "--set nameOverride=skyhook-operator"; do
+            dupes=$(helm template test-release ${CHART} -n nodewright $args \
+              | awk '
+                  /^kind: / { kind=$2; inmeta=0; next }
+                  /^metadata:/ { inmeta=1; next }
+                  /^[^ ]/ { inmeta=0 }
+                  inmeta && /^  name: / { gsub(/"/,"",$2); print kind"/"$2; inmeta=0 }
+                ' | sort | uniq -d)
+            if [ -n "$dupes" ]; then
+              echo "duplicate rendered resources with args '$args':"
+              echo "$dupes"
+              exit 1
+            fi
+          done
+
+  - name: metrics-reader-renders-once-under-its-new-name
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## Users bind their own Prometheus ServiceAccount to this ClusterRole by name
+          ## (docs/metrics/README.md), so it is the one renamed object the chart cannot
+          ## fix up for them. Exactly one ClusterRole, under the new name.
+          rendered=$(helm template test-release ${CHART} -n nodewright \
+            -s templates/metrics-reader-rbac.yaml)
+          echo "$rendered" | grep -q 'name: nodewright-metrics-reader'
+          if echo "$rendered" | grep -q 'name: skyhook-operator-metrics-reader'; then
+            echo "the pre-rename metrics-reader name is still being rendered"
+            exit 1
+          fi
+          if [ "$(echo "$rendered" | grep -c '^kind: ClusterRole$')" -ne 1 ]; then
+            echo "expected exactly one metrics-reader ClusterRole"
+            echo "$rendered"
+            exit 1
+          fi
+
+  - name: operator-env-matches-rendered-webhook-service
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## The operator mints the webhook serving cert with WEBHOOK_SERVICE_NAME in
+          ## the SAN, so drift between this env value and the rendered Service fails
+          ## admission closed rather than erroring at startup. Asserted against the
+          ## whole render, so the Service and the env value are compared as shipped.
+          rendered=$(helm template test-release ${CHART} -n nodewright)
+          echo "$rendered" | grep -A1 'name: WEBHOOK_SERVICE_NAME' \
+            | grep -q 'value: "nodewright-webhook-service"'
+          echo "$rendered" | grep -A1 'name: WEBHOOK_SECRET_NAME' \
+            | grep -q 'value: "webhook-cert"'
+          ## and the Service the operator was told about actually exists in the render
+          echo "$rendered" | grep -q '^  name: nodewright-webhook-service$'
+
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## An override has to move the Service and the env value together, or the
+          ## cert SAN stops matching the DNS name the API server dials.
+          rendered=$(helm template test-release ${CHART} -n nodewright \
+            --set webhook.serviceName=pinned-svc)
+          echo "$rendered" | grep -A1 'name: WEBHOOK_SERVICE_NAME' \
+            | grep -q 'value: "pinned-svc"'
+          echo "$rendered" | grep -q '^  name: pinned-svc$'
+
+  - name: manager-rbac-covers-the-rendered-webhook-config-names
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## Label-based discovery removes the name coupling from the operator's LOOKUP,
+          ## but not from its RBAC: the manager ClusterRole scopes `update` by
+          ## resourceNames. A configuration the operator discovers by label but cannot
+          ## update 403s in a requeue loop, so the rendered names must always be a subset
+          ## of the rendered resourceNames. Both come from the same helpers; this asserts
+          ## they have not drifted.
+          rendered=$(helm template test-release ${CHART} -n nodewright)
+          allowed=$(helm template test-release ${CHART} -n nodewright \
+            -s templates/manager-rbac.yaml \
+            | grep -E '^  - .*-(validating|mutating)-webhook$' | sed 's/^  - //')
+          names=$(echo "$rendered" \
+            | grep -E '^  name: .*-(validating|mutating)-webhook$' | sed 's/^  name: //')
+          ## Guard the guard: an empty list would make the loop below vacuously green.
+          if [ "$(echo "$names" | grep -c .)" -ne 2 ]; then
+            echo "expected 2 rendered webhook configurations, got: $names"
+            exit 1
+          fi
+          for want in $names; do
+            if ! echo "$allowed" | grep -qx "$want"; then
+              echo "webhook configuration '$want' is not in the manager ClusterRole resourceNames:"
+              echo "$allowed"
+              exit 1
+            fi
+          done
+
+  - name: webhook-configs-carry-the-discovery-label
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        - name: CHAINSAW_BIN
+          value: ($CHAINSAW_BIN)
+        content: |
+          ## The operator selects the webhook configurations on this label instead of
+          ## by name, which is what makes renaming them survivable: a name-based
+          ## lookup turns a rename into a hard error on the running old leader, which
+          ## then never releases the webhook bootstrap lease and wedges the rollout.
+          ## Dropping this label breaks caBundle injection entirely.
+          for tpl in validating-webhook mutating-webhook; do
+            helm template test-release ${CHART} -n nodewright \
+              -s templates/${tpl}.yaml \
+              | grep -q 'nodewright.nvidia.com/webhook-config: "true"' || {
+                echo "templates/${tpl}.yaml lost the webhook-config discovery label"
+                exit 1
+              }
+          done
+
+  - name: webhook-service-name-override-threads-through
+    try:
+    - script:
+        env:
+        - name: CHART
+          value: ($CHART)
+        content: |
+          ## An override has to reach the Service, both webhook configurations,
+          ## the legacy CRD conversion clientConfigs, and the operator env in
+          ## lockstep. 1 Service + 8 webhook clientConfigs + 2 CRDs + 1 env = 12.
+          count=$(helm template test-release ${CHART} -n nodewright \
+            --set webhook.serviceName=custom-webhook-svc | grep -c 'custom-webhook-svc')
+          if [ "$count" -ne 12 ]; then
+            echo "expected 12 references to the overridden webhook service name, got $count"
+            exit 1
+          fi

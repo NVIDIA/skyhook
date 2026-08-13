@@ -7,6 +7,101 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Breaking Changes
 
+- **In-cluster resource names are now templated off the chart name and render
+  `nodewright-*` instead of `skyhook-operator-*`** (#440). These objects are
+  renamed on upgrade:
+
+  | Before | After |
+  | --- | --- |
+  | `skyhook-operator-manager-role` / `-manager-rolebinding` | `nodewright-manager-role` / `-manager-rolebinding` |
+  | `skyhook-operator-leader-election-role` / `-rolebinding` | `nodewright-leader-election-role` / `-rolebinding` |
+  | `skyhook-operator-metrics-reader` / `-metrics-reader-rolebinding` | `nodewright-metrics-reader` / `-metrics-reader-rolebinding` |
+  | `skyhook-operator-controller-manager-metrics-service` | `nodewright-controller-manager-metrics-service` |
+  | `skyhook-operator-webhook-service` | `nodewright-webhook-service` |
+  | `skyhook-operator-validating-webhook` / `-mutating-webhook` | `nodewright-validating-webhook` / `-mutating-webhook` |
+
+  The `app.kubernetes.io/created-by` and `app.kubernetes.io/part-of` labels move
+  from `skyhook-operator` to `nodewright` for the same reason. The
+  controller-manager Deployment name and `spec.selector` are **unchanged**, so
+  the immutable-selector failure fixed in #285 does not recur; every renamed
+  object is created new and the old one removed, and none of them has an
+  immutable field that a rename would trip.
+
+  Four consequences worth planning for:
+
+  1. **This chart requires an operator built from #440 or later.** The webhook
+     Service name is now passed to the operator as `WEBHOOK_SERVICE_NAME`, and
+     the operator finds its webhook configurations by the
+     `nodewright.nvidia.com/webhook-config` label rather than by name. An older
+     operator ignores both, keeps looking for `skyhook-operator-*`, and never
+     injects a caBundle, which leaves admission failing closed. Do not pin
+     `controllerManager.manager.image.tag` to a pre-#440 operator with this chart.
+  2. **The controller-manager Deployment is deleted and recreated during the one
+     upgrade that crosses the rename.** A pre-#440 operator looks its webhook
+     configurations up by name, so renaming them makes the running pod error, stay
+     un-Ready, and hold the webhook bootstrap lease forever; the rolling update
+     then never terminates it and `helm upgrade` wedges on `Pending termination`.
+     The existing `selectorMigration` pre-upgrade hook now also detects this case
+     (the live Deployment has no `WEBHOOK_SERVICE_NAME` env var) and deletes the
+     Deployment so Helm can recreate it. This costs a short operator gap on that
+     one upgrade and is a no-op on every normal upgrade. If you run with
+     `selectorMigration.enabled: false`, do it by hand instead:
+     `kubectl -n <ns> delete deploy <fullname>-controller-manager` before upgrading.
+  3. **A brief admission gap during that same upgrade.** Helm creates the renamed
+     webhook configurations with an empty `caBundle` and the operator fills it in
+     once the new pod is running, so for roughly the length of the rollout,
+     `create`/`update` on NodeWright, Skyhook, and DeploymentPolicy resources is
+     rejected. Nothing already running is affected; retry the apply. If you cannot
+     tolerate the gap, pin the old names with `fullnameOverride: skyhook-operator`,
+     which keeps every legacy name including the webhook configurations.
+  4. **`nodewright-metrics-reader` is the one renamed object you bind to yourself.**
+     Re-point any ClusterRoleBinding at the new name; the rule is identical, so
+     nothing else changes. A binding left on the old name fails as an empty scrape
+     rather than a visible error, so make the swap when you upgrade. See
+     [docs/metrics/README.md](../docs/metrics/README.md).
+
+  Anyone who already sets `fullnameOverride` or `nameOverride` keeps their own
+  prefix on all of the above, unchanged.
+
+### Bug Fixes (continued)
+
+- **`helm rollback` no longer destroys every NodeWright.** The chart ships its CRDs
+  under `templates/` (they interpolate the conversion-webhook Service name), so Helm
+  manages them as release resources. Rolling back to a pre-rename revision dropped
+  `nodewrights.nodewright.nvidia.com` and `deploymentpolicies.nodewright.nvidia.com`
+  from the rendered manifest, and Helm deleted them — cascade-deleting every object
+  they defined. Both CRDs now carry `helm.sh/resource-policy: keep` (#464).
+
+  `keep` suppresses **deletion only**. Helm still creates and patches these CRDs on
+  install and upgrade, so schema changes apply exactly as before. Two consequences:
+
+  - `helm uninstall` now leaves the two CRDs (and therefore any surviving `NodeWright`
+    / `DeploymentPolicy` objects) in the cluster. Remove them explicitly if you want a
+    full teardown: `kubectl delete crd nodewrights.nodewright.nvidia.com
+    deploymentpolicies.nodewright.nvidia.com`.
+  - A kept CRD keeps its `meta.helm.sh/release-name` annotation. Reinstalling under the
+    **same** release name and namespace adopts it; reinstalling under a **different**
+    release name fails with `invalid ownership metadata`. Delete the CRDs first if you
+    are renaming the release.
+
+- **The webhook serving certificate is reminted when the webhook Service is
+  renamed.** `Secret/webhook-cert` is operator-owned, not chart-owned, so it
+  survives a chart upgrade. The operator only reminted on expiry or a
+  cert-on-disk mismatch, so after a Service rename it kept serving a
+  year-valid certificate whose SAN was the old DNS name and every admission
+  call failed with
+  `x509: certificate is valid for skyhook-operator-webhook-service..., not
+  nodewright-webhook-service`. The operator now also remints when the Service
+  recorded on the Secret no longer matches its configured `WEBHOOK_SERVICE_NAME`.
+
+- **The pre-delete cleanup job can actually delete the webhook configurations.**
+  The manager ClusterRole granted only `get` and `update` on them, so the job's
+  `kubectl delete ...webhookconfiguration` was silently RBAC-denied and the
+  trailing `|| true` swallowed the error. `delete` is now granted, and the job
+  sweeps the pre-rename names as well, since an orphaned webhook configuration
+  with `failurePolicy: Fail` and no operator behind it rejects every matching
+  API call cluster-wide.
+
 - **`controllerManager.manager.env.runtimeRequiredTaint` now defaults to
   `nodewright.nvidia.com=runtime-required:NoSchedule`** (was
   `skyhook.nvidia.com=runtime-required:NoSchedule`). This is a coordinated change
@@ -53,9 +148,10 @@ For the full commit-level log see CHANGELOG.md.
 
 - **The operator pod now contains only the `manager` container.** Secure metrics
   are served directly by controller-runtime on port `8443`; the separate metrics
-  proxy image, resources, values, and RBAC objects have been removed. Existing
-  Prometheus clients should continue using a bearer token authorized for the
-  `skyhook-operator-metrics-reader` ClusterRole.
+  proxy image, resources, values, and RBAC objects have been removed. Prometheus
+  clients need a bearer token authorized for the `nodewright-metrics-reader`
+  ClusterRole (renamed from `skyhook-operator-metrics-reader` in the same release,
+  see the resource-rename entry above).
 
 - **Maintenance jobs moved off `bitnami/kubectl` to `alpine/kubectl`.** The
   webhook and skyhook cleanup pre-delete hooks and the new selector-migration

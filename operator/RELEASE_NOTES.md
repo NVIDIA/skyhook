@@ -7,6 +7,35 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Other Changes
 
+- **The operator finds its webhook configurations by label, not by name.** It now
+  selects `Validating`/`MutatingWebhookConfiguration` objects carrying
+  `nodewright.nvidia.com/webhook-config` whose `clientConfig` dials its own webhook
+  Service, and injects the caBundle into every webhook of every match. Scoping on the
+  Service rather than just the label matters because the configurations are
+  cluster-scoped: the caBundle only signs that one Service's certificate, so writing it
+  into a configuration belonging to another install would break that install's admission. Previously the two names
+  were compiled-in constants, which made renaming them in the chart a hard error on
+  the running operator: it stayed un-Ready, kept the webhook bootstrap lease, and
+  wedged the rolling update (see
+  [docs/designs/webhook-bootstrap-lease.md](../docs/designs/webhook-bootstrap-lease.md)).
+  The chart applies the label; a chart that does not is unsupported. The
+  now-vestigial `webhookValidatingWebhookConfiguration` /
+  `webhookMutatingWebhookConfiguration` builders were removed with the constants,
+  since the chart has owned creation of these objects for several releases and the
+  operator only ever patched their caBundle.
+
+- **`WEBHOOK_SERVICE_NAME` and `WEBHOOK_SECRET_NAME` are now set by the chart.**
+  Both env vars already existed but nothing passed them, so the operator always fell
+  back to its built-in defaults and silently ignored `webhook.serviceName` /
+  `webhook.secretName` in `values.yaml`.
+
+- **The webhook serving certificate is reminted when the webhook Service is renamed.**
+  `Secret/webhook-cert` is operator-owned, so it survives a chart upgrade. The
+  operator reminted only on expiry or a cert-on-disk mismatch, so a renamed Service
+  left a year-valid certificate carrying the old SAN and admission failed closed with
+  `x509: certificate is valid for <old>..., not <new>`. It now also remints when the
+  Service recorded on the Secret differs from the configured `WEBHOOK_SERVICE_NAME`.
+
 - **The documented install namespace for new deployments is now `nodewright`, not
   `skyhook`.** The kustomize overlay moved from `skyhook-operator-system` to
   `nodewright-operator-system`, and the operator's `NAMESPACE` env default (used only

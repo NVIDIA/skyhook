@@ -97,9 +97,16 @@ spec:
         - -c
         - |
           NAMESPACE="{{ .Release.Namespace }}"
-          VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
-          MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
           kubectl delete secret -n $NAMESPACE "{{ .Values.webhook.secretName | default "webhook-cert" }}" || true
-          kubectl delete validatingwebhookconfiguration $VALIDATING_WEBHOOK_CONFIGURATION_NAME || true
-          kubectl delete mutatingwebhookconfiguration $MUTATING_WEBHOOK_CONFIGURATION_NAME || true
+          {{- /* MIGRATION-SHIM (skyhook-operator -> nodewright resource rename, #440):
+                 the legacy names are swept too. An orphaned webhook configuration has
+                 failurePolicy: Fail with no operator left to serve it, which rejects every
+                 matching API call cluster-wide, so leaving one behind is worse than a
+                 redundant delete. Drop the legacy names once the rename window closes. */}}
+          for name in "{{ include "chart.validatingWebhookName" . }}" "skyhook-operator-validating-webhook"; do
+            kubectl delete validatingwebhookconfiguration "$name" --ignore-not-found || true
+          done
+          for name in "{{ include "chart.mutatingWebhookName" . }}" "skyhook-operator-mutating-webhook"; do
+            kubectl delete mutatingwebhookconfiguration "$name" --ignore-not-found || true
+          done
 {{- end }} 

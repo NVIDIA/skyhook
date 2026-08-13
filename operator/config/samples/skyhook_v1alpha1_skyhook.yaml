@@ -20,9 +20,9 @@ metadata:
   labels:
     app.kubernetes.io/name: skyhook
     app.kubernetes.io/instance: skyhook-sample
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
   name: skyhook-sample
 spec:
   additionalTolerations:

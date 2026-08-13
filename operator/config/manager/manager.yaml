@@ -22,8 +22,8 @@ metadata:
     app.kubernetes.io/name: namespace
     app.kubernetes.io/instance: system
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
   name: system
 ---
@@ -37,8 +37,8 @@ metadata:
     app.kubernetes.io/name: deployment
     app.kubernetes.io/instance: controller-manager
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
 spec:
   selector:
@@ -95,6 +95,12 @@ spec:
             value: info
           - name: ENABLE_WEBHOOKS
             value: "true"
+          # Must match the Service the overlay renders (config/default namePrefix +
+          # config/webhook/service.yaml). The operator puts WEBHOOK_SERVICE_NAME in
+          # the SAN of the serving cert it mints, so a mismatch fails admission
+          # closed rather than erroring at startup.
+          - name: WEBHOOK_SERVICE_NAME
+            value: nodewright-webhook-service
           - name: NAMESPACE
             value: nodewright-operator-system
           - name: IMAGE_PULL_SECRET

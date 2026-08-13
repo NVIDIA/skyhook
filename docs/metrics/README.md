@@ -114,15 +114,17 @@ See the script [metrics_test.py](../../k8s-tests/chainsaw/metrics_test.py) that 
 ```bash
 kubectl -n nodewright create serviceaccount metrics-reader
 kubectl create clusterrolebinding metrics-reader-access \
-  --clusterrole=skyhook-operator-metrics-reader \
+  --clusterrole=nodewright-metrics-reader \
   --serviceaccount=nodewright:metrics-reader
 ```
+
+This ClusterRole was named `skyhook-operator-metrics-reader` before the resource-name rename. If you created a ClusterRoleBinding against the old name, re-point it at `nodewright-metrics-reader`; the rule is identical (`get` on the `/metrics` non-resource URL), so nothing else changes. A binding left on the old name fails as an empty scrape rather than a visible error, so make the swap when you upgrade.
 
 Then port-forward the HTTPS Service and scrape it with a short-lived token. TLS verification must be skipped because controller-runtime generates an in-memory self-signed certificate for each operator pod and does not publish a stable CA:
 
 ```bash
 kubectl -n nodewright port-forward \
-  svc/skyhook-operator-controller-manager-metrics-service 8443:8443 &
+  svc/nodewright-controller-manager-metrics-service 8443:8443 &
 METRICS_TOKEN="$(kubectl -n nodewright create token metrics-reader)"
 curl --insecure --header "Authorization: Bearer ${METRICS_TOKEN}" \
   https://127.0.0.1:8443/metrics
@@ -262,7 +264,7 @@ discovery job does not send a bearer token or disable certificate verification,
 so annotations would continuously advertise a target that fails with a 401 or
 x509 error. Use the explicit `role: endpoints` job in
 [prometheus_values.yaml](prometheus_values.yaml), and bind the Prometheus
-ServiceAccount to `skyhook-operator-metrics-reader`, as shown in the local
+ServiceAccount to `nodewright-metrics-reader`, as shown in the local
 dashboard setup above. Endpoint discovery scrapes each operator pod separately;
 this preserves the leader's reconcile metrics without intermittently routing a
 single Service target to an idle standby replica.
