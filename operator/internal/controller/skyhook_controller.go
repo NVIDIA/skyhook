@@ -148,11 +148,17 @@ type SkyhookOperatorOptions struct {
 type JobOperatorOptions struct {
 	// JobTTLSucceeded / JobTTLFailed set ttlSecondsAfterFinished at completion time by
 	// outcome so failure logs outlive success logs; JobStageTimeout is the default
-	// activeDeadlineSeconds for a package stage Job when the package sets no stageTimeout
-	// (0 disables the deadline).
+	// per-attempt deadline for a package stage Job when the package sets no stageTimeout
+	// (0 removes the time bound); JobBackoffLimit is how many *retries* a package stage gets
+	// after its first attempt before its Job goes terminal, so the stage runs at most
+	// JobBackoffLimit+1 times (0 means a single attempt, no retry). Exhausting the budget is
+	// not by itself a timeout: the stage times out as erroring only if a retained attempt genuinely
+	// failed, since attempts the kubelet refused to admit spend the budget without ever
+	// running the package.
 	JobTTLSucceeded time.Duration `env:"JOB_TTL_SUCCEEDED, default=1h"`
 	JobTTLFailed    time.Duration `env:"JOB_TTL_FAILED, default=24h"`
 	JobStageTimeout time.Duration `env:"JOB_STAGE_TIMEOUT, default=1h"`
+	JobBackoffLimit int32         `env:"JOB_BACKOFF_LIMIT, default=3"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {
@@ -212,6 +218,11 @@ func (o *SkyhookOperatorOptions) Validate() error {
 	// 0 disables the stage deadline; negatives are meaningless.
 	if o.JobStageTimeout < 0 {
 		messages = append(messages, "job stage timeout must be greater than or equal to 0")
+	}
+
+	// 0 gives a stage a single attempt with no retry; negatives are meaningless.
+	if o.JobBackoffLimit < 0 {
+		messages = append(messages, "job backoff limit must be greater than or equal to 0")
 	}
 
 	if len(messages) > 0 {
@@ -1865,7 +1876,7 @@ func (r *SkyhookReconciler) HandleConfigUpdates(ctx context.Context, clusterStat
 					if packageStatus.State == v1alpha1.StateErroring {
 						erroringNode = true
 
-						// clear the package's in-flight/parked executors on the node so the config
+						// clear the package's in-flight or timed-out executors on the node so the config
 						// change re-runs the stage with the updated configmap
 						if err := r.deleteConfigUpdateExecutors(ctx, node, skyhook.GetSkyhook().Name, &_package); err != nil {
 							return false, false, err
@@ -2642,7 +2653,7 @@ func (r *SkyhookReconciler) JobExists(ctx context.Context, nodeName, skyhookName
 
 // handleExistingJob resolves an AlreadyExists on create against the deterministic Job name. It
 // never records in_progress (the create did not happen this pass): an unfinished Job that matches
-// is a benign race won by another pass; a parked deadline failure whose entry sits erroring is
+// is a benign race won by another pass; a timed-out Job whose entry sits erroring is
 // left in place to absorb the recreate; an unprocessed completion is left for JobReconcile; and a
 // stale-spec unfinished Job or a processed finished Job is foreground-deleted so the stage can
 // re-run next pass.
@@ -2662,24 +2673,35 @@ func (r *SkyhookReconciler) handleExistingJob(ctx context.Context, want *batchv1
 		return deleteJobForeground(ctx, r.Client, existing) // unfinished but stale spec
 	}
 
-	if isParkedJob(existing) && r.entryErroringAtStage(skyhookNode, _package, stage) {
-		return nil // parked: the finished Job is doing its job, absorb this recreate attempt
+	// Any finished Job JobReconcile has not processed yet is left alone, the same rule
+	// shouldDeleteFinishedJob applies: a Complete one holds an unrecorded completion, and a
+	// Failed one has not yet had its chance to write erroring. Deleting the Failed case here
+	// would take its retained attempts with it and restart the stage on a fresh budget, and
+	// this path is reachable in exactly that window — a finished Job does not satisfy
+	// JobExists, so the next pass tries to create over its deterministic name.
+	if !jobProcessed(existing) {
+		return nil
 	}
-	if hasJobCondition(existing, batchv1.JobComplete) && !jobProcessed(existing) {
-		return nil // unrecorded completion; JobReconcile owns it, do not discard it
+
+	// Timed out and still the current spec: the finished Job is doing its job, absorb this
+	// recreate attempt. The spec condition is what lets an edit clear a timed-out stage — mirrors
+	// shouldDeleteFinishedJob, which the two must agree with for the same Job.
+	if jobFailedTerminally(existing) && r.entryErroringAtStage(skyhookNode, _package, stage) &&
+		jobMatchesPackage(r.opts, _package, *existing, skyhookNode.GetSkyhook(), stage) {
+		return nil
 	}
 	return deleteJobForeground(ctx, r.Client, existing)
 }
 
 // entryErroringAtStage reports whether this package's node-state entry sits at (stage, erroring),
-// the parked state a DeadlineExceeded Job represents.
+// the timed-out state a terminally Failed Job represents.
 func (r *SkyhookReconciler) entryErroringAtStage(skyhookNode wrapper.SkyhookNode, _package *v1alpha1.Package, stage v1alpha1.Stage) bool {
 	status, found := skyhookNode.PackageStatus(_package.GetUniqueName())
 	return found && status.Stage == stage && status.State == v1alpha1.StateErroring
 }
 
 // deleteConfigUpdateExecutors clears a package's in-flight work on a node so a config change
-// re-runs it: its unfinished or parked (DeadlineExceeded) Jobs. Retained successful Jobs for
+// re-runs it: its unfinished or timed-out (terminally Failed) Jobs. Retained successful Jobs for
 // other stages are left in place — a literal port of the old delete-all-matching loop would gut
 // retention on every config update.
 func (r *SkyhookReconciler) deleteConfigUpdateExecutors(ctx context.Context, node wrapper.SkyhookNode, skyhookName string, _package *v1alpha1.Package) error {
@@ -2697,7 +2719,7 @@ func (r *SkyhookReconciler) deleteConfigUpdateExecutors(ctx context.Context, nod
 	if jobs != nil {
 		for i := range jobs.Items {
 			job := &jobs.Items[i]
-			if !jobFinished(job) || isParkedJob(job) {
+			if !jobFinished(job) || jobFailedTerminally(job) {
 				if err := deleteJobForeground(ctx, r.Client, job); err != nil {
 					return fmt.Errorf("deleting erroring job %s on node %s: %w", job.Name, node.GetNode().Name, err)
 				}
@@ -2805,7 +2827,7 @@ func FilterEnv(envs []corev1.EnvVar, exclude ...string) []corev1.EnvVar {
 
 // ValidateRunningPackages reconciles a Skyhook's package executor Jobs against spec and node
 // state: it sweeps Jobs whose node is gone, deletes processed finished Jobs once their stage
-// should re-run (leaving a parked deadline failure and any unprocessed completion in place), and
+// should re-run (leaving a timed-out Job and any unprocessed finished Job in place), and
 // invalidates unfinished Jobs whose spec or stage no longer matches. A legacy raw-pod sweep runs
 // alongside during the one-minor migration window.
 func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook SkyhookNodes) (bool, error) {
@@ -2861,7 +2883,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 			}
 
 			if jobFinished(job) {
-				if r.shouldDeleteFinishedJob(job, pkg, nodeState) {
+				if r.shouldDeleteFinishedJob(job, pkg, nodeState, skyhook) {
 					if err := deleteJobForeground(ctx, r.Client, job); err != nil {
 						errs = append(errs, fmt.Errorf("error deleting finished job %s: %w", job.Name, err))
 					} else {
@@ -2884,19 +2906,30 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 	return update, utilerrors.NewAggregate(errs)
 }
 
-// shouldDeleteFinishedJob is the rerun predicate: a processed finished Job (Failed, or Complete
-// and state-recorded) is deleted once node state no longer records its stage as done, so a reset
-// or config change re-runs the stage. Two carve-outs: an unprocessed completion is left for
-// JobReconcile, and a parked deadline failure stays while its entry sits (stage, erroring) — that
-// pair is the park that keeps the stage from churning.
-func (r *SkyhookReconciler) shouldDeleteFinishedJob(job *batchv1.Job, pkg *PackageSkyhook, nodeState v1alpha1.NodeState) bool {
-	if hasJobCondition(job, batchv1.JobComplete) && !jobProcessed(job) {
+// shouldDeleteFinishedJob is the rerun predicate: a state-recorded finished Job is deleted once
+// node state no longer records its stage as done, so a reset or config change re-runs the stage.
+// Two carve-outs: a finished Job JobReconcile has not processed yet is left alone, and a
+// timed-out Job stays while its entry sits (stage, erroring) — that pair is what keeps the stage
+// from churning. A spec change overrides the second carve-out.
+func (r *SkyhookReconciler) shouldDeleteFinishedJob(job *batchv1.Job, pkg *PackageSkyhook, nodeState v1alpha1.NodeState, skyhook SkyhookNodes) bool {
+	// Both outcomes wait for the marker. A Complete Job holds an unrecorded completion; a Failed
+	// one has not yet had its chance to write erroring, and a finite backoffLimit can take a Job
+	// from first failure to terminal in about a minute — well inside one pass of this sweep — so
+	// deleting first would race the timeout into a fresh, equally doomed attempt.
+	if !jobProcessed(job) {
 		return false
 	}
 
 	status, found := nodeState[pkg.GetUniqueName()]
 
-	if isParkedJob(job) && found && status.Stage == pkg.Stage && status.State == v1alpha1.StateErroring {
+	// The timed-out carve-out holds only while the Job still reflects the current spec. Spec-drift
+	// invalidation covers unfinished Jobs only, so without that last condition a stage that has
+	// spent its retries sits behind its terminal Job until the failure TTL — editing the package to
+	// fix exactly what broke it would do nothing, which is the opposite of what an edit means.
+	// Deleting puts the stage where any other erroring package is: entry at (stage, erroring), no
+	// executor, so the next pass builds a fresh Job from the new spec.
+	if jobFailedTerminally(job) && found && status.Stage == pkg.Stage && status.State == v1alpha1.StateErroring &&
+		r.jobSpecMatchesPackage(job, pkg, skyhook) {
 		return false
 	}
 
@@ -2907,28 +2940,33 @@ func (r *SkyhookReconciler) shouldDeleteFinishedJob(job *batchv1.Job, pkg *Packa
 	return !recordedDone
 }
 
-// jobIsStale reports whether an unfinished Job no longer matches the current spec or node state:
-// its package left the spec (or its spec changed), or node state doesn't record it at this stage.
-func (r *SkyhookReconciler) jobIsStale(job *batchv1.Job, pkg *PackageSkyhook, nodeState v1alpha1.NodeState, skyhook SkyhookNodes) bool {
-	found := false
+// jobSpecMatchesPackage reports whether a Job still corresponds to a package in the current spec,
+// built from the same config. Shared by the unfinished-Job staleness check and the finished-Job
+// rerun predicate so a spec change means the same thing to both.
+func (r *SkyhookReconciler) jobSpecMatchesPackage(job *batchv1.Job, pkg *PackageSkyhook, skyhook SkyhookNodes) bool {
 	for _, v := range skyhook.GetSkyhook().Spec.Packages {
 		if jobMatchesPackage(r.opts, &v, *job, skyhook.GetSkyhook(), pkg.Stage) {
-			found = true
-			break
+			return true
 		}
 	}
 
 	// Uninstall legacy special-case: a downgrade/removed-from-spec uninstall can't be validated
 	// against a spec that no longer has it, so treat it as matched; an explicit uninstall (still in
 	// spec, same version) is left to jobMatchesPackage.
-	if pkg.Stage == v1alpha1.StageUninstall && !found {
+	if pkg.Stage == v1alpha1.StageUninstall {
 		specPkg, inSpec := skyhook.GetSkyhook().Spec.Packages[pkg.Name]
 		if !inSpec || specPkg.Version != pkg.Version {
-			found = true
+			return true
 		}
 	}
 
-	if !found {
+	return false
+}
+
+// jobIsStale reports whether an unfinished Job no longer matches the current spec or node state:
+// its package left the spec (or its spec changed), or node state doesn't record it at this stage.
+func (r *SkyhookReconciler) jobIsStale(job *batchv1.Job, pkg *PackageSkyhook, nodeState v1alpha1.NodeState, skyhook SkyhookNodes) bool {
+	if !r.jobSpecMatchesPackage(job, pkg, skyhook) {
 		return true
 	}
 
@@ -3162,7 +3200,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 
 	if err := r.Create(ctx, job); err != nil {
 		// Deterministic names make Create idempotent, but AlreadyExists is not blindly benign:
-		// a retained, parked, or mismatched Job with our name needs GET-and-decide, and must not
+		// a retained, timed-out, or mismatched Job with our name needs GET-and-decide, and must not
 		// record an in_progress that isn't happening.
 		if apierrors.IsAlreadyExists(err) {
 			return r.handleExistingJob(ctx, job, _package, skyhookNode, stage)

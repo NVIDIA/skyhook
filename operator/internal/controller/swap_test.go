@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -64,6 +65,7 @@ var _ = Describe("Jobs execution swap", func() {
 				JobTTLSucceeded: time.Hour,
 				JobTTLFailed:    24 * time.Hour,
 				JobStageTimeout: time.Hour,
+				JobBackoffLimit: 3,
 			},
 		}
 	}
@@ -211,6 +213,38 @@ var _ = Describe("Jobs execution swap", func() {
 			Expect(state[pkg.GetUniqueName()].State).To(Equal(v1alpha1.StateErroring))
 		})
 
+		// The hung-stage case the per-attempt deadline exists for. The stuck container never
+		// started, so it has no exit code, and podFailureIsGenuine rejects every shape it can
+		// take (Waiting, or the kubelet's ContainerStatusUnknown rewrite on termination). The
+		// pod-level reason is the only evidence there is; without it a hang would read
+		// in_progress until the whole retry budget burned down.
+		It("records erroring from a per-attempt deadline whose container never started", func() {
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+			sn, err := wrapper.NewSkyhookNodeOnly(node, skyhookName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sn.Upsert(pkg.PackageRef, image, v1alpha1.StateInProgress, v1alpha1.StageApply, 0, "")).To(Succeed())
+
+			pod := jobOwnedPod("tuning-pod-timeout", corev1.ContainerStatus{
+				Name:  "apply",
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff"}},
+			})
+			Expect(podFailureIsGenuine(pod)).To(BeFalse(), "precondition: no container verdict to read")
+			pod.Status.Phase = corev1.PodFailed
+			pod.Status.Reason = podReasonDeadlineExceeded
+
+			r, c := newPodWatch(node, pod)
+			_, err = r.PodReconcile(ctx, pod)
+			Expect(err).ToNot(HaveOccurred())
+
+			var got corev1.Node
+			Expect(c.Get(ctx, types.NamespacedName{Name: nodeName}, &got)).To(Succeed())
+			gsn, err := wrapper.NewSkyhookNodeOnly(&got, skyhookName)
+			Expect(err).ToNot(HaveOccurred())
+			state, err := gsn.State()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(state[pkg.GetUniqueName()].State).To(Equal(v1alpha1.StateErroring))
+		})
+
 		// A failing Job under restartPolicy Never mints a fresh pod per attempt, so every one of
 		// these lands on the watch. If the watch could write an entry the reset just cleared, the
 		// package would be re-pinned to the cleared stage and the reset could never take effect.
@@ -249,8 +283,105 @@ var _ = Describe("Jobs execution swap", func() {
 		)
 	})
 
+	// handleExistingJob is the AlreadyExists-on-create path, and it must reach the same verdict
+	// as shouldDeleteFinishedJob for the same Job — the two are mirrors, and this path is the one
+	// that runs first: a finished Job does not satisfy JobExists, so the next pass tries to create
+	// over its deterministic name while JobReconcile may not have processed it yet.
+	Describe("handleExistingJob", func() {
+		specWith := func(p v1alpha1.Package) *v1alpha1.NodeWright {
+			return &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: namespace, Generation: 1},
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{"tuning": p}},
+			}
+		}
+
+		nodeWithEntry := func(state v1alpha1.State, stage v1alpha1.Stage) (*corev1.Node, *v1alpha1.NodeWright) {
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+			scr := specWith(*pkg)
+			sn, err := wrapper.NewSkyhookNodeOnly(node, skyhookName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sn.Upsert(pkg.PackageRef, image, state, stage, 0, "")).To(Succeed())
+			return node, scr
+		}
+
+		resolve := func(existing *batchv1.Job, state v1alpha1.State) bool {
+			node, scr := nodeWithEntry(state, v1alpha1.StageApply)
+			r, c := newReconciler(node, scr, existing)
+			skyhookNode, err := wrapper.NewSkyhookNode(node, scr)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(r.handleExistingJob(ctx, existing, pkg, skyhookNode, v1alpha1.StageApply)).To(Succeed())
+
+			var got batchv1.Job
+			err = c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: existing.Name}, &got)
+			if apierrors.IsNotFound(err) {
+				return false
+			}
+			Expect(err).ToNot(HaveOccurred())
+			// foreground deletion leaves the object visible until its children are gone
+			return got.DeletionTimestamp == nil
+		}
+
+		// Built from a package rather than by stageJob: the spec condition on the timed-out
+		// carve-out runs the same comparison validation does, and an empty pod template matches
+		// no package at all.
+		failedFor := func(p v1alpha1.Package, processed bool) *batchv1.Job {
+			job := createJobFromPackage(validOpts(), &p, wrapper.NewSkyhookWrapper(specWith(p)), nodeName, v1alpha1.StageApply)
+			job.Status.Conditions = []batchv1.JobCondition{{
+				Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: batchv1.JobReasonBackoffLimitExceeded,
+			}}
+			if processed {
+				job.Annotations[annotationStateRecorded] = annotationValueTrue
+			}
+			return job
+		}
+		failed := func(processed bool) *batchv1.Job { return failedFor(*pkg, processed) }
+
+		It("keeps a terminal Failed Job JobReconcile has not processed yet", func() {
+			// Deleting here would take the retained attempts with it and restart the stage on a
+			// fresh budget, before anything had a chance to write erroring.
+			Expect(resolve(failed(false), v1alpha1.StateInProgress)).To(BeTrue())
+		})
+		It("keeps a timed-out Job while its entry sits erroring", func() {
+			Expect(resolve(failed(true), v1alpha1.StateErroring)).To(BeTrue())
+		})
+		It("deletes a processed Failed Job whose entry never reached erroring", func() {
+			// The kubelet-refused-every-attempt case: nothing timed the stage out, so the name
+			// frees and the stage re-runs.
+			Expect(resolve(failed(true), v1alpha1.StateInProgress)).To(BeFalse())
+		})
+		It("deletes a timed-out Job built from a superseded spec, so an edit takes effect", func() {
+			// resolve() reconciles against a CR holding the current pkg, so a Job built from an
+			// older image is what the user just edited away from.
+			old := *pkg
+			old.Image = "ghcr.io/nvidia/skyhook-packages/tuning-broken"
+			Expect(resolve(failedFor(old, true), v1alpha1.StateErroring)).To(BeFalse())
+		})
+	})
+
 	Describe("rerun predicate", func() {
 		pkgSky := &PackageSkyhook{PackageRef: pkg.PackageRef, Skyhook: skyhookName, Stage: v1alpha1.StageApply}
+
+		// The spec-drift arm of the predicate compares a Job against the packages in the CR, so
+		// these need a CR to compare with. skyWith(*pkg) is the matching case.
+		skyWith := func(p v1alpha1.Package) SkyhookNodes {
+			scr := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: skyhookName, Namespace: namespace, Generation: 1},
+				Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{"tuning": p}},
+			}
+			return &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(scr), compartments: make(map[string]*wrapper.Compartment)}
+		}
+		sky := skyWith(*pkg)
+
+		// Built by the real builder, not stageJob: the spec-drift check runs the same comparison
+		// validation does, and stageJob's empty pod template matches no package at all.
+		builtJob := func(condition batchv1.JobCondition) *batchv1.Job {
+			job := createJobFromPackage(validOpts(), pkg, sky.GetSkyhook(), nodeName, v1alpha1.StageApply)
+			job.Status.Conditions = []batchv1.JobCondition{condition}
+			job.Annotations[annotationStateRecorded] = annotationValueTrue
+			return job
+		}
+
 		processed := func() *batchv1.Job {
 			job := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})
 			job.Annotations = map[string]string{annotationStateRecorded: annotationValueTrue}
@@ -261,11 +392,11 @@ var _ = Describe("Jobs execution swap", func() {
 
 		It("deletes a processed finished Job once its stage is no longer recorded done", func() {
 			r, _ := newReconciler()
-			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, v1alpha1.NodeState{})).To(BeTrue())
+			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, v1alpha1.NodeState{}, sky)).To(BeTrue())
 		})
 		It("keeps a processed finished Job while its stage is recorded complete", func() {
 			r, _ := newReconciler()
-			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, completeEntry)).To(BeFalse())
+			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, completeEntry, sky)).To(BeFalse())
 		})
 		// This predicate is what makes a lost node-state update self-healing rather than a stall:
 		// a completion clobbered back to (this stage, in_progress) no longer reads as recorded
@@ -274,18 +405,57 @@ var _ = Describe("Jobs execution swap", func() {
 		It("deletes a processed finished Job whose entry was reverted to this stage in_progress", func() {
 			r, _ := newReconciler()
 			reverted := v1alpha1.NodeState{pkg.GetUniqueName(): {Name: "tuning", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateInProgress}}
-			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, reverted)).To(BeTrue())
+			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, reverted, sky)).To(BeTrue())
 		})
-		It("never deletes an unprocessed Complete Job (JobReconcile owns it)", func() {
+		// Both outcomes wait for the marker. A finite backoffLimit can take a Job from first
+		// failure to terminal in about a minute, so deleting a Failed Job before JobReconcile
+		// has had its chance to write erroring would race the timeout into a fresh, doomed attempt.
+		DescribeTable("never deletes a finished Job JobReconcile has not processed yet",
+			func(condition batchv1.JobCondition) {
+				r, _ := newReconciler()
+				unprocessed := stageJob(v1alpha1.StageApply, condition)
+				Expect(r.shouldDeleteFinishedJob(unprocessed, pkgSky, v1alpha1.NodeState{}, sky)).To(BeFalse())
+			},
+			Entry("Complete, holding an unrecorded completion",
+				batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue}),
+			Entry("Failed, not yet given its chance to write erroring",
+				batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: batchv1.JobReasonBackoffLimitExceeded}),
+		)
+		DescribeTable("keeps a timed-out Job while its entry sits erroring, whatever ended it",
+			func(reason string) {
+				r, _ := newReconciler()
+				timedOut := builtJob(batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: reason})
+				Expect(r.shouldDeleteFinishedJob(timedOut, pkgSky, erroringEntry, sky)).To(BeFalse())
+			},
+			Entry("attempts exhausted", batchv1.JobReasonBackoffLimitExceeded),
+			Entry("whole-stage deadline (interrupt Jobs)", batchv1.JobReasonDeadlineExceeded),
+		)
+		// Without this a stage that has spent its retries sits behind its terminal Job until the
+		// failure TTL, so editing the package to fix what broke it does nothing for up to 24h.
+		DescribeTable("deletes a timed-out Job when the package spec changed, so the fix takes effect",
+			func(edit func(*v1alpha1.Package)) {
+				r, _ := newReconciler()
+				timedOut := builtJob(batchv1.JobCondition{
+					Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: batchv1.JobReasonBackoffLimitExceeded,
+				})
+				edited := *pkg
+				edit(&edited)
+				Expect(r.shouldDeleteFinishedJob(timedOut, pkgSky, erroringEntry, skyWith(edited))).To(BeTrue())
+			},
+			Entry("a new image fixes the broken one", func(p *v1alpha1.Package) {
+				p.Image = "ghcr.io/nvidia/skyhook-packages/tuning-fixed"
+			}),
+			Entry("a version bump", func(p *v1alpha1.Package) { p.Version = "1.0.1" }),
+			Entry("the package left the spec entirely", func(p *v1alpha1.Package) { p.Name = "other" }),
+		)
+		It("deletes a Failed Job whose entry never reached erroring, so the stage re-runs", func() {
+			// The kubelet-refused-every-attempt case: JobReconcile marked it without a state
+			// write, so nothing timed the stage out and the sweep clears the name.
 			r, _ := newReconciler()
-			unprocessed := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})
-			Expect(r.shouldDeleteFinishedJob(unprocessed, pkgSky, v1alpha1.NodeState{})).To(BeFalse())
-		})
-		It("keeps a parked DeadlineExceeded Job while its entry sits erroring", func() {
-			r, _ := newReconciler()
-			parked := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: batchv1.JobReasonDeadlineExceeded})
-			parked.Annotations = map[string]string{annotationStateRecorded: annotationValueTrue}
-			Expect(r.shouldDeleteFinishedJob(parked, pkgSky, erroringEntry)).To(BeFalse())
+			failed := stageJob(v1alpha1.StageApply, batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: batchv1.JobReasonBackoffLimitExceeded})
+			failed.Annotations = map[string]string{annotationStateRecorded: annotationValueTrue}
+			inProgress := v1alpha1.NodeState{pkg.GetUniqueName(): {Name: "tuning", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateInProgress}}
+			Expect(r.shouldDeleteFinishedJob(failed, pkgSky, inProgress, sky)).To(BeTrue())
 		})
 	})
 

@@ -5,6 +5,21 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+### New Features
+
+- **Package stage execution moved to `batch/v1` Jobs**, with four new operator
+  env values under `controllerManager.manager.env`:
+
+  | Value | Default | What it does |
+  | --- | --- | --- |
+  | `jobStageTimeout` | `"1h"` | Default per-attempt deadline for a package stage, when the package sets no `stageTimeout` of its own. `"0"` removes the time bound. |
+  | `jobBackoffLimit` | `"3"` | Retries after the first attempt before a stage is surfaced as `erroring` — so at most four attempts. |
+  | `jobTtlSucceeded` | `"1h"` | How long a succeeded stage Job (and its logs) is kept. Minimum `"1m"`. |
+  | `jobTtlFailed` | `"24h"` | How long a failed stage Job is kept, so failure logs outlive success logs. Minimum `"1m"`. |
+
+  The chart also gains `batch/job` RBAC for the operator; no values change is
+  required to upgrade.
+
 ### Bug Fixes
 
 - **Helm upgrade no longer fails on the immutable Deployment selector after the
@@ -32,6 +47,12 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Upgrade notes
 
+- **A crash-looping package now gives up after ~70 seconds instead of retrying
+  for up to an hour.** `jobBackoffLimit` bounds retries per stage; if you rely on
+  a package self-healing through transient environment problems, raise it before
+  upgrading. See the operator release notes for the full behavior change.
+- **`jobTtlSucceeded` / `jobTtlFailed` must be at least `"1m"`.** Setting `"0"`
+  to disable retention makes the operator fail validation at startup.
 - No action is required: the selector-migration hook runs automatically on
   `helm upgrade` and only recreates the Deployment when its selector is stale.
   To perform the recreate manually instead, set `selectorMigration.enabled=false`

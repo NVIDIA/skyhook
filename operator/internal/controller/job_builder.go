@@ -130,10 +130,6 @@ func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.S
 	spec := batchv1.JobSpec{
 		Parallelism: ptr(int32(1)),
 		Completions: ptr(int32(1)),
-		// Effectively unlimited, deliberately: the Job controller must never give up
-		// before the operator does. Under restartPolicy Never this counts Failed pods,
-		// and the podFailurePolicy below keeps disruptions from counting.
-		BackoffLimit: ptr(int32(math.MaxInt32)),
 		// Replace only after the previous pod is fully terminated so two executors never
 		// overlap on the shared hostPath mounts.
 		PodReplacementPolicy: ptr(batchv1.Failed),
@@ -145,8 +141,23 @@ func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.S
 		},
 	}
 
+	// From the package's stageTimeout, else the operator default. A value of 0 disables the
+	// time bound: the deadline fields are omitted, because a literal 0 would insta-fail every
+	// Job. The retry budget still applies.
+	timeout := effectiveStageTimeout(opts, _package)
+
 	if interrupt {
 		spec.Template.Spec.RestartPolicy = corev1.RestartPolicyOnFailure
+		// Interrupt Jobs keep the unbounded limit and a whole-stage deadline, deliberately
+		// unlike package Jobs. Under OnFailure backoffLimit counts container restarts rather
+		// than failed pods, so a finite limit would be spent by the in-place restart that *is*
+		// the reboot recovery; and the bound has to span the reboot, which a per-attempt clock
+		// cannot, because a pod's StartTime does not reset when the kubelet restarts its
+		// containers after the node returns.
+		spec.BackoffLimit = ptr(int32(math.MaxInt32))
+		if timeout > 0 {
+			spec.ActiveDeadlineSeconds = ptr(deadlineSeconds(timeout))
+		}
 	} else {
 		spec.Template.Spec.RestartPolicy = corev1.RestartPolicyNever
 		spec.PodFailurePolicy = &batchv1.PodFailurePolicy{
@@ -158,14 +169,21 @@ func jobFromPod(opts SkyhookOperatorOptions, pod *corev1.Pod, skyhook *wrapper.S
 				}},
 			}},
 		}
-	}
-
-	// From the package's stageTimeout, else the operator default. A value of 0 disables
-	// the deadline: the field is omitted, because a literal 0 would insta-fail every Job.
-	// Round up so a positive sub-second timeout can't truncate to 0 (which would also
-	// insta-fail); any positive value yields at least a 1s deadline.
-	if timeout := effectiveStageTimeout(opts, _package); timeout > 0 {
-		spec.ActiveDeadlineSeconds = ptr(int64(math.Ceil(timeout.Seconds())))
+		// A timeout is a retryable failure like any other, so the bound is per attempt, on the
+		// pod template: an expired pod is Failed and replaced rather than failing the Job
+		// outright. backoffLimit is what finally gives up.
+		//
+		// Deliberately no Job-level deadline here. A second clock over the same work can only
+		// disagree with the first — derived from the retry budget it is redundant, and set
+		// independently it truncates the budget into a DeadlineExceeded that reads as a hang.
+		// The cost is that the one case a per-attempt clock cannot see stays unbounded: that
+		// clock runs from pod.Status.StartTime, so a pod the kubelet never acknowledges never
+		// starts it, never fails, and never spends an attempt. Nothing the operator sets can
+		// bound a pod the kubelet has not accepted; see the stageTimeout docs.
+		spec.BackoffLimit = ptr(opts.JobBackoffLimit)
+		if timeout > 0 {
+			spec.Template.Spec.ActiveDeadlineSeconds = ptr(deadlineSeconds(timeout))
+		}
 	}
 
 	return &batchv1.Job{
@@ -187,6 +205,18 @@ func effectiveStageTimeout(opts SkyhookOperatorOptions, _package *v1alpha1.Packa
 		return _package.StageTimeout.Duration
 	}
 	return opts.JobStageTimeout
+}
+
+// deadlineSeconds rounds a timeout up to whole seconds. Truncating a positive sub-second timeout
+// to 0 would insta-fail every Job, so any positive value yields at least a 1s deadline. Clamped
+// because the apiserver rejects an activeDeadlineSeconds beyond int32, which would turn every
+// Create into an error loop rather than a validation failure the user sees.
+func deadlineSeconds(timeout time.Duration) int64 {
+	seconds := math.Ceil(timeout.Seconds())
+	if seconds > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int64(seconds)
 }
 
 // createPodFromPackage creates a pod spec for a skyhook pod for a given package

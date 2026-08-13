@@ -37,3 +37,37 @@ requests:
   memory: 256Mi
 ```
 Is sufficient to get to ~800 nodes and 1 - 3 packages or ~500 nodes a 4+ packages.
+
+## Package execution Jobs
+
+Package stages run as `batch/v1` Jobs — one per (NodeWright, package, stage, node), each `parallelism: 1`,
+`completions: 1`. A package that does not interrupt runs two of them per node (apply, config); one that
+interrupts runs four (apply, config, interrupt, post-interrupt), and uninstall/upgrade add their own.
+
+Two things follow for sizing.
+
+**Cache.** The operator watches Jobs through a **namespace-scoped** informer (only the operator's own
+namespace), giving it a second cache holding every package-stage Job in that namespace — in flight *and*
+retained. It is a cache of its own, not extra entries in the pod cache: package pods continue to be
+cached cluster-wide, because drain has to see every pod on a node. The two costs add.
+
+**Retention.** A finished Job is not deleted immediately: `ttlSecondsAfterFinished` is set by outcome
+from `jobTtlSucceeded` (1h default) and `jobTtlFailed` (24h default), both with a hard floor of one
+minute. So the cached Job count is in-flight plus retained, and neither term alone is the bound:
+
+ * in flight is capped by how many nodes execute at once — interruption budget, and any DeploymentPolicy
+   batch sizing on top;
+ * retained is whatever completed inside the TTL windows. A single NodeWright whose rollout finishes
+   inside `jobTtlSucceeded` peaks around `N × P × stages-per-package`; a longer rollout sheds its oldest
+   Jobs as it goes, and NodeWrights rolling out concurrently each add their own population.
+
+Each retained Job also keeps at most **two genuine** failed child pods — the first genuine failure and
+the most recent. Two things sit outside that cap: a disruption casualty (a pod carrying
+`DisruptionTarget` — evicted, preempted, or lost with its node) has no failure verdict, so it is neither
+counted nor pruned; and the pruner runs on active Jobs, so a Job that goes terminal before its next
+reconcile can keep extras. Successful child pods are deleted with their Job.
+
+If the operator's memory is the constraint at scale, `jobTtlSucceeded` is the first lever — successful
+stages are the bulk of the population and the least interesting to keep. Note that the equations above
+were derived before package execution moved to Jobs and have not been re-measured with the Jobs informer
+in the cache, so treat them as a floor.

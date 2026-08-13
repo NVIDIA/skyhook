@@ -67,6 +67,7 @@ spec:
         file: assert-compartments.yaml
     - script:
         content: |
+          set -e
           echo "=== Verifying compartment metrics ==="
           
           # Verify matched nodes metrics for each compartment
@@ -77,6 +78,7 @@ spec:
           echo "✓ Compartment matched nodes metrics verified"
     - script:
         content: |
+          set -e
           echo "=== Verifying ceiling metrics ==="
           
           # Verify ceiling (budget) for each compartment
@@ -106,6 +108,7 @@ spec:
     try:
     - script:
         content: |
+          set -e
           echo "=== Verifying final metrics ==="
           
           # All compartments should have 100% completion and 0 in progress

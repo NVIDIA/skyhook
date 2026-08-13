@@ -336,7 +336,9 @@ func (r *NodeWright) Validate() error {
 			return fmt.Errorf("package %q: uninstall.apply requires uninstall.enabled to be true", name)
 		}
 
-		// stageTimeout maps to a Job activeDeadlineSeconds; 0 disables it, negatives are meaningless.
+		// stageTimeout bounds one attempt (the stage Job's pod template activeDeadlineSeconds; on
+		// interrupt Jobs, the Job's own). 0 removes the time bound, leaving only the retry budget,
+		// which no attempt that hangs ever spends — see the field docs. Negatives are meaningless.
 		if v.StageTimeout != nil && v.StageTimeout.Duration < 0 {
 			return fmt.Errorf("package %q: stageTimeout must be greater than or equal to 0", name)
 		}

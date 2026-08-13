@@ -1072,10 +1072,16 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(opts.Validate()).ToNot(BeNil())
 		opts.JobTTLFailed = 24 * time.Hour
 
-		// negative JobStageTimeout is rejected; 0 is allowed (disables the deadline)
+		// negative JobStageTimeout is rejected; 0 is allowed (removes the time bound)
 		opts.JobStageTimeout = -time.Second
 		Expect(opts.Validate()).ToNot(BeNil())
 		opts.JobStageTimeout = 0
+		Expect(opts.Validate()).To(BeNil())
+
+		// negative JobBackoffLimit is rejected; 0 is allowed (a single attempt, no retry)
+		opts.JobBackoffLimit = -1
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobBackoffLimit = 0
 		Expect(opts.Validate()).To(BeNil())
 	})
 	It("Should group skyhooks by node correctly", func() {
