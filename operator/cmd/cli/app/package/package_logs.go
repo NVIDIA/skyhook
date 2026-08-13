@@ -106,7 +106,7 @@ By default, it shows logs from the most relevant stage container.`,
 				return err
 			}
 
-			namespace := ctx.GlobalFlags.Namespace()
+			namespace := ctx.ResolveNamespace(cmd.Context(), cmd, kubeClient.Kubernetes())
 			return runLogs(cmd.Context(), cmd.OutOrStdout(), kubeClient, opts, namespace)
 		},
 	}

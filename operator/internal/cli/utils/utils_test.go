@@ -506,4 +506,85 @@ var _ = Describe("CLI Utility Functions", func() {
 			Expect(isSkyhookOperatorDeployment(dep("busybox:latest", map[string]string{"app": "other"}))).To(BeFalse())
 		})
 	})
+
+	Describe("ResolveOperatorNamespace", func() {
+		operatorIn := func(namespace string) *appsv1.Deployment {
+			return &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "controller-manager",
+					Namespace: namespace,
+					Labels:    map[string]string{"control-plane": "controller-manager"},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: "ghcr.io/nvidia/nodewright/operator:v1"}}},
+					},
+				},
+			}
+		}
+
+		// Same substring the loose image/label heuristic keys on, but not a
+		// controller-manager: it must not decide the namespace.
+		lookalikeIn := func(namespace string) *appsv1.Deployment {
+			return &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "billing-nodewright-exporter", Namespace: namespace},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: "registry.example/billing-nodewright-exporter:v1"}}},
+					},
+				},
+			}
+		}
+
+		It("prefers the nodewright namespace", func() {
+			kube := fake.NewClientset(operatorIn(DefaultNamespace), operatorIn(LegacyDefaultNamespace))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(DefaultNamespace))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeFalse())
+		})
+
+		It("falls back to the legacy skyhook namespace and flags it", func() {
+			kube := fake.NewClientset(operatorIn(LegacyDefaultNamespace))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(LegacyDefaultNamespace))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeTrue())
+		})
+
+		It("finds an install in an arbitrary namespace via the cluster-wide sweep", func() {
+			kube := fake.NewClientset(operatorIn("platform-tools"))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal("platform-tools"))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeFalse())
+		})
+
+		It("ignores a non-controller-manager lookalike and picks the real namespace", func() {
+			kube := fake.NewClientset(lookalikeIn(DefaultNamespace), operatorIn(LegacyDefaultNamespace))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(LegacyDefaultNamespace))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeTrue())
+		})
+
+		It("reports the default when no operator is installed", func() {
+			kube := fake.NewClientset()
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(DefaultNamespace))
+			Expect(found).To(BeFalse())
+			Expect(legacy).To(BeFalse())
+		})
+
+		It("reports the default when there is no client", func() {
+			namespace, found, _ := ResolveOperatorNamespace(context.Background(), nil)
+			Expect(namespace).To(Equal(DefaultNamespace))
+			Expect(found).To(BeFalse())
+		})
+	})
 })

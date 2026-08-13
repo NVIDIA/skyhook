@@ -64,6 +64,13 @@ For the full commit-level log see CHANGELOG.md.
   withdrawn on 2025-08-28, leaving only an unversioned `:latest` with no
   security maintenance. If you had overridden `webhook.removalImage` to point at
   a private mirror, remirror from the new source (#207).
+  
+- **The documented install namespace for new installs is now `nodewright`.** This is a
+  documentation and example change only: the chart has always sourced the namespace from
+  `.Release.Namespace` and installs cleanly into any namespace. **An existing release in
+  the `skyhook` namespace needs no action** — a namespace cannot be renamed in place and
+  Helm cannot move a release between namespaces, so `helm upgrade` there keeps working
+  unchanged and is supported indefinitely.
 
 ### Upgrade notes
 

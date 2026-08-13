@@ -90,7 +90,7 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: delete-skyhook-dexter-1.2.3
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: delete-skyhook
   ownerReferences:
@@ -114,7 +114,7 @@ data:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/skyhook-node-meta: delete-skyhook
   ownerReferences:

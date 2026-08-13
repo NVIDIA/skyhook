@@ -5,6 +5,25 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+### Other Changes
+
+- **The documented install namespace for new deployments is now `nodewright`, not
+  `skyhook`.** The kustomize overlay moved from `skyhook-operator-system` to
+  `nodewright-operator-system`, and the operator's `NAMESPACE` env default (used only
+  when nothing sets it, such as a bare binary or `make run`) moved from `skyhook` to
+  `nodewright`.
+
+  **Existing installs need no action, and there is no deadline.** Namespaces cannot be
+  renamed in place and Helm cannot move a release between namespaces, so an install in
+  `skyhook` stays supported indefinitely. The chart sources the namespace from
+  `.Release.Namespace` throughout and installs into any namespace, so `helm upgrade`
+  against a `skyhook`-namespace release is unaffected. The chart always sets `NAMESPACE`
+  explicitly, so the default change is invisible to chart users.
+
+  `kubectl nodewright` discovers the operator's namespace rather than assuming one, so
+  it keeps working against a `skyhook`-namespace install. See
+  [docs/nodewright-migration.md](../docs/nodewright-migration.md#install-namespace-skyhook---nodewright).
+
 ### Breaking Changes
 
 - **The default runtime-required taint key moves from `skyhook.nvidia.com` to

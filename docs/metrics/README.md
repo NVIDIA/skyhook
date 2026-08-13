@@ -84,18 +84,18 @@ Note: When a NodeWright is deleted all metrics for that NodeWright are no longer
 
 See the script [metrics_test.py](../../k8s-tests/chainsaw/metrics_test.py) that will let you test for the existence or absence of metrics based on name and labels. The metrics endpoint requires a bearer token authorized for the `/metrics` non-resource URL. Create a scraper identity and bind it to the chart's metrics-reader role:
 ```bash
-kubectl -n skyhook create serviceaccount metrics-reader
+kubectl -n nodewright create serviceaccount metrics-reader
 kubectl create clusterrolebinding metrics-reader-access \
   --clusterrole=skyhook-operator-metrics-reader \
-  --serviceaccount=skyhook:metrics-reader
+  --serviceaccount=nodewright:metrics-reader
 ```
 
 Then port-forward the HTTPS Service and scrape it with a short-lived token. TLS verification must be skipped because controller-runtime generates an in-memory self-signed certificate for each operator pod and does not publish a stable CA:
 
 ```bash
-kubectl -n skyhook port-forward \
+kubectl -n nodewright port-forward \
   svc/skyhook-operator-controller-manager-metrics-service 8443:8443 &
-METRICS_TOKEN="$(kubectl -n skyhook create token metrics-reader)"
+METRICS_TOKEN="$(kubectl -n nodewright create token metrics-reader)"
 curl --insecure --header "Authorization: Bearer ${METRICS_TOKEN}" \
   https://127.0.0.1:8443/metrics
 ```
@@ -104,7 +104,7 @@ curl --insecure --header "Authorization: Bearer ${METRICS_TOKEN}" \
 namespace are provided by flags or environment variables:
 
 ```bash
-SKYHOOK_NAMESPACE=skyhook \
+SKYHOOK_NAMESPACE=nodewright \
 METRICS_TEST_SERVICE_ACCOUNT=metrics-reader \
 ./k8s-tests/chainsaw/metrics_test.py \
   skyhook_node_target_count 1 -t skyhook_name=my-nodewright
@@ -114,7 +114,7 @@ For repeated checks, mint one token and reuse it instead of making a
 TokenRequest for every invocation:
 
 ```bash
-METRICS_TOKEN="$(kubectl -n skyhook create token metrics-reader)"
+METRICS_TOKEN="$(kubectl -n nodewright create token metrics-reader)"
 export METRICS_TOKEN
 ./k8s-tests/chainsaw/metrics_test.py \
   skyhook_node_target_count 1 -t skyhook_name=my-nodewright
@@ -177,7 +177,7 @@ make create-kind-cluster
 
 # Install the operator through the helm chart so that
 # the /metrics endpoint is setup
-helm install skyhook ../chart --namespace skyhook \
+helm install skyhook ../chart --namespace nodewright \
   --set metrics.addServiceAccountBinding=true \
   --set metrics.serviceAccountName=prometheus \
   --set metrics.serviceAccountNamespace=default

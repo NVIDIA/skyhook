@@ -73,7 +73,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: cleanup-pods
               nodewright.nvidia.com/package: aa-1.2.3
@@ -110,7 +110,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: cleanup-pods
               nodewright.nvidia.com/package: aa-1.2.3
@@ -147,7 +147,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: cleanup-pods
               nodewright.nvidia.com/package: bb-1.2

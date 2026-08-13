@@ -28,4 +28,4 @@ else
 fi
 
 ## remove operator
-${HELM} delete $OPERATOR_NAME -n skyhook
+${HELM} delete $OPERATOR_NAME -n nodewright

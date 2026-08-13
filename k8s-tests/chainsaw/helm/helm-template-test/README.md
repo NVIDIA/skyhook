@@ -67,7 +67,7 @@ Use when you need to verify specific fields exist at the correct YAML path in a 
     - name: CHAINSAW_BIN
       value: ($CHAINSAW_BIN)
     content: |
-      helm template test-release ${CHART} -n skyhook \
+      helm template test-release ${CHART} -n nodewright \
         -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
       cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
         --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -102,7 +102,7 @@ Use when you need to verify a gated template produces **no output** when its con
     - name: CHART
       value: ($CHART)
     content: |
-      helm template test-release ${CHART} -n skyhook --set-json 'limitRange=null' \
+      helm template test-release ${CHART} -n nodewright --set-json 'limitRange=null' \
         -s templates/limitrange.yaml
     check:
       ($error != null): true
@@ -120,7 +120,7 @@ Use for simple presence/absence checks where structural assertion would be overk
     - name: CHART
       value: ($CHART)
     content: |
-      helm template test-release ${CHART} -n skyhook \
+      helm template test-release ${CHART} -n nodewright \
         --set 'useHostNetwork=true' \
         -s templates/deployment.yaml
     check:

@@ -233,7 +233,7 @@ func runUpdateState(ctx context.Context, cmd *cobra.Command, kubeClient *client.
 		return fmt.Errorf("fetching NodeWright %q: %w", skyhookName, err)
 	}
 
-	if err := utils.CheckNodeStateOperatorVersion(ctx, cmd, kubeClient.Kubernetes(), cliCtx.GlobalFlags.Namespace(), skyhook); err != nil {
+	if err := utils.CheckNodeStateOperatorVersion(ctx, cmd, kubeClient.Kubernetes(), cliCtx.ResolveNamespace(ctx, cmd, kubeClient.Kubernetes()), skyhook); err != nil {
 		return err
 	}
 

@@ -49,7 +49,7 @@ make run
 make prepare-metrics-test-access
 
 cd ../k8s-tests/chainsaw/deployment-policy
-SKYHOOK_NAMESPACE=skyhook \
+SKYHOOK_NAMESPACE=nodewright \
 METRICS_TEST_SERVICE_ACCOUNT=metrics-reader \
 ../../../operator/bin/chainsaw test --test-dir linear-strategy
 ```

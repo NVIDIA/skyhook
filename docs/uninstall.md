@@ -2,6 +2,8 @@
 
 NodeWright supports explicit, controlled uninstall of packages from nodes. This document covers the API, workflows, and migration guide.
 
+> `kubectl` examples below use `nodewright`, the default install namespace for new installs. Substitute your own if you installed elsewhere; installs predating the namespace rename are in `skyhook`.
+
 ## API Reference
 
 ### `Uninstall` struct
@@ -164,8 +166,8 @@ If the operator is rolled back to a version without explicit uninstall support:
 
 Check the uninstall pod logs:
 ```bash
-kubectl logs -n skyhook <pod-name> -c <package>-uninstall
-kubectl logs -n skyhook <pod-name> -c <package>-uninstallcheck
+kubectl logs -n nodewright <pod-name> -c <package>-uninstall
+kubectl logs -n nodewright <pod-name> -c <package>-uninstallcheck
 ```
 
 Check node state:
@@ -214,7 +216,7 @@ Any rows returned are nodes the finalizer is waiting on.
 
 **Workarounds (pick one; they have different blast radius).**
 
-1. **Fix the underlying install.** Inspect `kubectl logs -n skyhook <pod> -c <pkg>-apply` and correct the script, config, or environment so the install completes. Once the node reaches `stage: config` / `state: complete` (or `post-interrupt/complete` if the package has an interrupt), the finalizer's next reconcile will transition it to `uninstall` and proceed.
+1. **Fix the underlying install.** Inspect `kubectl logs -n nodewright <pod> -c <pkg>-apply` and correct the script, config, or environment so the install completes. Once the node reaches `stage: config` / `state: complete` (or `post-interrupt/complete` if the package has an interrupt), the finalizer's next reconcile will transition it to `uninstall` and proceed.
 
 2. **Reset the affected node's NodeWright state.** Use the CLI:
 
@@ -257,7 +259,7 @@ kubectl get nodes -l <selector> -o json \
 And verify no interrupt pod exists for the package:
 
 ```bash
-kubectl get pods -n skyhook -l nodewright.nvidia.com/name=<name>,nodewright.nvidia.com/package=<pkg>-<ver>,nodewright.nvidia.com/interrupt=True
+kubectl get pods -n nodewright -l nodewright.nvidia.com/name=<name>,nodewright.nvidia.com/package=<pkg>-<ver>,nodewright.nvidia.com/interrupt=True
 ```
 
 An entry from the first command with no rows from the second confirms the stranded state.

@@ -102,17 +102,21 @@ specifically, because v0.7.x has no knowledge of the new lease. Operators
 on v0.7.x still need the manual workaround:
 
 ```bash
-# In the operator's namespace:
-kubectl -n skyhook get pods                                                 # identify old-version pods
-kubectl -n skyhook delete pod <old-pod-1> <old-pod-2>                       # free the lease
+# The operator's namespace. A v0.7.x install predates the skyhook -> nodewright
+# namespace default, so it is almost certainly still `skyhook`; `nodewright` is
+# the default only for installs created after that change.
+NS=skyhook
+
+kubectl -n "$NS" get pods                                                   # identify old-version pods
+kubectl -n "$NS" delete pod <old-pod-1> <old-pod-2>                         # free the lease
 # Or, equivalently:
-kubectl -n skyhook delete lease 3c22c1ae.nvidia.com
+kubectl -n "$NS" delete lease 3c22c1ae.nvidia.com
 
 # Verify recovery:
-kubectl -n skyhook get secret webhook-cert -w
+kubectl -n "$NS" get secret webhook-cert -w
 kubectl get mutatingwebhookconfiguration skyhook-operator-mutating-webhook \
   -o jsonpath='{.webhooks[0].clientConfig.caBundle}' | wc -c                # must be > 0
-kubectl -n skyhook rollout status deploy/skyhook-operator-controller-manager
+kubectl -n "$NS" rollout status deploy/skyhook-operator-controller-manager
 ```
 
 The runbook above should be added to release notes for any future major

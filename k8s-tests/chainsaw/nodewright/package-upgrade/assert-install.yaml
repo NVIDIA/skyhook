@@ -96,7 +96,7 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: package-upgrade-nullptr-2.0.0
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: package-upgrade
   ownerReferences:

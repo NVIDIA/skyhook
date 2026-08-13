@@ -96,7 +96,7 @@ spec:
           - name: ENABLE_WEBHOOKS
             value: "true"
           - name: NAMESPACE
-            value: skyhook-operator-system
+            value: nodewright-operator-system
           - name: IMAGE_PULL_SECRET
             value: ""
           - name: COPY_DIR_ROOT
