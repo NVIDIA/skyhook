@@ -201,7 +201,7 @@ Today the `skyhook.nvidia.com/pause` annotation (the CLI's **Emergency Stop**) o
 - **Resume has an explicit owner and ordering.** Because the pause path only runs for paused Skyhooks and paused Skyhooks skip validation, un-suspension is a separate step for *non-paused* Skyhooks, ordered after validation: invalidate suspended Jobs whose spec changed while paused, *then* clear `suspend` on the survivors. Clearing first would let one stale-spec attempt launch before validation catches it.
 - **Everything else is indifferent**: existence gating counts the suspended Job, completion ignores it (Suspended is not terminal), and node state stays `in_progress` (guard (c) of the erroring evidence makes that hold).
 - **Interrupts already fired**: suspension can't un-ring a reboot; on resume the replacement pod skips the interrupt via the resource-id flag and completes.
-- **Legacy pods can't suspend** — for them pause keeps today's let-finish semantics until the upgrade window closes, so pause's stop-strength is operator-version-dependent (a CLI-docs note).
+- **Legacy pods can't suspend** — a pre-rename raw pod has no Job, so pause cannot stop one. It never has to: the migration hold keeps the two execution models from running side by side (see [Upgrade and compatibility](#upgrade-and-compatibility)). What stays version-dependent is pause's stop-strength *across operator versions* — a pre-Jobs operator lets an in-flight stage finish — which is the CLI-docs note.
 
 `disable` is unchanged: it skips a Skyhook from processing but has never claimed to halt in-flight work.
 
@@ -311,6 +311,63 @@ Locking the write does not fix this: the value is computed long before the write
 **Pruner accounting safety.** The archive pruner deletes the middle attempts by normal deletion only, never force-delete: the Job-tracking finalizer is what guarantees a failure is counted and policy-classified before the pod is removed. The archives it keeps — the first and most recent genuine failures — exclude `DisruptionTarget` casualties so an ignored disruption can neither shadow a real failure nor suppress the deadline snapshot.
 
 **Replacement-policy gate off.** `podReplacementPolicy` is beta and on by default across the supported range; if a cluster disables the gate, operator-initiated recreates stay safe (foreground deletion frees the name only after children are gone), and only Job-controller replacements can then briefly overlap a terminating predecessor — accepted for that non-default configuration, since the agent's flag files keep re-execution idempotent.
+
+## Validation
+
+Chainsaw and envtest assert fixed shapes; this section records the hand-run pass over the flows a
+user actually drives, which #305 gated the merge to `main` on. Run against
+`feature/package-as-jobs` on kind v1.36.1 (podman), three nodes, with the operator built from the
+branch and run against the cluster — the same shape `make e2e-tests` uses, since the branch
+published no image. Every case reset first (all CRs, Jobs, pods, ConfigMaps, and per-CR node
+annotations/labels/taints/cordons) with a baseline assertion before starting, and captured evidence
+mid-flight as well as at the end. Two full passes were run and agreed case for case.
+
+**16 cases, 15 pass, 1 fail.**
+
+| Case | Result |
+| --- | --- |
+| single package | pass — apply then config Jobs `Complete 1/1`, child pods retained and logs still readable, `state-recorded` set at completion |
+| multiple packages + `dependsOn` | pass — one Job per (package, stage); the dependency completed before its dependents started |
+| erroring, retries exhausted | pass — `failed=4` at `backoffLimit: 3`, `BackoffLimitExceeded`, exactly two archive pods (middle attempts pruned), no churn; editing the package cleared the terminal Job and the stage re-ran |
+| stage timeout | pass — attempt killed at its own deadline, pod `Failed`/`DeadlineExceeded`, archive logs readable, per-attempt bound only |
+| multiple CRs on one node | pass — no tick ever held unfinished Jobs from both CRs; separate `nodeState_` keys |
+| interrupt grouping | pass — one merged interrupt Job for two packages, node cordoned during and uncordoned after, `skipped` sibling promoted to `complete` |
+| explicit uninstall | **fail** — entry removed correctly, but the successful uninstall Job and its pod were deleted immediately, losing the logs (#443) |
+| CR deletion with `uninstall.enabled` | pass — finalizer ran an uninstall Job during deletion; no `nodewright.nvidia.com/*` metadata left behind, node uncordoned |
+| TTL by outcome | pass — succeeded collected first while the failed one remained, node state survived collection, sub-minute TTL rejected at startup |
+| kubelet-refused attempts | pass — spent budget, never marked `erroring`, self-healed via sweep and recreate |
+| pause / disable | pass — pause set `spec.suspend` and killed the running pod, resume started a fresh one; adding disable while clearing pause left the Job suspended |
+| config update mid-flight | pass — ConfigMap not swapped mid-stage; the config stage re-ran afterwards with a new `resource-id` |
+| two nodes + interruption budget | pass — never more than one node cordoned, one interrupt Job per node |
+| node deleted mid-run | pass — orphaned-node Job foreground-deleted within seconds; the surviving node completed |
+| disruption casualty | pass — evicted attempt spent no retry budget and never marked `erroring` |
+| upgrade → downgrade | pass — upgrade removed the superseded entry; downgrade kept both, as `uninstall.md` intends |
+| unpullable image | pass — bounded by `stageTimeout` rather than hanging indefinitely; the baseline #306 improves on |
+
+**CLI.** `package logs`, `package status`, `node status` and `package rerun` were exercised inside
+the cases above against a Jobs operator and needed no code change: child pods inherit the full label
+set, so the CLI's label queries resolve identically, and post-completion `package logs` gets better
+because the Job is retained. The version-dependent stop-strength of `pause` is recorded in
+[`docs/cli.md`](../cli.md)'s compatibility matrix.
+
+**Upgrade.** The hold is what makes the upgrade safe, and it was validated separately, on the rename
+pass: an upgrade started mid-rollout held without taking over the node (requeuing roughly every 20s,
+writing no `nodewright.nvidia.com/*` annotations) and released when the in-flight legacy `Skyhook`
+was deleted. The same pass confirmed the unsupported case — upgrading with an interrupt executing
+leaves a **cordoned, stalled node** rather than corrupting state or double-executing.
+
+### Not covered
+
+- **The hold and the Jobs executor were never exercised in one build.** The hold was validated on
+  pre-Jobs `main` (rename, raw pods) and the cases above on `feature/package-as-jobs`.
+  `migration_hold.go` was byte-identical across the two, so the composition is argued rather than
+  observed.
+- **Operator restart across a completion** — the exactly-once crash window in
+  [Edge cases](#edge-cases-and-correctness-arguments); the gap #433 exists for and the one most worth
+  covering next.
+- **Scale** — two nodes, one package at a time. Nothing here speaks to fleet behavior (#382).
+- **Webhook validation** — disabled under the local-run setup, so rejection paths were not exercised.
+- **Real reboots** — the test image does not reboot, so interrupt was exercised structurally only.
 
 ## References
 

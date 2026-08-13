@@ -53,6 +53,16 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Upgrade notes
 
+- **Run `helm upgrade` only when no package work is in flight.** The operator
+  that precedes this chart executes packages as raw pods, and the two execution
+  models are never allowed to overlap: the new operator withholds all
+  reconciliation while any pre-rename `Skyhook` is still rolling out. Upgrading
+  mid-rollout therefore leaves that node **cordoned and stalled** until you
+  `helm rollback` and let the rollout finish, or delete the legacy `Skyhook`.
+  Confirm every `Skyhook` reads `complete` first, and do not unpause or enable a
+  migrated `NodeWright` until its pre-upgrade package pods are gone. See the
+  operator release notes and
+  [docs/nodewright-migration.md](../docs/nodewright-migration.md).
 - **A crash-looping package now gives up after ~70 seconds instead of retrying
   for up to an hour.** `jobBackoffLimit` bounds retries per stage; if you rely on
   a package self-healing through transient environment problems, raise it before
