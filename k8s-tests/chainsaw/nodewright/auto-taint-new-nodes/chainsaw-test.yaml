@@ -47,6 +47,8 @@ spec:
             kubectl annotate node kind-worker "${key}-" 2>/dev/null || true
           done
           ## remove any runtime-required taint
+          kubectl taint node kind-worker nodewright.nvidia.com=runtime-required:NoSchedule- 2>/dev/null || true
+          ## and the legacy key, in case an older run or provisioner left it behind
           kubectl taint node kind-worker skyhook.nvidia.com=runtime-required:NoSchedule- 2>/dev/null || true
 
   # Phase 2: First auto-taint skyhook — node is new, should be tainted
@@ -81,4 +83,6 @@ spec:
     finally:
     - script:
         content: |
+          kubectl taint node kind-worker nodewright.nvidia.com=runtime-required:NoSchedule- 2>/dev/null || true
+          ## and the legacy key, in case an older run or provisioner left it behind
           kubectl taint node kind-worker skyhook.nvidia.com=runtime-required:NoSchedule- 2>/dev/null || true

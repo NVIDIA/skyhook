@@ -21,6 +21,6 @@ metadata:
   name: kind-worker
 spec:
   taints:
-  - key: skyhook.nvidia.com
+  - key: nodewright.nvidia.com
     value: runtime-required
     effect: NoSchedule

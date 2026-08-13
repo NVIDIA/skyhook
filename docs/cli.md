@@ -307,9 +307,15 @@ The one thing to rename by hand, if your manifest sets it, is the operator's own
 lifecycle annotations on the CR: `skyhook.nvidia.com/pause` and
 `skyhook.nvidia.com/disable` become `nodewright.nvidia.com/*`.
 
-Leave everything else alone. In particular the runtime-required **taint** key is
-the bare string `skyhook.nvidia.com` (no trailing slash) and did **not** move in
-the rename, so any `additionalTolerations` entry referencing it stays as-is.
+Leave everything else alone. In particular, do not rewrite the runtime-required
+**taint** key here: it is the bare string `skyhook.nvidia.com` (no trailing
+slash), so a blanket group swap would corrupt it, and the taint on a node is not
+something a CR manifest edit can change. The default key did move to
+`nodewright.nvidia.com`, but the operator tolerates and removes both keys for the
+deprecation window, so an `additionalTolerations` entry naming the legacy key
+stays valid. Migrating it is a change to your **provisioning** config (autoscaler,
+node pool, `--register-with-taints`), not to your CRs; see
+[docs/runtime_required.md](runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 The operator's mirror controller already converts the live objects in the
 cluster automatically; the edit above is only for the manifests in your source

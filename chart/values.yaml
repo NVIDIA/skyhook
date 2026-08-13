@@ -60,7 +60,12 @@ controllerManager:
       ## runtimeRequiredTaint: This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag.
       ## This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete.
       ## NOTE: If your systems nodes have this taint make sure to add the toleration to the controllerManager.tolerations
-      runtimeRequiredTaint: skyhook.nvidia.com=runtime-required:NoSchedule
+      ## MIGRATION-SHIM (skyhook.nvidia.com -> nodewright.nvidia.com rename): the default moved from
+      ## `skyhook.nvidia.com=runtime-required:NoSchedule` to the key below. For the deprecation window the operator
+      ## also tolerates and removes the legacy key, so a cluster whose autoscaler/node template still stamps
+      ## `skyhook.nvidia.com` keeps working. Update that provisioning config before the removal release; see
+      ## docs/runtime_required.md.
+      runtimeRequiredTaint: nodewright.nvidia.com=runtime-required:NoSchedule
       ## puaseImage: is the image used for the pause container in the operator controller.
       pauseImage: registry.k8s.io/pause:3.10
     image:

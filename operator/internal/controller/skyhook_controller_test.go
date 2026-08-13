@@ -125,7 +125,7 @@ var _ = Describe("skyhook controller tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, skyhook := range clusterState.skyhooks {
-					picker := NewNodePicker(logger, opts.GetRuntimeRequiredToleration())
+					picker := NewNodePicker(logger, opts.GetRuntimeRequiredTolerations())
 					pick := picker.SelectNodes(skyhook)
 					Expect(pick).To(HaveLen(expected))
 				}
@@ -185,7 +185,7 @@ var _ = Describe("skyhook controller tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, skyhook := range clusterState.skyhooks {
-					picker := NewNodePicker(logger, opts.GetRuntimeRequiredToleration())
+					picker := NewNodePicker(logger, opts.GetRuntimeRequiredTolerations())
 					pick := picker.SelectNodes(skyhook)
 					Expect(pick).To(HaveLen(expected))
 				}
@@ -1279,15 +1279,35 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(to_remove).To(HaveLen(1))
 		Expect(to_remove[0].UID).To(BeEquivalentTo(nodeA.UID))
 	})
-	It("CreateTolerationForTaint should tolerate the passed taint", func() {
-		taint := corev1.Taint{
-			Key:    "skyhook.nvidia.com",
-			Value:  "runtime-required",
-			Effect: "NoSchedule",
-		}
-		toleration := opts.GetRuntimeRequiredToleration()
-		Expect(toleration.ToleratesTaint(logger, &taint, false)).To(BeTrue())
+	It("CreateTolerationForTaint should tolerate both the configured and the legacy taint", func() {
+		tolerations := opts.GetRuntimeRequiredTolerations()
 
+		for _, taint := range []corev1.Taint{
+			{Key: "nodewright.nvidia.com", Value: "runtime-required", Effect: "NoSchedule"},
+			{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: "NoSchedule"},
+		} {
+			Expect(CheckTaintToleration(logger, tolerations, []corev1.Taint{taint})).To(BeTrue(), "expected %s to be tolerated", taint.Key)
+		}
+	})
+
+	It("An operator configured with the legacy taint does not list it twice", func() {
+		legacyOpts := opts
+		legacyOpts.RuntimeRequiredTaint = legacyRuntimeRequiredTaint
+
+		Expect(legacyOpts.GetRuntimeRequiredTaints()).To(HaveLen(1))
+		Expect(legacyOpts.GetRuntimeRequiredTaints()[0].Key).To(Equal("skyhook.nvidia.com"))
+		Expect(legacyOpts.GetRuntimeRequiredTolerations()).To(HaveLen(1))
+	})
+
+	It("A custom configured taint is recognised alongside the legacy taint", func() {
+		customOpts := opts
+		customOpts.RuntimeRequiredTaint = "example.com/custom=runtime-required:NoSchedule"
+
+		keys := make([]string, 0)
+		for _, taint := range customOpts.GetRuntimeRequiredTaints() {
+			keys = append(keys, taint.Key)
+		}
+		Expect(keys).To(ConsistOf("example.com/custom", "skyhook.nvidia.com"))
 	})
 	It("Pods should always tolerate runtime required taint", func() {
 		pod := createPodFromPackage(
@@ -1309,15 +1329,7 @@ var _ = Describe("skyhook controller tests", func() {
 			"node1",
 			v1alpha1.StageApply,
 		)
-		found_toleration := false
-		expected_toleration := opts.GetRuntimeRequiredToleration()
-		for _, toleration := range pod.Spec.Tolerations {
-			if toleration.Key == expected_toleration.Key && toleration.Value == expected_toleration.Value && toleration.Effect == expected_toleration.Effect {
-				found_toleration = true
-				break
-			}
-		}
-		Expect(found_toleration).To(BeTrue())
+		Expect(pod.Spec.Tolerations).To(ContainElements(opts.GetRuntimeRequiredTolerations()))
 	})
 	It("Interrupt pods should tolerate runtime required taint when it is runtime required", func() {
 		pod := createInterruptPodForPackage(
@@ -1344,15 +1356,7 @@ var _ = Describe("skyhook controller tests", func() {
 			"node1",
 			v1alpha1.StageInterrupt,
 		)
-		found_toleration := false
-		expected_toleration := opts.GetRuntimeRequiredToleration()
-		for _, toleration := range pod.Spec.Tolerations {
-			if toleration.Key == expected_toleration.Key && toleration.Value == expected_toleration.Value && toleration.Effect == expected_toleration.Effect {
-				found_toleration = true
-				break
-			}
-		}
-		Expect(found_toleration).To(BeTrue())
+		Expect(pod.Spec.Tolerations).To(ContainElements(opts.GetRuntimeRequiredTolerations()))
 	})
 
 	It("Pods should not have imagePullSecrets when ImagePullSecret is empty", func() {
@@ -4205,7 +4209,7 @@ var _ = Describe("ProcessInterrupt skipped-package promotion", func() {
 
 var _ = Describe("TrackReboots auto-taint on reboot", func() {
 	const (
-		defaultRuntimeRequiredTaint = "skyhook.nvidia.com=runtime-required:NoSchedule"
+		defaultRuntimeRequiredTaint = "nodewright.nvidia.com=runtime-required:NoSchedule"
 		oldBootID                   = "boot-A"
 		newBootID                   = "boot-B"
 	)
@@ -4216,7 +4220,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 			nodeName    = "auto-taint-reboot-node"
 		)
 		nodeLabel := map[string]string{"auto-taint-reboot-test": "yes"}
-		autoTaintAnnotationKey := fmt.Sprintf("%s/autoTaint_skyhook.nvidia.com", v1alpha1.METADATA_PREFIX)
+		autoTaintAnnotationKey := fmt.Sprintf("%s/autoTaint_nodewright.nvidia.com", v1alpha1.METADATA_PREFIX)
 
 		// Node arrives without the taint (it was removed after previous completion)
 		// but retains the autoTaint annotation from the original auto-taint.
@@ -4279,7 +4283,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 		live := &corev1.Node{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
 		Expect(live.Spec.Taints).To(ContainElement(
-			Equal(corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}),
+			Equal(corev1.Taint{Key: "nodewright.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}),
 		), "runtime-required taint must be re-applied after reboot when all three conditions are met")
 	})
 
@@ -4344,7 +4348,154 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 		live := &corev1.Node{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
 		Expect(live.Spec.Taints).ToNot(ContainElement(
-			HaveField("Key", "skyhook.nvidia.com"),
+			HaveField("Key", "nodewright.nvidia.com"),
 		), "taint must NOT be re-applied when AutoTaintNewNodes is false")
+	})
+
+	It("should NOT stack a second taint on a node that already carries the legacy one", func() {
+		const (
+			skyhookName = "legacy-taint-reboot-sh"
+			nodeName    = "legacy-taint-reboot-node"
+		)
+		nodeLabel := map[string]string{"legacy-taint-reboot-test": "yes"}
+		legacyTaint := corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
+
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nodeName,
+				Labels: nodeLabel,
+			},
+			Spec: corev1.NodeSpec{Taints: []corev1.Taint{legacyTaint}},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+		node.Status.NodeInfo.BootID = newBootID
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+		snapshotNode := node.DeepCopy()
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		skyhook := v1alpha1.NodeWright{
+			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
+			Spec: v1alpha1.NodeWrightSpec{
+				NodeSelector:      metav1.LabelSelector{MatchLabels: nodeLabel},
+				RuntimeRequired:   true,
+				AutoTaintNewNodes: true,
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+			Status: v1alpha1.NodeWrightStatus{
+				NodeBootIds: map[string]string{nodeName: oldBootID},
+			},
+		}
+
+		clusterState, err := BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
+			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		r := &SkyhookReconciler{
+			Client:   k8sClient,
+			recorder: operator.recorder,
+			opts: SkyhookOperatorOptions{
+				ReapplyOnReboot:      true,
+				RuntimeRequiredTaint: defaultRuntimeRequiredTaint,
+			},
+		}
+
+		_, err = r.TrackReboots(ctx, clusterState)
+		if err != nil {
+			Expect(err.Error()).ToNot(ContainSubstring("node after reboot"))
+		}
+
+		live := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
+		Expect(live.Spec.Taints).To(ContainElement(Equal(legacyTaint)))
+		Expect(live.Spec.Taints).ToNot(ContainElement(HaveField("Key", "nodewright.nvidia.com")),
+			"a node already gated by the legacy taint must not also get the new one")
+	})
+})
+
+var _ = Describe("HandleRuntimeRequired legacy taint removal", func() {
+	newReconciler := func(configured string) *SkyhookReconciler {
+		return &SkyhookReconciler{
+			Client:   k8sClient,
+			recorder: operator.recorder,
+			opts: SkyhookOperatorOptions{
+				RuntimeRequiredTaint: configured,
+			},
+		}
+	}
+
+	removeTaintsFor := func(r *SkyhookReconciler, nodeName string, nodeTaints []corev1.Taint) []corev1.Taint {
+		nodeLabel := map[string]string{"runtime-required-removal-test": nodeName}
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName, Labels: nodeLabel},
+			Spec:       corev1.NodeSpec{Taints: nodeTaints},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		skyhook := v1alpha1.NodeWright{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName + "-sh"},
+			Spec: v1alpha1.NodeWrightSpec{
+				NodeSelector:    metav1.LabelSelector{MatchLabels: nodeLabel},
+				RuntimeRequired: true,
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+		}
+
+		clusterState, err := BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
+			&corev1.NodeList{Items: []corev1.Node{*node.DeepCopy()}},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Mark the package complete on the node so the taint becomes removable.
+		_, nodeWrapper := clusterState.skyhooks[0].GetNode(nodeName)
+		Expect(nodeWrapper).ToNot(BeNil())
+		pkg := skyhook.Spec.Packages[pkgRef.Name]
+		Expect(nodeWrapper.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, v1alpha1.StageConfig, int32(0), "")).To(Succeed())
+
+		Expect(r.HandleRuntimeRequired(ctx, clusterState)).To(Succeed())
+
+		live := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
+		return live.Spec.Taints
+	}
+
+	legacyTaint := corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
+	newTaint := corev1.Taint{Key: "nodewright.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
+	unrelatedTaint := corev1.Taint{Key: "nvidia.com/gpu", Value: "present", Effect: corev1.TaintEffectNoSchedule}
+
+	// envtest stamps its own node.kubernetes.io/not-ready taint on created Nodes, so the
+	// assertions name the keys under test rather than the whole taint list.
+	expectRuntimeRequiredGone := func(remaining []corev1.Taint) {
+		GinkgoHelper()
+		Expect(remaining).To(ContainElement(Equal(unrelatedTaint)), "unrelated taints must be preserved")
+		Expect(remaining).ToNot(ContainElement(HaveField("Key", "skyhook.nvidia.com")))
+		Expect(remaining).ToNot(ContainElement(HaveField("Key", "nodewright.nvidia.com")))
+	}
+
+	It("removes the legacy taint from a node the provisioner still stamps with it", func() {
+		r := newReconciler("nodewright.nvidia.com=runtime-required:NoSchedule")
+		expectRuntimeRequiredGone(removeTaintsFor(r, "legacy-only-node", []corev1.Taint{legacyTaint, unrelatedTaint}))
+	})
+
+	It("removes both keys when a node somehow carries both", func() {
+		r := newReconciler("nodewright.nvidia.com=runtime-required:NoSchedule")
+		expectRuntimeRequiredGone(removeTaintsFor(r, "both-keys-node", []corev1.Taint{legacyTaint, newTaint, unrelatedTaint}))
+	})
+
+	It("still removes the legacy taint when the operator is pinned to the legacy key", func() {
+		r := newReconciler(legacyRuntimeRequiredTaint)
+		expectRuntimeRequiredGone(removeTaintsFor(r, "pinned-legacy-node", []corev1.Taint{legacyTaint, unrelatedTaint}))
 	})
 })
