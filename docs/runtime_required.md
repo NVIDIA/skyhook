@@ -108,4 +108,6 @@ This per-node behavior prevents deadlocks where a few bad nodes would block all 
 
 This is useful when you want to gate other work behind the successful completion of some set of NodeWright Packages. This can be for security reasons or for scheduling.
 
-**NOTE:** No additional toleration is required; NodeWright automatically tolerates the configured (`runtimeRequiredTaint`) taint, and for the deprecation window the legacy `skyhook.nvidia.com` taint as well.
+**NOTE:** **Package pods** need no additional toleration: NodeWright stamps them with a toleration for the configured (`runtimeRequiredTaint`) taint, and for the deprecation window the legacy `skyhook.nvidia.com` taint as well.
+
+This does **not** cover the operator's own controller-manager pod, which carries only the tolerations you give it via `controllerManager.tolerations`. If the operator itself has to schedule onto nodes carrying the runtime-required taint, add that toleration to the chart values yourself, or the operator will not schedule there.
