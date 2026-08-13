@@ -22,6 +22,12 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Other Changes
 
+- **The operator pod now contains only the `manager` container.** Secure metrics
+  are served directly by controller-runtime on port `8443`; the separate metrics
+  proxy image, resources, values, and RBAC objects have been removed. Existing
+  Prometheus clients should continue using a bearer token authorized for the
+  `skyhook-operator-metrics-reader` ClusterRole.
+
 - **Maintenance jobs moved off `bitnami/kubectl` to `alpine/kubectl`.** The
   webhook and skyhook cleanup pre-delete hooks and the new selector-migration
   pre-upgrade hook now use a maintained, versioned, multi-arch `alpine/kubectl`
@@ -31,6 +37,22 @@ For the full commit-level log see CHANGELOG.md.
   a private mirror, remirror from the new source (#207).
 
 ### Upgrade notes
+
+- Remove any overrides under `controllerManager.kubeRbacProxy`; that values
+  block no longer exists. Metrics remain available on HTTPS port `8443`.
+  If you override `controllerManager.manager.env.metricsPort`, update it from
+  `:8080` to `:8443`; the value remains supported, but the Service now targets
+  `8443` exclusively.
+  Scrapers that used the chart's former unauthenticated HTTP `:8080` service
+  port must switch to `:8443`, disable TLS certificate verification, and
+  provide a Kubernetes bearer token authorized for the `/metrics`
+  non-resource URL. controller-runtime generates an in-memory self-signed
+  certificate for each operator pod, so there is no stable CA to trust.
+  The chart no longer adds `prometheus.io/*` discovery annotations by default,
+  because standard annotation-based jobs cannot supply that authentication or
+  trust configuration and would continuously report a failed target. Configure
+  an authenticated endpoints-discovery job as shown in
+  `docs/metrics/prometheus_values.yaml` instead.
 
 - No action is required: the selector-migration hook runs automatically on
   `helm upgrade` and only recreates the Deployment when its selector is stale.

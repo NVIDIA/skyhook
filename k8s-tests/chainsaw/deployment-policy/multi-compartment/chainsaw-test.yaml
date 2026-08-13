@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
@@ -66,16 +63,28 @@ spec:
     - assert:
         file: assert-compartments.yaml
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_rollout_matched_nodes 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           echo "=== Verifying compartment metrics ==="
-          
+
           # Verify matched nodes metrics for each compartment
-          ../../metrics_test.py skyhook_rollout_matched_nodes 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
           ../../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
           ../../metrics_test.py skyhook_rollout_matched_nodes 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
-          
+
           echo "✓ Compartment matched nodes metrics verified"
     - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           echo "=== Verifying ceiling metrics ==="
           
@@ -105,11 +114,20 @@ spec:
   - name: verify-final-metrics
     try:
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_rollout_completed 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           echo "=== Verifying final metrics ==="
-          
+
           # All compartments should have 100% completion and 0 in progress
-          ../../metrics_test.py skyhook_rollout_completed 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
           ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
           ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
           

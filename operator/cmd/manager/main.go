@@ -42,6 +42,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	kzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	nwv1 "github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
@@ -77,12 +78,18 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// The metrics endpoint is served by controller-runtime behind
+// filters.WithAuthenticationAndAuthorization, which delegates authn/authz to the
+// apiserver. These are the permissions that filter needs, not any controller's.
+//+kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
+//+kubebuilder:rbac:groups=authorization.k8s.io,resources=subjectaccessreviews,verbs=create
+
 type options struct {
 	// SkyhookOperatorOptions are options for the operator operation, and not controller runtime.
 	controller.SkyhookOperatorOptions
 	controller.WebhookControllerOptions
 	// MetricsPort The address the metric endpoint binds to.
-	MetricsPort string `env:"METRICS_PORT, default=:8080"`
+	MetricsPort string `env:"METRICS_PORT, default=:8443"`
 	// ProbePort The address the probe endpoint binds to.
 	ProbePort string `env:"PROBE_PORT, default=:8081"`
 	// LeaderElection Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.
@@ -109,8 +116,15 @@ func main() {
 	certDir := filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
 	restConfig := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: options.MetricsPort},
+		Scheme: scheme,
+		// No CertDir: with none on disk, controller-runtime generates an in-memory
+		// self-signed cert per pod. Scrapers cannot verify it either way (Prometheus
+		// targets pod IPs), so we do not manage one ourselves.
+		Metrics: metricsserver.Options{
+			BindAddress:    options.MetricsPort,
+			SecureServing:  true,
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
+		},
 		HealthProbeBindAddress: options.ProbePort,
 		LeaderElection:         options.LeaderElection,
 		LeaderElectionID:       reconcileLeaseID,
