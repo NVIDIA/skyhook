@@ -98,7 +98,7 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 
 	It("converge: adds the nodewright ConfigMap label but keeps the legacy label and the legacy pods", func() {
 		c := buildClient(legacyPod("legacy-pod", "node-a"), legacyCM())
-		r, err := NewSkyhookReconciler(c.Scheme(), c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+		r, err := NewSkyhookReconciler(c.Scheme(), c, c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, false)
@@ -141,7 +141,7 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 		cm.Labels["nodewright.nvidia.com/name"] = shName
 
 		c := buildClient(legacyPod("legacy-pod", "node-a"), newPod, otherPod, cm)
-		r, err := NewSkyhookReconciler(c.Scheme(), c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+		r, err := NewSkyhookReconciler(c.Scheme(), c, c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, true)
@@ -178,7 +178,7 @@ var _ = Describe("reconcileLegacyLabeledWorkloads", func() {
 
 	It("is a cheap no-op when there is nothing legacy-labeled", func() {
 		c := buildClient()
-		r, err := NewSkyhookReconciler(c.Scheme(), c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+		r, err := NewSkyhookReconciler(c.Scheme(), c, c, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 		Expect(err).ToNot(HaveOccurred())
 
 		hadLegacy, changed, err := r.reconcileLegacyLabeledWorkloads(ctx, shName, false)

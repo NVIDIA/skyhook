@@ -84,7 +84,7 @@ var _ = Describe("Jobs execution swap", func() {
 				}
 				return []string{pod.Spec.NodeName}
 			}).Build()
-		r, err := NewSkyhookReconciler(scheme, c, k8sfake.NewClientset(), events.NewFakeRecorder(50), validOpts())
+		r, err := NewSkyhookReconciler(scheme, c, c, k8sfake.NewClientset(), events.NewFakeRecorder(50), validOpts())
 		Expect(err).ToNot(HaveOccurred())
 		return r, c
 	}
@@ -397,6 +397,15 @@ var _ = Describe("Jobs execution swap", func() {
 		It("keeps a processed finished Job while its stage is recorded complete", func() {
 			r, _ := newReconciler()
 			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, completeEntry, sky)).To(BeFalse())
+		})
+		// This predicate is what makes a lost node-state update self-healing rather than a stall:
+		// a completion clobbered back to (this stage, in_progress) no longer reads as recorded
+		// done, so the finished Job is torn down and the stage runs again. Distinct from the
+		// absent-entry case above — that is a reset or an uninstall, this is a regression.
+		It("deletes a processed finished Job whose entry was reverted to this stage in_progress", func() {
+			r, _ := newReconciler()
+			reverted := v1alpha1.NodeState{pkg.GetUniqueName(): {Name: "tuning", Version: "1.0.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateInProgress}}
+			Expect(r.shouldDeleteFinishedJob(processed(), pkgSky, reverted, sky)).To(BeTrue())
 		})
 		// Both outcomes wait for the marker. A finite backoffLimit can take a Job from first
 		// failure to terminal in about a minute, so deleting a Failed Job before JobReconcile
