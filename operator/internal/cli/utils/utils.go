@@ -339,7 +339,15 @@ func outputTableInternal[T any](out io.Writer, cfg TableConfig[T], items []T, wi
 
 // Operator version discovery constants
 const (
-	DefaultNamespace = "skyhook"
+	// DefaultNamespace is the namespace new NodeWright installs use, and the single
+	// source of truth for the CLI's --namespace default (internal/cli/context seeds
+	// the flag from it).
+	DefaultNamespace = "nodewright"
+	// LegacyDefaultNamespace is the namespace Skyhook installs used before the rename.
+	// Namespaces cannot be renamed in place, so an existing install legitimately stays
+	// here; the CLI discovers it rather than forcing a reinstall. See
+	// ResolveOperatorNamespace.
+	LegacyDefaultNamespace = "skyhook"
 	// MinAnnotationSupportVersion is the minimum operator version that supports annotation-based pause/disable
 	MinAnnotationSupportVersion = "v0.8.0"
 	// MinNodeStateSupportVersion is the lowest operator version known to use
@@ -473,6 +481,73 @@ func DiscoverOperatorVersion(ctx context.Context, kube kubernetes.Interface, nam
 	}
 
 	return "", fmt.Errorf("unable to determine operator version; no nodewright operator deployment found in namespace %q", namespace)
+}
+
+// ResolveOperatorNamespace works out which namespace the operator is installed in
+// when the user did not pass --namespace.
+//
+// WHY this exists rather than a plain default: the install namespace moved from
+// "skyhook" to "nodewright" with the rename, and a namespace cannot be renamed in
+// place. Existing installs legitimately stay in "skyhook" forever, so defaulting
+// blindly to "nodewright" would answer "not found" for every one of them with no
+// explanation. Probing is two namespaced List calls at worst, and needs no
+// cluster-wide RBAC.
+//
+// Resolution order: DefaultNamespace, then LegacyDefaultNamespace, then a
+// best-effort cluster-wide sweep for installs in some other namespace. When
+// nothing answers, DefaultNamespace is returned so callers still produce their
+// own, more specific error. found reports whether an operator was actually
+// located, and legacy reports that the answer came from LegacyDefaultNamespace so
+// the caller can warn.
+func ResolveOperatorNamespace(ctx context.Context, kube kubernetes.Interface) (namespace string, found bool, legacy bool) {
+	if kube == nil {
+		return DefaultNamespace, false, false
+	}
+
+	for _, candidate := range []string{DefaultNamespace, LegacyDefaultNamespace} {
+		if hasOperatorDeployment(ctx, kube, candidate) {
+			return candidate, true, candidate == LegacyDefaultNamespace
+		}
+	}
+
+	// Last resort. This needs cluster-wide list permission, which a scoped user may
+	// not have, so a failure here is not an error: fall through to the default and
+	// let the caller's own lookup report what is actually missing.
+	deployments, err := kube.AppsV1().Deployments(metav1.NamespaceAll).List(ctx, controllerManagerSelector)
+	if err != nil {
+		return DefaultNamespace, false, false
+	}
+	for i := range deployments.Items {
+		if isSkyhookOperatorDeployment(&deployments.Items[i]) {
+			return deployments.Items[i].Namespace, true, false
+		}
+	}
+
+	return DefaultNamespace, false, false
+}
+
+// controllerManagerSelector narrows a Deployment list to the operator's own
+// controller-manager, which both the chart and the kustomize overlay label.
+//
+// WHY this is stricter than DiscoverOperatorVersion's substring match: that match
+// accepts any image or label merely CONTAINING "nodewright" or "skyhook", which is
+// tolerable when the caller already named the namespace. Namespace resolution has
+// no such anchor, so an unrelated deployment (say a "billing-nodewright-exporter"
+// in the nodewright namespace) would otherwise decide the namespace and send every
+// subsequent lookup to the wrong place.
+var controllerManagerSelector = metav1.ListOptions{LabelSelector: "control-plane=controller-manager"}
+
+func hasOperatorDeployment(ctx context.Context, kube kubernetes.Interface, namespace string) bool {
+	deployments, err := kube.AppsV1().Deployments(namespace).List(ctx, controllerManagerSelector)
+	if err != nil {
+		return false
+	}
+	for i := range deployments.Items {
+		if isSkyhookOperatorDeployment(&deployments.Items[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 // isSkyhookOperatorDeployment checks if a deployment looks like the operator by

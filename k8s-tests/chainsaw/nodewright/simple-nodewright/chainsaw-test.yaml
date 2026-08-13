@@ -40,7 +40,7 @@ spec:
     - get:
         apiVersion: v1
         kind: Pod
-        namespace: skyhook
+        namespace: nodewright
         selector: nodewright.nvidia.com/name=simple-skyhook
         format: yaml
   steps:

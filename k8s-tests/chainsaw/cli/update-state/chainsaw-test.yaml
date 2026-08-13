@@ -38,7 +38,7 @@ spec:
     - get:
         apiVersion: v1
         kind: Pod
-        namespace: skyhook
+        namespace: nodewright
         format: yaml
   steps:
   # Step 0: Reset state from previous runs

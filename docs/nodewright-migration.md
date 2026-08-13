@@ -282,6 +282,44 @@ runtime-required **taint** key is likewise untouched: it did not move in the ren
 This is transition-only behavior and is removed together with the `skyhook.nvidia.com` group at the
 removal release.
 
+## Install namespace (`skyhook` -> `nodewright`)
+
+The documented install namespace for **new** deployments is now `nodewright`. The kustomize
+overlay moved from `skyhook-operator-system` to `nodewright-operator-system` to match, and the
+operator's own `NAMESPACE` default (used only when nothing sets it, such as a bare binary or
+`make run`) moved from `skyhook` to `nodewright`.
+
+**There is nothing to migrate, and no deadline.** Kubernetes namespaces cannot be renamed in
+place, and Helm cannot move a release between namespaces, so moving an existing install would
+mean deleting and recreating every namespaced object the operator owns: a real outage in
+exchange for a cosmetic name. **Staying in `skyhook` remains fully supported and correct.** The
+chart takes the namespace from `.Release.Namespace` throughout and installs cleanly into any
+namespace, so `helm upgrade` against an existing `skyhook`-namespace release is unaffected by
+this change.
+
+What this does change:
+
+- **New installs.** The README and chart docs now use `--namespace nodewright --create-namespace`.
+  Substitute your own namespace freely; nothing depends on the name.
+- **`kubectl nodewright`.** With no `--namespace`, the CLI discovers the operator's namespace
+  rather than assuming one, so it keeps working against a `skyhook`-namespace install. It checks
+  `nodewright`, then `skyhook` (printing a one-line note), then sweeps cluster-wide. See
+  [the CLI reference](cli.md#namespace-resolution).
+
+If you do want to move an existing install, treat it as an uninstall and reinstall, not a
+migration:
+
+1. Confirm every NodeWright is `complete` with no nodes in progress.
+2. `helm uninstall <release> -n skyhook`. The chart's pre-delete hook removes the NodeWright and
+   DeploymentPolicy CRs; on-node package state (the `nodewright.nvidia.com/*` node annotations)
+   is **not** removed by this, so it survives.
+3. `helm install <release> oci://ghcr.io/nvidia/nodewright/charts/nodewright -n nodewright --create-namespace`.
+4. Re-apply your NodeWright CRs. Because the per-node state annotations survived, packages are
+   not re-run.
+
+There is no reason to do this on a running cluster unless you have an external requirement on
+the namespace name.
+
 ## Downstream consumers (e.g. aicr)
 
 Projects that ship or depend on Skyhook CRs need a coordinated update. For example

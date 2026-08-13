@@ -41,7 +41,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/limitrange.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -67,7 +67,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -96,7 +96,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/cleanup-webhook-job.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -128,7 +128,7 @@ spec:
           ## The controller-manager Deployment selector must carry the full,
           ## specific managerSelectorLabels set (not a single vague label), so
           ## it stays stable and the selector-migration hook can match it.
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/deployment.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -158,7 +158,7 @@ spec:
           ## (name=nodewright), not the overridden name. (Asserted by kind, since
           ## deployment.yaml also renders the PDB; the preserved Deployment name
           ## is covered by the Role/hook assertions below.)
-          helm template skyhook-operator ${CHART} -n skyhook \
+          helm template skyhook-operator ${CHART} -n nodewright \
             --set fullnameOverride=skyhook-operator \
             -s templates/deployment.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
@@ -181,7 +181,7 @@ spec:
         content: |
           ## The hook's RBAC must follow the overridden name so it can delete the
           ## right Deployment.
-          helm template skyhook-operator ${CHART} -n skyhook \
+          helm template skyhook-operator ${CHART} -n nodewright \
             --set fullnameOverride=skyhook-operator \
             -s templates/selector-migration-role.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
@@ -200,7 +200,7 @@ spec:
           value: ($CHART)
         content: |
           ## The hook command targets the overridden Deployment name.
-          helm template skyhook-operator ${CHART} -n skyhook \
+          helm template skyhook-operator ${CHART} -n nodewright \
             --set fullnameOverride=skyhook-operator \
             -s templates/selector-migration-job.yaml
         check:
@@ -217,7 +217,7 @@ spec:
         content: |
           ## The pre-upgrade hook Job is wired as a pre-upgrade hook, runs under
           ## its dedicated ServiceAccount, and has a single migration container.
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/selector-migration-job.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -250,7 +250,7 @@ spec:
           ## Also assert the hook compares the FULL managerSelectorLabels set, not
           ## just control-plane: a regression to a single label would reintroduce
           ## the upgrade failure for rename/fullnameOverride installs.
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/selector-migration-job.yaml
         check:
           "(contains($stdout, 'image: alpine/kubectl'))": true
@@ -274,7 +274,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/selector-migration-serviceaccount.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -297,7 +297,7 @@ spec:
           value: ($CHAINSAW_BIN)
         content: |
           ## Least-privilege: get/delete on the controller-manager deployment only.
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/selector-migration-role.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -326,7 +326,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/selector-migration-rolebinding.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -353,7 +353,7 @@ spec:
           ## With the hook disabled, none of the selector-migration templates
           ## should render (-s exits non-zero when a gated template is empty).
           for f in serviceaccount role rolebinding job; do
-            if helm template test-release ${CHART} -n skyhook \
+            if helm template test-release ${CHART} -n nodewright \
                  --set 'selectorMigration.enabled=false' \
                  -s templates/selector-migration-$f.yaml 2>/dev/null; then
               echo "ERROR: selector-migration-$f.yaml rendered while disabled"
@@ -372,7 +372,7 @@ spec:
           value: ($CHAINSAW_BIN)
         content: |
           ## LimitRange disabled, but cleanup job should still have fallback resources
-          helm template test-release ${CHART} -n skyhook --set-json 'limitRange=null' \
+          helm template test-release ${CHART} -n nodewright --set-json 'limitRange=null' \
             -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
             --resource /tmp/rendered.yaml --file - --no-color --timeout 5s
@@ -400,7 +400,7 @@ spec:
           value: ($CHART)
         content: |
           ## -s errors when a gated template produces no output
-          helm template test-release ${CHART} -n skyhook --set-json 'limitRange=null' \
+          helm template test-release ${CHART} -n nodewright --set-json 'limitRange=null' \
             -s templates/limitrange.yaml
         check:
           ($error != null): true
@@ -412,7 +412,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook --set 'limitRange=false' \
+          helm template test-release ${CHART} -n nodewright --set 'limitRange=false' \
             -s templates/limitrange.yaml
         check:
           ($error != null): true
@@ -424,7 +424,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook --set 'webhook.enable=false' \
+          helm template test-release ${CHART} -n nodewright --set 'webhook.enable=false' \
             -s templates/cleanup-webhook-job.yaml
         check:
           ($error != null): true
@@ -436,7 +436,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook --set 'cleanup.enabled=false' \
+          helm template test-release ${CHART} -n nodewright --set 'cleanup.enabled=false' \
             -s templates/cleanup-skyhooks-job.yaml
         check:
           ($error != null): true
@@ -461,7 +461,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.selectors.dedicated=system-workload' \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].key=foo' \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].operator=Exists' \
@@ -476,7 +476,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.podDisruptionBudget.minAvailable=2' \
             --set 'controllerManager.replicas=2' \
             2>&1 || true
@@ -492,7 +492,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/skyhook_viewer_role.yaml
         check:
           ($error != null): true
@@ -501,7 +501,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/skyhook_editor_role.yaml
         check:
           ($error != null): true
@@ -515,7 +515,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'rbac.createSkyhookViewerRole=true' \
             -s templates/skyhook_viewer_role.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
@@ -535,7 +535,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'rbac.createSkyhookEditorRole=true' \
             -s templates/skyhook_editor_role.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
@@ -553,7 +553,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'imagePullSecret=my-registry-secret' \
             -s templates/deployment.yaml
         check:
@@ -566,7 +566,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/deployment.yaml
         check:
           "(contains($stdout, 'hostNetwork: true'))": false
@@ -578,7 +578,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'useHostNetwork=true' \
             -s templates/deployment.yaml
         check:
@@ -591,7 +591,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             -s templates/metrics-reader-rbac.yaml
         check:
           "(contains($stdout, 'kind: ClusterRoleBinding'))": false
@@ -603,7 +603,7 @@ spec:
         - name: CHART
           value: ($CHART)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'metrics.addServiceAccountBinding=true' \
             -s templates/metrics-reader-rbac.yaml
         check:
@@ -627,7 +627,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.tolerations[0].key=dedicated' \
             --set 'controllerManager.tolerations[0].operator=Equal' \
             --set 'controllerManager.tolerations[0].value=system-cpu' \
@@ -656,7 +656,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.tolerations[0].key=dedicated' \
             --set 'controllerManager.tolerations[0].operator=Equal' \
             --set 'controllerManager.tolerations[0].value=system-cpu' \
@@ -689,7 +689,7 @@ spec:
           ## restrictive placement makes the pre-delete hook unschedulable. The
           ## job still renders fully (SA + cleanup container); only nodeSelector
           ## is dropped. (== null asserts the field is absent, not merely empty.)
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.selectors.dedicated=system-workload' \
             -s templates/cleanup-skyhooks-job.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
@@ -720,7 +720,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.selectors.dedicated=system-workload' \
             -s templates/cleanup-webhook-job.yaml > /tmp/rendered.yaml
           cat <<'EXPECTED' | ${CHAINSAW_BIN} assert \
@@ -755,7 +755,7 @@ spec:
           ## restrictive placement makes the pre-delete hook unschedulable. The
           ## job still renders fully (SA + cleanup container); only affinity is
           ## dropped. (== null asserts the field is absent, not merely empty.)
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].key=gpu-type' \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].operator=In' \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].values[0]=a100' \
@@ -783,7 +783,7 @@ spec:
         - name: CHAINSAW_BIN
           value: ($CHAINSAW_BIN)
         content: |
-          helm template test-release ${CHART} -n skyhook \
+          helm template test-release ${CHART} -n nodewright \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].key=gpu-type' \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].operator=In' \
             --set 'controllerManager.nodeAffinity.matchExpressions[0].values[0]=a100' \

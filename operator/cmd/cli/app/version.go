@@ -51,7 +51,7 @@ func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 		kubectl nodewright version --client-only
 
 		# Query operator in a specific namespace
-		kubectl nodewright version -n skyhook`,
+		kubectl nodewright version -n nodewright`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright plugin:\t%s\n", version.Summary())
 
@@ -68,7 +68,7 @@ func NewVersionCmd(ctx *cliContext.CLIContext) *cobra.Command {
 			cmdCtx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
-			opVersion, err := utils.DiscoverOperatorVersion(cmdCtx, kubeClient.Kubernetes(), ctx.GlobalFlags.Namespace())
+			opVersion, err := utils.DiscoverOperatorVersion(cmdCtx, kubeClient.Kubernetes(), ctx.ResolveNamespace(cmdCtx, cmd, kubeClient.Kubernetes()))
 			if err != nil {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright operator:\tunknown (%v)\n", err)
 				return nil

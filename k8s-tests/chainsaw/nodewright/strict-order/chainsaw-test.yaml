@@ -95,7 +95,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: strict-order-skyhook-zzz
               nodewright.nvidia.com/package: foobar-1.2
@@ -155,7 +155,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: strict-order-skyhook-zzz
               nodewright.nvidia.com/package: foobar-1.2

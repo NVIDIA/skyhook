@@ -19,7 +19,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: drain-config-pdb
-  namespace: skyhook
+  namespace: nodewright
 spec:
   replicas: 1
   selector:
@@ -43,7 +43,7 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: drain-config-pdb
-  namespace: skyhook
+  namespace: nodewright
 spec:
   minAvailable: 1
   selector:

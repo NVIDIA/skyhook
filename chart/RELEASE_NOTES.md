@@ -5,6 +5,15 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+### Other Changes
+
+- **The documented install namespace for new installs is now `nodewright`.** This is a
+  documentation and example change only: the chart has always sourced the namespace from
+  `.Release.Namespace` and installs cleanly into any namespace. **An existing release in
+  the `skyhook` namespace needs no action** — a namespace cannot be renamed in place and
+  Helm cannot move a release between namespaces, so `helm upgrade` there keeps working
+  unchanged and is supported indefinitely.
+
 ### Bug Fixes
 
 - **Helm upgrade no longer fails on the immutable Deployment selector after the

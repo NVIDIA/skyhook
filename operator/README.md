@@ -211,18 +211,18 @@ Operator containers:
 If you want to test the helm chart, this is how you can deploy it from the repo.
 
 ```
-## setup namespace "skyhook"
-kubectl create namespace skyhook --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret generic node-init-secret --from-file=.dockerconfigjson=${HOME}/.config/containers/auth.json --type=kubernetes.io/dockerconfigjson -n  skyhook
+## setup namespace "nodewright"
+kubectl create namespace nodewright --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic node-init-secret --from-file=.dockerconfigjson=${HOME}/.config/containers/auth.json --type=kubernetes.io/dockerconfigjson -n nodewright
 
 ## install operator
-helm install skyhook-operator ./chart --namespace skyhook
+helm install skyhook-operator ./chart --namespace nodewright
 ```
 
 to remove operator from a cluster:
 ```
 ## remove operator (automatic cleanup enabled by default)
-helm uninstall skyhook-operator --namespace skyhook
+helm uninstall skyhook-operator --namespace nodewright
 
 ## delete CRD
 make uninstall
