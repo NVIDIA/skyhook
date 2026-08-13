@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
@@ -64,15 +61,24 @@ spec:
     - assert:
         file: assert-compartment.yaml
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_rollout_matched_nodes 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           set -e
           echo "=== Verifying initial metrics ==="
-          
+
           # Verify matched nodes and ceiling for production compartment
-          ../../metrics_test.py skyhook_rollout_matched_nodes 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           # Budget is count=4
           ../../metrics_test.py skyhook_rollout_ceiling 4 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
-          
+
           echo "✓ Initial metrics verified"
   
   - name: track-batch-progression
@@ -95,12 +101,21 @@ spec:
   - name: verify-final-metrics
     try:
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_rollout_completed 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           set -e
           echo "=== Verifying final metrics ==="
-          
+
           # All nodes should be completed
-          ../../metrics_test.py skyhook_rollout_completed 8 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=linear-strategy-test -t policy_name=linear-ramp-policy -t compartment_name=production -t strategy=linear
           

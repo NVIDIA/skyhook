@@ -50,9 +50,18 @@ spec:
     - assert:
         file: assert.yaml
     - script:
+        skipLogOutput: true
         content: |
           set -e
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
           ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
           ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
     - patch:
@@ -60,6 +69,9 @@ spec:
     - assert:
         file: assert-update.yaml
     - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           set -e
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling

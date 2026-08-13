@@ -31,6 +31,7 @@ import (
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -611,8 +612,12 @@ func podMatchesPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Package, 
 			expectedResources := expectedContainer.Resources
 			actualResources := actualContainer.Resources
 			if skyhook.Spec.Packages[_package.Name].Resources != nil {
-				// If CR has resources specified, they should match exactly
-				if !reflect.DeepEqual(expectedResources, actualResources) {
+				// Semantic, not reflect: apimachinery rewrites a quantity into its canonical
+				// form when the pod is serialized ("4000m" -> "4", "8192Mi" -> "8Gi"), so a
+				// pod read back from the apiserver is never byte-equal to the one we built.
+				// reflect.DeepEqual compares Quantity's unexported cached string and reports
+				// a mismatch that isn't one, which invalidates and recreates the Job forever.
+				if !apiequality.Semantic.DeepEqual(expectedResources, actualResources) {
 					return false
 				}
 			} else {

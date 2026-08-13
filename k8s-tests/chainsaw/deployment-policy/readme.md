@@ -44,9 +44,20 @@ Logical groups of nodes with their own rollout strategy and budget. Nodes are as
 make deployment-policy-tests
 
 # Run a specific test
-cd k8s-tests/chainsaw/deployment-policy
-chainsaw test --test-dir linear-strategy
+cd operator
+make run
+make prepare-metrics-test-access
+
+cd ../k8s-tests/chainsaw/deployment-policy
+SKYHOOK_NAMESPACE=skyhook \
+METRICS_TEST_SERVICE_ACCOUNT=metrics-reader \
+../../../operator/bin/chainsaw test --test-dir linear-strategy
 ```
+
+The direct Chainsaw command requires the same authenticated metrics setup as
+the Makefile target. `make prepare-metrics-test-access` creates the
+`metrics-reader` ServiceAccount and grants it `GET /metrics`; the two
+environment variables tell `metrics_test.py` which identity to use.
 
 ## Helper Scripts
 

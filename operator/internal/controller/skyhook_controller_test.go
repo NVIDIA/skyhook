@@ -880,7 +880,7 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drained).To(BeFalse())
 			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
-			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [skyhook:drain-timeout]")))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [nodewright:drain-timeout]")))
 			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0]")))
 		})
 	})
@@ -1661,6 +1661,323 @@ var _ = Describe("skyhook controller tests", func() {
 			// Idle with nothing pending: fall back to MaxInterval.
 			Expect(reconcileResult(nil, false, maxInterval)).To(Equal(reconcile.Result{RequeueAfter: maxInterval}))
 		})
+	})
+})
+
+var _ = Describe("Resource Comparison", func() {
+	var (
+		expectedPod *corev1.Pod
+		actualPod   *corev1.Pod
+		skyhook     *wrapper.Skyhook
+		package_    *v1alpha1.Package
+	)
+
+	BeforeEach(func() {
+		// Setup common test objects
+		nodeName := "testNode"
+		stage := v1alpha1.StageApply
+		package_ = &v1alpha1.Package{
+			PackageRef: v1alpha1.PackageRef{
+				Name:    "test-package",
+				Version: "1.0.0",
+			},
+			Image: "test-image",
+		}
+
+		skyhook = &wrapper.Skyhook{
+			NodeWright: &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-skyhook",
+				},
+				Spec: v1alpha1.NodeWrightSpec{
+					Packages: map[string]v1alpha1.Package{
+						"test-package": *package_,
+					},
+				},
+			},
+		}
+
+		// Create base pod structure, to much work to do it again
+		expectedPod = createPodFromPackage(operator.opts, package_, skyhook, nodeName, stage)
+		actualPod = expectedPod.DeepCopy()
+	})
+
+	It("should match when resources are identical", func() {
+		// Setup: Add resources to package and expected pod
+		newPackage := *package_
+		newPackage.Resources = &v1alpha1.ResourceRequirements{
+			CPURequest:    resource.MustParse("100m"),
+			CPULimit:      resource.MustParse("200m"),
+			MemoryRequest: resource.MustParse("128Mi"),
+			MemoryLimit:   resource.MustParse("256Mi"),
+		}
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		expectedResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+
+		// Set resources for all init containers in expected pod
+		for i := range expectedPod.Spec.InitContainers {
+			expectedPod.Spec.InitContainers[i].Resources = expectedResources
+		}
+
+		// Test: Set actual pod resources to match expected
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = expectedResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
+	})
+
+	// Unlike its neighbours, this spec round-trips the pod through the envtest
+	// apiserver instead of comparing two in-process structs. A DeepCopy can never
+	// observe that apimachinery rewrites a quantity into its canonical form
+	// ("4000m" -> "4", "8192Mi" -> "8Gi") when the pod is serialized, so the pod the
+	// operator reads back is not byte-identical to the one it created.
+	It("should match when the pod's quantities were canonicalized by the apiserver", func() {
+		newPackage := *package_
+		newPackage.Resources = &v1alpha1.ResourceRequirements{
+			CPURequest:    resource.MustParse("2000m"),
+			CPULimit:      resource.MustParse("4000m"),
+			MemoryRequest: resource.MustParse("4096Mi"),
+			MemoryLimit:   resource.MustParse("8192Mi"),
+		}
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// "test-node", not the "testNode" the sibling specs use: spec.nodeName must be
+		// a lowercase RFC 1123 subdomain, which only a real apiserver enforces.
+		pod := createPodFromPackage(operator.opts, &newPackage, skyhook, "test-node", v1alpha1.StageApply)
+		Expect(SetPackages(pod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)).To(Succeed())
+
+		// Capture what the operator built before Create: the client overwrites pod in
+		// place with the apiserver's response, which is the rewrite under test.
+		built := pod.Spec.InitContainers[0].Resources.DeepCopy()
+
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pod))).To(Succeed())
+		})
+
+		observedPod := &corev1.Pod{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), observedPod)).To(Succeed())
+		observed := observedPod.Spec.InitContainers[0].Resources
+
+		Expect(observed.Limits.Cpu().Cmp(*built.Limits.Cpu())).To(Equal(0),
+			"guard: the apiserver must change only representation, never value")
+		Expect(observed.Limits.Memory().Cmp(*built.Limits.Memory())).To(Equal(0),
+			"guard: the apiserver must change only representation, never value")
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *observedPod, skyhook, v1alpha1.StageApply)).To(BeTrue(),
+			"a pod read back from the apiserver must still match the package that created it")
+	})
+
+	It("should not match when resources differ", func() {
+		// Setup: Add resources to package and expected pod
+		newPackage := *package_
+		newPackage.Resources = &v1alpha1.ResourceRequirements{
+			CPURequest:    resource.MustParse("100m"),
+			CPULimit:      resource.MustParse("200m"),
+			MemoryRequest: resource.MustParse("128Mi"),
+			MemoryLimit:   resource.MustParse("256Mi"),
+		}
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		expectedResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+
+		// Set resources for all init containers in expected pod
+		for i := range expectedPod.Spec.InitContainers {
+			expectedPod.Spec.InitContainers[i].Resources = expectedResources
+		}
+
+		// Test: Set different CPU request in actual pod for all init containers
+		differentResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"), // Different CPU request
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = differentResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
+	})
+
+	It("should match when no resources are specified and pod has no overrides", func() {
+		// Setup: Ensure no resources in package
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Test: Ensure pod has no resource overrides for any init container
+		emptyResources := corev1.ResourceRequirements{}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = emptyResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
+	})
+
+	It("should not match when no resources are specified but pod has requests", func() {
+		// Setup: Ensure no resources in package
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Test: Add resource requests to all init containers
+		requestResources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+		}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = requestResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
+	})
+
+	It("should not match when no resources are specified but pod has limits", func() {
+		// Setup: Ensure no resources in package
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Test: Add resource limits to all init containers
+		limitResources := corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Resources = limitResources
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
+	})
+
+	It("should ignore SKYHOOK_RESOURCE_ID env var", func() {
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Setup: Add SKYHOOK_RESOURCE_ID env var to all init containers
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Env = append(actualPod.Spec.InitContainers[i].Env, corev1.EnvVar{
+				Name:  "SKYHOOK_RESOURCE_ID",
+				Value: "SOME_VALUE",
+			})
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
+	})
+
+	It("should not ignore non static env vars", func() {
+		newPackage := *package_
+		newPackage.Resources = nil
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// Setup: Add SKYHOOK_RESOURCE_ID env var to all init containers
+		for i := range actualPod.Spec.InitContainers {
+			actualPod.Spec.InitContainers[i].Env = append(actualPod.Spec.InitContainers[i].Env, corev1.EnvVar{
+				Name:  "SOME_ENV_VAR",
+				Value: "SOME_VALUE",
+			})
+		}
+
+		// Set the package in the pod annotations
+		err := SetPackages(actualPod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
+	})
+
+	It("should partition nodes into compartments", func() {
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "skyhook-a"},
+					Spec: v1alpha1.NodeWrightSpec{
+						DeploymentPolicy: "deployment-policy-a",
+					},
+				},
+			},
+		}
+		nodes := &corev1.NodeList{
+			Items: []corev1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-a", Labels: map[string]string{"a": "a"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-b", Labels: map[string]string{"a": "a"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-c", Labels: map[string]string{"b": "b"}}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "node-d", Labels: map[string]string{"c": "c"}}},
+			},
+		}
+		deploymentPolicies := &v1alpha1.DeploymentPolicyList{
+			Items: []v1alpha1.DeploymentPolicy{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "deployment-policy-a"},
+					Spec: v1alpha1.DeploymentPolicySpec{
+						Compartments: []v1alpha1.Compartment{
+							{Name: "compartment-a", Selector: metav1.LabelSelector{MatchLabels: map[string]string{"a": "a"}}},
+							{Name: "compartment-b", Selector: metav1.LabelSelector{MatchLabels: map[string]string{"c": "c"}}},
+						},
+					},
+				},
+			},
+		}
+
+		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks[0].GetCompartments()).To(HaveLen(3))
+		Expect(clusterState.skyhooks[0].GetCompartments()["compartment-a"].GetNodes()).To(HaveLen(2))
+		Expect(clusterState.skyhooks[0].GetCompartments()["compartment-b"].GetNodes()).To(HaveLen(1))
+		Expect(clusterState.skyhooks[0].GetCompartments()["__default__"].GetNodes()).To(HaveLen(1))
 	})
 })
 

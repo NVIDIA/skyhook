@@ -45,6 +45,12 @@ test: ## Run tests for operator and agent.
 
 ##@ Formatting
 
+LICENSE_HOLDER ?= NVIDIA CORPORATION & AFFILIATES
+LICENSE_TEMPLATE ?= scripts/license-header.tmpl
+ADDLICENSE ?= $(CURDIR)/operator/bin/addlicense
+license_files = git ls-files -- '*.go' '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*.Dockerfile' \
+	| grep -vE '^(operator|agent|chart)/'
+
 .PHONY: fmt
 fmt: ## Run formatters for operator and agent.
 	$(MAKE) -C operator fmt
@@ -52,7 +58,22 @@ fmt: ## Run formatters for operator and agent.
 
 .PHONY: license-fmt
 license-fmt: ## Run license header formatting for all code.
-	python3 scripts/format_license.py --root-dir . --license-file LICENSE
+	$(MAKE) -C operator license-fmt
+	$(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	$(MAKE) -C agent license-fmt
+
+.PHONY: license-header-check
+license-header-check: ## Check license headers for all code.
+	$(MAKE) -C operator license-header-check
+	$(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	@wrong=$$($(license_files) | while read -r f; do \
+		grep -qE '^.{1,2} Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
+		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "  $$f"; \
+	done); \
+	if [ -n "$$wrong" ]; then \
+		echo "ERROR: header present but not Apache-2.0:"; echo "$$wrong"; exit 1; \
+	fi
+	$(MAKE) -C agent license-header-check
 
 ##@ Licenses
 

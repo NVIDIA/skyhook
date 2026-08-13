@@ -63,10 +63,19 @@ spec:
     - apply:
         file: nodewright.yaml
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_node_target_count 2 -t skyhook_name=strict-order-skyhook-zzz
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           set -e
           ## Validate 2 nodes are targeted per skyhook
-          ../../metrics_test.py skyhook_node_target_count 2 -t skyhook_name=strict-order-skyhook-zzz
           ../../metrics_test.py skyhook_node_target_count 2 -t skyhook_name=strict-order-skyhook-gate
           ../../metrics_test.py skyhook_node_target_count 2 -t skyhook_name=strict-order-skyhook-aa
           ../../metrics_test.py skyhook_node_target_count 2 -t skyhook_name=strict-order-skyhook-b
@@ -117,10 +126,19 @@ spec:
     - assert:
         file: assert-node1-priority1-complete-node2-blocked.yaml
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-zzz -t status=complete
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           set -e
           ## Validate per-node status counts
-          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-zzz -t status=complete
           ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=strict-order-skyhook-zzz -t status=blocked
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=foobar -t package_version=1.2 -t skyhook_name=strict-order-skyhook-zzz -t state=complete
 
@@ -175,10 +193,19 @@ spec:
       assert: 120s ## zzz needs time to complete before gate state can be verified
     try:
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-b -t status=paused
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           set -e
           ## b is paused, aa is waiting (blocked by gate's sequencing: all — the key proof)
-          ../../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-b -t status=paused
           ../../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-aa -t status=waiting
     - assert:
         resource:
@@ -241,10 +268,19 @@ spec:
     - assert:
         file: assert-gate-released-b-paused.yaml
     - script:
+        skipLogOutput: true
         content: |
           set -e
           ## Both nodes should have completed gate
           ../../metrics_test.py skyhook_node_status_count 2 -t skyhook_name=strict-order-skyhook-gate -t status=complete
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
           ## b should still be paused
           ../../metrics_test.py skyhook_status 1 -t skyhook_name=strict-order-skyhook-b -t status=paused
 
@@ -262,10 +298,19 @@ spec:
     - assert:
         file: assert-both-nodes-complete.yaml
     - script:
+        skipLogOutput: true
+        content: |
+          ../../metrics_test.py skyhook_node_status_count 2 -t skyhook_name=strict-order-skyhook-zzz -t status=complete
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
           set -e
           ## Validate final state - both nodes complete
-          ../../metrics_test.py skyhook_node_status_count 2 -t skyhook_name=strict-order-skyhook-zzz -t status=complete
           ../../metrics_test.py skyhook_node_status_count 2 -t skyhook_name=strict-order-skyhook-gate -t status=complete
           ../../metrics_test.py skyhook_node_status_count 2 -t skyhook_name=strict-order-skyhook-aa -t status=complete
           ../../metrics_test.py skyhook_node_status_count 2 -t skyhook_name=strict-order-skyhook-b -t status=complete

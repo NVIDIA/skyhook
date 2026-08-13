@@ -370,10 +370,10 @@ func (r *JobReconciler) recordJobCompletion(ctx context.Context, job *batchv1.Jo
 		// name the one a reset just cleared.
 		if recorded || updated {
 			r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobComplete",
-				"Package [%s:%s] state %s on [skyhook:%s]", pkg.Name, pkg.Version, v1alpha1.StateComplete, pkg.Skyhook)
+				"Package [%s:%s] state %s on [nodewright:%s]", pkg.Name, pkg.Version, v1alpha1.StateComplete, pkg.Skyhook)
 		} else {
 			r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookStateChange, "JobComplete",
-				"Interrupt complete on [skyhook:%s]: promoted packages skipped during interrupt sequencing", pkg.Skyhook)
+				"Interrupt complete on [nodewright:%s]: promoted packages skipped during interrupt sequencing", pkg.Skyhook)
 		}
 		return true, nil
 	})

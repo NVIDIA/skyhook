@@ -139,12 +139,18 @@ are usually authored separately (not part of the operator chart); adjust to your
 2. **Update your CR manifests to `NodeWright`** wherever you keep them, and apply. This is a mechanical
    group/kind swap with no change to the spec body:
    ```bash
-   sed -e 's|skyhook\.nvidia\.com/|nodewright.nvidia.com/|g' \
-       -e 's|kind: Skyhook|kind: NodeWright|' my-skyhook.yaml > my-nodewright.yaml
+   sed -e '/^ *apiVersion:/ s|skyhook\.nvidia\.com/|nodewright.nvidia.com/|' \
+       -e 's|^\( *kind: *\)Skyhook[[:space:]]*$|\1NodeWright|' my-skyhook.yaml > my-nodewright.yaml
    kubectl apply -f my-nodewright.yaml
    ```
    Because the operator already created the `NodeWright` via the mirror, this apply is a no-op adoption of
    the existing object (same name, same spec) rather than a fresh create.
+
+   Rewrite `apiVersion` and `kind` only. A blanket `s|skyhook\.nvidia\.com/|...|g` also rewrites
+   `nodeSelectors` and `podNonInterruptLabels` keys, which name **your** node and pod labels rather than
+   anything the operator owns. Rewriting them points the CR at a key nothing carries, so it matches nothing,
+   and it turns this step into a real spec change instead of the no-op adoption described above. See
+   [the CLI reference](cli.md#migrating-manifests-to-nodewright) for what else to rename by hand.
 
 3. **Delete the old CRs** once you have confirmed the `NodeWright` exists and reconciles (see
    [safe deletion](#safe-deletion-ordering)):
@@ -170,10 +176,12 @@ legacy objects remain before removing the legacy CRD.
 2. Convert your CR manifests by hand (change `apiVersion`/`kind`, keep `metadata.name`) and apply them.
    The mirror has already created the `NodeWright` objects, so this apply is a no-op adoption:
    ```bash
-   sed -e 's|skyhook\.nvidia\.com/|nodewright.nvidia.com/|g' \
-       -e 's|kind: Skyhook|kind: NodeWright|' my-skyhook.yaml > my-nodewright.yaml
+   sed -e '/^ *apiVersion:/ s|skyhook\.nvidia\.com/|nodewright.nvidia.com/|' \
+       -e 's|^\( *kind: *\)Skyhook[[:space:]]*$|\1NodeWright|' my-skyhook.yaml > my-nodewright.yaml
    kubectl apply -f my-nodewright.yaml             # adopts the mirrored object
    ```
+   As above, rewrite `apiVersion` and `kind` only; leave `nodeSelectors` and `podNonInterruptLabels` keys
+   alone.
 3. Delete the old CRs only after confirming the `NodeWright` reconciles (see
    [safe deletion](#safe-deletion-ordering)); delete legacy `DeploymentPolicy` objects too:
    ```bash
@@ -215,10 +223,12 @@ while any legacy `Skyhook` still references it. Delete the referencing `Skyhook`
 ## Prerequisite: all Skyhooks must be complete
 
 **Perform the operator upgrade only when every `Skyhook` is `complete` with no nodes in progress**, i.e.
-no package is mid-rollout. This is a **requirement**, not just a recommendation: the per-node state
-migration renames the operator's package pods and per-node ConfigMaps, and the flow assumes there is no
-in-flight package work to disrupt. Upgrading against idle Skyhooks avoids handing a migrated `NodeWright`
-a stage that was mid-rollout.
+no package is mid-rollout. This is a **requirement**, not just a recommendation: the migration adds
+`nodewright.nvidia.com/*` labels to the operator's package and per-node ConfigMaps so the post-rename
+operator adopts them instead of trying to recreate them, and the flow assumes there is no in-flight
+package work to disrupt. The pre-rename package pods are **not** renamed or touched on upgrade; they are
+left in place for the rollback window and deleted at prune time. Upgrading against idle Skyhooks avoids
+handing a migrated `NodeWright` a stage that was mid-rollout.
 
 Check before upgrading:
 
@@ -279,6 +289,14 @@ The legacy copies (and the old package pods, and the legacy ConfigMap labels) ar
 (`controllerManager.manager.env.legacyCleanupDelay` in the chart). Set it to `0` to prune immediately (no
 rollback window), or longer to keep the door open longer. Pruning is the **point of no return**: after it
 runs, rolling back to the pre-rename operator would re-apply every package from scratch.
+
+**Your own `skyhook.nvidia.com/*` node keys are not touched.** The metadata prefix is the product's domain
+name, so you may well have your own labels or annotations under it (a `skyhook.nvidia.com/pool` feeding a
+`nodeSelectors`, say). The migration only copies and later prunes the keys the operator itself writes:
+the `nodeState_`, `status_`, `version_`, `cordon_`, `drainStart_`, and `autoTaint_` annotations, the
+`status_` label, the operator-defined `ignore` label, and the `<name>/NotReady` and `<name>/Erroring`
+conditions. Anything else under the prefix is yours and is left exactly as it is, on both halves. The
+runtime-required **taint** key is likewise untouched: it did not move in the rename.
 
 This is transition-only behavior and is removed together with the `skyhook.nvidia.com` group at the
 removal release.

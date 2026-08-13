@@ -58,8 +58,6 @@ This cutover must complete before GA. Shipping v1 on the Python agent and swappi
 
 ### 3. Production Hardening
 
-**Replace unmaintained and unversioned dependencies.** 🟡 The maintenance-job image moved off `bitnami/kubectl` to the maintained, versioned `alpine/kubectl` ([#207](https://github.com/NVIDIA/nodewright/issues/207)), with a chainsaw assertion that keeps it from regressing. 🔴 Operator metrics still run behind kube-rbac-proxy and have not moved to controller-runtime's built-in auth ([#206](https://github.com/NVIDIA/nodewright/issues/206)); the TLS-handshake noise reports resolve with that move.
-
 **Correctness under partial failure.** 🟡 Shipped:
 
 - ✅ ConfigMap keys mount as subPaths so they no longer clobber files baked into the package image ([#208](https://github.com/NVIDIA/nodewright/issues/208)).

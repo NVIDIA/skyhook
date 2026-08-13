@@ -180,7 +180,7 @@ func (r *PodReconciler) recordPodErroring(ctx context.Context, pod *corev1.Pod, 
 		}
 
 		r.recorder.Eventf(node, nil, EventTypeNormal, EventsReasonSkyhookApply, "UpdateNodeState",
-			"Package [%s:%s] state %s on [skyhook:%s]", packagePtr.Name, packagePtr.Version, v1alpha1.StateErroring, packagePtr.Skyhook)
+			"Package [%s:%s] state %s on [nodewright:%s]", packagePtr.Name, packagePtr.Version, v1alpha1.StateErroring, packagePtr.Skyhook)
 		return true, nil
 	})
 }

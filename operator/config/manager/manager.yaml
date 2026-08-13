@@ -86,7 +86,7 @@ spec:
         - /manager
         env:
           - name: METRICS_PORT
-            value: ":8080"
+            value: ":8443"
           - name: PROBE_PORT
             value: ":8081"
           - name: LEADER_ELECTION
