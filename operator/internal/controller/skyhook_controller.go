@@ -1216,7 +1216,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 			}
 
 			if node.IsComplete() {
-				r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookStateChange, "MarkComplete", "Skyhook [%s] complete.", skyhook.GetSkyhook().Name)
+				r.recorder.Eventf(node.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookStateChange, "MarkComplete", "NodeWright [%s] complete.", skyhook.GetSkyhook().Name)
 
 				// since node is complete remove from priority
 				skyhook.GetSkyhook().RemoveNodePriority(node.GetNode().Name)
@@ -1253,7 +1253,7 @@ func (r *SkyhookReconciler) SaveNodesAndSkyhook(ctx context.Context, clusterStat
 
 		if skyhook.GetPriorStatus() != "" && skyhook.GetPriorStatus() != skyhook.Status() {
 			// we transitioned, fire event
-			r.recorder.Eventf(skyhook.GetSkyhook(), nil, EventTypeNormal, EventsReasonSkyhookStateChange, "Transition", "Skyhook transitioned [%s] -> [%s]", skyhook.GetPriorStatus(), skyhook.Status())
+			r.recorder.Eventf(skyhook.GetSkyhook(), nil, EventTypeNormal, EventsReasonSkyhookStateChange, "Transition", "NodeWright transitioned [%s] -> [%s]", skyhook.GetPriorStatus(), skyhook.Status())
 		}
 	}
 
@@ -1903,7 +1903,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 					ObservedGeneration: skyhook.GetSkyhook().Generation,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "MalformedNodeState",
-					Message: "Cannot safely delete Skyhook: malformed nodeState on one or more nodes. " +
+					Message: "Cannot safely delete NodeWright: malformed nodeState on one or more nodes. " +
 						"Repair the nodeState annotation before deletion.",
 				})
 				r.recorder.Eventf(
@@ -1912,7 +1912,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
 					"BlockDelete",
-					"Cannot delete Skyhook %s: malformed nodeState. Repair and retry.",
+					"Cannot delete NodeWright %s: malformed nodeState. Repair and retry.",
 					skyhook.GetSkyhook().Name,
 				)
 				if _, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook); len(errs) > 0 {
@@ -1931,7 +1931,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 					ObservedGeneration: skyhook.GetSkyhook().Generation,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "PausedWithPendingUninstall",
-					Message: "Skyhook is paused with uninstall-enabled packages still tracked in nodeState. " +
+					Message: "NodeWright is paused with uninstall-enabled packages still tracked in nodeState. " +
 						"Unpause to let uninstall complete before deletion.",
 				})
 				r.recorder.Eventf(
@@ -1940,7 +1940,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
 					"BlockDelete",
-					"Cannot delete Skyhook %s: paused with uninstall work pending. Unpause to proceed.",
+					"Cannot delete NodeWright %s: paused with uninstall work pending. Unpause to proceed.",
 					skyhook.GetSkyhook().Name,
 				)
 				if _, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook); len(errs) > 0 {
@@ -1962,8 +1962,8 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 					ObservedGeneration: skyhook.GetSkyhook().Generation,
 					LastTransitionTime: metav1.Now(),
 					Reason:             "DisabledWithPendingUninstall",
-					Message: "Skyhook is disabled with uninstall-enabled packages still tracked in nodeState. " +
-						"Re-enable the Skyhook to let uninstall complete before deletion.",
+					Message: "NodeWright is disabled with uninstall-enabled packages still tracked in nodeState. " +
+						"Re-enable the NodeWright to let uninstall complete before deletion.",
 				})
 				r.recorder.Eventf(
 					skyhook.GetSkyhook().NodeWright,
@@ -1971,7 +1971,7 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 					corev1.EventTypeWarning,
 					"DeletionBlocked",
 					"BlockDelete",
-					"Cannot delete Skyhook %s: disabled with uninstall work pending. Re-enable to proceed.",
+					"Cannot delete NodeWright %s: disabled with uninstall work pending. Re-enable to proceed.",
 					skyhook.GetSkyhook().Name,
 				)
 				if _, errs := r.SaveNodesAndSkyhook(ctx, clusterState, skyhook); len(errs) > 0 {
@@ -2113,7 +2113,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 		skyhookNode.SetStatus(v1alpha1.StatusInProgress)
 	} else if drainConfig != nil && drain.TimedOut(drainStartedAt, drainConfig.Timeout, now.Time) {
 		r.recorder.Eventf(skyhookNode.GetNode(), nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, "DrainTimeout",
-			"drain timed out after [%s] for node [%s] package [%s:%s] from [skyhook:%s]",
+			"drain timed out after [%s] for node [%s] package [%s:%s] from [nodewright:%s]",
 			drainConfig.Timeout.Duration,
 			skyhookNode.GetNode().Name,
 			_package.Name,
@@ -2143,7 +2143,7 @@ func (r *SkyhookReconciler) DrainNode(ctx context.Context, skyhookNode wrapper.S
 	}
 
 	r.recorder.Eventf(skyhookNode.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookDrain, "DrainNode",
-		"draining node [%s] package [%s:%s] from [skyhook:%s]",
+		"draining node [%s] package [%s:%s] from [nodewright:%s]",
 		skyhookNode.GetNode().Name,
 		_package.Name,
 		_package.Version,
@@ -2231,7 +2231,7 @@ func (r *SkyhookReconciler) Interrupt(ctx context.Context, skyhookNode wrapper.S
 	_ = skyhookNode.Upsert(_package.PackageRef, _package.Image, v1alpha1.StateInProgress, stage, 0, _package.ContainerSHA)
 
 	r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, EventTypeNormal, EventsReasonSkyhookInterrupt, "InterruptNode",
-		"Interrupting node [%s] package [%s:%s] from [skyhook:%s]",
+		"Interrupting node [%s] package [%s:%s] from [nodewright:%s]",
 		skyhookNode.GetNode().Name,
 		_package.Name,
 		_package.Version,
@@ -3229,7 +3229,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 		Message:            fmt.Sprintf("Applying package [%s:%s] to node [%s]", _package.Name, _package.Version, skyhookNode.GetNode().Name),
 	})
 
-	r.recorder.Eventf(skyhookNode.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookApply, "ApplyPackage", "Applying package [%s:%s] from [skyhook:%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetSkyhook().Name, stage)
+	r.recorder.Eventf(skyhookNode.GetNode(), nil, EventTypeNormal, EventsReasonSkyhookApply, "ApplyPackage", "Applying package [%s:%s] from [nodewright:%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetSkyhook().Name, stage)
 	r.recorder.Eventf(skyhookNode.GetSkyhook(), nil, EventTypeNormal, EventsReasonSkyhookApply, "ApplyPackage", "Applying package [%s:%s] to node [%s] stage [%s]", _package.Name, _package.Version, skyhookNode.GetNode().Name, stage)
 
 	skyhookNode.GetSkyhook().Updated = true
