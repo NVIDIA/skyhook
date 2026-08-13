@@ -1081,8 +1081,10 @@ func (r *SkyhookReconciler) UpdatePauseStatus(ctx context.Context, clusterState 
 // unfinished Jobs is set spec.suspend=true, so the Job controller SIGTERMs the running pod (honoring
 // terminationGracePeriodSeconds) and starts nothing until resume. Idempotent; already-suspended Jobs
 // and invalid ones (mid-reap) are skipped. The killed pod carries a DeletionTimestamp, so
-// erroring-evidence guard (c) keeps node state at in_progress. Legacy raw pods have no Job to suspend
-// and keep today's let-finish semantics until the migration window closes.
+// erroring-evidence guard (c) keeps node state at in_progress. A pre-rename raw pod has no Job and
+// so cannot be suspended, but pause never has one of its own to stop: this change ships with the
+// nodewright rename, so legacyMigrationHold keeps the two execution models from running side by
+// side. See the design doc's Upgrade section.
 func (r *SkyhookReconciler) suspendUnfinishedJobs(ctx context.Context, skyhook SkyhookNodes) error {
 	return r.setSuspendOnUnfinishedJobs(ctx, skyhook, true)
 }
