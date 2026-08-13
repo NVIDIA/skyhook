@@ -109,10 +109,12 @@ For the full commit-level log see CHANGELOG.md.
   executor is now a Job, so `kubectl logs job/<name>` works during and after a
   run and finished work is retained instead of deleted on completion.
 - **Failure logs survive the failure.** Each genuinely failing stage keeps up to
-  two full-log archive pods (its first failure and its most recent). A stage
-  killed by its own deadline additionally gets a ~16KiB log tail snapshotted into
-  the Job's `nodewright.nvidia.com/last-logs` annotation, so evidence remains
-  even after the pod's logs are garbage-collected.
+  two full-log archive pods (its first failure and its most recent), including an
+  attempt killed by its own `stageTimeout` — the deadline fails the pod in place
+  rather than deleting it, so its logs are read like any other failed attempt's.
+  An interrupt Job, which keeps a whole-stage deadline, is the case where the pod
+  *is* deleted; there the operator falls back to a best-effort ~16KiB log tail in
+  the Job's `nodewright.nvidia.com/last-logs` annotation.
 - **New per-package `stageTimeout`** bounds the wall-clock runtime of one attempt
   at each of a package's stages. A hung stage (stuck script, unpullable image,
   dead registry) is killed and retried instead of sitting `in_progress`
