@@ -113,6 +113,12 @@ func main() {
 	ctrl.SetLogger(logger(options))
 	setupLog.Info("env options", "options", options)
 
+	// Before the manager starts, so nothing can write a legacy series first.
+	if !options.PublishLegacyMetrics {
+		controller.DisableLegacyMetrics()
+		setupLog.Info("deprecated skyhook_* metrics disabled; only nodewright_* series are exported")
+	}
+
 	certDir := filepath.Join(os.TempDir(), "k8s-webhook-server", "serving-certs")
 	restConfig := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{

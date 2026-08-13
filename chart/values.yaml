@@ -57,6 +57,13 @@ controllerManager:
       ## legacy skyhook.nvidia.com node state, pods, and ConfigMap labels around (a rollback window)
       ## before pruning them. "0" prunes immediately (no rollback window). Removed at the removal release.
       legacyCleanupDelay: "24h"
+      ## MIGRATION-SHIM (skyhook.nvidia.com -> nodewright.nvidia.com rename):
+      ## publishLegacyMetrics: "true" keeps the deprecated skyhook_* metric series exported alongside
+      ## the current nodewright_* ones, so existing Grafana dashboards and Prometheus alerts keep
+      ## working across the rename. Set "false" to export only nodewright_*, which halves the
+      ## operator's exported series count but breaks any consumer still querying the legacy names.
+      ## The legacy series are removed unconditionally at the removal release.
+      publishLegacyMetrics: "true"
       ## runtimeRequiredTaint: This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag.
       ## This taint is assume to be all new nodes, and skyhook pods will tolerate this taint, and remove it one the nodes packages are complete.
       ## NOTE: If your systems nodes have this taint make sure to add the toleration to the controllerManager.tolerations

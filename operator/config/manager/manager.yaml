@@ -108,6 +108,12 @@ spec:
           # immediately. Remove with the legacy group at the removal release.
           - name: LEGACY_CLEANUP_DELAY
             value: "24h"
+          # MIGRATION-SHIM: keep the deprecated skyhook_* metric series exported
+          # alongside nodewright_* so existing dashboards and alerts survive the
+          # rename. "false" exports only nodewright_*. Remove with the legacy group
+          # at the removal release.
+          - name: PUBLISH_LEGACY_METRICS
+            value: "true"
           - name: RUNTIME_REQUIRED_TAINT
             value: nodewright.nvidia.com=runtime-required:NoSchedule
           - name: PAUSE_IMAGE

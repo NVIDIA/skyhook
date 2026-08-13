@@ -18,7 +18,7 @@ The legacy prefixed `nodewright.nvidia.com/TaintNotTolerable` condition type is 
 
 Metrics:
 
- * skyhook_node_status_count status=blocked
+ * nodewright_node_status_count status=blocked
 
 # Default tolerations
 

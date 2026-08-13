@@ -328,6 +328,32 @@ migration:
 There is no reason to do this on a running cluster unless you have an external requirement on
 the namespace name.
 
+## Metrics
+
+Every operator metric moved from the `skyhook_` prefix to `nodewright_`, and the shared series label moved
+from `skyhook_name` to `nodewright_name`. **No action is required at upgrade time.** Both sets are
+published side by side with identical values and identical remaining labels, so existing dashboards,
+alerting rules, and recording rules keep working across the window.
+
+Migrating a query is a two-token swap:
+
+```promql
+# before
+skyhook_node_status_count{skyhook_name="my-nodewright", status="complete"}
+
+# after
+nodewright_node_status_count{nodewright_name="my-nodewright", status="complete"}
+```
+
+The legacy series are removed in **v0.20.0** along with the legacy API group, so update dashboards and
+alerts before then. `skyhook_*` help text in `/metrics` names its replacement and the removal release, so
+`curl`ing the operator's metrics endpoint tells you what each one becomes.
+
+Dual-publishing roughly doubles the exported series count. Once your dashboards and alerts are migrated,
+set `PUBLISH_LEGACY_METRICS=false` (chart: `controllerManager.manager.env.publishLegacyMetrics`) to drop
+the deprecated half early rather than waiting for v0.20.0. The full metric reference and the opt-out are in
+[docs/metrics/README.md](metrics/README.md).
+
 ## Downstream consumers (e.g. aicr)
 
 Projects that ship or depend on Skyhook CRs need a coordinated update. For example
@@ -358,11 +384,13 @@ The legacy `skyhook.nvidia.com` group is kept for a two-minor-release migration 
 **operator v0.20.0**. The rename ships in v0.18.0, so the window spans v0.18.x and v0.19.x.
 
 This is the single date every transition-only behavior keys off: the legacy API group, the per-node
-metadata prune, and the legacy runtime-required taint key (see
-[runtime_required.md](runtime_required.md#deprecation-window)) all end together in v0.20.0. In the
+metadata prune, the legacy runtime-required taint key (see
+[runtime_required.md](runtime_required.md#deprecation-window)), and the legacy `skyhook_*` metric names
+(see [Metrics](#metrics) below) all end together in v0.20.0. In the
 removal release:
 
 - The legacy admission webhook flips from warning to **denying** writes.
+- The legacy `skyhook_*` metric series stop being published.
 - The legacy CRDs are removed from the chart/manifests, sequenced behind a preflight that refuses removal
   while any legacy objects remain (the Helm/Argo pre-upgrade hook, planned above).
 - Removing the `skyhook.nvidia.com` CRD cascade-deletes any remaining `Skyhook`s, so **migrate before

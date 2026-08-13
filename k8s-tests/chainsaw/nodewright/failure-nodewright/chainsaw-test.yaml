@@ -51,7 +51,7 @@ spec:
     - script:
         skipLogOutput: true
         content: |
-          ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=failure-skyhook
+          ../../metrics_test.py nodewright_node_target_count 1 -t nodewright_name=failure-skyhook
         outputs:
         - name: metricsToken
           value: ($stderr)
@@ -60,8 +60,8 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
-          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=failure-skyhook -t status=erroring
-          ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=failure-skyhook -t state=complete
-          ../../metrics_test.py skyhook_package_state_count 1 -t package_name=failure -t skyhook_name=failure-skyhook -t state=erroring
-          ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=failure-skyhook -t stage=config
-          ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=failure -t skyhook_name=failure-skyhook -t stage=apply
+          ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=failure-skyhook -t status=erroring
+          ../../metrics_test.py nodewright_package_state_count 1 -t package_name=dexter -t nodewright_name=failure-skyhook -t state=complete
+          ../../metrics_test.py nodewright_package_state_count 1 -t package_name=failure -t nodewright_name=failure-skyhook -t state=erroring
+          ../../metrics_test.py nodewright_package_stage_count 1 -t package_name=dexter -t nodewright_name=failure-skyhook -t stage=config
+          ../../metrics_test.py nodewright_package_stage_count 1 -t package_name=failure -t nodewright_name=failure-skyhook -t stage=apply
