@@ -18,7 +18,7 @@ NodeWright was developed for modifying the underlying host OS in Kubernetes clus
 - **configMap:** per package
 - **env vars:** per package
 - **additionalTolerations:**  are tolerations added to the packages
-- [**runtimeRequired**](../docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
+- [**runtimeRequired**](../docs/runtime_required.md): gates general workloads behind a taint the node carries (either on join, or applied by the operator with `autoTaintNewNodes`), and does its work prior to removing that taint.
 
 ## Important Chart Settings
 
@@ -33,7 +33,7 @@ Settings | Description | Default |
 | controllerManager.manager.env.leaderElection | Enable leader election for the operator controller. Default is "true" and is required for production. | "true" |
 | controllerManager.manager.env.logLevel | Log level for the operator controller. If you want more or less logs, change this value to "debug" or "error". | "info" |
 | controllerManager.manager.env.reapplyOnReboot | Reapply the packages on reboot. This is useful for systems that are read-only. | "false" |
-| controllerManager.manager.env.runtimeRequiredTaint | This feature assumes nodes are added to the cluster with `--register-with-taints` kubelet flag. This taint is assumed to be on all new nodes; NodeWright pods tolerate it, and the operator removes it from a node once every `runtimeRequired: true` NodeWright targeting that node has completed on it (completion on other nodes does not affect removal). During the rename deprecation window the operator additionally tolerates and removes the legacy `skyhook.nvidia.com=runtime-required:NoSchedule` taint, but never applies it. | nodewright.nvidia.com=runtime-required:NoSchedule | 
+| controllerManager.manager.env.runtimeRequiredTaint | Nodes are expected to carry this taint, either by joining with it (e.g. the `--register-with-taints` kubelet flag) or via `autoTaintNewNodes: true` on the NodeWright, which makes the operator apply it. NodeWright pods tolerate it, and the operator removes it from a node once every `runtimeRequired: true` NodeWright targeting that node has completed on it (completion on other nodes does not affect removal). During the rename deprecation window the operator additionally tolerates and removes the legacy `skyhook.nvidia.com=runtime-required:NoSchedule` taint, but never applies it. | nodewright.nvidia.com=runtime-required:NoSchedule | 
 | controllerManager.manager.image.repository | Where to get the image from | "ghcr.io/nvidia/nodewright/operator" |
 | controllerManager.manager.image.tag | what version of the operator to run | defaults to appVersion |
 | controllerManager.manager.image.digest | content-addressable pin for the operator image. If set, the digest determines the pulled image. If both tag and digest are provided, the digest takes precedence; the rendered image may include `tag@digest` but the digest controls selection. | "" |

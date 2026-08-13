@@ -6,10 +6,14 @@ Runtime required is a special mode that packages can be run in. This mode is for
 
 ## Pre-requisites
 
-1. A node MUST join the cluster with a pre defined taint
+1. The node MUST carry the runtime-required taint. There are two ways to get there, and only the first requires the node to join already tainted:
+    1. **Pre-taint at provisioning (recommended).** The node joins the cluster already carrying the taint, via the kubelet `--register-with-taints` flag or your provisioner. Nothing can schedule on the node before the taint exists.
+    1. **`autoTaintNewNodes: true` (fallback).** The operator applies the taint itself to new nodes matching the NodeWright's selector, so the node does **not** have to join with it. Use this when you cannot control tainting at provisioning time, and note the race window described in [Auto-tainting new nodes](#auto-tainting-new-nodes).
 1. The operator MUST recognise that taint. It recognises two:
     1. the taint set as the chart value `controllerManager.manager.env.runtimeRequiredTaint`, which defaults to `nodewright.nvidia.com=runtime-required:NoSchedule`
     1. for the deprecation window only, the legacy `skyhook.nvidia.com=runtime-required:NoSchedule` taint, whatever the chart value is
+
+Recognition matters for both paths: a taint the operator does not recognise is never removed, so the node stays unschedulable. `autoTaintNewNodes` applies only the configured taint, never the legacy one.
 
 So during the deprecation window the node taint and the chart value do **not** have to match: a cluster whose nodes still join with the legacy key keeps working without touching the chart, and a cluster on the new key works out of the box. You only need to set `runtimeRequiredTaint` explicitly if your nodes join with some **other** key. See [Taint key rename](#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom) for what to migrate and by when.
 
