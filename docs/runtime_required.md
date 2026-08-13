@@ -80,6 +80,34 @@ When enabled, the operator automatically applies the runtime-required taint to n
 
 A node is considered "new" if it has no NodeWright annotations. This works for both initial cluster setup (day 0) and nodes joining an existing cluster (day 2+). Nodes that have already been processed by NodeWright (and had their taint removed after completion) will not be re-tainted because they retain their NodeWright annotations.
 
+### "New" means never touched, and it is one-way
+
+This is deliberately **not** "new to this NodeWright". The check is for *any* `nodewright.nvidia.com/*` annotation, so once **any** NodeWright has touched a node, auto-taint never considers it new again. Two consequences that surprise people:
+
+- **A different NodeWright does not make it new again.** If NodeWright A has run on a node, and runtime-required NodeWright B later selects that same node for the first time, B does **not** auto-taint it. The node is not new, even though B has never run there.
+- **`kubectl nodewright reset` does not make it new again.** Reset clears a NodeWright's package state so its packages re-run, but the node keeps other `nodewright.nvidia.com/*` annotations, including the node-scoped `autoTaint_<taintKey>` marker. So the packages re-run **without** the runtime-required taint being re-applied.
+
+That second point is the important one: **reset is not a way to re-gate a node.** If you need the runtime-required taint back on a node that NodeWright has already handled, do it explicitly:
+
+```bash
+# Re-apply the taint yourself, then reset:
+kubectl taint node <node> nodewright.nvidia.com=runtime-required:NoSchedule
+kubectl nodewright reset <nodewright-name> --confirm
+```
+
+Returning a node to genuinely "new" is a deliberate human action, not something the operator or the CLI does for you. It means removing the NodeWright annotations from the node yourself:
+
+```bash
+# Inspect what is keeping the node from being "new"
+kubectl get node <node> -o jsonpath='{range .metadata.annotations}{...}' \
+  | tr ',' '\n' | grep nodewright.nvidia.com
+
+# Remove them (this discards NodeWright's record of the node)
+kubectl annotate node <node> nodewright.nvidia.com/autoTaint_nodewright.nvidia.com-
+```
+
+This is intentional. Auto-taint exists to gate nodes arriving in the cluster, typically from an autoscaler; it is not a general re-gating mechanism, and it is not a substitute for pre-tainting at provisioning. If you need the gate to hold reliably across resets, reboots, and re-runs, **pre-taint at provisioning** as recommended above rather than relying on `autoTaintNewNodes`.
+
 **Exception: reboot with `REAPPLY_ON_REBOOT=true`.** When the operator is configured with `REAPPLY_ON_REBOOT=true` and a NodeWright has both `runtimeRequired: true` and `autoTaintNewNodes: true`, a node whose boot ID changes is treated as new for taint purposes. The runtime-required taint is re-applied alongside the state reset in the same atomic operation, ensuring no workloads can schedule on the rebooted node before NodeWright finishes re-applying. The taint is removed again by the normal completion path once all runtime-required NodeWrights finish on that node.
 
 ## What runtimeRequired: true will NOT do
