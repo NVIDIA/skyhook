@@ -39,7 +39,7 @@ spec:
     - get:
         apiVersion: v1
         kind: Pod
-        namespace: skyhook
+        namespace: nodewright
         selector: nodewright.nvidia.com/name=depends-on
         format: yaml
   steps:
@@ -59,7 +59,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: depends-on
               nodewright.nvidia.com/package: aa-fast-1.2.3
@@ -78,7 +78,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: depends-on
               nodewright.nvidia.com/package: bb-slow-1.2
@@ -97,7 +97,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: depends-on
               nodewright.nvidia.com/package: aa-fast-1.2.3
@@ -116,7 +116,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: depends-on
               nodewright.nvidia.com/package: bb-slow-1.2
@@ -135,7 +135,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: depends-on
               nodewright.nvidia.com/package: cc-last-5.4.3
@@ -154,7 +154,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: depends-on
               nodewright.nvidia.com/package: cc-last-5.4.3

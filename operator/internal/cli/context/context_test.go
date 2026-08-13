@@ -20,11 +20,17 @@ package context
 
 import (
 	"bytes"
+	gocontext "context"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestContext(t *testing.T) {
@@ -38,7 +44,7 @@ var _ = Describe("CLI Context", func() {
 			It("should initialize with default namespace", func() {
 				flags := NewGlobalFlags()
 				Expect(flags.ConfigFlags.Namespace).NotTo(BeNil())
-				Expect(*flags.ConfigFlags.Namespace).To(Equal("skyhook"))
+				Expect(*flags.ConfigFlags.Namespace).To(Equal("nodewright"))
 			})
 
 			It("should initialize with default output format", func() {
@@ -120,7 +126,7 @@ var _ = Describe("CLI Context", func() {
 		Describe("Namespace", func() {
 			It("should return default namespace when not set", func() {
 				flags := NewGlobalFlags()
-				Expect(flags.Namespace()).To(Equal("skyhook"))
+				Expect(flags.Namespace()).To(Equal("nodewright"))
 			})
 
 			It("should return custom namespace when set", func() {
@@ -134,20 +140,20 @@ var _ = Describe("CLI Context", func() {
 				flags := NewGlobalFlags()
 				ns := ""
 				flags.ConfigFlags.Namespace = &ns
-				Expect(flags.Namespace()).To(Equal("skyhook"))
+				Expect(flags.Namespace()).To(Equal("nodewright"))
 			})
 
 			It("should return default namespace for whitespace", func() {
 				flags := NewGlobalFlags()
 				ns := "  "
 				flags.ConfigFlags.Namespace = &ns
-				Expect(flags.Namespace()).To(Equal("skyhook"))
+				Expect(flags.Namespace()).To(Equal("nodewright"))
 			})
 
 			It("should return default namespace when nil", func() {
 				flags := NewGlobalFlags()
 				flags.ConfigFlags.Namespace = nil
-				Expect(flags.Namespace()).To(Equal("skyhook"))
+				Expect(flags.Namespace()).To(Equal("nodewright"))
 			})
 		})
 	})
@@ -186,5 +192,74 @@ var _ = Describe("CLI Context", func() {
 			Expect(ctx.Config()).To(Equal(config))
 		})
 
+		Describe("ResolveNamespace", func() {
+			operatorIn := func(namespace string) *appsv1.Deployment {
+				return &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "controller-manager",
+						Namespace: namespace,
+						Labels:    map[string]string{"control-plane": "controller-manager"},
+					},
+					Spec: appsv1.DeploymentSpec{
+						Template: corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: "ghcr.io/nvidia/nodewright/operator:v1"}}},
+						},
+					},
+				}
+			}
+
+			// The command must have the flag registered for Changed() to be meaningful.
+			newCmd := func(cliCtx *CLIContext, args ...string) (*cobra.Command, *bytes.Buffer) {
+				stderr := &bytes.Buffer{}
+				cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
+				cliCtx.GlobalFlags.AddFlags(cmd.Flags())
+				cmd.SetErr(stderr)
+				// Must be non-nil: cobra falls back to os.Args (which carries go test's
+				// own -test.* flags) when SetArgs is given nil.
+				cmd.SetArgs(append([]string{}, args...))
+				Expect(cmd.Execute()).To(Succeed())
+				return cmd, stderr
+			}
+
+			It("honors an explicit --namespace without touching the cluster", func() {
+				cliCtx := NewCLIContext(nil)
+				cmd, stderr := newCmd(cliCtx, "--namespace", "team-platform")
+
+				Expect(cliCtx.ResolveNamespace(gocontext.Background(), cmd, fake.NewClientset(operatorIn("nodewright")))).
+					To(Equal("team-platform"))
+				Expect(stderr.String()).To(BeEmpty())
+			})
+
+			It("discovers the nodewright namespace without a note", func() {
+				cliCtx := NewCLIContext(nil)
+				cmd, stderr := newCmd(cliCtx)
+
+				Expect(cliCtx.ResolveNamespace(gocontext.Background(), cmd, fake.NewClientset(operatorIn("nodewright")))).
+					To(Equal("nodewright"))
+				Expect(stderr.String()).To(BeEmpty())
+			})
+
+			It("discovers a legacy skyhook install and notes it once", func() {
+				cliCtx := NewCLIContext(nil)
+				cmd, stderr := newCmd(cliCtx)
+				kube := fake.NewClientset(operatorIn("skyhook"))
+
+				Expect(cliCtx.ResolveNamespace(gocontext.Background(), cmd, kube)).To(Equal("skyhook"))
+				Expect(stderr.String()).To(ContainSubstring("legacy \"skyhook\" namespace"))
+
+				// Cached: a second call must not re-probe or re-warn.
+				stderr.Reset()
+				Expect(cliCtx.ResolveNamespace(gocontext.Background(), cmd, kube)).To(Equal("skyhook"))
+				Expect(stderr.String()).To(BeEmpty())
+			})
+
+			It("falls back to the default when no operator is found", func() {
+				cliCtx := NewCLIContext(nil)
+				cmd, stderr := newCmd(cliCtx)
+
+				Expect(cliCtx.ResolveNamespace(gocontext.Background(), cmd, fake.NewClientset())).To(Equal("nodewright"))
+				Expect(stderr.String()).To(BeEmpty())
+			})
+		})
 	})
 })

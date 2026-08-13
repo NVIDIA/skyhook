@@ -18,7 +18,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: config-skyhook
     nodewright.nvidia.com/package: dexter-1.2.3
@@ -93,7 +93,7 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: config-skyhook-dexter-1.2.3
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: config-skyhook
   ownerReferences:

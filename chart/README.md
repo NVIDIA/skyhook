@@ -95,7 +95,7 @@ By default, the Helm chart includes a pre-delete hook that automatically cleans 
 
 ```bash
 # Uninstall with automatic cleanup (default)
-helm uninstall nodewright --namespace skyhook
+helm uninstall nodewright --namespace nodewright
 ```
 
 The pre-delete hook will:
@@ -121,7 +121,7 @@ When disabled, you must manually delete resources before uninstalling to avoid i
 # Manual cleanup when automatic cleanup is disabled
 kubectl delete skyhooks --all
 kubectl delete deploymentpolicies --all
-helm uninstall nodewright --namespace skyhook
+helm uninstall nodewright --namespace nodewright
 ```
 
 ### Configuring Timeout Values

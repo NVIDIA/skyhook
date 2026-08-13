@@ -20,7 +20,7 @@ kind: Test
 metadata:
   name: helm-events-rbac
 spec:
-  # Installs into the shared `skyhook` namespace, so keep it serial with the
+  # Installs into the shared `nodewright` namespace, so keep it serial with the
   # other helm tests.
   concurrent: false
   timeouts:
@@ -45,7 +45,7 @@ spec:
           # chainsaw runs script content under POSIX /bin/sh (dash in CI), so
           # keep this POSIX-clean: no `pipefail`, `[[ ]]`, or other bashisms.
           set -u
-          NS=skyhook
+          NS=nodewright
 
           # Resolve the operator ServiceAccount from the manager Deployment rather
           # than hard-coding it, so the test survives a fullnameOverride change.
@@ -84,7 +84,7 @@ spec:
         content: |
           ## Remove the chart regardless of assertion outcome. Do not swallow the
           ## exit status: a failed uninstall leaks resources into the shared
-          ## skyhook namespace and would contaminate later tests.
+          ## nodewright namespace and would contaminate later tests.
           if ! ../uninstall-helm-chart.sh events-rbac; then
             echo "FAIL: could not uninstall Helm release events-rbac" >&2
             exit 1

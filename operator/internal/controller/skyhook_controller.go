@@ -111,7 +111,7 @@ const (
 )
 
 type SkyhookOperatorOptions struct {
-	Namespace            string        `env:"NAMESPACE, default=skyhook"`
+	Namespace            string        `env:"NAMESPACE, default=nodewright"`
 	MaxInterval          time.Duration `env:"DEFAULT_INTERVAL, default=10m"`
 	ImagePullSecret      string        `env:"IMAGE_PULL_SECRET"`
 	CopyDirRoot          string        `env:"COPY_DIR_ROOT, default=/var/lib/skyhook"`

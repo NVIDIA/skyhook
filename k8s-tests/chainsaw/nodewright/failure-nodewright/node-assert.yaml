@@ -63,7 +63,7 @@ status:
 # kind: ConfigMap
 # apiVersion: v1
 # metadata:
-#   namespace: skyhook
+#   namespace: nodewright
 #   labels:
 #     nodewright.nvidia.com/skyhook-node-meta: failure-skyhook
 #   ownerReferences:

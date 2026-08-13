@@ -96,10 +96,12 @@ go get github.com/NVIDIA/nodewright/operator@v0.8.0
 
 ## Quick Reference
 
+> These examples use `nodewright`, the default install namespace for new installs. Substitute your own if you installed elsewhere; installs predating the namespace rename are in `skyhook`.
+
 ```bash
 # Check deployed versions
-kubectl get deployment -n skyhook -o jsonpath='{.items[0].spec.template.spec.containers[0].image}'
-helm list -n skyhook
+kubectl get deployment -n nodewright -o jsonpath='{.items[0].spec.template.spec.containers[0].image}'
+helm list -n nodewright
 
 # Override operator version
 helm install skyhook ./chart --set controllerManager.manager.image.tag="0.8.0"

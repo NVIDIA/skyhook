@@ -75,7 +75,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: interrupt-grouping
               nodewright.nvidia.com/package: dax-1.2.3
@@ -110,7 +110,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: interrupt-grouping
               nodewright.nvidia.com/package: dax-1.2.3
@@ -142,7 +142,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: interrupt-grouping
               nodewright.nvidia.com/package: dax-1.2.3
@@ -183,7 +183,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: interrupt-grouping
               nodewright.nvidia.com/package: dax-1.2.3
@@ -268,7 +268,7 @@ spec:
           kind: ConfigMap
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/skyhook-node-meta: interrupt-grouping
             ownerReferences:

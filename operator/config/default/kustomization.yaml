@@ -15,13 +15,16 @@
 # limitations under the License.
 
 # Adds namespace to all resources.
-namespace: skyhook-operator-system
+namespace: nodewright-operator-system
 
 # Value of this field is prepended to the
 # names of all resources, e.g. a deployment named
 # "wordpress" becomes "alices-wordpress".
-# Note that it should also match with the prefix (text before '-') of the namespace
-# field above.
+# The kubebuilder convention is for this to match the prefix of the namespace field
+# above; it deliberately does not right now. Renaming the in-cluster resource names is
+# a separate, riskier change than renaming the namespace (see #285: the last one broke
+# `helm upgrade` on the immutable Deployment selector), so the namespace moved to
+# nodewright first and the resource names still lag.
 namePrefix: skyhook-operator-
 
 # Labels to add to all resources and selectors.

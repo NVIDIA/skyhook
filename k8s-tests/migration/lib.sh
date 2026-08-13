@@ -19,6 +19,10 @@
 # Shared helpers for the Skyhook -> NodeWright upgrade migration test.
 # Sourced by run.sh; not executable on its own.
 
+# Deliberately still "skyhook", not the current default "nodewright": this test installs
+# a pre-rename release and upgrades it in place, and Helm cannot move a release between
+# namespaces. Keeping it here is the coverage that an install predating the namespace
+# rename keeps upgrading cleanly.
 NAMESPACE="${NAMESPACE:-skyhook}"
 RELEASE="${RELEASE:-nodewright-operator}"
 TEST_NAME="${TEST_NAME:-migration-upgrade-test}"

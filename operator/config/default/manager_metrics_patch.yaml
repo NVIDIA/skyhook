@@ -38,4 +38,4 @@ spec:
           - name: ENABLE_WEBHOOKS
             value: "true"
           - name: NAMESPACE
-            value: skyhook-operator-system
+            value: nodewright-operator-system

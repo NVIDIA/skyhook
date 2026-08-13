@@ -8,7 +8,7 @@ The canonical file lives at `.claude/CLAUDE.md`. The root-level `AGENTS.md` is a
 
 Skyhook (being renamed to NodeWright) is a Kubernetes-aware package manager for safely modifying host infrastructure at scale. It coordinates the node lifecycle (cordon → drain → apply package → interrupt/reboot → uncordon) as controlled rollouts gated by interruption budgets and deployment policies.
 
-Rename status: the project is transitioning from Skyhook → NodeWright. The namespace (`skyhook`) still uses `skyhook` pending its migration. Components already moved to `nodewright`: the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), the operator image (`ghcr.io/nvidia/nodewright/operator`), the agent image (`ghcr.io/nvidia/nodewright/agent`, since `agent/v6.4.2`), the primary CRD group (`nodewright.nvidia.com/v1alpha1 NodeWright`; the legacy `skyhook.nvidia.com` group is kept read-only for a migration window), and the CLI plugin (`kubectl nodewright`, binary `kubectl-nodewright`). Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
+Rename status: the project is transitioning from Skyhook → NodeWright. Components already moved to `nodewright`: the install namespace (`nodewright` for new installs; existing installs stay in `skyhook` forever, since namespaces cannot be renamed in place), the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), the operator image (`ghcr.io/nvidia/nodewright/operator`), the agent image (`ghcr.io/nvidia/nodewright/agent`, since `agent/v6.4.2`), the primary CRD group (`nodewright.nvidia.com/v1alpha1 NodeWright`; the legacy `skyhook.nvidia.com` group is kept read-only for a migration window), and the CLI plugin (`kubectl nodewright`, binary `kubectl-nodewright`). Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
 
 ## Required reading: `docs/` (load every session)
 
@@ -100,7 +100,7 @@ E2E tests use [chainsaw](https://kyverno.github.io/chainsaw/) against a real clu
 
 ### CRDs (see `operator/api/v1alpha1/`)
 
-- **Skyhook** (namespaced) — desired state: a DAG of `packages` (container image + version + configMap + optional `dependsOn`), node selector, interruption budget, additional tolerations, runtime-required flag, priority/sequencing, optional `DeploymentPolicy` reference.
+- **Skyhook** / **NodeWright** (cluster-scoped) — desired state: a DAG of `packages` (container image + version + configMap + optional `dependsOn`), node selector, interruption budget, additional tolerations, runtime-required flag, priority/sequencing, optional `DeploymentPolicy` reference. Both CRDs are cluster-scoped, so the install namespace only ever determines where the operator and its package pods live, never which CRs a client sees.
 - **DeploymentPolicy** (cluster-scoped) — rollout shape: batch sizing, pause/resume windows, cross-Skyhook ordering.
 
 CRD types are kubebuilder-annotated (`//+kubebuilder:…`). Any change to these files **must** be followed by `make manifests generate` — the generated `zz_generated.deepcopy.go`, CRD YAML under `config/crd/bases/`, and webhook config are all consumed at build time.
