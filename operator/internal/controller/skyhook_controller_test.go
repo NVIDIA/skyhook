@@ -872,7 +872,7 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drained).To(BeFalse())
 			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
-			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [skyhook:drain-timeout]")))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [nodewright:drain-timeout]")))
 			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0]")))
 		})
 	})
@@ -1972,6 +1972,48 @@ var _ = Describe("Resource Comparison", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
+	})
+
+	// Unlike its neighbours, this spec round-trips the pod through the envtest
+	// apiserver instead of comparing two in-process structs. A DeepCopy can never
+	// observe that apimachinery rewrites a quantity into its canonical form
+	// ("4000m" -> "4", "8192Mi" -> "8Gi") when the pod is serialized, so the pod the
+	// operator reads back is not byte-identical to the one it created.
+	It("should match when the pod's quantities were canonicalized by the apiserver", func() {
+		newPackage := *package_
+		newPackage.Resources = &v1alpha1.ResourceRequirements{
+			CPURequest:    resource.MustParse("2000m"),
+			CPULimit:      resource.MustParse("4000m"),
+			MemoryRequest: resource.MustParse("4096Mi"),
+			MemoryLimit:   resource.MustParse("8192Mi"),
+		}
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// "test-node", not the "testNode" the sibling specs use: spec.nodeName must be
+		// a lowercase RFC 1123 subdomain, which only a real apiserver enforces.
+		pod := createPodFromPackage(operator.opts, &newPackage, skyhook, "test-node", v1alpha1.StageApply)
+		Expect(SetPackages(pod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)).To(Succeed())
+
+		// Capture what the operator built before Create: the client overwrites pod in
+		// place with the apiserver's response, which is the rewrite under test.
+		built := pod.Spec.InitContainers[0].Resources.DeepCopy()
+
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pod))).To(Succeed())
+		})
+
+		observedPod := &corev1.Pod{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), observedPod)).To(Succeed())
+		observed := observedPod.Spec.InitContainers[0].Resources
+
+		Expect(observed.Limits.Cpu().Cmp(*built.Limits.Cpu())).To(Equal(0),
+			"guard: the apiserver must change only representation, never value")
+		Expect(observed.Limits.Memory().Cmp(*built.Limits.Memory())).To(Equal(0),
+			"guard: the apiserver must change only representation, never value")
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *observedPod, skyhook, v1alpha1.StageApply)).To(BeTrue(),
+			"a pod read back from the apiserver must still match the package that created it")
 	})
 
 	It("should not match when resources differ", func() {
