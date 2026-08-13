@@ -412,6 +412,108 @@ var _ = Describe("JobReconcile", func() {
 		Expect(state[sibling.GetUniqueName()].State).To(Equal(v1alpha1.StateComplete))
 	})
 
+	It("promotes the sibling without resurrecting a package whose entry was removed", func() {
+		// A rerun/reset/uninstall clears an entry while that package's interrupt Job is
+		// completing. The Job is package-agnostic and still owes the sibling its promotion, but
+		// re-creating the cleared entry would put it back at (interrupt, complete) — the rerun
+		// predicate would then keep the Job and the stage would never run again, so the rerun
+		// the user asked for would silently do nothing.
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+		sn, err := wrapper.NewSkyhookNodeOnly(node, skyhookName)
+		Expect(err).ToNot(HaveOccurred())
+		sibling := v1alpha1.PackageRef{Name: "other", Version: "2.0.0"}
+		Expect(sn.Upsert(sibling, image, v1alpha1.StateSkipped, v1alpha1.StageInterrupt, 0, "")).To(Succeed())
+		// deliberately no entry for pkgRef: that is the removal
+
+		scr := &v1alpha1.NodeWright{
+			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
+			Spec: v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{
+				"tuning": {PackageRef: pkgRef, Image: image},
+				"other":  {PackageRef: sibling, Image: image},
+			}},
+		}
+		job := packageJob(v1alpha1.StageInterrupt, true, trueCondition(batchv1.JobComplete, ""))
+		r := newReconciler(node, scr, job)
+
+		_, err = r.JobReconcile(ctx, job)
+		Expect(err).ToNot(HaveOccurred())
+
+		state := getNodeState(r)
+		Expect(state).ToNot(HaveKey(pkgRef.GetUniqueName()), "the removal must stand")
+		Expect(state[sibling.GetUniqueName()].State).To(Equal(v1alpha1.StateComplete), "the sibling is still promoted")
+	})
+
+	It("does not regress an entry that already advanced past the interrupt", func() {
+		// The non-interrupt path never reaches the write here — shouldRecordCompletion returns
+		// false on a mismatched stage. On the interrupt path a skipped sibling makes it return
+		// true, so this direction is guarded only by the completion check.
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+		sn, err := wrapper.NewSkyhookNodeOnly(node, skyhookName)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sn.Upsert(pkgRef, image, v1alpha1.StateComplete, v1alpha1.StagePostInterrupt, 0, "")).To(Succeed())
+		sibling := v1alpha1.PackageRef{Name: "other", Version: "2.0.0"}
+		Expect(sn.Upsert(sibling, image, v1alpha1.StateSkipped, v1alpha1.StageInterrupt, 0, "")).To(Succeed())
+
+		scr := &v1alpha1.NodeWright{
+			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
+			Spec: v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{
+				"tuning": {PackageRef: pkgRef, Image: image},
+				"other":  {PackageRef: sibling, Image: image},
+			}},
+		}
+		job := packageJob(v1alpha1.StageInterrupt, true, trueCondition(batchv1.JobComplete, ""))
+		r := newReconciler(node, scr, job)
+
+		_, err = r.JobReconcile(ctx, job)
+		Expect(err).ToNot(HaveOccurred())
+
+		state := getNodeState(r)
+		// The sibling's promotion is what proves the interrupt completion path actually ran:
+		// without it this spec would pass on a reconcile that did nothing at all.
+		Expect(state[sibling.GetUniqueName()].State).To(Equal(v1alpha1.StateComplete))
+		Expect(getJob(r, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
+
+		entry := state[pkgRef.GetUniqueName()]
+		Expect(entry.Stage).To(Equal(v1alpha1.StagePostInterrupt))
+		Expect(entry.State).To(Equal(v1alpha1.StateComplete))
+	})
+
+	It("marks an interrupt completion without panicking when the CR is already gone", func() {
+		// Same window as the resurrection case: the NodeWright deleted while a completed interrupt
+		// Job is still unprocessed. GetSkyhook reads a missing CR as (nil, nil).
+		node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageInterrupt)
+		job := packageJob(v1alpha1.StageInterrupt, true, trueCondition(batchv1.JobComplete, ""))
+		r := newReconciler(node, job) // no NodeWright seeded
+
+		_, err := r.JobReconcile(ctx, job)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(getNodeState(r)[pkgRef.GetUniqueName()].State).To(Equal(v1alpha1.StateComplete))
+		Expect(getJob(r, job.Name).Annotations).To(HaveKeyWithValue(annotationStateRecorded, annotationValueTrue))
+	})
+
+	It("removes the superseded version's entry on upgrade completion", func() {
+		// The upgrade branch is the other place that calls RemoveState and then leans on the
+		// guarded fallback; NodeState is keyed name|version, so only the old key goes.
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}}
+		sn, err := wrapper.NewSkyhookNodeOnly(node, skyhookName)
+		Expect(err).ToNot(HaveOccurred())
+		old := v1alpha1.PackageRef{Name: "tuning", Version: "0.9.0"}
+		Expect(sn.Upsert(old, image, v1alpha1.StateComplete, v1alpha1.StageConfig, 0, "")).To(Succeed())
+		Expect(sn.Upsert(pkgRef, image, v1alpha1.StateInProgress, v1alpha1.StageUpgrade, 0, "")).To(Succeed())
+
+		job := packageJob(v1alpha1.StageUpgrade, false, trueCondition(batchv1.JobComplete, ""))
+		r := newReconciler(node, job)
+
+		_, err = r.JobReconcile(ctx, job)
+		Expect(err).ToNot(HaveOccurred())
+
+		state := getNodeState(r)
+		Expect(state).ToNot(HaveKey(old.GetUniqueName()))
+		Expect(state[pkgRef.GetUniqueName()].State).To(Equal(v1alpha1.StateComplete))
+		Expect(state[pkgRef.GetUniqueName()].Stage).To(Equal(v1alpha1.StageUpgrade))
+	})
+
 	It("records erroring (state only, no marker) for a stale FailureTarget on an unreachable node", func() {
 		node := nodeWithState(v1alpha1.StateInProgress, v1alpha1.StageConfig)
 		job := packageJob(v1alpha1.StageConfig, false)
