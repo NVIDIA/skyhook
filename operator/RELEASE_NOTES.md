@@ -24,6 +24,38 @@ For the full commit-level log see CHANGELOG.md.
   it keeps working against a `skyhook`-namespace install. See
   [docs/nodewright-migration.md](../docs/nodewright-migration.md#install-namespace-skyhook---nodewright).
 
+### Deprecations
+
+- **The `skyhook_*` metrics are deprecated in favour of `nodewright_*`, and the
+  `skyhook_name` series label in favour of `nodewright_name`.** Both sets are now
+  published side by side.
+
+  **No action is required at upgrade time, and nothing breaks.** Metric names and
+  label keys are the identifiers users bake into Grafana dashboards, Prometheus
+  alerting rules, and recording rules, so the rename is a dual-publish rather than
+  an in-place swap: every `skyhook_*` series continues to be exported with the same
+  value and the same remaining labels as its `nodewright_*` twin.
+
+  Migrating a query is a two-token swap, for example
+  `skyhook_node_status_count{skyhook_name="x"}` becomes
+  `nodewright_node_status_count{nodewright_name="x"}`. The `skyhook_*` help text in
+  `/metrics` names its replacement and the removal release, so the exposition itself
+  documents the mapping.
+
+  **The legacy set is removed in operator v0.20.0**, the same release that removes
+  the legacy `skyhook.nvidia.com` API group, so there is one deadline rather than
+  two. Update dashboards and alerts before then. See
+  [docs/metrics/README.md](../docs/metrics/README.md) and the
+  [migration guide](../docs/nodewright-migration.md#metrics).
+
+  Note this roughly doubles the operator's exported series count for the duration of
+  the window; see [docs/operator_resources_at_scale.md](../docs/operator_resources_at_scale.md).
+  If you have already migrated your dashboards, or never consumed the legacy names,
+  set `PUBLISH_LEGACY_METRICS=false` (chart:
+  `controllerManager.manager.env.publishLegacyMetrics`) to drop the deprecated half
+  immediately. It defaults to `true`, so upgrading without setting it keeps the
+  compatibility window.
+
 ### Breaking Changes
 
 - **The default runtime-required taint key moves from `skyhook.nvidia.com` to

@@ -2,34 +2,62 @@
 
 The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a NodeWright Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go).
 
+## Deprecated: the `skyhook_*` metric names
+
+> **The `skyhook_*` metrics are deprecated and will be removed in operator v0.20.0.**
+
+As part of the Skyhook to NodeWright rename, every metric moved from the `skyhook_` prefix to `nodewright_`, and the shared series label moved from `skyhook_name` to `nodewright_name`. Metric names and label keys are the identifiers you write into dashboards and alerting rules, so both sets are published side by side for a deprecation window rather than swapped in place:
+
+| | Metric name | CR-name label |
+| --- | --- | --- |
+| Current | `nodewright_status`, `nodewright_node_target_count`, … | `nodewright_name` |
+| Deprecated | `skyhook_status`, `skyhook_node_target_count`, … | `skyhook_name` |
+
+Both carry identical values and identical remaining labels, so a query migrates by swapping the prefix and the one label key. Nothing else changes.
+
+The legacy set is removed in **v0.20.0**, the same release that removes the legacy `skyhook.nvidia.com` API group (see [the migration guide](../nodewright-migration.md)), so there is one deadline to plan against rather than two. Everything documented below uses the current names.
+
+### Opting out early
+
+Dual-publishing roughly doubles the operator's exported series count. If you have already migrated your dashboards and alerts, or you never consumed the legacy names, you can drop the deprecated half immediately:
+
+```yaml
+controllerManager:
+  manager:
+    env:
+      publishLegacyMetrics: "false"   # PUBLISH_LEGACY_METRICS
+```
+
+The deprecated collectors are then unregistered at startup and `skyhook_*` disappears from `/metrics` entirely, rather than appearing with stale values. The default is `"true"`, so an upgrade that sets nothing keeps the compatibility window. This is a startup setting, not a runtime toggle.
+
 ## NodeWright Status Metrics
 
- * `skyhook_status` : Binary metric indicating the status of the NodeWright Custom Resource (1 if in that status, 0 otherwise). Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
-    * `status` : One of complete, disabled, paused
+ * `nodewright_status` : Binary metric indicating the status of the NodeWright Custom Resource (1 if in that status, 0 otherwise). Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
+    * `status` : One of complete, blocked, waiting, disabled, paused, in_progress, erroring, unknown
 
 ## Node Metrics
 
- * `skyhook_node_status_count` : Number of nodes in the cluster by status for the NodeWright Custom Resource. Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
-    * `status` : One of complete, in_progress, erroring, blocked, waiting
- * `skyhook_node_target_count` : Total number of nodes targeted by this NodeWright Custom Resource. Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_node_status_count` : Number of nodes in the cluster by status for the NodeWright Custom Resource. Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
+    * `status` : One of complete, blocked, waiting, disabled, paused, in_progress, erroring, unknown
+ * `nodewright_node_target_count` : Total number of nodes targeted by this NodeWright Custom Resource. Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
 
 ## Package Metrics
 
- * `skyhook_package_state_count` : Number of nodes in the cluster by state for this package. Tags:
-    * `skyhook_name` : The name of the CR the package belongs to
+ * `nodewright_package_state_count` : Number of nodes in the cluster by state for this package. Tags:
+    * `nodewright_name` : The name of the CR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
     * `state` : One of complete, in_progress, skipped, erroring, unknown
- * `skyhook_package_stage_count` : Number of nodes in the cluster by stage for this package. Tags:
-    * `skyhook_name` : The name of the CR the package belongs to
+ * `nodewright_package_stage_count` : Number of nodes in the cluster by stage for this package. Tags:
+    * `nodewright_name` : The name of the CR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
-    * `stage` : One of apply, config, interrupt, post_interrupt, uninstall, upgrade
- * `skyhook_package_restarts_count`: Number of restarts for this package on this node. Tags:
-    * `skyhook_name` : The name of the CR the package belongs to
+    * `stage` : One of uninstall, uninstall-interrupt, upgrade, apply, interrupt, post-interrupt, config
+ * `nodewright_package_restarts_count`: Number of restarts for this package on this node. Tags:
+    * `nodewright_name` : The name of the CR the package belongs to
     * `package_name` : The name of the package
     * `package_version`: The version of the package
 
@@ -37,43 +65,43 @@ The current metrics supplied by the Operator are intended to be sufficient to de
 
 These metrics track the rollout progress and health of compartments defined in a DeploymentPolicy. See [Deployment Policy documentation](../deployment_policy.md) for details on compartments and strategies.
 
- * `skyhook_rollout_matched_nodes` : Number of nodes matched by this compartment's selector. Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_matched_nodes` : Number of nodes matched by this compartment's selector. Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy (or "legacy" if using interruptionBudget)
-    * `compartment_name` : The name of the compartment (or "__default__" for unmatched nodes)
+    * `compartment_name` : The name of the compartment (or `__default__` for unmatched nodes)
     * `strategy` : The rollout strategy type (fixed, linear, exponential, or unknown)
- * `skyhook_rollout_ceiling` : Maximum number of nodes that can be in progress at once in this compartment. Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_ceiling` : Maximum number of nodes that can be in progress at once in this compartment. Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
- * `skyhook_rollout_in_progress` : Number of nodes currently in progress in this compartment. Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_in_progress` : Number of nodes currently in progress in this compartment. Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
- * `skyhook_rollout_completed` : Number of nodes completed in this compartment. Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_completed` : Number of nodes completed in this compartment. Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
- * `skyhook_rollout_progress_percent` : Percentage of nodes completed in this compartment (0-100). Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_progress_percent` : Percentage of nodes completed in this compartment (0-100). Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
- * `skyhook_rollout_current_batch` : Current batch number in the rollout strategy (0 if no batch processing). Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_current_batch` : Current batch number in the rollout strategy (0 if no batch processing). Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
- * `skyhook_rollout_consecutive_failures` : Number of consecutive batch failures in this compartment. Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_consecutive_failures` : Number of consecutive batch failures in this compartment. Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
- * `skyhook_rollout_should_stop` : Binary metric indicating if rollout should be stopped due to failures (1 = stopped, 0 = continuing). Tags:
-    * `skyhook_name` : The name of the NodeWright Custom Resource
+ * `nodewright_rollout_should_stop` : Binary metric indicating if rollout should be stopped due to failures (1 = stopped, 0 = continuing). Tags:
+    * `nodewright_name` : The name of the NodeWright Custom Resource
     * `policy_name` : The name of the DeploymentPolicy
     * `compartment_name` : The name of the compartment
     * `strategy` : The rollout strategy type
@@ -107,7 +135,7 @@ namespace are provided by flags or environment variables:
 SKYHOOK_NAMESPACE=nodewright \
 METRICS_TEST_SERVICE_ACCOUNT=metrics-reader \
 ./k8s-tests/chainsaw/metrics_test.py \
-  skyhook_node_target_count 1 -t skyhook_name=my-nodewright
+  nodewright_node_target_count 1 -t nodewright_name=my-nodewright
 ```
 
 For repeated checks, mint one token and reuse it instead of making a
@@ -117,7 +145,7 @@ TokenRequest for every invocation:
 METRICS_TOKEN="$(kubectl -n nodewright create token metrics-reader)"
 export METRICS_TOKEN
 ./k8s-tests/chainsaw/metrics_test.py \
-  skyhook_node_target_count 1 -t skyhook_name=my-nodewright
+  nodewright_node_target_count 1 -t nodewright_name=my-nodewright
 ```
 
 When it has to mint a token, the helper writes only that token to stderr so a
@@ -247,8 +275,8 @@ After the chart is installed connect to the grafana instance and configure the p
 
 You can deploy the dashboard in several ways:
 
-1. __Manual Import__: Import the `skyhook-dashboard.json` file directly through the Grafana UI
-2. __ConfigMap Deployment__: Use the generated ConfigMap to automatically provision the dashboard:
+1. **Manual Import**: Import the `skyhook-dashboard.json` file directly through the Grafana UI
+2. **ConfigMap Deployment**: Use the generated ConfigMap to automatically provision the dashboard:
    ```bash
    # Generate the ConfigMap
    ./generate-dashboards.sh
@@ -256,4 +284,4 @@ You can deploy the dashboard in several ways:
    # Apply to your cluster
    kubectl apply -f grafana-dashboards-configmap.yaml
    ```
-3. __Makefile__: Running the `make metrics` target will automatically generate and apply the configmap so that every dashboard in the dashboards file will automatically be setup in grafana on sign-in.
+3. **Makefile**: Running the `make metrics` target will automatically generate and apply the configmap so that every dashboard in the dashboards file will automatically be setup in grafana on sign-in.

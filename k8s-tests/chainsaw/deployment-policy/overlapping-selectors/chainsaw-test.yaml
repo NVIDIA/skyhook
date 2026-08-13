@@ -77,7 +77,7 @@ spec:
     - script:
         skipLogOutput: true
         content: |
-          ../../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_matched_nodes 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
         outputs:
         - name: metricsToken
           value: ($stderr)
@@ -89,16 +89,16 @@ spec:
           echo "=== Verifying compartment metrics ==="
 
           # Verify matched nodes for each compartment
-          ../../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_matched_nodes 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_matched_nodes 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
 
           # Verify ceiling (budget) for each compartment
           # us-west: count=2
           # production: count=2
           # prod-us-west: count=1
-          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_ceiling 1 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_ceiling 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_ceiling 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_ceiling 1 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
           
           echo "✓ Compartment metrics verified"
   
@@ -120,7 +120,7 @@ spec:
     - script:
         skipLogOutput: true
         content: |
-          ../../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_completed 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
         outputs:
         - name: metricsToken
           value: ($stderr)
@@ -132,21 +132,21 @@ spec:
           echo "=== Verifying final metrics ==="
 
           # All compartments should be 100% complete
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
 
-          ../../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_completed 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
 
-          ../../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_completed 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
 
           # Verify no consecutive failures
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
           
           echo "✓ All final metrics verified!"
   

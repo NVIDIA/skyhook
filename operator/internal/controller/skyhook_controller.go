@@ -137,6 +137,13 @@ type SkyhookOperatorOptions struct {
 	// around (a rollback window) before pruning them. 0 or less prunes immediately (no
 	// rollback window). Remove with the legacy group at the removal release.
 	LegacyCleanupDelay time.Duration `env:"LEGACY_CLEANUP_DELAY, default=24h"`
+	// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+	// rename. PublishLegacyMetrics keeps the deprecated skyhook_* metric series exported
+	// alongside the current nodewright_* ones so existing dashboards and alerts survive
+	// the rename. Setting it false halves the operator's exported series count at the
+	// cost of breaking any consumer still querying the legacy names. Remove with the
+	// legacy group at the removal release.
+	PublishLegacyMetrics bool `env:"PUBLISH_LEGACY_METRICS, default=true"`
 }
 
 func (o *SkyhookOperatorOptions) Validate() error {

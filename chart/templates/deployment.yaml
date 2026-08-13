@@ -95,6 +95,8 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.reapplyOnReboot }}
         - name: LEGACY_CLEANUP_DELAY
           value: {{ quote .Values.controllerManager.manager.env.legacyCleanupDelay }}
+        - name: PUBLISH_LEGACY_METRICS
+          value: {{ quote .Values.controllerManager.manager.env.publishLegacyMetrics }}
         - name: RUNTIME_REQUIRED_TAINT
           value: {{ quote .Values.controllerManager.manager.env.runtimeRequiredTaint }}
         - name: PAUSE_IMAGE

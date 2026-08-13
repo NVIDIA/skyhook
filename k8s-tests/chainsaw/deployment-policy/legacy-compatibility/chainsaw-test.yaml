@@ -64,7 +64,7 @@ spec:
     - script:
         skipLogOutput: true
         content: |
-          ../../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_matched_nodes 6 -t nodewright_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
         outputs:
         - name: metricsToken
           value: ($stderr)
@@ -76,7 +76,7 @@ spec:
           echo "=== Verifying legacy compatibility metrics ==="
 
           # Verify metrics for synthetic __default__ compartment
-          ../../metrics_test.py skyhook_rollout_ceiling 3 -t skyhook_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_ceiling 3 -t nodewright_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
 
           # Verify that the legacy policy name is "legacy" and not a real policy
           echo "✓ Legacy compatibility metrics verified!"
