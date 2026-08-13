@@ -304,6 +304,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a NodeWright that references the policy
 			nodewright := &NodeWright{
@@ -361,6 +362,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a NodeWright that references the policy
 			nodewright := &NodeWright{

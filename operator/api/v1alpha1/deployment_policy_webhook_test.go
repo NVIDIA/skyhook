@@ -324,6 +324,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a Skyhook that references the policy
 			skyhook := &Skyhook{
@@ -381,6 +382,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a Skyhook that references the policy
 			skyhook := &Skyhook{
