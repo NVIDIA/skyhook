@@ -475,6 +475,24 @@ var _ = Describe("Jobs execution swap", func() {
 			return state.skyhooks[0]
 		}
 
+		// buildDisabledSkyhookNodes is the same wrapper with the disable annotation set, which is
+		// what IsDisabled reads.
+		buildDisabledSkyhookNodes := func() SkyhookNodes {
+			scr := v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{
+				Name: skyhookName, Namespace: namespace,
+				Annotations: map[string]string{v1alpha1.METADATA_PREFIX + "/disable": "true"},
+			}}
+			state, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{scr}},
+				&corev1.NodeList{},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(state.skyhooks).To(HaveLen(1))
+			Expect(state.skyhooks[0].IsDisabled()).To(BeTrue(), "fixture must actually read as disabled")
+			return state.skyhooks[0]
+		}
+
 		suspendVal := func(c client.WithWatch, name string) *bool {
 			var got batchv1.Job
 			Expect(c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &got)).To(Succeed())
@@ -522,6 +540,20 @@ var _ = Describe("Jobs execution swap", func() {
 			r, c := newReconciler(job)
 			Expect(r.resumeSuspendedJobs(ctx, buildSkyhookNodes())).To(Succeed())
 			Expect(suspendVal(c, job.Name)).To(HaveValue(BeFalse()))
+		})
+
+		// Disable must not un-suspend what pause stopped. Clearing the pause annotation and setting
+		// disable in one edit used to resume every suspended Job, so disabling a paused Skyhook
+		// restarted it — disable ending up strictly weaker than pause.
+		It("does not resume a disabled Skyhook's suspended Jobs", func() {
+			job := stageJob(v1alpha1.StageApply)
+			job.Spec.Suspend = ptr(true)
+			r, c := newReconciler(job)
+
+			Expect(r.resumeSuspendedJobs(ctx, buildDisabledSkyhookNodes())).To(Succeed())
+
+			Expect(suspendVal(c, job.Name)).To(HaveValue(BeTrue()),
+				"a disabled Skyhook must never restart work pause stopped")
 		})
 
 		It("leaves an invalid suspended Job suspended (validation reaps it before resume clears it)", func() {
