@@ -66,6 +66,7 @@ spec:
     try:
     - script:
         content: |
+          set -e
           echo "=== Verifying legacy compatibility metrics ==="
           
           # Verify metrics for synthetic __default__ compartment

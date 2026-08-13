@@ -65,6 +65,7 @@ spec:
         file: assert-compartment.yaml
     - script:
         content: |
+          set -e
           echo "=== Verifying initial metrics ==="
           
           # Verify matched nodes and ceiling for production compartment
@@ -95,6 +96,7 @@ spec:
     try:
     - script:
         content: |
+          set -e
           echo "=== Verifying final metrics ==="
           
           # All nodes should be completed
