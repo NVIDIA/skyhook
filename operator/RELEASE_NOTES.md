@@ -258,7 +258,9 @@ For the full commit-level log see CHANGELOG.md.
     package's node-state entry, so its Job is eligible for rerun cleanup the
     moment it finishes and never serves out `JOB_TTL_SUCCEEDED`. Starting an
     uninstall also clears that package's retained apply/config Jobs. Failed
-    uninstalls are retained normally (#443).
+    uninstalls are retained normally. A successful uninstall's output is
+    therefore unrecoverable — a known limitation, tracked in #443 and deferred
+    to a later release.
 - Editing `stageTimeout`, `JOB_STAGE_TIMEOUT` or `JOB_BACKOFF_LIMIT` applies to
   the *next* stage Job, not one already running (a Job's pod template is
   immutable). To apply a new value to work already under way, clear that Job
