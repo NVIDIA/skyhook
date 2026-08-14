@@ -52,6 +52,39 @@ Reference the issue in your PR description (`closes #1234`) so it closes on merg
 5. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message and sign off (see below).
 6. Open a pull request against `main`. The PR template will guide you through the checklist.
 
+### Running the CI checks locally
+
+Everything CI gates on can be run before you push. Run these from the component directory you touched:
+
+```bash
+# Operator / CLI (from operator/)
+make unit-tests          # ginkgo unit tests + envtest — the fast inner loop
+make lint                # golangci-lint + license check
+make fmt                 # gofmt + license headers; CI fails if this leaves a diff
+make test                # the full suite: unit + e2e + cli-e2e + helm + operator-agent
+
+# Agent (from agent/)
+make test                # hatch test with coverage
+make fmt
+
+# Repo-wide (from the root)
+make license-header-check   # the same gate CI runs
+```
+
+`make test` in `operator/` is heavy — it runs four flavors of e2e and expects a running cluster (`make create-kind-cluster`). For iteration, `make unit-tests` is usually what you want; let CI run the rest.
+
+Prefer the Makefile over raw `go test` / `golangci-lint` invocations. The targets encode `-mod=vendor`, license-header formatting, envtest setup, and CRD/deepcopy generation ordering; calling the tools directly skips some of that and produces drift. Run `make help` to see what is available.
+
+### How your pull request gets reviewed
+
+- **Reviewers are assigned automatically** from [`.github/CODEOWNERS`](.github/CODEOWNERS) based on the paths you touched. You do not need to find a reviewer yourself.
+- **One approval from a code owner** for the affected paths is enough for most changes. Changes to a public contract — a CRD field, CLI flag, annotation, metric, or lifecycle semantics — additionally require approval from a maintainer who did not author the change.
+- **All required checks must pass** before merge, and the branch must be up to date with `main`. Every gating workflow publishes a check named `ci-gate`; GitHub composes them into a single required status.
+- **Decisions are made by lazy consensus.** A change is accepted if no maintainer raises a blocking objection within a reasonable review window — at least five business days for non-trivial changes. A maintainer blocking a change must give a concrete technical rationale and an actionable path forward. The full process, including how to escalate a disagreement, is in [GOVERNANCE.md](GOVERNANCE.md#decision-making).
+- **If your PR goes quiet**, comment on it — a ping is welcome and is the fastest way to get it moving. A bot also nudges the author on PRs with no activity for 14 days.
+
+Review is a conversation, not a gate to get past. If you disagree with a review comment, say so and explain why; reviewers are expected to engage with the reasoning rather than insist.
+
 ### AI-Assisted Contributions Policy
 
 We welcome the use of AI tools (e.g., Claude, GitHub Copilot, ChatGPT) to help you write code, brainstorm, or refactor. However, we maintain a strict human-in-the-loop policy for all submissions:
@@ -59,6 +92,29 @@ We welcome the use of AI tools (e.g., Claude, GitHub Copilot, ChatGPT) to help y
 - **Full accountability**: By submitting a PR, you (the human author) accept full responsibility for the code: its correctness, security, maintainability, and license compliance. "The AI wrote it" is not an acceptable explanation for bugs or security flaws.
 - **Understand what you submit**: Do not submit AI-generated code you do not fully understand. Reviewers expect you to explain and defend every line of code in your PR.
 - **Follow the project rules**: Coding assistants must follow the guidance in [`.claude/CLAUDE.md`](.claude/CLAUDE.md) (symlinked as [`AGENTS.md`](AGENTS.md)), including running `make fmt`, `make test`, and keeping `docs/` in sync.
+
+## Extending NodeWright
+
+Most new host behavior does **not** require changing the operator. NodeWright's primary extension point is a **package**: a container image the operator runs on each selected node, whose steps the agent executes through the lifecycle stages (uninstall, upgrade, apply, config, interrupt, post-interrupt).
+
+### Writing a package
+
+1. **Start with an existing generalist package.** [`NVIDIA/skyhook-packages`](https://github.com/NVIDIA/skyhook-packages) publishes ready-made ones. The `shellscript` package runs commands you supply in the CR's `configMap` — no image build at all. [`examples/simple/scr.yaml`](examples/simple/scr.yaml) is a working example.
+2. **Build your own when you need more.** A package image ships its step scripts plus a `/skyhook-package/config.json` that the agent validates and dispatches on. The agent runs steps inside the host root mount and writes completion flags so finished stages are skipped on re-run.
+3. **Version it with SemVer.** This is not cosmetic: the operator compares package versions to decide upgrade vs. downgrade vs. fresh apply, so a package that misreports its version will take the wrong lifecycle path.
+4. **Consume secrets at runtime**, never baked into the image — see [`docs/providing_secrets_to_packages.md`](docs/providing_secrets_to_packages.md).
+
+The environment the agent gives your steps (`SKYHOOK_RESOURCE_ID`, `SKYHOOK_NODE_ORDER`, and others) is documented in [`agent/README.md`](agent/README.md). Package *contents* live with their authors rather than in this repository — see [Project Scope](GOVERNANCE.md#project-scope).
+
+### Extension points inside this repository
+
+If you are changing NodeWright itself rather than writing a package:
+
+- **A new interrupt type** implements the agent's `Interrupt` contract — `Type` for the wire identity, `Run` for execution against an `execution.Config`, `Serialize` for the operator-facing form. Retry state and completion flags stay outside the interrupt. See the execution-contract notes in [`agent/README.md`](agent/README.md).
+- **A new CLI subcommand** goes under `operator/cmd/cli/app/` and talks to the cluster through `operator/internal/cli/client`, not the apiserver directly. Anything version-gated must also land in the compatibility matrix in [`docs/cli.md`](docs/cli.md).
+- **A new CRD field** requires `make manifests generate`, mirrored edits in both `operator/config/` and `chart/`, and a docs update in the same PR.
+
+In every case, find the nearest existing example and match it. A new pattern that has no precedent in the target package should be called out explicitly in your PR description — what you introduced, why the existing patterns didn't fit, and why it should become the convention.
 
 ## Developer Certificate of Origin (DCO)
 
