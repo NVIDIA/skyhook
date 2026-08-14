@@ -220,14 +220,14 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
 		clientset,
-		mgr.GetEventRecorder("skyhook-controller"),
+		mgr.GetEventRecorder("nodewright-controller"),
 		options.SkyhookOperatorOptions)
 	if err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Skyhook")
+		setupLog.Error(err, "unable to create controller", "controller", "NodeWright")
 		os.Exit(1)
 	}
 	if err = cont.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Skyhook")
+		setupLog.Error(err, "unable to create controller", "controller", "NodeWright")
 		os.Exit(1)
 	}
 

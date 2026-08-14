@@ -113,7 +113,7 @@ func (h *globalDelayHandler) relevant(ctx context.Context, object client.Object)
 	case *corev1.Node:
 		list, err := h.dal.GetSkyhooks(ctx)
 		if err != nil {
-			return false, fmt.Errorf("listing skyhooks for node relevance check: %w", err)
+			return false, fmt.Errorf("listing nodewrights for node relevance check: %w", err)
 		}
 		if list == nil {
 			return false, nil

@@ -121,7 +121,7 @@ var _ = BeforeSuite(func() {
 		k8sManager.GetClient(),
 		k8sManager.GetAPIReader(),
 		k8sfake.NewClientset(),
-		k8sManager.GetEventRecorder("skyhook-controller"),
+		k8sManager.GetEventRecorder("nodewright-controller"),
 		opts,
 	)
 	Expect(err).ToNot(HaveOccurred())

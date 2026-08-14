@@ -85,7 +85,7 @@ func (e *dal) GetSkyhook(ctx context.Context, name string, opts ...client.ListOp
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("error getting skyhook [%s]: %w", name, err)
+		return nil, fmt.Errorf("error getting nodewright [%s]: %w", name, err)
 	}
 
 	return &skyhook, nil
@@ -98,7 +98,7 @@ func (e *dal) GetSkyhooks(ctx context.Context, opts ...client.ListOption) (*skyh
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("error getting skyhooks: %w", err)
+		return nil, fmt.Errorf("error getting nodewrights: %w", err)
 	}
 
 	if len(skyhook.Items) == 0 {

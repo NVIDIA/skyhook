@@ -909,9 +909,9 @@ func (s *skyhookNodes) UpdateCondition(logger logr.Logger) bool {
 	byStatus := wrapper.SkyhookReadyConditionStatusGroups(nodeStatuses, nodeNames)
 
 	if wrapper.SkyhookReadyConditionMessageTruncated(byStatus) {
-		logger.WithName("skyhook-ready-condition").Info(
+		logger.WithName("nodewright-ready-condition").Info(
 			"Ready condition message truncated; full per-status node lists",
-			"skyhook", s.skyhook.Name,
+			"nodewright", s.skyhook.Name,
 			"complete", byStatus[v1alpha1.StatusComplete],
 			"inProgress", byStatus[v1alpha1.StatusInProgress],
 			"blocked", byStatus[v1alpha1.StatusBlocked],
@@ -1112,7 +1112,7 @@ func (np *NodePicker) updateTaintToleranceCondition(s SkyhookNodes, nodesWithTai
 	if len(nodesWithTaintTolerationIssue) > 0 {
 		message := fmt.Sprintf("Node [%s] has taints that are not tolerable. Skipping.", strings.Join(nodesWithTaintTolerationIssue, ", "))
 		if len(nodesWithTaintTolerationIssue) > wrapper.ReadyConditionNodeListLimit {
-			np.logger.Info("Condition message truncated for nodes with taint toleration issues", "skyhook", s.GetSkyhook().Name, "nodes", nodesWithTaintTolerationIssue)
+			np.logger.Info("Condition message truncated for nodes with taint toleration issues", "nodewright", s.GetSkyhook().Name, "nodes", nodesWithTaintTolerationIssue)
 			message = fmt.Sprintf("%d nodes have taints that are not tolerable. Skipping.", len(nodesWithTaintTolerationIssue))
 		}
 
@@ -1141,7 +1141,7 @@ func (np *NodePicker) updateIgnoredNodesCondition(s SkyhookNodes, ignoredNodes [
 	if len(ignoredNodes) > 0 {
 		message := fmt.Sprintf("Node [%s] has ignore label set. Skipping.", strings.Join(ignoredNodes, ", "))
 		if len(ignoredNodes) > wrapper.ReadyConditionNodeListLimit {
-			np.logger.Info("Condition message truncated for ignored nodes", "skyhook", s.GetSkyhook().Name, "nodes", ignoredNodes)
+			np.logger.Info("Condition message truncated for ignored nodes", "nodewright", s.GetSkyhook().Name, "nodes", ignoredNodes)
 			message = fmt.Sprintf("%d nodes have ignore label set. Skipping.", len(ignoredNodes))
 		}
 
@@ -1563,7 +1563,7 @@ func (skyhook *skyhookNodes) Migrate(logger logr.Logger) error {
 	}
 
 	if err := skyhook.skyhook.Migrate(logger); err != nil {
-		return fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.skyhook.Name, err)
+		return fmt.Errorf("error migrating nodewright [%s]: %w", skyhook.skyhook.Name, err)
 	}
 
 	if from == "" { // before this was a thing v0.4.0 and before
@@ -1587,7 +1587,7 @@ func (skyhook *skyhookNodes) AddCompartment(name string, compartment *wrapper.Co
 func (skyhook *skyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) error {
 	compartment, ok := skyhook.compartments[name]
 	if !ok {
-		return fmt.Errorf("compartment %q not found for skyhook %q - missing deployment policy", name, skyhook.skyhook.Name)
+		return fmt.Errorf("compartment %q not found for nodewright %q - missing deployment policy", name, skyhook.skyhook.Name)
 	}
 	compartment.AddNode(node)
 	return nil
