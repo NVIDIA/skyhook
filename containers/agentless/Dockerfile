@@ -14,9 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BUSYBOX_TAG=1.36.1
-
-FROM busybox:${BUSYBOX_TAG}
+# The digest must stay the multi-arch index digest, not a per-platform one:
+# .github/workflows/agentless-container.yaml builds linux/amd64 + linux/arm64
+# from this file, and a platform-specific digest breaks the arm64 leg.
+# Dependabot (docker ecosystem, /containers/**) bumps tag and digest together.
+FROM docker.io/library/busybox:1.36.1@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
 
 ## might need a better mock than empty folders existing
 RUN mkdir -p /skyhook_package/skyhook_dir /skyhook_package/root_dir

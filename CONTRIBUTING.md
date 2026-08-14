@@ -34,6 +34,17 @@ We use a single-owner model: an issue is assigned to at most one person. `/assig
 
 ## Pull Requests
 
+### Open an issue first
+
+Non-trivial changes start with an issue, not a pull request. Open one (or find an existing one), and wait for a maintainer to acknowledge it before you start writing code. The issue is where we confirm the change is wanted, agree on an approach, and tell you if something similar is already in flight — all of which are cheaper to sort out before you have a branch. A pull request that arrives with no linked, acknowledged issue may be closed and asked to start as one.
+
+Two exceptions:
+
+- **Trivial changes** — typo and formatting fixes, broken links, comment corrections — can go straight to a pull request.
+- **Security vulnerabilities never start with a public issue.** Report them through [SECURITY.md](SECURITY.md) instead. PSIRT owns triage and the disclosure date and will coordinate the fix with you, including the pull request itself, so that nothing reveals the issue before the embargo lifts.
+
+Reference the issue in your PR description (`closes #1234`) so it closes on merge.
+
 1. Fork the repository and create a branch from `main`.
 2. Make your changes and ensure tests pass (`make test` in the relevant component directory).
 3. Run `make fmt` to format code and add license headers.
