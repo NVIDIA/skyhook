@@ -261,7 +261,16 @@ func tailAndSanitize(r io.Reader, maxBytes int64) (string, error) {
 		}
 	}
 
-	return strings.ToValidUTF8(string(tail), "�"), nil
+	// Re-apply the cap after sanitizing: ToValidUTF8 swaps each invalid byte for a 3-byte
+	// replacement rune, so a tail already at maxBytes can grow past it and blow the annotation's
+	// share of the object's metadata budget. Trim from the front, matching the tail semantics
+	// above, then drop any partial rune the trim exposed.
+	sanitized := strings.ToValidUTF8(string(tail), "�")
+	if int64(len(sanitized)) > maxBytes {
+		sanitized = sanitized[int64(len(sanitized))-maxBytes:]
+		sanitized = strings.ToValidUTF8(sanitized, "")
+	}
+	return sanitized, nil
 }
 
 func (e *dal) GetDeploymentPolicies(ctx context.Context, opts ...client.ListOption) (*skyhookv1alpha1.DeploymentPolicyList, error) {

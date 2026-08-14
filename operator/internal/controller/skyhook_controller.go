@@ -2814,7 +2814,7 @@ func (r *SkyhookReconciler) handleExistingJob(ctx context.Context, want *batchv1
 		if jobMatchesPackage(r.opts, _package, *existing, skyhookNode.GetSkyhook(), stage) {
 			return nil // another pass won the race with a matching Job
 		}
-		return deleteJobForeground(ctx, r.Client, existing) // unfinished but stale spec
+		return deleteJobForeground(ctx, r.Client, existing, "unfinished job no longer matches the package spec")
 	}
 
 	// Any finished Job JobReconcile has not processed yet is left alone, the same rule
@@ -2834,7 +2834,7 @@ func (r *SkyhookReconciler) handleExistingJob(ctx context.Context, want *batchv1
 		jobMatchesPackage(r.opts, _package, *existing, skyhookNode.GetSkyhook(), stage) {
 		return nil
 	}
-	return deleteJobForeground(ctx, r.Client, existing)
+	return deleteJobForeground(ctx, r.Client, existing, "finished job superseded by a recreate attempt")
 }
 
 // entryErroringAtStage reports whether this package's node-state entry sits at (stage, erroring),
@@ -2864,7 +2864,7 @@ func (r *SkyhookReconciler) deleteConfigUpdateExecutors(ctx context.Context, nod
 		for i := range jobs.Items {
 			job := &jobs.Items[i]
 			if !jobFinished(job) || jobFailedTerminally(job) {
-				if err := deleteJobForeground(ctx, r.Client, job); err != nil {
+				if err := deleteJobForeground(ctx, r.Client, job, "clearing an unfinished or terminally failed stage"); err != nil {
 					return fmt.Errorf("deleting erroring job %s on node %s: %w", job.Name, node.GetNode().Name, err)
 				}
 			}
@@ -2892,7 +2892,7 @@ func (r *SkyhookReconciler) deleteNodeJobs(ctx context.Context, skyhookName, nod
 		return nil
 	}
 	for i := range jobs.Items {
-		if err := deleteJobForeground(ctx, r.Client, &jobs.Items[i]); err != nil {
+		if err := deleteJobForeground(ctx, r.Client, &jobs.Items[i], "removing all jobs on the node"); err != nil {
 			return fmt.Errorf("deleting job %s on node %s: %w", jobs.Items[i].Name, nodeName, err)
 		}
 	}
@@ -3014,7 +3014,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 			// and a finished one has no node state left to claim it.
 			node, nodeExists := nodesByName[jobNodeName(job)]
 			if !nodeExists {
-				if err := deleteJobForeground(ctx, r.Client, job); err != nil {
+				if err := deleteJobForeground(ctx, r.Client, job, "node no longer exists"); err != nil {
 					errs = append(errs, fmt.Errorf("error deleting orphaned-node job %s: %w", job.Name, err))
 				} else {
 					update = true
@@ -3030,7 +3030,7 @@ func (r *SkyhookReconciler) ValidateRunningPackages(ctx context.Context, skyhook
 
 			if jobFinished(job) {
 				if r.shouldDeleteFinishedJob(job, pkg, nodeState, skyhook) {
-					if err := deleteJobForeground(ctx, r.Client, job); err != nil {
+					if err := deleteJobForeground(ctx, r.Client, job, "finished job no longer recorded as done in node state"); err != nil {
 						errs = append(errs, fmt.Errorf("error deleting finished job %s: %w", job.Name, err))
 					} else {
 						update = true
@@ -3127,12 +3127,16 @@ func (r *SkyhookReconciler) jobIsStale(job *batchv1.Job, pkg *PackageSkyhook, no
 // delete the Job foreground. Takes client.Object rather than *batchv1.Job because the callers hold
 // the executor as an Object and the mark itself is kind-agnostic.
 func (r *SkyhookReconciler) InvalidPackage(ctx context.Context, obj client.Object) error {
+	// Patch, not Update: the mark is a metadata-only change, but the executor is a cached
+	// object whose spec.suspend the pause path writes concurrently. Sending the whole object
+	// back would revert a suspend that landed after this copy was read.
+	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
 	if err := InvalidatePackage(obj); err != nil {
 		return fmt.Errorf("error invalidating package: %w", err)
 	}
 
-	if err := r.Update(ctx, obj); err != nil {
-		return fmt.Errorf("error updating executor %s: %w", obj.GetName(), err)
+	if err := r.Patch(ctx, obj, patch); err != nil {
+		return fmt.Errorf("error patching executor %s: %w", obj.GetName(), err)
 	}
 
 	return nil

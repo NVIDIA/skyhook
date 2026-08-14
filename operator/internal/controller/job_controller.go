@@ -64,6 +64,12 @@ const (
 	// batchJobNameLabel is stamped by the Job controller on every child pod.
 	batchJobNameLabel = "batch.kubernetes.io/job-name"
 
+	// nameLabel is the ownership label every package Job and child pod carries.
+	nameLabel = v1alpha1.METADATA_PREFIX + "/name"
+
+	// interruptLabel marks a Job as running an interrupt stage.
+	interruptLabel = v1alpha1.METADATA_PREFIX + "/interrupt"
+
 	// lastLogsMaxBytes caps the deadline log snapshot. Annotations share a per-object
 	// metadata budget, so the tail stays small.
 	lastLogsMaxBytes = 16 * 1024
@@ -110,7 +116,7 @@ func NewJobReconciler(c client.Client, uncached client.Reader, clientset kuberne
 // say) stay out of the workqueue entirely, rather than being filtered after the fact in Reconcile.
 func ownedJob() predicate.Predicate {
 	return predicate.NewPredicateFuncs(func(o client.Object) bool {
-		return labels.Set(o.GetLabels()).Has(fmt.Sprintf("%s/name", v1alpha1.METADATA_PREFIX))
+		return labels.Set(o.GetLabels()).Has(nameLabel)
 	})
 }
 
@@ -152,7 +158,7 @@ func (r *JobReconciler) JobReconcile(ctx context.Context, job *batchv1.Job) (ctr
 	if invalid, err := IsInvalidPackage(job); err != nil {
 		return ctrl.Result{}, fmt.Errorf("checking invalid package on job %s: %w", job.Name, err)
 	} else if invalid {
-		return ctrl.Result{}, deleteJobForeground(ctx, r.Client, job)
+		return ctrl.Result{}, deleteJobForeground(ctx, r.Client, job, "package marked invalid")
 	}
 
 	// Already processed: a persisted marker, not pod deletion, is the processed-once
@@ -693,11 +699,15 @@ func (r *JobReconciler) snapshotFailureLogs(ctx context.Context, job *batchv1.Jo
 		snapshot = fmt.Sprintf("%s:\n%s", container, logs)
 	}
 
+	// Patch, not Update: this writes one annotation off a cached Job, and the pause path
+	// concurrently writes spec.suspend on the same object. A full Update would send our stale
+	// spec back and silently resume a Job that was just suspended.
+	patch := client.MergeFrom(job.DeepCopy())
 	if job.Annotations == nil {
 		job.Annotations = map[string]string{}
 	}
 	job.Annotations[annotationLastLogs] = snapshot
-	if err := r.Update(ctx, job); err != nil {
+	if err := r.Patch(ctx, job, patch); err != nil {
 		return fmt.Errorf("annotating job %s with failure logs: %w", job.Name, err)
 	}
 	return nil
@@ -749,17 +759,23 @@ func (r *JobReconciler) pruneFailedAttempts(ctx context.Context, job *batchv1.Jo
 // freed only after the child pods are gone.
 // A free function because both JobReconciler and the heavy pass delete Jobs, and neither
 // should have to reach through the other to do it.
-func deleteJobForeground(ctx context.Context, c client.Client, job *batchv1.Job) error {
+func deleteJobForeground(ctx context.Context, c client.Client, job *batchv1.Job, reason string) error {
+	// A Job vanishing is otherwise unexplained: this is called from orphan cleanup, stale-spec
+	// replacement, and package invalidation, and which one fired is the first thing anyone
+	// debugging a restarted stage needs.
+	log.FromContext(ctx).Info("deleting job", "job", job.Name, "reason", reason)
 	if err := c.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationForeground)); client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("deleting job %s: %w", job.Name, err)
 	}
 	return nil
 }
 
-// markJobProcessed sets the state-recorded marker and the outcome TTL in one Update, run after
+// markJobProcessed sets the state-recorded marker and the outcome TTL in one patch, run after
 // the node-state write so a crash can never mark a Job whose state is still in_progress. TTL is
-// unset at creation, so the TTL controller cannot race this.
+// unset at creation, so the TTL controller cannot race this. Patched rather than Updated for the
+// same reason as the other Job writes here: only these two fields should travel.
 func (r *JobReconciler) markJobProcessed(ctx context.Context, job *batchv1.Job, ttl time.Duration) error {
+	patch := client.MergeFrom(job.DeepCopy())
 	if job.Annotations == nil {
 		job.Annotations = map[string]string{}
 	}
@@ -767,7 +783,7 @@ func (r *JobReconciler) markJobProcessed(ctx context.Context, job *batchv1.Job, 
 	seconds := int32(ttl.Seconds())
 	job.Spec.TTLSecondsAfterFinished = &seconds
 
-	if err := r.Update(ctx, job); err != nil {
+	if err := r.Patch(ctx, job, patch); err != nil {
 		return fmt.Errorf("marking job %s processed: %w", job.Name, err)
 	}
 	return nil
@@ -817,7 +833,7 @@ func jobNodeName(job *batchv1.Job) string {
 
 // isInterruptJob reports whether the Job runs an interrupt stage (carries the interrupt label).
 func isInterruptJob(job *batchv1.Job) bool {
-	return job.Labels[fmt.Sprintf("%s/interrupt", v1alpha1.METADATA_PREFIX)] == interruptLabelValue
+	return job.Labels[interruptLabel] == interruptLabelValue
 }
 
 // hasJobCondition reports whether the Job has the given condition set True.

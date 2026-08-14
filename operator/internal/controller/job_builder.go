@@ -436,7 +436,10 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: strings.ReplaceAll(fmt.Sprintf("%s-%s-metadata", skyhook.Name, nodeName), ".", "-"),
+						// Must match how the ConfigMap is actually named at creation
+						// (skyhook_controller.go), which hashes and truncates -- an ad-hoc
+						// format string here resolves to a ConfigMap that does not exist.
+						Name: generateSafeName(253, skyhook.Name, nodeName, "metadata"),
 					},
 				},
 			},

@@ -186,6 +186,23 @@ func TestTailAndSanitize(t *testing.T) {
 			t.Fatalf("split-rune result is not valid UTF-8: %q", cut)
 		}
 	})
+
+	// Sanitizing runs after the cap, and each invalid byte becomes a 3-byte replacement
+	// rune, so a tail already at the cap can grow past it unless the cap is re-applied.
+	t.Run("stays within the cap after sanitizing", func(t *testing.T) {
+		const maxBytes = 64
+		invalid := strings.Repeat(string([]byte{0xff, 'a'}), 200)
+		got, err := tailAndSanitize(strings.NewReader(invalid), maxBytes)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if int64(len(got)) > maxBytes {
+			t.Fatalf("got %d bytes, want at most %d", len(got), maxBytes)
+		}
+		if !utf8.ValidString(got) {
+			t.Fatalf("result is not valid UTF-8: %q", got)
+		}
+	})
 }
 
 func TestGetPodLogTail(t *testing.T) {

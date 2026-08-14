@@ -48,7 +48,7 @@ Facts about today's implementation that shape the design; symbols are named here
 - **Package pods never terminate.** All work runs sequentially in `initContainers` (init-copy → `<stage>` → `<stage>-check`); the main container is a `pause` image that runs forever ([`createPodFromPackage`](../../operator/internal/controller/skyhook_controller.go)). The lingering Running pod doubles as the "stage in-flight, don't create another" marker ([`PodExists`](../../operator/internal/controller/skyhook_controller.go)).
 - **The operator is the completion detector.** [`containerExitedSuccessfully`](../../operator/internal/controller/pod_controller.go) inspects init-container statuses; on success the operator updates node state and then **deletes the pod** — deletion is also the processed-once marker (the `DeletionTimestamp == nil` gate prevents double-processing). The write pair is not atomic today either (node Patch, then pod Delete); the Jobs design keeps the same crash window, not a larger one.
 - **Retries are kubelet in-place restarts.** `restartPolicy: OnFailure` crash-loops a failing init container forever; the operator only reports `erroring` with restart counts — it never recreates a failing pod. A pod that *disappears* (evicted, deleted) produces no state write: node state stays `in_progress` and a later reconcile silently recreates it via the `PodExists` miss. Pods on a **deleted node** are cleaned up by kube-controller-manager's PodGC, not by the operator.
-- **Pods are owned by the Skyhook CR**, carry `skyhook.nvidia.com/name` + `…/package` labels (interrupt pods add `…/interrupt: "True"`), and a JSON package annotation that round-trips (skyhook, package, version, stage, image).
+- **Pods are owned by the Skyhook CR**, carry `nodewright.nvidia.com/name` + `…/package` labels (interrupt pods add `…/interrupt: "True"`), and a JSON package annotation that round-trips (skyhook, package, version, stage, image).
 - **Interrupt pods have their own name formula** (skyhook, stage, interrupt-type, node — no package/version), which dedupes the merged interrupt: one per node/stage/type, independent of which package's interrupt won.
 - **Config updates delete erroring package pods directly** ([`HandleConfigUpdates`](../../operator/internal/controller/skyhook_controller.go)) so they are recreated with the updated configmap.
 - **[`cluster_state_v2.go`](../../operator/internal/controller/cluster_state_v2.go) does not read pods.** Node annotations are the state store; pods are ephemeral executors.
@@ -64,14 +64,14 @@ metadata:
   name: <generateSafeName(63, skyhook, package, version, stage, node)>   # interrupt Jobs: skyhook, stage, interruptType, node
   namespace: <operator namespace>
   labels:
-    skyhook.nvidia.com/name: <skyhook>            # existing
-    skyhook.nvidia.com/package: <name>-<version>  # existing
-    skyhook.nvidia.com/interrupt: "True"          # existing (interrupt Jobs only)
-    skyhook.nvidia.com/stage: <stage>             # new
-    skyhook.nvidia.com/node: <node>               # new (hashed for >63-char node names — see Labels)
-    skyhook.nvidia.com/generation: "<n>"          # new: the SCR generation that produced this Job
+    nodewright.nvidia.com/name: <skyhook>            # existing
+    nodewright.nvidia.com/package: <name>-<version>  # existing
+    nodewright.nvidia.com/interrupt: "True"          # existing (interrupt Jobs only)
+    nodewright.nvidia.com/stage: <stage>             # new
+    nodewright.nvidia.com/node: <node>               # new (hashed for >63-char node names — see Labels)
+    nodewright.nvidia.com/generation: "<n>"          # new: the SCR generation that produced this Job
   annotations:
-    skyhook.nvidia.com/resource-id: <full resource id>   # provenance; too long for a label
+    nodewright.nvidia.com/resource-id: <full resource id>   # provenance; too long for a label
   ownerReferences: [<Skyhook CR>]                 # cascade delete; pods are owned by the Job
 spec:
   parallelism: 1
@@ -89,7 +89,7 @@ spec:
     metadata:
       labels: <same label set>                    # child pods inherit labels → existing CLI label queries keep working
       annotations:
-        skyhook.nvidia.com/package: <same JSON package annotation>   # the in-flight erroring path reads it off the child pod
+        nodewright.nvidia.com/package: <same JSON package annotation>   # the in-flight erroring path reads it off the child pod
     spec:
       # identical to today's pod spec, with the three changes described below
       restartPolicy: Never                        # interrupt Jobs: OnFailure
@@ -118,7 +118,7 @@ Interrupt Jobs are the exception and keep an unbounded limit. Under `OnFailure` 
 
 The pseudo-controller pattern is kept (issue #223 option A): a Jobs watch maps events into the single global reconcile queue as `job---<name>` requests, alongside the existing `pod---<name>` routing, so no second reconciler writes state and the serialization guarantee holds. The Jobs informer is namespace-scoped.
 
-Because completed pods now linger, pod-deletion can no longer be the processed-once marker. A persisted Job annotation, `skyhook.nvidia.com/state-recorded: "true"`, replaces it. On each Job event:
+Because completed pods now linger, pod-deletion can no longer be the processed-once marker. A persisted Job annotation, `nodewright.nvidia.com/state-recorded: "true"`, replaces it. On each Job event:
 
 - **`Complete`, not yet marked** → read the `Succeeded` child pod for the container name (selected by the Job's controller UID, not by name — a same-named prior Job's pod can still be terminating), record completion through the existing node-state path (upgrade/uninstall/interrupt special cases unchanged), then one Job Update sets `state-recorded` and the success TTL. If the child pod was already GC'd, fall back to the Job's own stage/node/interrupt labels. Already-marked Jobs are skipped, so duplicate events are harmless. The recorded attempt count now comes from the Job's failed-pod count — a user-visible improvement over today's usually-zero restart count.
 - **`Failed`, on genuine evidence** → the stage is out of attempts (`BackoffLimitExceeded` with at least one retained archive that really failed) or hit the Job-level ceiling (`DeadlineExceeded`, which needs no archive — see Stage deadline, below). Record `erroring`, mark processed with the failure TTL, and **leave the Job in place as the timeout marker**.
@@ -180,7 +180,7 @@ So the contract is: the new value applies at the package's next stage. To apply 
 
 **Interrupt Jobs keep the Job-level bound** and take no per-attempt one: a reboot interrupt's deadline has to span the reboot, and `StartTime` does not reset when the kubelet restarts its containers after the node returns, so a per-attempt clock sized for normal work would kill a legitimate reboot.
 
-**Log visibility.** A per-attempt expiry terminates the pod's containers and marks the pod `Failed` with reason `DeadlineExceeded`; it does **not** delete the pod object, so a timed-out attempt survives as an ordinary failed-attempt archive with its logs intact, subject to the usual Job and pod GC. A *Job-level* deadline is the case that loses evidence — there the Job controller deletes the active pod and the kubelet garbage-collects its logs with it — which now applies only to interrupt Jobs, the one kind that still carries one. To keep that last evidence queryable, the operator reacts to the pre-terminal `FailureTarget` condition with a **best-effort log-tail snapshot** into the `skyhook.nvidia.com/last-logs` Job annotation:
+**Log visibility.** A per-attempt expiry terminates the pod's containers and marks the pod `Failed` with reason `DeadlineExceeded`; it does **not** delete the pod object, so a timed-out attempt survives as an ordinary failed-attempt archive with its logs intact, subject to the usual Job and pod GC. A *Job-level* deadline is the case that loses evidence — there the Job controller deletes the active pod and the kubelet garbage-collects its logs with it — which now applies only to interrupt Jobs, the one kind that still carries one. To keep that last evidence queryable, the operator reacts to the pre-terminal `FailureTarget` condition with a **best-effort log-tail snapshot** into the `nodewright.nvidia.com/last-logs` Job annotation:
 
 - if a failed-attempt archive pod already exists, the snapshot is unnecessary — the archive carries full logs and survives the deadline;
 - otherwise it tails the stuck container's logs (a small byte cap, because annotations share a per-object metadata budget), sanitized to valid UTF-8;
@@ -194,7 +194,7 @@ Deadline-`erroring` counts toward DeploymentPolicy failure thresholds like any `
 
 ### Pause cascades to Job suspension
 
-Today the `skyhook.nvidia.com/pause` annotation (the CLI's **Emergency Stop**) only blocks *new* stage scheduling — an in-flight stage runs to completion, so pause cannot actually stop it. With Jobs, pause gets teeth: when the operator observes the annotation it sets `spec.suspend: true` on all of the Skyhook's unfinished Jobs, and clears it on resume. The annotation stays the user-facing primitive; suspension is the enforcement.
+Today the `nodewright.nvidia.com/pause` annotation (the CLI's **Emergency Stop**) only blocks *new* stage scheduling — an in-flight stage runs to completion, so pause cannot actually stop it. With Jobs, pause gets teeth: when the operator observes the annotation it sets `spec.suspend: true` on all of the Skyhook's unfinished Jobs, and clears it on resume. The annotation stays the user-facing primitive; suspension is the enforcement.
 
 - **Suspension SIGTERMs the running pod** (honoring `gracefulShutdown`) and no pods start until resume. On resume the fresh pod re-runs the stage; the agent's flag files skip completed steps and re-run the interrupted one — the same recovery shape as an eviction or reboot mid-stage, which packages must already tolerate. This is the "no checkpointing" cost the earlier draft rejected `suspend` over, now accepted deliberately, because a pause that can't stop anything isn't an emergency stop.
 - **The deadline pauses with the Job.** Suspension deletes the running pod, so the resumed attempt starts a fresh per-attempt clock — otherwise a "paused" stage could quietly hit its deadline and time out while the user believed everything was frozen. (Package Jobs carry no Job-level clock to keep ticking; an interrupt Job's is reset by suspension clearing the Job's start time.) Suspend-deletions are excluded from the failure count upstream (verified empirically), so pausing never spends the retry budget; `status.failed` is *not* reset either, so pausing to investigate a half-failed stage and resuming leaves the remaining budget unchanged.
@@ -234,12 +234,12 @@ The existence gates move with these rules: the "is this stage in flight" check a
 
 ### Labels
 
-The full resource id is routinely over the 63-character label limit, so it rides as an **annotation**; a numeric `skyhook.nvidia.com/generation` **label** carries the SCR generation instead (same-generation reruns exist — reboots and erroring retries don't bump it, though config updates do; the annotation is the exact provenance). Node names are legal up to 253 characters, so the `…/node` label is the node name when it fits and a stable hash otherwise; the operator computes the same transform on lookup, and `spec.template.spec.nodeName` always carries the authoritative full name. The issue's query goals hold with valid label values:
+The full resource id is routinely over the 63-character label limit, so it rides as an **annotation**; a numeric `nodewright.nvidia.com/generation` **label** carries the SCR generation instead (same-generation reruns exist — reboots and erroring retries don't bump it, though config updates do; the annotation is the exact provenance). Node names are legal up to 253 characters, so the `…/node` label is the node name when it fits and a stable hash otherwise; the operator computes the same transform on lookup, and `spec.template.spec.nodeName` always carries the authoritative full name. The issue's query goals hold with valid label values:
 
 ```bash
-kubectl get jobs -l skyhook.nvidia.com/name=gpu-init                              # all Jobs in one SCR
-kubectl get jobs -l skyhook.nvidia.com/name=gpu-init,skyhook.nvidia.com/node=worker-7,skyhook.nvidia.com/generation=4
-kubectl get jobs -l skyhook.nvidia.com/node=worker-7                              # everything touching a node
+kubectl get jobs -l nodewright.nvidia.com/name=gpu-init                              # all Jobs in one SCR
+kubectl get jobs -l nodewright.nvidia.com/name=gpu-init,nodewright.nvidia.com/node=worker-7,nodewright.nvidia.com/generation=4
+kubectl get jobs -l nodewright.nvidia.com/node=worker-7                              # everything touching a node
 ```
 
 ### RBAC
@@ -322,7 +322,7 @@ published no image. Every case reset first (all CRs, Jobs, pods, ConfigMaps, and
 annotations/labels/taints/cordons) with a baseline assertion before starting, and captured evidence
 mid-flight as well as at the end. Two full passes were run and agreed case for case.
 
-**16 cases, 15 pass, 1 fail.**
+**17 cases, 16 pass, 1 fail.**
 
 | Case | Result |
 | --- | --- |

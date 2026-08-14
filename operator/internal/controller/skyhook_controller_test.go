@@ -1958,47 +1958,6 @@ var _ = Describe("Resource Comparison", func() {
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
 	})
-
-	It("should partition nodes into compartments", func() {
-		skyhooks := &v1alpha1.NodeWrightList{
-			Items: []v1alpha1.NodeWright{
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "skyhook-a"},
-					Spec: v1alpha1.NodeWrightSpec{
-						DeploymentPolicy: "deployment-policy-a",
-					},
-				},
-			},
-		}
-		nodes := &corev1.NodeList{
-			Items: []corev1.Node{
-				{ObjectMeta: metav1.ObjectMeta{Name: "node-a", Labels: map[string]string{"a": "a"}}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "node-b", Labels: map[string]string{"a": "a"}}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "node-c", Labels: map[string]string{"b": "b"}}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "node-d", Labels: map[string]string{"c": "c"}}},
-			},
-		}
-		deploymentPolicies := &v1alpha1.DeploymentPolicyList{
-			Items: []v1alpha1.DeploymentPolicy{
-				{
-					ObjectMeta: metav1.ObjectMeta{Name: "deployment-policy-a"},
-					Spec: v1alpha1.DeploymentPolicySpec{
-						Compartments: []v1alpha1.Compartment{
-							{Name: "compartment-a", Selector: metav1.LabelSelector{MatchLabels: map[string]string{"a": "a"}}},
-							{Name: "compartment-b", Selector: metav1.LabelSelector{MatchLabels: map[string]string{"c": "c"}}},
-						},
-					},
-				},
-			},
-		}
-
-		clusterState, err := BuildState(skyhooks, nodes, deploymentPolicies)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(clusterState.skyhooks[0].GetCompartments()).To(HaveLen(3))
-		Expect(clusterState.skyhooks[0].GetCompartments()["compartment-a"].GetNodes()).To(HaveLen(2))
-		Expect(clusterState.skyhooks[0].GetCompartments()["compartment-b"].GetNodes()).To(HaveLen(1))
-		Expect(clusterState.skyhooks[0].GetCompartments()["__default__"].GetNodes()).To(HaveLen(1))
-	})
 })
 
 var _ = Describe("cluster state compartments", func() {

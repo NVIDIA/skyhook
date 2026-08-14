@@ -250,10 +250,12 @@ state onto the `NodeWright`, which then does not roll out, so they migrate in th
 > root and share one package directory, and nothing serializes their writes.
 >
 > Leaving it paused or disabled is safe indefinitely — the new operator creates no Jobs for it.
-> Check before unpausing or enabling, and wait for the list to come back empty:
+> Check before unpausing or enabling, and wait for the list to come back empty. Query every
+> namespace — a false empty here is the dangerous answer, and the pre-rename operator was not
+> necessarily installed in `skyhook`:
 >
 > ```bash
-> kubectl get pods -n skyhook -l skyhook.nvidia.com/name=<skyhook-name>
+> kubectl get pods -A -l skyhook.nvidia.com/name=<skyhook-name>
 > ```
 >
 > These pods are not reaped by the new operator; they finish on their own and are cleaned up by the

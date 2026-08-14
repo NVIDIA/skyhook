@@ -154,8 +154,12 @@ func (r *PodReconciler) recordPodErroring(ctx context.Context, pod *corev1.Pod, 
 	if err != nil {
 		return fmt.Errorf("getting package from pod %s: %w", pod.Name, err)
 	}
+	// Not an error: ownedPod admits any pod carrying the name label, and a pod without the
+	// package annotation is simply not ours to record. Returning an error here requeues it
+	// forever with backoff, logging on every attempt, and no retry can ever add the
+	// annotation.
 	if packagePtr == nil {
-		return fmt.Errorf("pod %s carries the package label but no package annotation", pod.Name)
+		return nil
 	}
 
 	return patchNodeState(ctx, r.dal, r.uncached, r.Client, pod.Spec.NodeName, func(node *corev1.Node) (bool, error) {

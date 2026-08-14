@@ -71,7 +71,7 @@ For the full commit-level log see CHANGELOG.md.
   | Value | Default | What it does |
   | --- | --- | --- |
   | `jobStageTimeout` | `"1h"` | Default per-attempt deadline for a package stage, when the package sets no `stageTimeout` of its own. `"0"` removes the time bound. |
-  | `jobBackoffLimit` | `"3"` | Retries after the first attempt before a stage is surfaced as `erroring` — so at most four attempts. |
+  | `jobBackoffLimit` | `"3"` | Retries after the first attempt before a stage's Job goes terminal — so at most four attempts. Spending the budget is not by itself a timeout: the stage is surfaced as `erroring` only if a retained attempt genuinely failed, since attempts the kubelet refused to admit spend the budget without ever running the package. |
   | `jobTtlSucceeded` | `"1h"` | How long a succeeded stage Job (and its logs) is kept. Minimum `"1m"`. |
   | `jobTtlFailed` | `"24h"` | How long a failed stage Job is kept, so failure logs outlive success logs. Minimum `"1m"`. |
 

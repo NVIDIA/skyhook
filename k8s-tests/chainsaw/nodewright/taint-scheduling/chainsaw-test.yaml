@@ -62,6 +62,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=taint-scheduling -t status=blocked
           ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=taint-scheduling -t status=blocked
     - patch:

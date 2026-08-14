@@ -221,7 +221,12 @@ For the full commit-level log see CHANGELOG.md.
   rather than deleting it, so its logs are read like any other failed attempt's.
   An interrupt Job, which keeps a whole-stage deadline, is the case where the pod
   *is* deleted; there the operator falls back to a best-effort ~16KiB log tail in
-  the Job's `nodewright.nvidia.com/last-logs` annotation.
+  the Job's `nodewright.nvidia.com/last-logs` annotation. Three limits are worth
+  knowing: an attempt with no container logs (an unpullable image, say) archives
+  nothing to read; an attempt the kubelet refused to admit is not a genuine
+  failure and is not archived at all; and the `last-logs` annotation is written
+  only while a Job passes through `FailureTarget`, so it can be absent when that
+  condition is never emitted.
 - **New per-package `stageTimeout`** bounds the wall-clock runtime of one attempt
   at each of a package's stages. A hung stage (stuck script, unpullable image,
   dead registry) is killed and retried instead of sitting `in_progress`

@@ -148,12 +148,13 @@ func main() {
 		//   Jobs        scoped. Package-stage Jobs are created in options.Namespace and every
 		//               list passes client.InNamespace, so caching a cluster's CronJobs and
 		//               user Jobs buys nothing.
-		//   Secrets     scoped, though nothing on THIS manager reads a Secret today — the only
-		//               reader is WebhookController, which runs on webhookBootstrapMgr below and
-		//               scopes its own cache. Listed anyway because the Secret RBAC is namespaced
-		//               now: informers start lazily, so without this entry the first Secret read
-		//               added here would quietly open a cluster-wide watch and get a 403 at
-		//               runtime rather than a compile error.
+		//   Secrets     scoped, and load-bearing: SecretCertWatcher runs on THIS manager and
+		//               reads the serving-cert Secret through this cache to sync it to disk, so
+		//               removing this entry breaks TLS serving on every pod. (WebhookController
+		//               reads the same Secret, but on the bootstrap manager below, which scopes
+		//               its own cache.) The Secret RBAC is namespaced, and informers start
+		//               lazily, so an unscoped entry here opens a cluster-wide watch and gets a
+		//               403 at runtime rather than a compile error.
 		//
 		// Deliberately NOT scoped:
 		//

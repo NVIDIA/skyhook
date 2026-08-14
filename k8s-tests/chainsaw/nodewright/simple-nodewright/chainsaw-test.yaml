@@ -71,6 +71,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=dexter -t nodewright_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py nodewright_package_stage_count 1 -t package_name=dexter -t nodewright_name=simple-skyhook -t stage=config
     ## Deprecation-window coverage: the legacy skyhook_* series must carry the same
@@ -82,6 +83,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=simple-skyhook
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t stage=config
