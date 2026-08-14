@@ -152,6 +152,16 @@ Relevant env vars are documented in `agent/README.md`.
 
 kubectl plugin (`kubectl nodewright …`). Subcommands under `app/`: `node`, `package`, `deploymentpolicy`, plus `reset`, `lifecycle` (pause/resume/disable/enable), `version`, `migrate`. Commands go through `operator/internal/cli/client` rather than talking to the apiserver directly. Recent operators use annotations (`nodewright.nvidia.com/pause`, `nodewright.nvidia.com/disable`) for pause/disable — not spec fields (the legacy Skyhook uses the `skyhook.nvidia.com/*` equivalents).
 
+## Secrets and credentials
+
+Hard boundaries. These are not style preferences — violating one means a rotation, not a revert.
+
+- **Never commit credentials, API keys, tokens, passwords, kubeconfigs, or private keys.** Nothing secret belongs in a tracked file: not in Go or Python source, not in test fixtures, not in `chart/values.yaml`, not in chainsaw manifests under `k8s-tests/`, not in `.github/workflows/`, and not in a commit message. Examples use an obvious placeholder (`REPLACE_ME`, `<your-token>`), never a real value that "happens to be expired".
+- **Never read a real credential into your output.** `~/.kube/config`, `~/.docker/config.json`, `~/.ssh/`, `~/.aws/`, and any `.env` are off limits — refer to them by path, don't cat them into the transcript, a file, or a PR description.
+- **Secret-bearing environment variables stay out of tracked files.** CI reads them via `${{ secrets.* }}`; local runs read them from your shell. Don't add a `.env` with real values, and never give a secret-bearing variable a hardcoded fallback default.
+- **Cluster secrets are mounted at runtime, never baked in.** Packages receive them through the mechanism in `docs/providing_secrets_to_packages.md` — a Kubernetes Secret projected into the package pod. Never inline a secret into a package `configMap`, a `NodeWright` CR, or a container image layer.
+- **Found a committed secret? Stop and report it.** Do not quietly delete it in a follow-up commit — the value survives in git history and has to be rotated regardless. Report it through `SECURITY.md`; do not open a public issue.
+
 ## Code style (Go)
 
 ### Working rules
