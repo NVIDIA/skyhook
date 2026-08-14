@@ -373,7 +373,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	skyhooks, err := r.dal.GetSkyhooks(ctx)
 	if err != nil {
 		// error, going to requeue and backoff
-		logger.Error(err, "error getting skyhooks")
+		logger.Error(err, "error getting nodewrights")
 		return ctrl.Result{}, err
 	}
 
@@ -574,7 +574,7 @@ func (r *SkyhookReconciler) processSkyhooksPerNode(ctx context.Context, clusterS
 
 		res, err := r.RunSkyhookPackages(ctx, clusterState, nodePicker, skyhook)
 		if err != nil {
-			logger.Error(err, "error processing skyhook", "skyhook", skyhook.GetSkyhook().Name)
+			logger.Error(err, "error processing nodewright", "nodewright", skyhook.GetSkyhook().Name)
 			errs = append(errs, err)
 		}
 		if res != nil {

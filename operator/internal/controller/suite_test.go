@@ -118,7 +118,7 @@ var _ = BeforeSuite(func() {
 	operator, err = NewSkyhookReconciler(
 		k8sManager.GetScheme(),
 		k8sManager.GetClient(),
-		k8sManager.GetEventRecorder("skyhook-controller"),
+		k8sManager.GetEventRecorder("nodewright-controller"),
 		opts,
 	)
 	Expect(err).ToNot(HaveOccurred())
