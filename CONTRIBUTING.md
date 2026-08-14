@@ -99,12 +99,12 @@ Most new host behavior does **not** require changing the operator. NodeWright's 
 
 ### Writing a package
 
-1. **Start with an existing generalist package.** [`NVIDIA/skyhook-packages`](https://github.com/NVIDIA/skyhook-packages) publishes ready-made ones. The `shellscript` package runs commands you supply in the CR's `configMap` — no image build at all. [`examples/simple/scr.yaml`](examples/simple/scr.yaml) is a working example.
+1. **Start with an existing generalist package.** [`NVIDIA/nodewright-packages`](https://github.com/NVIDIA/nodewright-packages) publishes ready-made ones. The `shellscript` package runs commands you supply in the CR's `configMap` — no image build at all. [`examples/simple/scr.yaml`](examples/simple/scr.yaml) is a working example.
 2. **Build your own when you need more.** A package image ships its step scripts plus a `/skyhook-package/config.json` that the agent validates and dispatches on. The agent runs steps inside the host root mount and writes completion flags so finished stages are skipped on re-run.
 3. **Version it with SemVer.** This is not cosmetic: the operator compares package versions to decide upgrade vs. downgrade vs. fresh apply, so a package that misreports its version will take the wrong lifecycle path.
 4. **Consume secrets at runtime**, never baked into the image — see [`docs/providing_secrets_to_packages.md`](docs/providing_secrets_to_packages.md).
 
-The environment the agent gives your steps (`SKYHOOK_RESOURCE_ID`, `SKYHOOK_NODE_ORDER`, and others) is documented in [`agent/README.md`](agent/README.md). Package *contents* live with their authors rather than in this repository — see [Project Scope](GOVERNANCE.md#project-scope).
+Package *contents* live with their authors rather than in this repository — see [Project Scope](GOVERNANCE.md#project-scope).
 
 ### Extension points inside this repository
 

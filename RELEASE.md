@@ -37,7 +37,9 @@ Operator, agent, and CLI follow SemVer directly — MAJOR for breaking changes, 
 
 The chart carries two versions: `version` tracks the chart itself, and `appVersion` names the operator version that chart release is built around. `appVersion` is the *fallback* operator image tag, used only when both `image.tag` and `image.digest` are omitted from values. The shipped `chart/values.yaml` sets both explicitly, and when a digest is present the digest is what determines the image pulled.
 
-Removing or breaking a public surface — a CRD field, CLI command or flag, annotation, env var, or metric — requires a deprecation period announced in the relevant `CHANGELOG.md` and a migration path in `docs/` before the removal ships. See [Deprecation and End-of-Life](GOVERNANCE.md#deprecation-and-end-of-life).
+Removing or breaking a public surface — a CRD field, CLI command or flag, annotation, env var, or metric — requires a deprecation period and a migration path in `docs/` before the removal ships. See [Deprecation and End-of-Life](GOVERNANCE.md#deprecation-and-end-of-life).
+
+**Before upgrading, read the component's `RELEASE_NOTES.md`.** That is where breaking changes and the steps to migrate are written down. `CHANGELOG.md` is generated from commit history — it will tell you *what* changed, not what you have to do about it.
 
 ## Cadence
 
@@ -50,9 +52,11 @@ The shape of a release line:
 3. The final `vX.Y.0` is tagged on the same commit as the last good RC, with no code changes in between.
 4. Patches for that line (`vX.Y.1`, `vX.Y.2`, …) land on `main` first, are cherry-picked onto the same release branch, and are tagged there.
 
-Tags only ever live on release branches, never on `main`. This is a convention the tooling does not currently enforce: `scripts/release-tag.sh` tags whatever `HEAD` points at, and the release workflow publishes any matching tag push regardless of the branch it came from. Check what branch you are on before tagging.
+Operator and chart tags live on the release branch, never on `main`. The chart is tagged on every release because `Chart.yaml` moves with it.
 
-The agent frequently rides along at its existing version; the chart is tagged on every release because `Chart.yaml` moves with it.
+**Agent and CLI releases do not consistently follow this today.** Several `agent/*` and `cli/*` tags were cut from `main` rather than from a release branch, and the CLI publishes through its own workflow ([`.github/workflows/cli-release.yaml`](.github/workflows/cli-release.yaml), triggered by `cli/*` tags) instead of the shared release workflow. Bringing them onto the release-branch flow is known work that has not been done yet.
+
+None of this is enforced by tooling: `scripts/release-tag.sh` tags whatever `HEAD` points at, and the release workflow publishes any matching tag push regardless of the branch it came from. Check what branch you are on before tagging.
 
 ## Where artifacts are published
 
