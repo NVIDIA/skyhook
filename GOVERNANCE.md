@@ -60,6 +60,24 @@ Changes that alter a public contract (CRD field, CLI flag, annotation, metric, o
 
 If a vote is tied, the **lead maintainer** has the casting vote. The lead maintainer is designated by the maintainer team and recorded in [MAINTAINERS.md](MAINTAINERS.md); the role exists to break deadlocks and carries no additional day-to-day authority. If the lead maintainer is the subject of, or is recused from, a decision, the remaining maintainers designate an acting lead for that decision.
 
+## Issue Triage and Priority
+
+Priority is communicated through GitHub's native **Priority field** (Urgent / High / Medium / Low) in the issue sidebar — not through a label. There are deliberately no `priority/*` or `P0`/`P1`/`P2` labels, and none should be created: one field with one owner is the only way the queue stays readable.
+
+**Maintainers set the Priority field during triage.** Issue reporters and automation do not set it. New issues arrive labelled `needs-triage` by [`.github/workflows/triage.yaml`](.github/workflows/triage.yaml), which also infers `component/*` from the title and body; a maintainer assigns the Priority when they pick the issue up.
+
+What maintainers weigh when assigning priority:
+
+- **Blast radius** — does it affect one node, one cluster, or every install? A defect that can leave nodes cordoned or a rollout wedged outranks one with a local effect.
+- **Whether a workaround exists**, and how costly it is to apply.
+- **Regression or long-standing** — something that broke in a recent release is treated more urgently than a limitation that has always been there.
+- **Data or availability risk** — anything that can lose state or take capacity out of service.
+- **Breadth of demand**, for enhancements: how many users are asking, and whether it unblocks work that is otherwise impossible.
+
+Security vulnerabilities are not prioritized here at all — PSIRT owns their severity and disclosure timeline. See [SECURITY.md](SECURITY.md).
+
+**To ask for a different priority, add context to the issue.** Describe the impact you are seeing: how many nodes or clusters, what you had to do to work around it, what it blocks. Concrete impact is what moves priority; asking for a bump without it generally will not. Maintainers re-prioritize as new information arrives, so an issue that was Medium at triage can move once someone explains what it is actually costing them.
+
 ## Adding and Removing Maintainers
 
 ### Adding
