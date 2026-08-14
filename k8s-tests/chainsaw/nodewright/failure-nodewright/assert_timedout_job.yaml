@@ -21,7 +21,7 @@
 kind: Job
 apiVersion: batch/v1
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: failure-skyhook
     nodewright.nvidia.com/package: failure-1.2.3

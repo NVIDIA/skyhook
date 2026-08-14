@@ -32,8 +32,8 @@ spec:
         format: yaml
     - script:
         content: |
-          kubectl get jobs -n skyhook -l nodewright.nvidia.com/name=pause-suspends-jobs -o yaml || true
-          kubectl get pods -n skyhook -l nodewright.nvidia.com/name=pause-suspends-jobs -o yaml || true
+          kubectl get jobs -n nodewright -l nodewright.nvidia.com/name=pause-suspends-jobs -o yaml || true
+          kubectl get pods -n nodewright -l nodewright.nvidia.com/name=pause-suspends-jobs -o yaml || true
           kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o yaml || true
   steps:
   - name: start-a-long-stage
@@ -65,7 +65,7 @@ spec:
         timeout: 240s
         content: |
           for i in $(seq 1 80); do
-            running=$(kubectl get pods -n skyhook \
+            running=$(kubectl get pods -n nodewright \
               -l nodewright.nvidia.com/name=pause-suspends-jobs,nodewright.nvidia.com/package=slowpoke-1.2.3,nodewright.nvidia.com/stage=apply \
               -o jsonpath='{.items[*].status.initContainerStatuses[*].state.running.startedAt}' 2>/dev/null)
             if [ -n "$running" ]; then
@@ -75,7 +75,7 @@ spec:
             sleep 3
           done
           echo "no apply pod reached a running init container within timeout"
-          kubectl get jobs,pods -n skyhook -l nodewright.nvidia.com/name=pause-suspends-jobs -o wide || true
+          kubectl get jobs,pods -n nodewright -l nodewright.nvidia.com/name=pause-suspends-jobs -o wide || true
           exit 1
 
   - name: pause-suspends-the-job-and-kills-the-pod
@@ -94,7 +94,7 @@ spec:
           apiVersion: batch/v1
           kind: Job
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
               nodewright.nvidia.com/package: slowpoke-1.2.3
@@ -107,7 +107,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
               nodewright.nvidia.com/package: slowpoke-1.2.3
@@ -140,7 +140,7 @@ spec:
           apiVersion: batch/v1
           kind: Job
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
               nodewright.nvidia.com/package: slowpoke-1.2.3
@@ -154,7 +154,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: pause-suspends-jobs
               nodewright.nvidia.com/package: slowpoke-1.2.3
