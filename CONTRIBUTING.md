@@ -43,7 +43,7 @@ Two exceptions:
 - **Trivial changes** — typo and formatting fixes, broken links, comment corrections — can go straight to a pull request.
 - **Security vulnerabilities never start with a public issue.** Report them through [SECURITY.md](SECURITY.md) instead. PSIRT owns triage and the disclosure date and will coordinate the fix with you, including the pull request itself, so that nothing reveals the issue before the embargo lifts.
 
-Reference the issue in your PR description (`closes #1234`) so it closes on merge. Note that this ONLY applies to public issues and PRs closing security SHOULD NOT reference the non public security issue.
+Reference the issue in your PR description (`closes #1234`) so it closes on merge. Note that this ONLY applies to public issues and PRs closing security MUST NOT reference the non-public security issue.
 
 1. Fork the repository and create a branch from `main`.
 2. Make your changes and ensure tests pass (`make test` in the relevant component directory).
