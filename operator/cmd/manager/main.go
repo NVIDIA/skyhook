@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -40,6 +41,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	kzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -183,12 +185,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// webhookBootstrapMgr owns the webhook cert/caBundle bootstrap on its own lease so
-	// a stuck old-version leader on reconcileLeaseID cannot block a new pod from issuing
-	// the serving cert and patching the webhook configurations.
-	var webhookBootstrapMgr ctrl.Manager
-	if options.EnableWebhooks {
-		webhookBootstrapMgr, err = ctrl.NewManager(restConfig, ctrl.Options{
+	// The webhook cert/caBundle bootstrap runs on its own lease so a stuck old-version
+	// leader on reconcileLeaseID cannot block a new pod from issuing the serving cert and
+	// patching the webhook configurations. Its manager is built per attempt rather than
+	// once, because relinquishing that lease means stopping the manager that holds it; see
+	// runWebhookBootstrap below and docs/designs/webhook-bootstrap-lease.md.
+	var webhookController *controller.WebhookController
+	newWebhookBootstrapMgr := func() (ctrl.Manager, error) {
+		bootstrapMgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 			Scheme: scheme,
 			// Disable metrics + health probes on the bootstrap manager; the main manager
 			// already serves both, and binding the same ports twice would fail.
@@ -197,28 +201,49 @@ func main() {
 			LeaderElectionID: webhookBootstrapLeaseID,
 		})
 		if err != nil {
-			setupLog.Error(err, "unable to start webhook bootstrap manager")
+			return nil, fmt.Errorf("building webhook bootstrap manager: %w", err)
+		}
+		// WebhookController runs only on the holder of webhookBootstrapLeaseID.
+		if err := bootstrapMgr.Add(webhookController); err != nil {
+			return nil, fmt.Errorf("adding webhook controller as runnable: %w", err)
+		}
+		if err := webhookController.SetupWithManager(bootstrapMgr); err != nil {
+			return nil, fmt.Errorf("setting up webhook controller: %w", err)
+		}
+		return bootstrapMgr, nil
+	}
+
+	if options.EnableWebhooks {
+		// The bootstrap controller reads through an UNCACHED client, unlike every other
+		// controller here. Two reasons, both from it outliving any one manager:
+		//
+		//   - It is driven by the bootstrap manager's watches but shares its instance with
+		//     the readyz check on the main manager, and it has to keep answering across a
+		//     bootstrap manager restart, which takes that manager's cache down with it.
+		//     A cached client from either manager makes the reader's lifetime the wrong
+		//     shape for one of the two callers.
+		//   - Reading from a cache that is not the one that delivered the event means the
+		//     read can lag the event. This controller creates Secret/webhook-cert and is
+		//     then woken by its own create; a stale cache answers NotFound, the reconcile
+		//     returns early, and nothing wakes it again because the object never changes
+		//     a second time. Bootstrap has to read its own writes.
+		//
+		// The cost is a handful of direct reads per reconcile and per readiness probe,
+		// against small cluster-scoped collections, on a controller that otherwise sits
+		// idle behind a 24h requeue.
+		apiClient, err := client.New(restConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			setupLog.Error(err, "unable to build uncached client for the webhook controller")
 			os.Exit(1)
 		}
-
-		webhookController, err := controller.NewWebhookController(
-			webhookBootstrapMgr.GetClient(),
-			webhookBootstrapMgr.GetCache(),
+		webhookController, err = controller.NewWebhookController(
+			apiClient,
+			mgr.GetCache(),
 			options.Namespace,
 			certDir,
 			options.WebhookControllerOptions,
 		)
 		if err != nil {
-			setupLog.Error(err, "unable to create webhook controller", "controller", "Webhook")
-			os.Exit(1)
-		}
-
-		// WebhookController runs only on the holder of webhookBootstrapLeaseID.
-		if err = webhookBootstrapMgr.Add(webhookController); err != nil {
-			setupLog.Error(err, "unable to add webhook controller as runnable", "controller", "Webhook")
-			os.Exit(1)
-		}
-		if err = webhookController.SetupWithManager(webhookBootstrapMgr); err != nil {
 			setupLog.Error(err, "unable to create webhook controller", "controller", "Webhook")
 			os.Exit(1)
 		}
@@ -284,17 +309,77 @@ func main() {
 		}
 		return nil
 	})
-	if webhookBootstrapMgr != nil {
+	if webhookController != nil {
 		g.Go(func() error {
-			if err := webhookBootstrapMgr.Start(gctx); err != nil {
-				return fmt.Errorf("webhook bootstrap manager: %w", err)
-			}
-			return nil
+			return runWebhookBootstrap(gctx, webhookController, newWebhookBootstrapMgr)
 		})
 	}
 	if err := g.Wait(); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
+	}
+}
+
+// webhookBootstrapRecontendDelay is how long to wait after relinquishing the webhook
+// bootstrap lease before contending for it again. Long enough that the pod this operator
+// stood aside for wins the election and gets its work done, short enough that a pod which
+// stood aside for nobody is not idle for long.
+const webhookBootstrapRecontendDelay = 30 * time.Second
+
+// runWebhookBootstrap keeps a webhook bootstrap manager running for as long as this
+// operator can usefully hold the bootstrap lease.
+//
+// The manager is the thing that holds the lease, so relinquishing it means stopping the
+// manager and building a fresh one to contend again. The controller asks for that when it
+// finds that every webhook configuration in its namespace now dials some other Service:
+// the release has moved on without this pod, and a pod that can reach those configurations
+// is blocked behind this lease (#469). Standing aside is safe in every direction. If no
+// other pod takes the lease, this one takes it back a moment later and carries on; the
+// main manager, and therefore admission serving and readiness, is untouched either way.
+func runWebhookBootstrap(ctx context.Context, webhookController *controller.WebhookController, newMgr func() (ctrl.Manager, error)) error {
+	for {
+		bootstrapMgr, err := newMgr()
+		if err != nil {
+			return fmt.Errorf("webhook bootstrap manager: %w", err)
+		}
+
+		bootstrapCtx, cancel := context.WithCancel(ctx)
+		stopped := make(chan error, 1)
+		go func() { stopped <- bootstrapMgr.Start(bootstrapCtx) }()
+
+		select {
+		case err := <-stopped:
+			cancel()
+			if ctx.Err() != nil {
+				return nil // shutting down
+			}
+			if err != nil {
+				return fmt.Errorf("webhook bootstrap manager: %w", err)
+			}
+			return nil
+		case <-webhookController.Relinquished():
+			cancel()
+			// Wait for the manager to finish stopping before contending again, so two
+			// elections for the same lease are never in flight from this process. A
+			// cancelled manager returns nil, so anything else here means it stopped for a
+			// reason of its own and this loop is about to paper over it by recontending.
+			if err := <-stopped; err != nil {
+				setupLog.Error(err, "webhook bootstrap manager stopped with an error while relinquishing the lease")
+			}
+			// A reconcile that was already in flight during that shutdown can signal
+			// again, and the signal is buffered. Left there, the next manager would be
+			// cancelled the instant it started, before running a single reconcile, and
+			// this loop would never hold the lease long enough to do anything even after
+			// the condition cleared. Discard anything stale: the next manager decides for
+			// itself, from its own reconcile.
+			webhookController.DrainRelinquished()
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(webhookBootstrapRecontendDelay):
+		}
 	}
 }
 

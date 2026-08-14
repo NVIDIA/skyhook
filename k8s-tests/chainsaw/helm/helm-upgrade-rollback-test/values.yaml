@@ -20,8 +20,15 @@
 ## nodewright.nvidia.com/webhook-config label.
 ## install-helm-chart.sh overrides the image from LOCAL_OPERATOR_IMG.
 controllerManager:
-  ## One replica keeps the post-upgrade rollout deterministic; the rename gap
-  ## this test measures is about object names, not replica count.
+  ## One replica keeps the post-upgrade rollout deterministic; the rename gap this test
+  ## measures is about object names, not replica count. It also matches what
+  ## install-previous-chart.sh sets on the baseline, so the rollback restores the same
+  ## shape it started from and the post-rollback replica counts mean something.
+  ##
+  ## One replica still reproduces the rollback wedge: the default rolling update rounds
+  ## maxUnavailable down to 0 for a single replica, so the post-rename pod is kept alive
+  ## until the rollback-target pod reports Ready, and it is that pod which holds the
+  ## webhook bootstrap lease the rollback target is waiting on.
   replicas: 1
   podDisruptionBudget:
     minAvailable: 0

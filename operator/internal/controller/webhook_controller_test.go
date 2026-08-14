@@ -250,6 +250,127 @@ var _ = Describe("WebhookController", Ordered, func() {
 		})
 	})
 
+	Describe("relinquishing the webhook bootstrap lease", func() {
+		var controller *WebhookController
+
+		BeforeEach(func() {
+			controller = &WebhookController{
+				namespace:    namespace,
+				opts:         WebhookControllerOptions{SecretName: secretName, ServiceName: serviceName},
+				relinquished: make(chan struct{}, 1),
+			}
+		})
+
+		It("keeps erroring when nothing else is installed here", func() {
+			// Nothing dials anything: the chart's configurations are simply absent. That is
+			// a real error and must stay one, or a broken install looks like a healthy pod
+			// that has politely stood aside.
+			controller.Client = fake.NewClientBuilder().Build()
+
+			_, err := controller.handleNoOwnedConfigurations(context.Background(), errNoOwnedWebhookConfigurations)
+			Expect(err).To(MatchError(errNoOwnedWebhookConfigurations))
+			Expect(controller.relinquished).NotTo(Receive())
+		})
+
+		It("waits out the grace period before standing aside", func() {
+			// A helm upgrade that renames the Service applies the Deployment and the webhook
+			// configurations in one pass, so this state can appear for a moment on a healthy
+			// upgrade. Reacting immediately would make that a self-inflicted outage.
+			controller.Client = fake.NewClientBuilder().WithObjects(
+				validatingWebhookConfig("theirs", namespace, "some-other-webhook-service", nil),
+			).Build()
+
+			result, err := controller.handleNoOwnedConfigurations(context.Background(), errNoOwnedWebhookConfigurations)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(supersededPollInterval))
+			Expect(controller.relinquished).NotTo(Receive())
+			Expect(controller.supersededSince).NotTo(BeZero())
+		})
+
+		It("stands aside once the condition has held for the grace period", func() {
+			controller.Client = fake.NewClientBuilder().WithObjects(
+				validatingWebhookConfig("theirs", namespace, "some-other-webhook-service", nil),
+			).Build()
+			controller.supersededSince = time.Now().Add(-2 * supersededGracePeriod)
+
+			_, err := controller.handleNoOwnedConfigurations(context.Background(), errNoOwnedWebhookConfigurations)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(controller.relinquished).To(Receive())
+		})
+
+		It("stands aside for a configuration that carries no marker label", func() {
+			// The release rolled back to may predate the label entirely, which is exactly
+			// the case in #469. Detection cannot use the ownership filter for that reason.
+			unlabelled := validatingWebhookConfig("theirs", namespace, "some-other-webhook-service", nil)
+			unlabelled.Labels = nil
+			controller.Client = fake.NewClientBuilder().WithObjects(unlabelled).Build()
+			controller.supersededSince = time.Now().Add(-2 * supersededGracePeriod)
+
+			_, err := controller.handleNoOwnedConfigurations(context.Background(), errNoOwnedWebhookConfigurations)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(controller.relinquished).To(Receive())
+		})
+
+		It("ignores webhook services in other namespaces", func() {
+			// Another operator in another namespace is not our replacement.
+			elsewhere := validatingWebhookConfig("elsewhere", "some-other-namespace", "some-other-webhook-service", nil)
+			controller.Client = fake.NewClientBuilder().WithObjects(elsewhere).Build()
+			controller.supersededSince = time.Now().Add(-2 * supersededGracePeriod)
+
+			_, err := controller.handleNoOwnedConfigurations(context.Background(), errNoOwnedWebhookConfigurations)
+			Expect(err).To(MatchError(errNoOwnedWebhookConfigurations))
+			Expect(controller.relinquished).NotTo(Receive())
+			Expect(controller.supersededSince).To(BeZero(), "the debounce resets when the condition stops holding")
+		})
+
+		It("discards a stale relinquish signal", func() {
+			// A reconcile still in flight while the previous manager shuts down can leave a
+			// signal buffered. Acted on, it would cancel the NEXT manager before it ran a
+			// single reconcile, and the loop would never hold the lease long enough to do
+			// anything, even once the condition cleared.
+			controller.relinquished <- struct{}{}
+			controller.DrainRelinquished()
+			Expect(controller.relinquished).NotTo(Receive())
+
+			// And it stays safe to call when there is nothing to discard.
+			controller.DrainRelinquished()
+		})
+
+		It("watches configurations that dial this namespace even without the marker label", func() {
+			// What the detection reads, the watch has to deliver. A rollback restores
+			// configurations from a release that predates the label, and those are exactly
+			// the ones supersedingService is looking for.
+			unlabelled := validatingWebhookConfig("theirs", namespace, "some-other-webhook-service", nil)
+			unlabelled.Labels = nil
+			Expect(controller.watchedWebhookConfiguration(unlabelled)).To(BeTrue())
+
+			labelled := validatingWebhookConfig("ours", namespace, serviceName, nil)
+			Expect(controller.watchedWebhookConfiguration(labelled)).To(BeTrue())
+
+			mutatingUnlabelled := mutatingWebhookConfig("theirs", namespace, "some-other-webhook-service", nil)
+			mutatingUnlabelled.Labels = nil
+			Expect(controller.watchedWebhookConfiguration(mutatingUnlabelled)).To(BeTrue())
+		})
+
+		It("ignores unlabelled configurations belonging to other namespaces", func() {
+			// Otherwise every unrelated admission component in the cluster wakes this
+			// controller.
+			elsewhere := validatingWebhookConfig("elsewhere", "some-other-namespace", "some-other-webhook-service", nil)
+			elsewhere.Labels = nil
+			Expect(controller.watchedWebhookConfiguration(elsewhere)).To(BeFalse())
+		})
+
+		It("finds a superseding service declared only on a mutating configuration", func() {
+			controller.Client = fake.NewClientBuilder().WithObjects(
+				mutatingWebhookConfig("theirs", namespace, "some-other-webhook-service", nil),
+			).Build()
+
+			other, err := controller.supersedingService(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(other).To(Equal("some-other-webhook-service"))
+		})
+	})
+
 	Describe("webhook update logic", func() {
 		It("should detect CABundle changes and non-changes for validating webhook", func() {
 			tests := []struct {
@@ -737,9 +858,64 @@ var _ = Describe("WebhookController", Ordered, func() {
 			Expect(block).NotTo(BeNil())
 			parsed, err := x509.ParseCertificate(block.Bytes)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(parsed.DNSNames).To(ConsistOf(
+			Expect(parsed.DNSNames).To(ContainElements(
 				fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace),
 				fmt.Sprintf("%s.%s.svc", serviceName, namespace),
+			))
+			Expect(parsed.DNSNames).NotTo(ContainElement(
+				fmt.Sprintf("old-webhook-service.%s.svc", namespace),
+			))
+		})
+
+		It("should carry a SAN for the pre-rename Service name as well", func() {
+			// RENAME-SHIM: a rollback to a pre-rename release leaves this cert in place,
+			// serving a Service the older operator names skyhook-operator-webhook-service.
+			// That operator has no remint-on-Service-change check, so the cert it inherits
+			// has to already be valid for the name the API server will dial (#469).
+			cert, err := generateCert(serviceName, namespace, certValidityDurationYear)
+			Expect(err).NotTo(HaveOccurred())
+
+			block, _ := pem.Decode([]byte(cert.TLSCert))
+			Expect(block).NotTo(BeNil())
+			parsed, err := x509.ParseCertificate(block.Bytes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(parsed.DNSNames).To(ContainElements(
+				fmt.Sprintf("%s.%s.svc.cluster.local", legacyWebhookServiceName, namespace),
+				fmt.Sprintf("%s.%s.svc", legacyWebhookServiceName, namespace),
+			))
+		})
+
+		It("should remint a certificate that predates the pre-rename SAN", func() {
+			// Clusters upgraded before this shipped carry a single-name cert. They have to
+			// be reminted on upgrade, or their rollback is still broken. The check reads the
+			// SANs rather than the service annotation, which is what makes this detectable.
+			cert, err := generateCert(serviceName, namespace, certValidityDurationYear)
+			Expect(err).NotTo(HaveOccurred())
+
+			legacyOnly, err := generateCertWithDNSNames([]string{
+				fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace),
+				fmt.Sprintf("%s.%s.svc", serviceName, namespace),
+			}, certValidityDurationYear)
+			Expect(err).NotTo(HaveOccurred())
+
+			secret := cert.ToSecret(secretName, namespace, serviceName)
+			secret.Data["tls.crt"] = []byte(legacyOnly.TLSCert)
+			secret.Data["tls.key"] = []byte(legacyOnly.TLSKey)
+			controller.Client = fake.NewClientBuilder().WithObjects(secret).Build()
+
+			err = writeCertAndKey([]byte(legacyOnly.TLSCert), []byte(legacyOnly.TLSKey), tmpDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			updated, err := controller.CheckOrUpdateWebhookCertSecret(context.Background(), secret)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue())
+
+			block, _ := pem.Decode(secret.Data["tls.crt"])
+			Expect(block).NotTo(BeNil())
+			parsed, err := x509.ParseCertificate(block.Bytes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(parsed.DNSNames).To(ContainElement(
+				fmt.Sprintf("%s.%s.svc", legacyWebhookServiceName, namespace),
 			))
 		})
 

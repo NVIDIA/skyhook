@@ -14,9 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-## Baseline: the published chart really does create the pre-rename names. If
-## these ever stop existing the upgrade step below is asserting nothing, so this
-## is a guard on the test itself, not on the product.
+## RENAME-SHIM: this whole file. Baseline guard for the one-time resource-name rename:
+## the published chart really does create the pre-rename names, so the "legacy names are
+## gone" step downstream is asserting something. It guards the test, not the product.
+## With a post-rename baseline there is nothing here to check beyond the Deployment
+## being Ready, which the upgrade step covers anyway.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:

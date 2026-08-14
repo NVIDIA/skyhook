@@ -416,3 +416,24 @@ state, package pods, and `Skyhook` CRs during the transition, so rolling back to
 (default 24h; see [Rollback window](#rollback-window-legacy_cleanup_delay)), after which a rolled-back
 operator sees fresh nodes and re-applies packages; and deleting the `Skyhook`s, which strands the
 `NodeWright`s. Keep the `Skyhook`s (and raise `LEGACY_CLEANUP_DELAY`) until you are confident.
+
+Pass the target revision explicitly: `helm rollback <release> <revision> -n <namespace> --wait`. With no
+revision, `helm rollback` targets the previous *deployed* revision, which after a failed attempt is the
+release you were trying to leave rather than your baseline, so it is easy to run twice and conclude the
+rollback worked.
+
+The rollback also has to hand the operator's webhook plumbing back across the resource-name rename, since
+the two releases name the webhook Service and configurations differently. That is automatic: the pod being
+rolled away notices that the webhook configurations now dial a Service it does not serve, releases the
+webhook bootstrap lease so the pod being rolled back to can take over, and the serving certificate it
+minted already carries a SAN for the pre-rename Service name. Expect the rollout to take up to about
+ninety seconds longer than a normal one while that handover happens.
+
+**Rolling back from an operator that predates that handover** wedges with no Ready operator pod
+([#469](https://github.com/NVIDIA/nodewright/issues/469)). Clear it by hand:
+
+```bash
+kubectl -n <namespace> delete deploy <fullname>-controller-manager
+kubectl -n <namespace> delete secret webhook-cert
+helm rollback <release> <revision> -n <namespace> --wait
+```
