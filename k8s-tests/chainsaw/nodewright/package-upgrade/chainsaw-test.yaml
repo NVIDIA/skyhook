@@ -99,7 +99,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: package-upgrade
               nodewright.nvidia.com/package: nullptr-2.0.1

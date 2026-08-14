@@ -23,7 +23,7 @@
 #   - EKS cluster already exists; kubectl context is set to that cluster.
 #   - A node group exists and is the one you pass via --node-group (script scales
 #     it with aws eks update-nodegroup-config and uses it as node selector).
-#   - skyhook-operator is installed in the cluster (default namespace: skyhook-operator).
+#   - the operator is installed in the cluster (default namespace: nodewright).
 #
 # Metrics endpoint (for --metrics-source):
 #   - kube (default): uses kubectl top for operator pod memory. Install metrics-server
@@ -52,7 +52,7 @@ POLICY_YAML="${SCRIPT_DIR}/scale_test_policy.yaml"
 SKYHOOK_YAML="${SCRIPT_DIR}/scale_test_skyhook.yaml"
 
 # Defaults
-NAMESPACE="${NAMESPACE:-skyhook-operator}"
+NAMESPACE="${NAMESPACE:-nodewright}"
 METRICS_SOURCE="${METRICS_SOURCE:-kube}"
 METRICS_SERVICE_ACCOUNT="${METRICS_SERVICE_ACCOUNT:-scale-test-metrics}"
 OUTPUT_FILE=""
@@ -76,7 +76,7 @@ Required:
   --final-size     Final desired node count (inclusive)
 
 Options:
-  --namespace           Operator namespace (default: skyhook-operator)
+  --namespace           Operator namespace (default: nodewright)
   --metrics-source      kube|prometheus (default: kube). kube uses kubectl top; prometheus uses authenticated HTTPS on operator :8443/metrics.
   --output               Write CSV results to this path (default: ./scale_test_results_<timestamp>.csv)
   --no-clear-annotations Do not remove skyhook annotations/labels from nodes (Skyhook/Policy CRs are still deleted)
@@ -209,7 +209,7 @@ prepare_metrics_access() {
   kubectl -n "$NAMESPACE" create serviceaccount "$METRICS_SERVICE_ACCOUNT" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   kubectl create clusterrolebinding scale-test-metrics-reader-access \
-    --clusterrole=skyhook-operator-metrics-reader \
+    --clusterrole=nodewright-metrics-reader \
     --serviceaccount="${NAMESPACE}:${METRICS_SERVICE_ACCOUNT}" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }

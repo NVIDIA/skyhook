@@ -8,8 +8,8 @@ metadata:
   labels:
     app: {{ include "chart.fullname" . }}-controller-manager
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: {{ include "chart.name" . }}
+    app.kubernetes.io/part-of: {{ include "chart.name" . }}
     control-plane: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
@@ -85,6 +85,14 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.logLevel }}
         - name: ENABLE_WEBHOOKS
           value: {{ quote .Values.webhook.enable }}
+        {{- /* The operator mints its own webhook serving cert, so it has to be told the
+               Service name the chart rendered: that name goes in the cert SAN, and if it
+               does not match the Service the API server dials, admission fails closed.
+               The webhook configurations themselves are found by label, not by name. */}}
+        - name: WEBHOOK_SECRET_NAME
+          value: {{ quote (.Values.webhook.secretName | default "webhook-cert") }}
+        - name: WEBHOOK_SERVICE_NAME
+          value: {{ quote (include "chart.webhookServiceName" .) }}
         - name: NAMESPACE
           value: {{ .Release.Namespace }}
         - name: IMAGE_PULL_SECRET
@@ -103,6 +111,8 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.jobStageTimeout }}
         - name: JOB_BACKOFF_LIMIT
           value: {{ quote .Values.controllerManager.manager.env.jobBackoffLimit }}
+        - name: PUBLISH_LEGACY_METRICS
+          value: {{ quote .Values.controllerManager.manager.env.publishLegacyMetrics }}
         - name: RUNTIME_REQUIRED_TAINT
           value: {{ quote .Values.controllerManager.manager.env.runtimeRequiredTaint }}
         - name: PAUSE_IMAGE

@@ -21,8 +21,8 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: metrics-reader
     app.kubernetes.io/component: metrics
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
   name: metrics-reader
 rules:

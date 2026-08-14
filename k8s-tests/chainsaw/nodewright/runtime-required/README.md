@@ -40,6 +40,7 @@ The test explicitly validates node isolation by blocking one node while the othe
 - Node isolation (one slow node doesn't block others)
 - Multi-node runtime-required behavior
 - Taint is removed based on individual node completion, not global nodewright completion
+- Deprecation-window handling of the **legacy** `skyhook.nvidia.com=runtime-required:NoSchedule` taint key
 
 ## Files
 
@@ -49,3 +50,9 @@ The test explicitly validates node isolation by blocking one node while the othe
 
 - Uses dedicated label `nodewright.nvidia.com/runtime-required-test=true` to avoid conflicts with other tests
 - Tests both worker nodes independently
+- **Deliberately taints the nodes with the legacy `skyhook.nvidia.com` key**, not the current default
+  `nodewright.nvidia.com`. This is the e2e coverage for the rename deprecation window: it proves the
+  operator still tolerates and removes the legacy taint on a cluster whose provisioner has not migrated.
+  The `auto-taint-new-nodes` suite covers the current key end to end. Do not "fix" this to
+  `nodewright.nvidia.com`; when the legacy key is dropped in operator v0.20.0, delete this coverage
+  along with it.

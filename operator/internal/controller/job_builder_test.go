@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -261,6 +262,13 @@ var _ = Describe("job builders", func() {
 		// activeDeadlineSeconds). Create both Job kinds against the envtest apiserver so an
 		// admission regression fails here instead of only at e2e / wiring time.
 		It("creates both a package and an interrupt Job against the apiserver", func() {
+			// These specs use their own opts, so the namespace they name is not the one the
+			// suite provisions from the operator default; create it rather than depend on it.
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: opts.Namespace}}
+			if err := k8sClient.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+				Expect(err).ToNot(HaveOccurred())
+			}
+
 			built := []*batchv1.Job{
 				createJobFromPackage(opts, pkg, skyhook, "worker-admission", v1alpha1.StageApply),
 				createInterruptJobFromPackage(opts, &v1alpha1.Interrupt{Type: v1alpha1.REBOOT}, "args", pkg, skyhook, "worker-admission", v1alpha1.StageInterrupt),
@@ -312,15 +320,7 @@ var _ = Describe("pod builders", func() {
 			"node1",
 			v1alpha1.StageApply,
 		)
-		found_toleration := false
-		expected_toleration := opts.GetRuntimeRequiredToleration()
-		for _, toleration := range pod.Spec.Tolerations {
-			if toleration.Key == expected_toleration.Key && toleration.Value == expected_toleration.Value && toleration.Effect == expected_toleration.Effect {
-				found_toleration = true
-				break
-			}
-		}
-		Expect(found_toleration).To(BeTrue())
+		Expect(pod.Spec.Tolerations).To(ContainElements(opts.GetRuntimeRequiredTolerations()))
 	})
 
 	It("Interrupt pods should tolerate runtime required taint when it is runtime required", func() {
@@ -348,15 +348,7 @@ var _ = Describe("pod builders", func() {
 			"node1",
 			v1alpha1.StageInterrupt,
 		)
-		found_toleration := false
-		expected_toleration := opts.GetRuntimeRequiredToleration()
-		for _, toleration := range pod.Spec.Tolerations {
-			if toleration.Key == expected_toleration.Key && toleration.Value == expected_toleration.Value && toleration.Effect == expected_toleration.Effect {
-				found_toleration = true
-				break
-			}
-		}
-		Expect(found_toleration).To(BeTrue())
+		Expect(pod.Spec.Tolerations).To(ContainElements(opts.GetRuntimeRequiredTolerations()))
 	})
 
 	It("Pods should not have imagePullSecrets when ImagePullSecret is empty", func() {

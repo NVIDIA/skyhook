@@ -115,7 +115,7 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 			opVersion := utils.GetSkyhookVersion(skyhook)
 			if opVersion == "" || !utils.IsValidVersion(opVersion) {
 				// Try to get version from deployment instead
-				deployVersion, err := utils.DiscoverOperatorVersion(cmd.Context(), kubeClient.Kubernetes(), ctx.GlobalFlags.Namespace())
+				deployVersion, err := utils.DiscoverOperatorVersion(cmd.Context(), kubeClient.Kubernetes(), ctx.ResolveNamespace(cmd.Context(), cmd, kubeClient.Kubernetes()))
 				if err == nil && utils.IsValidVersion(deployVersion) {
 					opVersion = deployVersion
 				} else {

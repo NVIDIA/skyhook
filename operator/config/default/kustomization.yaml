@@ -15,14 +15,14 @@
 # limitations under the License.
 
 # Adds namespace to all resources.
-namespace: skyhook-operator-system
+namespace: nodewright-operator-system
 
 # Value of this field is prepended to the
 # names of all resources, e.g. a deployment named
 # "wordpress" becomes "alices-wordpress".
-# Note that it should also match with the prefix (text before '-') of the namespace
-# field above.
-namePrefix: skyhook-operator-
+# Kept in sync with the Helm chart, where the same names come from
+# `chart.fullname` and render `nodewright-*` by default (#440).
+namePrefix: nodewright-
 
 # Labels to add to all resources and selectors.
 #labels:

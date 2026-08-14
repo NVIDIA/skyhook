@@ -39,6 +39,13 @@ need ctlptl's local image registry to serve the operator image under test. The
 three cluster-setup steps key off a shared list, so adding another registry-needing
 suite means adding its name to that list in all three places.
 
+Both also need **full history with tags** (`fetch-depth: 0`, `fetch-tags: true`,
+already set for the whole `tests` job): each materializes a released chart with
+`git archive chart/v0.17.1` to get a pre-rename baseline — `migration` for the API
+group rename, `helm-tests`' `helm-upgrade-rename-test` for the in-cluster resource
+name rename. Both fail early with an explicit message rather than a bare git error
+when the tag is missing.
+
 ### `migration`
 
 Runs `k8s-tests/migration/run.sh`: installs the last pre-rename release

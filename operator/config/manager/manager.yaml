@@ -22,8 +22,8 @@ metadata:
     app.kubernetes.io/name: namespace
     app.kubernetes.io/instance: system
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
   name: system
 ---
@@ -37,8 +37,8 @@ metadata:
     app.kubernetes.io/name: deployment
     app.kubernetes.io/instance: controller-manager
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
 spec:
   selector:
@@ -95,8 +95,14 @@ spec:
             value: info
           - name: ENABLE_WEBHOOKS
             value: "true"
+          # Must match the Service the overlay renders (config/default namePrefix +
+          # config/webhook/service.yaml). The operator puts WEBHOOK_SERVICE_NAME in
+          # the SAN of the serving cert it mints, so a mismatch fails admission
+          # closed rather than erroring at startup.
+          - name: WEBHOOK_SERVICE_NAME
+            value: nodewright-webhook-service
           - name: NAMESPACE
-            value: skyhook-operator-system
+            value: nodewright-operator-system
           - name: IMAGE_PULL_SECRET
             value: ""
           - name: COPY_DIR_ROOT
@@ -122,8 +128,14 @@ spec:
             value: "1h"
           - name: JOB_BACKOFF_LIMIT
             value: "3"
-          - name: RUNTIME_REQUIRED_TAINT_KEY
-            value: skyhook.nvidia.com=runtime-required:NoSchedule
+          # MIGRATION-SHIM: keep the deprecated skyhook_* metric series exported
+          # alongside nodewright_* so existing dashboards and alerts survive the
+          # rename. "false" exports only nodewright_*. Remove with the legacy group
+          # at the removal release.
+          - name: PUBLISH_LEGACY_METRICS
+            value: "true"
+          - name: RUNTIME_REQUIRED_TAINT
+            value: nodewright.nvidia.com=runtime-required:NoSchedule
           - name: PAUSE_IMAGE
             value: registry.k8s.io/pause:3.10
           - name: AGENT_IMAGE

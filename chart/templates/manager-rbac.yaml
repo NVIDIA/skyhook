@@ -1,7 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: skyhook-operator-manager-role
+  name: {{ include "chart.fullname" . }}-manager-role
   annotations:
     checkov.io/skip1: CKV_K8S_155=Operator must manage webhook configs for cert rotation
   labels:
@@ -25,11 +25,22 @@ rules:
   - mutatingwebhookconfigurations
   - validatingwebhookconfigurations
   resourceNames:
+  - {{ include "chart.validatingWebhookName" . }}
+  - {{ include "chart.mutatingWebhookName" . }}
+  {{- /* MIGRATION-SHIM (skyhook-operator -> nodewright resource rename, #440):
+         during the upgrade that crosses the rename both the pre-rename webhook
+         configurations and a not-yet-terminated old operator replica are still
+         around, and the pre-delete cleanup job deletes the legacy names as a
+         belt-and-braces. Drop these two entries once the rename window closes. */}}
   - skyhook-operator-validating-webhook
   - skyhook-operator-mutating-webhook
   verbs:
   - get
   - update
+  {{- /* delete is what the pre-delete cleanup job needs; without it that job's
+         `kubectl delete ...webhookconfiguration` was silently RBAC-denied and
+         the `|| true` swallowed the error. */}}
+  - delete
 - apiGroups:
   - admissionregistration.k8s.io
   resources:
@@ -176,16 +187,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: skyhook-operator-manager-rolebinding
+  name: {{ include "chart.fullname" . }}-manager-rolebinding
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: {{ include "chart.name" . }}
+    app.kubernetes.io/part-of: {{ include "chart.name" . }}
   {{- include "chart.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: skyhook-operator-manager-role
+  name: {{ include "chart.fullname" . }}-manager-role
 subjects:
 - kind: ServiceAccount
   name: {{ include "chart.fullname" . }}-controller-manager

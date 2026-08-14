@@ -5,7 +5,114 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+### Other Changes
+
+- **The operator finds its webhook configurations by label, not by name.** It now
+  selects `Validating`/`MutatingWebhookConfiguration` objects carrying
+  `nodewright.nvidia.com/webhook-config` whose `clientConfig` dials its own webhook
+  Service, and injects the caBundle into every webhook of every match. Scoping on the
+  Service rather than just the label matters because the configurations are
+  cluster-scoped: the caBundle only signs that one Service's certificate, so writing it
+  into a configuration belonging to another install would break that install's admission. Previously the two names
+  were compiled-in constants, which made renaming them in the chart a hard error on
+  the running operator: it stayed un-Ready, kept the webhook bootstrap lease, and
+  wedged the rolling update (see
+  [docs/designs/webhook-bootstrap-lease.md](../docs/designs/webhook-bootstrap-lease.md)).
+  The chart applies the label; a chart that does not is unsupported. The
+  now-vestigial `webhookValidatingWebhookConfiguration` /
+  `webhookMutatingWebhookConfiguration` builders were removed with the constants,
+  since the chart has owned creation of these objects for several releases and the
+  operator only ever patched their caBundle.
+
+- **`WEBHOOK_SERVICE_NAME` and `WEBHOOK_SECRET_NAME` are now set by the chart.**
+  Both env vars already existed but nothing passed them, so the operator always fell
+  back to its built-in defaults and silently ignored `webhook.serviceName` /
+  `webhook.secretName` in `values.yaml`.
+
+- **The webhook serving certificate is reminted when the webhook Service is renamed.**
+  `Secret/webhook-cert` is operator-owned, so it survives a chart upgrade. The
+  operator reminted only on expiry or a cert-on-disk mismatch, so a renamed Service
+  left a year-valid certificate carrying the old SAN and admission failed closed with
+  `x509: certificate is valid for <old>..., not <new>`. It now also remints when the
+  Service recorded on the Secret differs from the configured `WEBHOOK_SERVICE_NAME`.
+
+- **The documented install namespace for new deployments is now `nodewright`, not
+  `skyhook`.** The kustomize overlay moved from `skyhook-operator-system` to
+  `nodewright-operator-system`, and the operator's `NAMESPACE` env default (used only
+  when nothing sets it, such as a bare binary or `make run`) moved from `skyhook` to
+  `nodewright`.
+
+  **Existing installs need no action, and there is no deadline.** Namespaces cannot be
+  renamed in place and Helm cannot move a release between namespaces, so an install in
+  `skyhook` stays supported indefinitely. The chart sources the namespace from
+  `.Release.Namespace` throughout and installs into any namespace, so `helm upgrade`
+  against a `skyhook`-namespace release is unaffected. The chart always sets `NAMESPACE`
+  explicitly, so the default change is invisible to chart users.
+
+  `kubectl nodewright` discovers the operator's namespace rather than assuming one, so
+  it keeps working against a `skyhook`-namespace install. See
+  [docs/nodewright-migration.md](../docs/nodewright-migration.md#install-namespace-skyhook---nodewright).
+
+### Deprecations
+
+- **The `skyhook_*` metrics are deprecated in favour of `nodewright_*`, and the
+  `skyhook_name` series label in favour of `nodewright_name`.** Both sets are now
+  published side by side.
+
+  **No action is required at upgrade time, and nothing breaks.** Metric names and
+  label keys are the identifiers users bake into Grafana dashboards, Prometheus
+  alerting rules, and recording rules, so the rename is a dual-publish rather than
+  an in-place swap: every `skyhook_*` series continues to be exported with the same
+  value and the same remaining labels as its `nodewright_*` twin.
+
+  Migrating a query is a two-token swap, for example
+  `skyhook_node_status_count{skyhook_name="x"}` becomes
+  `nodewright_node_status_count{nodewright_name="x"}`. The `skyhook_*` help text in
+  `/metrics` names its replacement and the removal release, so the exposition itself
+  documents the mapping.
+
+  **The legacy set is removed in operator v0.20.0**, the same release that removes
+  the legacy `skyhook.nvidia.com` API group, so there is one deadline rather than
+  two. Update dashboards and alerts before then. See
+  [docs/metrics/README.md](../docs/metrics/README.md) and the
+  [migration guide](../docs/nodewright-migration.md#metrics).
+
+  Note this roughly doubles the operator's exported series count for the duration of
+  the window; see [docs/operator_resources_at_scale.md](../docs/operator_resources_at_scale.md).
+  If you have already migrated your dashboards, or never consumed the legacy names,
+  set `PUBLISH_LEGACY_METRICS=false` (chart:
+  `controllerManager.manager.env.publishLegacyMetrics`) to drop the deprecated half
+  immediately. It defaults to `true`, so upgrading without setting it keeps the
+  compatibility window.
+
 ### Breaking Changes
+
+- **The default runtime-required taint key moves from `skyhook.nvidia.com` to
+  `nodewright.nvidia.com`.** `RUNTIME_REQUIRED_TAINT` now defaults to
+  `nodewright.nvidia.com=runtime-required:NoSchedule`.
+
+  **This is a coordinated change, not a silent default bump.** The taint key is a
+  contract with infrastructure the operator cannot see: cluster autoscaler and
+  Karpenter node pools, machine/node templates, `--register-with-taints` kubelet
+  arguments, and tolerations on your own workloads all name it. A node that comes
+  up carrying a key the operator does not recognise is never untainted, and sits
+  unschedulable — a cluster-down failure mode for anyone using
+  `autoTaintNewNodes`, not a cosmetic break.
+
+  For the deprecation window the operator therefore recognises **both** keys. It
+  **applies** only the configured taint, but **tolerates** and **removes** the
+  legacy `skyhook.nvidia.com=runtime-required:NoSchedule` taint as well, and
+  treats a node already carrying either key as gated so `autoTaintNewNodes` does
+  not stamp a second taint. Existing taints on existing nodes are not rewritten.
+  A cluster whose provisioner still applies the legacy key keeps working with no
+  change on your side.
+
+  **What you must do:** update the taint key in your autoscaler / node-pool /
+  machine-template configuration, and in any workload tolerations that name it,
+  before operator v0.20.0, after which the legacy key is neither tolerated nor
+  removed. To stay on the old key in the meantime, set it explicitly via
+  `controllerManager.manager.env.runtimeRequiredTaint`. See
+  [docs/runtime_required.md](../docs/runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 - **The primary CRD is renamed from `Skyhook` (`skyhook.nvidia.com/v1alpha1`) to
   `NodeWright` (`nodewright.nvidia.com/v1alpha1`), and `DeploymentPolicy` moves to
@@ -30,8 +137,8 @@ For the full commit-level log see CHANGELOG.md.
     is `complete` with no nodes in progress. In-flight stages resume idempotently
     (no double reboot), but upgrading idle avoids even the benign package-pod
     restart.
-  - The legacy `skyhook.nvidia.com` group remains available for a multi-release,
-    adoption-gated migration window and is removed in a later release.
+  - The legacy `skyhook.nvidia.com` group remains available for a two-minor-release
+    migration window spanning v0.18.x and v0.19.x, and is removed in operator v0.20.0.
   - **See [docs/nodewright-migration.md](../docs/nodewright-migration.md)** for the
     full migration guide, the pre-upgrade check, and a verification checklist.
 

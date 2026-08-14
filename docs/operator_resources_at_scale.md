@@ -25,6 +25,21 @@ For the equations below the variables are as follows:
 | request | max(500m, $limit/2) |
 | limit  | max(N*1.6* max(P * 0.4, 1), 1000) |
 
+## Exported metric series during the metrics deprecation window
+
+Between operator v0.18.0 and v0.20.0 every metric is published twice, once under the current
+`nodewright_*` name and once under the deprecated `skyhook_*` name (see
+[docs/metrics/README.md](metrics/README.md)). That roughly doubles the operator's exported series count
+for the duration of the window.
+
+This affects the Prometheus side rather than the operator: series count drives scrape payload size and
+Prometheus storage, and the equations above are driven by node and package count, not by series count.
+No change to the requests/limits below is needed. The legacy half disappears in v0.20.0.
+
+If the extra series are unwelcome and your dashboards and alerts already use the `nodewright_*` names,
+set `PUBLISH_LEGACY_METRICS=false` (chart: `controllerManager.manager.env.publishLegacyMetrics`) to
+unregister the deprecated collectors at startup and halve the count immediately.
+
 ## Helm chart
 
 The chart is already setup with the above equations. You can use the `estimatedPackageCount` and `estimatedNodeCount`. The default values in the chart of:

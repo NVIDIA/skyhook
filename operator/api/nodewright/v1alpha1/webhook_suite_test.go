@@ -34,6 +34,7 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	//+kubebuilder:scaffold:imports
 	apimachineryruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,6 +50,7 @@ import (
 
 var cfg *rest.Config
 var k8sClient client.Client
+var cachedClient client.Client
 var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
@@ -122,6 +124,8 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
+	cachedClient = mgr.GetClient()
+
 	err = (&NodeWright{}).SetupWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -155,3 +159,15 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
+
+// waitForPolicyInWebhookCache blocks until the manager's cache has observed the named
+// DeploymentPolicy. The NodeWright validating webhook reads through that cache, while
+// k8sClient reads straight from the apiserver, so a NodeWright created immediately
+// after its policy races the informer and is denied with "deploymentPolicy ... not
+// found". Waiting on the same client the webhook uses closes that window.
+func waitForPolicyInWebhookCache(name string) {
+	GinkgoHelper()
+	Eventually(func() error {
+		return cachedClient.Get(ctx, types.NamespacedName{Name: name}, &DeploymentPolicy{})
+	}, "10s", "100ms").Should(Succeed())
+}

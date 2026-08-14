@@ -117,15 +117,26 @@ const (
 	// advances one stage per Node event, so a larger delay (we started at 500ms)
 	// adds up across stages and blows the interrupt e2e timing budget.
 	globalReconcileDelay = 50 * time.Millisecond
+
+	// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+	// rename. legacyRuntimeRequiredTaint is the pre-rename default runtime-required taint.
+	// The operator still tolerates it and removes it on completion, but never applies it.
+	//
+	// WHY: the taint key is a coordination point with infrastructure the operator cannot
+	// see — autoscaler/Karpenter node pools, machine templates, and user tolerations all
+	// name it. A cluster whose provisioner still stamps the old key would otherwise bring
+	// up nodes carrying a taint nothing removes, leaving them permanently unschedulable.
+	// Remove with the legacy group at the removal release.
+	legacyRuntimeRequiredTaint = "skyhook.nvidia.com=runtime-required:NoSchedule"
 )
 
 type SkyhookOperatorOptions struct {
-	Namespace            string        `env:"NAMESPACE, default=skyhook"`
+	Namespace            string        `env:"NAMESPACE, default=nodewright"`
 	MaxInterval          time.Duration `env:"DEFAULT_INTERVAL, default=10m"`
 	ImagePullSecret      string        `env:"IMAGE_PULL_SECRET"`
 	CopyDirRoot          string        `env:"COPY_DIR_ROOT, default=/var/lib/skyhook"`
 	ReapplyOnReboot      bool          `env:"REAPPLY_ON_REBOOT, default=false"`
-	RuntimeRequiredTaint string        `env:"RUNTIME_REQUIRED_TAINT, default=skyhook.nvidia.com=runtime-required:NoSchedule"`
+	RuntimeRequiredTaint string        `env:"RUNTIME_REQUIRED_TAINT, default=nodewright.nvidia.com=runtime-required:NoSchedule"`
 	PauseImage           string        `env:"PAUSE_IMAGE, default=registry.k8s.io/pause:3.10"`
 	AgentImage           string        `env:"AGENT_IMAGE, default=ghcr.io/nvidia/nodewright/agent:latest"` // TODO: pin a released agent version instead of :latest
 	AgentLogRoot         string        `env:"AGENT_LOG_ROOT, default=/var/log/skyhook"`
@@ -135,6 +146,13 @@ type SkyhookOperatorOptions struct {
 	// around (a rollback window) before pruning them. 0 or less prunes immediately (no
 	// rollback window). Remove with the legacy group at the removal release.
 	LegacyCleanupDelay time.Duration `env:"LEGACY_CLEANUP_DELAY, default=24h"`
+	// MIGRATION-SHIM: transition-only for the skyhook.nvidia.com -> nodewright.nvidia.com
+	// rename. PublishLegacyMetrics keeps the deprecated skyhook_* metric series exported
+	// alongside the current nodewright_* ones so existing dashboards and alerts survive
+	// the rename. Setting it false halves the operator's exported series count at the
+	// cost of breaking any consumer still querying the legacy names. Remove with the
+	// legacy group at the removal release.
+	PublishLegacyMetrics bool `env:"PUBLISH_LEGACY_METRICS, default=true"`
 
 	// Embedded rather than a separate field so the Job knobs are one nameable unit for
 	// JobReconciler while promotion keeps opts.JobStageTimeout resolving for the eight
@@ -238,19 +256,49 @@ func (o *SkyhookOperatorOptions) AgentVersion() string {
 	return parts[len(parts)-1]
 }
 
+// GetRuntimeRequiredTaint returns the taint the operator APPLIES to nodes, which is
+// always the configured one. Use GetRuntimeRequiredTaints for anything that has to
+// recognise a taint already on a node.
 func (o *SkyhookOperatorOptions) GetRuntimeRequiredTaint() corev1.Taint {
 	to_add, _, _ := taints.ParseTaints([]string{o.RuntimeRequiredTaint})
 	return to_add[0]
 }
 
-func (o *SkyhookOperatorOptions) GetRuntimeRequiredToleration() corev1.Toleration {
-	taint := o.GetRuntimeRequiredTaint()
-	return corev1.Toleration{
-		Key:      taint.Key,
-		Operator: corev1.TolerationOpEqual,
-		Value:    taint.Value,
-		Effect:   taint.Effect,
+// GetRuntimeRequiredTaints returns every runtime-required taint the operator RECOGNISES:
+// the configured one, plus the legacy skyhook.nvidia.com taint for the deprecation
+// window. The legacy entry is dropped when it is the configured taint, so an operator
+// still pinned to the old key does not see it twice.
+func (o *SkyhookOperatorOptions) GetRuntimeRequiredTaints() []corev1.Taint {
+	configured := o.GetRuntimeRequiredTaint()
+	legacy, _, _ := taints.ParseTaints([]string{legacyRuntimeRequiredTaint})
+	if configured.MatchTaint(&legacy[0]) {
+		return []corev1.Taint{configured}
 	}
+	return []corev1.Taint{configured, legacy[0]}
+}
+
+func (o *SkyhookOperatorOptions) GetRuntimeRequiredTolerations() []corev1.Toleration {
+	recognised := o.GetRuntimeRequiredTaints()
+	tolerations := make([]corev1.Toleration, 0, len(recognised))
+	for _, taint := range recognised {
+		tolerations = append(tolerations, corev1.Toleration{
+			Key:      taint.Key,
+			Operator: corev1.TolerationOpEqual,
+			Value:    taint.Value,
+			Effect:   taint.Effect,
+		})
+	}
+	return tolerations
+}
+
+// hasAnyTaint reports whether node carries any of ts.
+func hasAnyTaint(node *corev1.Node, ts []corev1.Taint) bool {
+	for i := range ts {
+		if taints.TaintExists(node.Spec.Taints, &ts[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 // force type checking against this interface
@@ -440,7 +488,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// node picker is for selecting nodes to do work, tries maintain a prior of nodes between SCRs
-	nodePicker := NewNodePicker(logger, r.opts.GetRuntimeRequiredToleration())
+	nodePicker := NewNodePicker(logger, r.opts.GetRuntimeRequiredTolerations())
 
 	errs := make([]error, 0)
 	var result *ctrl.Result
@@ -1194,7 +1242,8 @@ func (r *SkyhookReconciler) TrackReboots(ctx context.Context, clusterState *clus
 					// rebooted node until Skyhook finishes re-applying. The original auto-taint
 					// annotation survives Reset() and remains the record that this taint is
 					// operator-managed; no annotation update is needed.
-					if skyhook.GetSkyhook().Spec.RuntimeRequired && skyhook.GetSkyhook().Spec.AutoTaintNewNodes {
+					if skyhook.GetSkyhook().Spec.RuntimeRequired && skyhook.GetSkyhook().Spec.AutoTaintNewNodes &&
+						!hasAnyTaint(node.GetNode(), r.opts.GetRuntimeRequiredTaints()) {
 						taintToAdd := r.opts.GetRuntimeRequiredTaint()
 						newNode, updated, _ := taints.AddOrUpdateTaint(node.GetNode(), &taintToAdd)
 						if updated {
@@ -3332,18 +3381,22 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 func (r *SkyhookReconciler) HandleRuntimeRequired(ctx context.Context, clusterState *clusterState) error {
 	node_to_skyhooks, skyhook_node_map := groupSkyhooksByNode(clusterState)
 	to_remove := getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks, skyhook_node_map)
-	// Remove the runtime required taint from nodes in to_remove
-	taint_to_remove := r.opts.GetRuntimeRequiredTaint()
+	// Remove every recognised runtime-required taint, not just the configured one: a node
+	// provisioned by infrastructure still stamping the legacy skyhook.nvidia.com key would
+	// otherwise stay unschedulable forever, since nothing else removes it.
+	taints_to_remove := r.opts.GetRuntimeRequiredTaints()
 	errs := make([]error, 0)
 	for _, node := range to_remove {
-		// check before removing taint that it even exists to begin with
-		if !taints.TaintExists(node.Spec.Taints, &taint_to_remove) {
-			continue
+		current, changed := node, false
+		for i := range taints_to_remove {
+			// RemoveTaint will ALWAYS return nil for its error so no need to check it
+			next, updated, _ := taints.RemoveTaint(current, &taints_to_remove[i])
+			if updated {
+				current, changed = next, true
+			}
 		}
-		// RemoveTaint will ALWAYS return nil for its error so no need to check it
-		new_node, updated, _ := taints.RemoveTaint(node, &taint_to_remove)
-		if updated {
-			err := r.Patch(ctx, new_node, client.MergeFrom(node))
+		if changed {
+			err := r.Patch(ctx, current, client.MergeFrom(node))
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -3400,10 +3453,11 @@ func getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks map[types.UID][]Skyho
 }
 
 // HandleAutoTaint applies the runtime-required taint to new nodes matching runtime-required
-// Skyhooks that have AutoTaintNewNodes enabled.
+// Skyhooks that have AutoTaintNewNodes enabled. Only the configured taint is ever applied;
+// the legacy key is recognised on the way in and removed on completion, never stamped.
 func (r *SkyhookReconciler) HandleAutoTaint(ctx context.Context, clusterState *clusterState) (bool, error) {
 	taint_to_add := r.opts.GetRuntimeRequiredTaint()
-	to_taint := clusterState.getAutoTaintNodes(taint_to_add)
+	to_taint := clusterState.getAutoTaintNodes(r.opts.GetRuntimeRequiredTaints())
 	errs := make([]error, 0)
 	changed := false
 	for _, node := range to_taint {

@@ -8,7 +8,7 @@ The canonical file lives at `.claude/CLAUDE.md`. The root-level `AGENTS.md` is a
 
 Skyhook (being renamed to NodeWright) is a Kubernetes-aware package manager for safely modifying host infrastructure at scale. It coordinates the node lifecycle (cordon → drain → apply package → interrupt/reboot → uncordon) as controlled rollouts gated by interruption budgets and deployment policies.
 
-Rename status: the project is transitioning from Skyhook → NodeWright. The namespace (`skyhook`) still uses `skyhook` pending its migration. Components already moved to `nodewright`: the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), the operator image (`ghcr.io/nvidia/nodewright/operator`), the agent image (`ghcr.io/nvidia/nodewright/agent`, since `agent/v6.4.2`), the primary CRD group (`nodewright.nvidia.com/v1alpha1 NodeWright`; the legacy `skyhook.nvidia.com` group is kept read-only for a migration window), and the CLI plugin (`kubectl nodewright`, binary `kubectl-nodewright`). Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
+Rename status: the project is transitioning from Skyhook → NodeWright. Components already moved to `nodewright`: the install namespace (`nodewright` for new installs; existing installs stay in `skyhook` forever, since namespaces cannot be renamed in place), the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), the operator image (`ghcr.io/nvidia/nodewright/operator`), the agent image (`ghcr.io/nvidia/nodewright/agent`, since `agent/v6.4.2`), the primary CRD group (`nodewright.nvidia.com/v1alpha1 NodeWright`; the legacy `skyhook.nvidia.com` group is kept read-only for a migration window), and the CLI plugin (`kubectl nodewright`, binary `kubectl-nodewright`). Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
 
 ## Required reading: `docs/` (load every session)
 
@@ -100,7 +100,7 @@ E2E tests use [chainsaw](https://kyverno.github.io/chainsaw/) against a real clu
 
 ### CRDs (see `operator/api/v1alpha1/`)
 
-- **Skyhook** (namespaced) — desired state: a DAG of `packages` (container image + version + configMap + optional `dependsOn`), node selector, interruption budget, additional tolerations, runtime-required flag, priority/sequencing, optional `DeploymentPolicy` reference.
+- **Skyhook** / **NodeWright** (cluster-scoped) — desired state: a DAG of `packages` (container image + version + configMap + optional `dependsOn`), node selector, interruption budget, additional tolerations, runtime-required flag, priority/sequencing, optional `DeploymentPolicy` reference. Both CRDs are cluster-scoped, so the install namespace only ever determines where the operator and its package pods live, never which CRs a client sees.
 - **DeploymentPolicy** (cluster-scoped) — rollout shape: batch sizing, pause/resume windows, cross-Skyhook ordering.
 
 CRD types are kubebuilder-annotated (`//+kubebuilder:…`). Any change to these files **must** be followed by `make manifests generate` — the generated `zz_generated.deepcopy.go`, CRD YAML under `config/crd/bases/`, and webhook config are all consumed at build time.
@@ -288,6 +288,14 @@ When choosing between approaches, prioritize:
 - Partial failure is the steady state — nodes come and go, pods die, webhook certs rotate. Design for timeouts, bounded retries, and idempotent reconciles.
 - Observability is mandatory — structured `logr` messages, metrics via `controller/metrics.go`, events via the event recorder.
 - Boring first — prefer proven controller-runtime idioms over clever abstractions.
+
+## Issue and PR metadata (labels, type, priority)
+
+- **`.github/labels.yml` is the desired, closed set of labels.** It is the only source of truth, synced to GitHub with `make labels`. Because that sync creates and updates but never deletes, GitHub may currently carry undeclared extras; treat any label not defined in the file as one that should not exist, never as precedent for adding more.
+- **Never create a label.** No `gh label create`, no `gh issue create --label <something-new>`, no label creation through `gh api`. `make labels` does not prune, so a label invented once lingers on the repo forever until someone deletes it by hand. If a label you want is genuinely missing, add it to `.github/labels.yml` in a PR and stop there; do not create it on GitHub and backfill the file later.
+- **Priority is not a label.** It is a native GitHub issue Field (Urgent / High / Medium / Low) in the issue sidebar. **Maintainers set it during triage; agents and issue reporters do not set it at all.** Never apply `priority/*`, `P0` / `P1` / `P2`, or any severity label, and never write the Priority field from automation. If you think something is urgent, say so in the issue body and let a maintainer decide.
+- **Type is not a label either.** Bug / Enhancement / Documentation / Task / Epic / Initiative are native GitHub Issue Types, assigned by the issue forms via their `type:` key. `doc` is the one exception, and only because the PR path labeler applies it to docs-only PRs.
+- **When filing an issue, apply no labels yourself.** `.github/workflows/triage.yaml` adds `needs-triage` and infers `component/*` from the title and body; `.github/labeler.yml` handles PR path labels. Let that automation run rather than pre-labeling.
 
 ## Conventions and gotchas
 

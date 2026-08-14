@@ -66,6 +66,35 @@ control-plane: controller-manager
 {{- end }}
 
 {{/*
+Name of the webhook Service.
+
+Also handed to the operator as WEBHOOK_SERVICE_NAME: the operator mints the
+webhook serving certificate itself and puts this name in the SAN, so a Service
+named anything other than what the operator was told produces a cert the API
+server rejects. Truncated at 63 because a Service name is a DNS-1035 label.
+*/}}
+{{- define "chart.webhookServiceName" -}}
+{{- default (printf "%s-webhook-service" (include "chart.fullname" .)) .Values.webhook.serviceName | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Names of the webhook configurations.
+
+NOT handed to the operator: it discovers these objects by the
+nodewright.nvidia.com/webhook-config label, so their names are free to change.
+The names are still needed here because the manager ClusterRole scopes `update`
+to them by resourceNames, and the pre-delete cleanup job deletes them by name.
+Both render from these helpers, so they stay in lockstep with the objects.
+*/}}
+{{- define "chart.validatingWebhookName" -}}
+{{- printf "%s-validating-webhook" (include "chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "chart.mutatingWebhookName" -}}
+{{- printf "%s-mutating-webhook" (include "chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
 Create the name of the service account to use
 */}}
 {{- define "chart.serviceAccountName" -}}

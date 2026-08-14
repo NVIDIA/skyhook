@@ -4,6 +4,15 @@ metadata:
   name: nodewrights.nodewright.nvidia.com
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
+    ## The CRDs live in templates/ (not crds/) because they interpolate the
+    ## conversion-webhook Service name, so helm manages them as release resources
+    ## and would DELETE this one on any release operation that drops it from the
+    ## rendered manifest. `helm rollback` to a pre-rename revision does exactly
+    ## that, and the CRD delete cascades to every NodeWright object (#464).
+    ## `keep` only suppresses deletion; helm still creates and patches this CRD on
+    ## upgrade, so schema changes are unaffected. The cost is that uninstall
+    ## orphans it, which is the right trade against silent data loss.
+    "helm.sh/resource-policy": keep
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 spec:

@@ -102,7 +102,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "count(skyhook_status{status!=\"\"} == 1)",
+          "expr": "count(nodewright_status{status!=\"\"} == 1)",
           "instant": true,
           "legendFormat": "Total",
           "range": false,
@@ -164,7 +164,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"complete\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"complete\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Complete",
           "range": false,
@@ -226,7 +226,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"in_progress\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"in_progress\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "In Progress",
           "range": false,
@@ -288,7 +288,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"erroring\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"erroring\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Erroring",
           "range": false,
@@ -350,7 +350,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"blocked\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"blocked\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Blocked",
           "range": false,
@@ -412,7 +412,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "(sum(skyhook_status{status=\"waiting\"} == 1) or vector(0)) + (sum(skyhook_status{status=\"paused\"} == 1) or vector(0)) + (sum(skyhook_status{status=\"disabled\"} == 1) or vector(0)) + (sum(skyhook_status{status=\"unknown\"} == 1) or vector(0))",
+          "expr": "(sum(nodewright_status{status=\"waiting\"} == 1) or vector(0)) + (sum(nodewright_status{status=\"paused\"} == 1) or vector(0)) + (sum(nodewright_status{status=\"disabled\"} == 1) or vector(0)) + (sum(nodewright_status{status=\"unknown\"} == 1) or vector(0))",
           "instant": true,
           "legendFormat": "Other",
           "range": false,
@@ -603,7 +603,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"complete\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"complete\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Complete",
           "range": false,
@@ -611,7 +611,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"in_progress\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"in_progress\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "In Progress",
           "range": false,
@@ -619,7 +619,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"erroring\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"erroring\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Erroring",
           "range": false,
@@ -627,7 +627,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"blocked\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"blocked\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Blocked",
           "range": false,
@@ -635,7 +635,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"waiting\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"waiting\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Waiting",
           "range": false,
@@ -643,7 +643,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"paused\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"paused\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Paused",
           "range": false,
@@ -651,7 +651,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"disabled\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"disabled\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Disabled",
           "range": false,
@@ -659,7 +659,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"unknown\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"unknown\"} == 1) or vector(0)",
           "instant": true,
           "legendFormat": "Unknown",
           "range": false,
@@ -871,56 +871,56 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"complete\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"complete\"} == 1) or vector(0)",
           "legendFormat": "Complete",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"in_progress\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"in_progress\"} == 1) or vector(0)",
           "legendFormat": "In Progress",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"erroring\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"erroring\"} == 1) or vector(0)",
           "legendFormat": "Erroring",
           "range": true,
           "refId": "C"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"blocked\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"blocked\"} == 1) or vector(0)",
           "legendFormat": "Blocked",
           "range": true,
           "refId": "D"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"waiting\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"waiting\"} == 1) or vector(0)",
           "legendFormat": "Waiting",
           "range": true,
           "refId": "E"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"paused\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"paused\"} == 1) or vector(0)",
           "legendFormat": "Paused",
           "range": true,
           "refId": "F"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"disabled\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"disabled\"} == 1) or vector(0)",
           "legendFormat": "Disabled",
           "range": true,
           "refId": "G"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_status{status=\"unknown\"} == 1) or vector(0)",
+          "expr": "sum(nodewright_status{status=\"unknown\"} == 1) or vector(0)",
           "legendFormat": "Unknown",
           "range": true,
           "refId": "H"
@@ -1048,7 +1048,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "(skyhook_status{status=\"erroring\"} == 1) or\n(skyhook_status{status=\"blocked\"} == 1) or  \n(skyhook_status{status=\"paused\"} == 1) or\n(skyhook_status{status=\"disabled\"} == 1) or\n(skyhook_status{status=\"in_progress\"} == 1) or\n(skyhook_status{status=\"waiting\"} == 1) or\n(skyhook_status{status=\"complete\"} == 1)",
+          "expr": "(nodewright_status{status=\"erroring\"} == 1) or\n(nodewright_status{status=\"blocked\"} == 1) or  \n(nodewright_status{status=\"paused\"} == 1) or\n(nodewright_status{status=\"disabled\"} == 1) or\n(nodewright_status{status=\"in_progress\"} == 1) or\n(nodewright_status{status=\"waiting\"} == 1) or\n(nodewright_status{status=\"complete\"} == 1)",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -1076,13 +1076,13 @@
             },
             "includeByName": {},
             "indexByName": {
-              "skyhook_name": 0,
+              "nodewright_name": 0,
               "status": 1
             },
             "renameByName": {
               "namespace": "Namespace",
               "node": "Node",
-              "skyhook_name": "Skyhook Name",
+              "nodewright_name": "Skyhook Name",
               "status": "Issue Type"
             }
           }
@@ -1278,7 +1278,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "(skyhook_status{status=\"erroring\"} == 1) or\n(skyhook_status{status=\"blocked\"} == 1) or  \n(skyhook_status{status=\"paused\"} == 1) or\n(skyhook_status{status=\"disabled\"} == 1) or\n(skyhook_status{status=\"in_progress\"} == 1) or\n(skyhook_status{status=\"waiting\"} == 1) or\n(skyhook_status{status=\"complete\"} == 1)",
+          "expr": "(nodewright_status{status=\"erroring\"} == 1) or\n(nodewright_status{status=\"blocked\"} == 1) or  \n(nodewright_status{status=\"paused\"} == 1) or\n(nodewright_status{status=\"disabled\"} == 1) or\n(nodewright_status{status=\"in_progress\"} == 1) or\n(nodewright_status{status=\"waiting\"} == 1) or\n(nodewright_status{status=\"complete\"} == 1)",
           "format": "table",
           "instant": false,
           "legendFormat": "__auto",
@@ -1299,7 +1299,7 @@
                     "value": "${skyhook:regex}"
                   }
                 },
-                "fieldName": "skyhook_name"
+                "fieldName": "nodewright_name"
               }
             ],
             "match": "any",
@@ -1309,7 +1309,7 @@
         {
           "id": "groupingToMatrix",
           "options": {
-            "columnField": "skyhook_name",
+            "columnField": "nodewright_name",
             "rowField": "Time",
             "valueField": "status"
           }
@@ -1383,7 +1383,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_target_count{skyhook_name=~\"$skyhook\"}) or vector(0)",
+          "expr": "sum(nodewright_node_target_count{nodewright_name=~\"$skyhook\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Total Nodes",
           "range": false,
@@ -1445,7 +1445,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"complete\"}) or vector(0)",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"complete\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Complete Nodes",
           "range": false,
@@ -1507,7 +1507,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"in_progress\"}) or vector(0)",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"in_progress\"}) or vector(0)",
           "instant": true,
           "legendFormat": "In Progress Nodes",
           "range": false,
@@ -1569,7 +1569,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"erroring\"}) or vector(0)",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"erroring\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Problem Nodes",
           "range": false,
@@ -1631,7 +1631,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"blocked\"}) or vector(0)",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"blocked\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Complete Nodes",
           "range": false,
@@ -1693,7 +1693,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"waiting\"} or vector(0)) + \nsum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"paused\"} or vector(0)) + \nsum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"disabled\"} or vector(0)) + \nsum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"unknown\"} or vector(0))",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"waiting\"} or vector(0)) + \nsum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"paused\"} or vector(0)) + \nsum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"disabled\"} or vector(0)) + \nsum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"unknown\"} or vector(0))",
           "instant": true,
           "legendFormat": "Complete Nodes",
           "range": false,
@@ -1885,7 +1885,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"complete\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"complete\"})",
           "instant": true,
           "legendFormat": "Complete",
           "range": false,
@@ -1893,7 +1893,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"in_progress\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"in_progress\"})",
           "instant": true,
           "legendFormat": "In Progress",
           "range": false,
@@ -1901,7 +1901,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"erroring\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"erroring\"})",
           "instant": true,
           "legendFormat": "Erroring",
           "range": false,
@@ -1909,7 +1909,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"blocked\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"blocked\"})",
           "instant": true,
           "legendFormat": "Blocked",
           "range": false,
@@ -1917,7 +1917,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"waiting\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"waiting\"})",
           "instant": true,
           "legendFormat": "Waiting",
           "range": false,
@@ -1925,7 +1925,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"paused\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"paused\"})",
           "instant": true,
           "legendFormat": "Paused",
           "range": false,
@@ -1933,7 +1933,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"disabled\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"disabled\"})",
           "instant": true,
           "legendFormat": "Disabled",
           "range": false,
@@ -1941,7 +1941,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"unknown\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"unknown\"})",
           "instant": true,
           "legendFormat": "Unknown",
           "range": false,
@@ -2153,56 +2153,56 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"complete\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"complete\"})",
           "legendFormat": "Complete",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"in_progress\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"in_progress\"})",
           "legendFormat": "In Progress",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"erroring\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"erroring\"})",
           "legendFormat": "Erroring",
           "range": true,
           "refId": "C"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"blocked\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"blocked\"})",
           "legendFormat": "Blocked",
           "range": true,
           "refId": "D"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"waiting\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"waiting\"})",
           "legendFormat": "Waiting",
           "range": true,
           "refId": "E"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"paused\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"paused\"})",
           "legendFormat": "Paused",
           "range": true,
           "refId": "F"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"disabled\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"disabled\"})",
           "legendFormat": "Disabled",
           "range": true,
           "refId": "G"
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"unknown\"})",
+          "expr": "sum(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"unknown\"})",
           "legendFormat": "Unknown",
           "range": true,
           "refId": "H"
@@ -2331,7 +2331,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"erroring\"} > 0) or\n(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"blocked\"} > 0) or  \n(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"paused\"} > 0) or\n(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"disabled\"} > 0) or\n(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"in_progress\"} > 0) or\n(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"waiting\"} > 0) or\n(skyhook_node_status_count{skyhook_name=~\"$skyhook\", status=\"complete\"} > 0)",
+          "expr": "(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"erroring\"} > 0) or\n(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"blocked\"} > 0) or  \n(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"paused\"} > 0) or\n(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"disabled\"} > 0) or\n(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"in_progress\"} > 0) or\n(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"waiting\"} > 0) or\n(nodewright_node_status_count{nodewright_name=~\"$skyhook\", status=\"complete\"} > 0)",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -2372,13 +2372,13 @@
               "namespace": 12,
               "node": 0,
               "service": 13,
-              "skyhook_name": 1,
+              "nodewright_name": 1,
               "status": 2
             },
             "renameByName": {
               "namespace": "Namespace",
               "node": "Node",
-              "skyhook_name": "Skyhook Name",
+              "nodewright_name": "Skyhook Name",
               "status": "Issue Type"
             }
           }
@@ -2471,7 +2471,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_stage_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", stage=\"apply\"}) or vector(0)",
+          "expr": "sum(nodewright_package_stage_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", stage=\"apply\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Apply",
           "range": false,
@@ -2479,7 +2479,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_stage_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", stage=\"config\"}) or vector(0)",
+          "expr": "sum(nodewright_package_stage_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", stage=\"config\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Config",
           "range": false,
@@ -2487,7 +2487,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_stage_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", stage=\"interrupt\"}) or vector(0)",
+          "expr": "sum(nodewright_package_stage_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", stage=\"interrupt\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Interrupt",
           "range": false,
@@ -2495,7 +2495,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_stage_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", stage=\"post-interrupt\"}) or vector(0)",
+          "expr": "sum(nodewright_package_stage_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", stage=\"post-interrupt\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Post Interrupt",
           "range": false,
@@ -2503,7 +2503,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_stage_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", stage=\"uninstall\"}) or vector(0)",
+          "expr": "sum(nodewright_package_stage_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", stage=\"uninstall\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Uninstall",
           "range": false,
@@ -2511,7 +2511,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_stage_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", stage=\"upgrade\"}) or vector(0)",
+          "expr": "sum(nodewright_package_stage_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", stage=\"upgrade\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Upgrade",
           "range": false,
@@ -2657,7 +2657,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_state_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", state=\"complete\"}) or vector(0)",
+          "expr": "sum(nodewright_package_state_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", state=\"complete\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Complete",
           "range": false,
@@ -2665,7 +2665,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_state_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", state=\"in_progress\"}) or vector(0)",
+          "expr": "sum(nodewright_package_state_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", state=\"in_progress\"}) or vector(0)",
           "instant": true,
           "legendFormat": "In Progress",
           "range": false,
@@ -2673,7 +2673,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_state_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", state=\"erroring\"}) or vector(0)",
+          "expr": "sum(nodewright_package_state_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", state=\"erroring\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Erroring",
           "range": false,
@@ -2681,7 +2681,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_state_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", state=\"skipped\"}) or vector(0)",
+          "expr": "sum(nodewright_package_state_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", state=\"skipped\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Skipped",
           "range": false,
@@ -2689,7 +2689,7 @@
         },
         {
           "editorMode": "code",
-          "expr": "sum(skyhook_package_state_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\", state=\"unknown\"}) or vector(0)",
+          "expr": "sum(nodewright_package_state_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\", state=\"unknown\"}) or vector(0)",
           "instant": true,
           "legendFormat": "Unknown",
           "range": false,
@@ -2867,7 +2867,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "label_join(\n    skyhook_package_state_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\"} > 0,\n    \"join-key\", \"-\", \"skyhook_name\", \"package_name\"\n)",
+          "expr": "label_join(\n    nodewright_package_state_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\"} > 0,\n    \"join-key\", \"-\", \"nodewright_name\", \"package_name\"\n)",
           "format": "table",
           "instant": true,
           "legendFormat": "__auto",
@@ -2880,7 +2880,7 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "label_join(\n    skyhook_package_stage_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\"} > 0,\n    \"join-key\", \"-\", \"skyhook_name\", \"package_name\"\n)",
+          "expr": "label_join(\n    nodewright_package_stage_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\"} > 0,\n    \"join-key\", \"-\", \"nodewright_name\", \"package_name\"\n)",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -2895,7 +2895,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "label_join(\n    skyhook_package_restarts_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\"},\n    \"join-key\", \"-\", \"skyhook_name\", \"package_name\"\n)",
+          "expr": "label_join(\n    nodewright_package_restarts_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\"},\n    \"join-key\", \"-\", \"nodewright_name\", \"package_name\"\n)",
           "format": "table",
           "hide": false,
           "instant": true,
@@ -2971,9 +2971,9 @@
               "service 1": true,
               "service 2": true,
               "service 3": true,
-              "skyhook_name 1": false,
-              "skyhook_name 2": true,
-              "skyhook_name 3": true
+              "nodewright_name 1": false,
+              "nodewright_name 2": true,
+              "nodewright_name 3": true
             },
             "includeByName": {},
             "indexByName": {
@@ -3023,9 +3023,9 @@
               "service 1": 21,
               "service 2": 32,
               "service 3": 49,
-              "skyhook_name 1": 0,
-              "skyhook_name 2": 8,
-              "skyhook_name 3": 50,
+              "nodewright_name 1": 0,
+              "nodewright_name 2": 8,
+              "nodewright_name 3": 50,
               "stage": 6,
               "state": 7
             },
@@ -3047,9 +3047,9 @@
               "package_version": "Version",
               "package_version 1": "Package Version",
               "package_version 2": "",
-              "skyhook_name": "Skyhook",
-              "skyhook_name 1": "Skyhook",
-              "skyhook_name 2": "",
+              "nodewright_name": "Skyhook",
+              "nodewright_name 1": "Skyhook",
+              "nodewright_name 2": "",
               "stage": "Current Stage",
               "state": "Current State"
             }
@@ -3273,7 +3273,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "label_join(\n    skyhook_package_state_count{skyhook_name=~\"$skyhook\", package_name=~\"$package\"} > 0,\n    \"join-key\", \"-\", \"skyhook_name\", \"package_name\"\n)",
+          "expr": "label_join(\n    nodewright_package_state_count{nodewright_name=~\"$skyhook\", package_name=~\"$package\"} > 0,\n    \"join-key\", \"-\", \"nodewright_name\", \"package_name\"\n)",
           "format": "table",
           "instant": false,
           "legendFormat": "__auto",
@@ -3308,7 +3308,7 @@
           "text": "All",
           "value": "$__all"
         },
-        "definition": "label_values(skyhook_status,skyhook_name)",
+        "definition": "label_values(nodewright_status,nodewright_name)",
         "includeAll": true,
         "label": "Skyhook",
         "multi": true,
@@ -3316,7 +3316,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(skyhook_status,skyhook_name)",
+          "query": "label_values(nodewright_status,nodewright_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -3331,7 +3331,7 @@
           "text": "All",
           "value": "$__all"
         },
-        "definition": "label_values(skyhook_package_state_count{skyhook_name=~\"$skyhook\"},package_name)",
+        "definition": "label_values(nodewright_package_state_count{nodewright_name=~\"$skyhook\"},package_name)",
         "includeAll": true,
         "label": "Package",
         "multi": true,
@@ -3339,7 +3339,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(skyhook_package_state_count{skyhook_name=~\"$skyhook\"},package_name)",
+          "query": "label_values(nodewright_package_state_count{nodewright_name=~\"$skyhook\"},package_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,

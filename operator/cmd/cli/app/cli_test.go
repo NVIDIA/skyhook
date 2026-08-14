@@ -246,9 +246,14 @@ var _ = Describe("NodeWright CLI Tests", func() {
 		})
 	})
 
-	Describe("defaultNamespace constant", func() {
-		It("should be set to skyhook", func() {
-			Expect(context.DefaultNamespace).To(Equal("skyhook"))
+	Describe("default namespace", func() {
+		It("should be nodewright, with skyhook kept as the legacy fallback", func() {
+			Expect(utils.DefaultNamespace).To(Equal("nodewright"))
+			Expect(utils.LegacyDefaultNamespace).To(Equal("skyhook"))
+		})
+
+		It("should seed the --namespace flag default", func() {
+			Expect(context.NewGlobalFlags().Namespace()).To(Equal(utils.DefaultNamespace))
 		})
 	})
 })

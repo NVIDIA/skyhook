@@ -18,7 +18,7 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: simple-skyhook
     nodewright.nvidia.com/package: spencer-3.2.3
@@ -76,7 +76,7 @@ spec:
 kind: Pod
 apiVersion: v1
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: simple-skyhook
     nodewright.nvidia.com/package: foobar-1.2

@@ -21,4 +21,4 @@ kind: Node
 metadata:
   name: kind-worker
 spec:
-  (!taints || length(taints)==`0` || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true
+  (!taints || length(taints)==`0` || length(taints[?key == 'nodewright.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true

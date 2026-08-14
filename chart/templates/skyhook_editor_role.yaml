@@ -7,8 +7,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: {{ include "chart.name" . }}
+    app.kubernetes.io/part-of: {{ include "chart.name" . }}
   {{- include "chart.labels" . | nindent 4 }}
   name: skyhook-editor-role
 rules:

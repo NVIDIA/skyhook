@@ -387,13 +387,12 @@ func createPodFromPackage(opts SkyhookOperatorOptions, _package *v1alpha1.Packag
 			HostPID:     true,
 			HostNetwork: true,
 			// If you change these go change the SelectNode toleration in cluster_state.go
-			Tolerations: append([]corev1.Toleration{ // tolerate all cordon
+			Tolerations: append(append([]corev1.Toleration{ // tolerate all cordon
 				{
 					Key:      TaintUnschedulable,
 					Operator: corev1.TolerationOpExists,
 				},
-				opts.GetRuntimeRequiredToleration(),
-			}, skyhook.Spec.AdditionalTolerations...),
+			}, opts.GetRuntimeRequiredTolerations()...), skyhook.Spec.AdditionalTolerations...),
 		},
 	}
 	if opts.ImagePullSecret != "" {
@@ -505,13 +504,12 @@ func createInterruptPodForPackage(opts SkyhookOperatorOptions, _interrupt *v1alp
 			HostPID:     true,
 			HostNetwork: true,
 			// If you change these go change the SelectNode toleration in cluster_state.go
-			Tolerations: append([]corev1.Toleration{ // tolerate all cordon
+			Tolerations: append(append([]corev1.Toleration{ // tolerate all cordon
 				{
 					Key:      TaintUnschedulable,
 					Operator: corev1.TolerationOpExists,
 				},
-				opts.GetRuntimeRequiredToleration(),
-			}, skyhook.Spec.AdditionalTolerations...),
+			}, opts.GetRuntimeRequiredTolerations()...), skyhook.Spec.AdditionalTolerations...),
 			Volumes: volumes,
 		},
 	}

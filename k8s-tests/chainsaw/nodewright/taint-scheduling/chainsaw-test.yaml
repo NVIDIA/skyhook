@@ -53,7 +53,7 @@ spec:
         skipLogOutput: true
         content: |
           set -e
-          ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling
+          ../../metrics_test.py nodewright_node_target_count 1 -t nodewright_name=taint-scheduling
         outputs:
         - name: metricsToken
           value: ($stderr)
@@ -62,8 +62,8 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
-          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
-          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=blocked
+          ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=taint-scheduling -t status=blocked
+          ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=taint-scheduling -t status=blocked
     - patch:
         file: update-nodewright.yaml
     - assert:
@@ -74,9 +74,9 @@ spec:
           value: ($metricsToken)
         content: |
           set -e
-          ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=taint-scheduling
-          ../../metrics_test.py skyhook_node_status_count 1 -t skyhook_name=taint-scheduling -t status=complete
-          ../../metrics_test.py skyhook_node_status_count 0 -t skyhook_name=taint-scheduling -t status=blocked
+          ../../metrics_test.py nodewright_node_target_count 1 -t nodewright_name=taint-scheduling
+          ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=taint-scheduling -t status=complete
+          ../../metrics_test.py nodewright_node_status_count 0 -t nodewright_name=taint-scheduling -t status=blocked
     finally:
     - script:
         content: |

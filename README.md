@@ -76,13 +76,15 @@ Install NodeWright quickly using Helm without downloading the repository:
 # Helm 3.8+ supports OCI natively — no `helm repo add` needed.
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
   --version v0.17.1 \
-  --namespace skyhook \
+  --namespace nodewright \
   --create-namespace
 ```
 
 > **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`. NGC / `nvcr.io` distribution is paused — see [docs/release-process.md#distribution-ghcrio-only-for-now](docs/release-process.md#distribution-ghcrio-only-for-now).
 >
 > **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above. If you also want to keep the existing in-cluster release name (e.g. `skyhook`), substitute it for `nodewright` in the `helm install` command — the chart works either way.
+>
+> **Already installed in the `skyhook` namespace?** Stay there. The documented namespace for **new** installs moved from `skyhook` to `nodewright`, but Kubernetes namespaces cannot be renamed in place and Helm cannot move a release between namespaces, so there is nothing to migrate and no deadline. `kubectl nodewright` finds the operator in either namespace automatically. See [docs/nodewright-migration.md#install-namespace](docs/nodewright-migration.md#install-namespace-skyhook---nodewright).
 
 ### Configure Image Pull Secrets (if needed)
 
@@ -92,7 +94,7 @@ If you're using private container registries, create the necessary secrets:
 kubectl create secret generic node-init-secret \
   --from-file=.dockerconfigjson=${HOME}/.docker/config.json \
   --type=kubernetes.io/dockerconfigjson \
-  --namespace skyhook
+  --namespace nodewright
 ```
 
 **Note:** NodeWright currently uses a single shared image pull secret for all packages, and agent/operator containers. If you need access to multiple registries, combine the credentials into one `dockerconfigjson` secret with multiple registry auths.
@@ -101,16 +103,16 @@ kubectl create secret generic node-init-secret \
 
 ```bash
 # Check that the operator is running
-kubectl get pods -n skyhook
+kubectl get pods -n nodewright
 
 # or Wait for the deployment to be available first
-kubectl wait --for=condition=Available deployment -l control-plane=controller-manager -n skyhook --timeout=300s
+kubectl wait --for=condition=Available deployment -l control-plane=controller-manager -n nodewright --timeout=300s
 
 # Then wait for the operator pod to be ready
-kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n skyhook --timeout=300s
+kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n nodewright --timeout=300s
 
 # Verify the Ready condition
-kubectl get pods -l control-plane=controller-manager -n skyhook -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}'
+kubectl get pods -l control-plane=controller-manager -n nodewright -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}'
 
 # Verify the CRDs are installed
 kubectl get crd | grep nodewright
@@ -154,7 +156,7 @@ kubectl describe nodewright nodewright-sample
 
 ```bash
 # Uninstall the chart (cleanup happens automatically)
-helm uninstall nodewright --namespace skyhook
+helm uninstall nodewright --namespace nodewright
 ```
 
 The pre-delete hook will:
@@ -170,13 +172,13 @@ The pre-delete hook will:
 To disable automatic cleanup and manage resources manually:
 
 ```bash
-helm install nodewright ./chart --namespace skyhook --set cleanup.enabled=false
+helm install nodewright ./chart --namespace nodewright --set cleanup.enabled=false
 ```
 
 To adjust the job timeout:
 
 ```bash
-helm install nodewright ./chart --namespace skyhook \
+helm install nodewright ./chart --namespace nodewright \
   --set cleanup.jobTimeoutSeconds=180
 ```
 
@@ -193,7 +195,7 @@ kubectl delete deploymentpolicies.nodewright.nvidia.com --all
 kubectl delete deploymentpolicies --all
 
 # Then uninstall the chart
-helm uninstall nodewright --namespace skyhook
+helm uninstall nodewright --namespace nodewright
 ```
 
 **Why cleanup matters:** If you uninstall while NodeWright CRs with finalizers still exist, it can leave resources in a broken state that may cause reinstall issues.
@@ -203,7 +205,7 @@ helm uninstall nodewright --namespace skyhook
 ### Watch NodeWright apply packages
 
 ```
-kubectl get pods -w -n skyhook
+kubectl get pods -w -n nodewright
 ```
 There will be a pod for each lifecycle stage (apply, config, etc.) per package per node matching the selector.
 

@@ -23,6 +23,42 @@ If the cluster serves only the legacy `skyhook.nvidia.com` group and not
 naming both groups and telling you to upgrade to a NodeWright-capable operator,
 rather than a confusing `NotFound`.
 
+### Namespace resolution
+
+The install namespace for new deployments moved from `skyhook` to `nodewright` with
+the rename. Namespaces cannot be renamed in place, and Helm cannot move a release
+between namespaces, so an install that predates the rename legitimately stays in
+`skyhook` indefinitely. The CLI therefore does **not** simply default to
+`nodewright`.
+
+When `--namespace` is **not** passed, the CLI resolves the operator's namespace in
+this order and caches the answer for the invocation:
+
+1. `nodewright` — if a NodeWright operator Deployment is there, use it.
+2. `skyhook` — if the operator is there instead, use it and print a one-line note
+   to stderr saying the legacy namespace was used and that new installs default to
+   `nodewright`. Pass `--namespace skyhook` to silence the note.
+3. A cluster-wide Deployment sweep, for installs in some other namespace. This
+   needs cluster-scoped list permission; if you don't have it, the step is skipped
+   silently rather than failing.
+4. If nothing is found, `nodewright` is used so the command's own lookup produces
+   the specific error (for example, "no operator deployment found in namespace
+   \"nodewright\"").
+
+When `--namespace` **is** passed, it is used verbatim with no discovery and no
+note. Nothing else about the CLI is version-gated on this: the namespace is only
+used to locate the operator Deployment and the package pods.
+
+The `NodeWright` and `DeploymentPolicy` CRDs are cluster-scoped, so `--namespace`
+never affects which CRs a command sees.
+
+| Situation | `--namespace` omitted | `--namespace` passed |
+|-----------|----------------------|----------------------|
+| Operator in `nodewright` | ✅ Discovered | ✅ Used as given |
+| Operator in `skyhook` (pre-rename install) | ✅ Discovered, with a deprecation note | ✅ Used as given |
+| Operator in some other namespace | ✅ Discovered when the user can list Deployments cluster-wide, otherwise falls back to `nodewright` and the command reports the miss | ✅ Used as given |
+| No operator installed | ⚠️ Falls back to `nodewright`; the command reports the miss | ⚠️ Command reports the miss |
+
 ### Minimum Operator Version
 
 The CLI requires **operator version v0.8.0 or later** for full functionality of all commands.
@@ -116,7 +152,7 @@ kubectl nodewright [global-flags] <command> [subcommand] [flags] [arguments]
 
 - `-h, --help` - Show help for any command
 - `--version` - Show version information
-- `-n, --namespace` - Kubernetes namespace (default: "skyhook")
+- `-n, --namespace` - Kubernetes namespace the operator is installed in. When omitted, the CLI discovers it (see [Namespace resolution](#namespace-resolution)); the fallback default is `nodewright`.
 - `-o, --output` - Output format: table|json|yaml|wide
 - `-v, --verbose` - Enable verbose output
 - `--dry-run` - Preview changes without applying them
@@ -318,9 +354,15 @@ The one thing to rename by hand, if your manifest sets it, is the operator's own
 lifecycle annotations on the CR: `skyhook.nvidia.com/pause` and
 `skyhook.nvidia.com/disable` become `nodewright.nvidia.com/*`.
 
-Leave everything else alone. In particular the runtime-required **taint** key is
-the bare string `skyhook.nvidia.com` (no trailing slash) and did **not** move in
-the rename, so any `additionalTolerations` entry referencing it stays as-is.
+Leave everything else alone. In particular, do not rewrite the runtime-required
+**taint** key here: it is the bare string `skyhook.nvidia.com` (no trailing
+slash), so a blanket group swap would corrupt it, and the taint on a node is not
+something a CR manifest edit can change. The default key did move to
+`nodewright.nvidia.com`, but the operator tolerates and removes both keys for the
+deprecation window, so an `additionalTolerations` entry naming the legacy key
+stays valid. Migrating it is a change to your **provisioning** config (autoscaler,
+node pool, `--register-with-taints`), not to your CRs; see
+[docs/runtime_required.md](runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 The operator's mirror controller already converts the live objects in the
 cluster automatically; the edit above is only for the manifests in your source

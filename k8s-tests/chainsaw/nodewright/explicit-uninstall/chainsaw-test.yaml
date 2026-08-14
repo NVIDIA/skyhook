@@ -85,7 +85,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: explicit-uninstall
               nodewright.nvidia.com/package: mypkg-2.1.4
@@ -148,7 +148,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: explicit-uninstall
               nodewright.nvidia.com/interrupt: "True"

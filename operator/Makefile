@@ -31,7 +31,7 @@ LOCAL_REGISTRY ?= localhost:5005
 LOCAL_OPERATOR_IMG ?= $(LOCAL_REGISTRY)/skyhook-operator:testing
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
-SKYHOOK_NAMESPACE ?= skyhook
+SKYHOOK_NAMESPACE ?= nodewright
 METRICS_TEST_SERVICE_ACCOUNT ?= metrics-reader
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -323,8 +323,11 @@ push-local-image: docker-build ## Tag and push the locally-built operator image 
 
 .PHONY: rollout-local
 rollout-local: push-local-image ## push locally-built operator and restart the deployment
-	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout restart deployment -l app.kubernetes.io/name=skyhook-operator,control-plane=controller-manager
-	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout status deployment -l app.kubernetes.io/name=skyhook-operator,control-plane=controller-manager --timeout=60s
+	@# control-plane=controller-manager is the only label both install paths agree on:
+	@# the chart renders app.kubernetes.io/name=nodewright while the kustomize overlay
+	@# renders app.kubernetes.io/name=deployment (namePrefix renames resources, not labels).
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout restart deployment -l control-plane=controller-manager
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout status deployment -l control-plane=controller-manager --timeout=60s
 
 
 .PHONY: delete-kind-cluster
@@ -389,8 +392,8 @@ else
 DOCKER_AUTH_FILE=${HOME}/.config/containers/auth.json
 endif
 
-setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook namespace
-	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
+setup-kind-cluster: ## setup kind cluster with local docker creds and nodewright namespace
+	## sets you local $(DOCKER_CMD) creds into a secret in kind in the nodewright namespace
 	## Dual-labelled during the NodeWright rename: the skyhook and deployment-policy
 	## pools select nodewright.nvidia.com/test-node; the not-yet-migrated cli pool still
 	## selects skyhook.nvidia.com/test-node. Drop the skyhook label once the cli pool moves.

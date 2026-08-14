@@ -1,6 +1,8 @@
 ## Helm Tests
 
-This directory holds all the tests for the nodewright operator's helm chart. Right now this mainly ensures that tolerations set in the helm chart actually work and that the operator can be deployed successfully under another deployment name than skyhook-operator.
+This directory holds all the tests for the nodewright operator's helm chart. It covers template rendering, that tolerations and node affinity set in the chart actually take effect, that the admission webhooks reject invalid resources, and that the operator deploys successfully under an overridden name.
+
+`helm-upgrade-rename-test` is the odd one out: it installs the last pre-rename chart release (extracted from its git tag, the same way `k8s-tests/migration` does) and upgrades the working tree's chart over it. It exists because in-cluster resource names can only be renamed safely once, and a local render cannot reproduce the pre-rename objects that the upgrade has to clean up. It needs the checkout to have full history with tags (`fetch-depth: 0`, `fetch-tags: true`), which the CI `tests` job already sets.
 
 ## Test Image
 

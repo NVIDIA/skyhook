@@ -87,7 +87,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: runtime-required
               nodewright.nvidia.com/package: spencer-3.2.3
@@ -101,7 +101,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: runtime-required
               nodewright.nvidia.com/package: spencer-3.2.3
@@ -160,7 +160,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: runtime-required
               nodewright.nvidia.com/package: spencer-3.2.3
@@ -174,7 +174,7 @@ spec:
           apiVersion: v1
           kind: Pod
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: runtime-required
               nodewright.nvidia.com/package: spencer-3.2.3

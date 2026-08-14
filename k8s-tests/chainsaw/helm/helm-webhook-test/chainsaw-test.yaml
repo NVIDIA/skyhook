@@ -232,12 +232,12 @@ spec:
         resource:
           apiVersion: admissionregistration.k8s.io/v1
           kind: ValidatingWebhookConfiguration
-          name: skyhook-operator-validating-webhook
+          name: nodewright-validating-webhook
     - error:
         resource:
           apiVersion: admissionregistration.k8s.io/v1
           kind: MutatingWebhookConfiguration
-          name: skyhook-operator-mutating-webhook
+          name: nodewright-mutating-webhook
     finally:
     - script:
         content: |

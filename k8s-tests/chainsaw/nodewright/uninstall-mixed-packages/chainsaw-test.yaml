@@ -66,7 +66,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: uninstall-mixed-packages
               nodewright.nvidia.com/package: pkg-remove-2.1.4
