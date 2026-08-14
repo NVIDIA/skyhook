@@ -33,6 +33,7 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	//+kubebuilder:scaffold:imports
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimachineryruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -170,4 +171,17 @@ func waitForPolicyInWebhookCache(name string) {
 	Eventually(func() error {
 		return cachedClient.Get(ctx, types.NamespacedName{Name: name}, &DeploymentPolicy{})
 	}, "10s", "100ms").Should(Succeed())
+}
+
+// waitForNodeWrightGoneFromWebhookCache blocks until the manager's cache has observed that
+// the named NodeWright is deleted. Same race as waitForPolicyInWebhookCache, in the removal
+// direction: the DeploymentPolicy validating webhook lists NodeWrights through the cache, so
+// confirming the delete against the apiserver with k8sClient is not enough. The informer can
+// still return the object, and the policy delete is denied with "still referenced by 1
+// NodeWright(s)".
+func waitForNodeWrightGoneFromWebhookCache(name string) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		return apierrors.IsNotFound(cachedClient.Get(ctx, types.NamespacedName{Name: name}, &NodeWright{}))
+	}, "10s", "100ms").Should(BeTrue())
 }
