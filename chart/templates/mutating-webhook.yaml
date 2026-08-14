@@ -2,13 +2,18 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: skyhook-operator-mutating-webhook
+  name: {{ include "chart.mutatingWebhookName" . }}
+  labels:
+    ## The operator finds this object by this label, not by name, so renaming it
+    ## in the chart does not strand a running operator. Do not remove.
+    nodewright.nvidia.com/webhook-config: "true"
+  {{- include "chart.labels" . | nindent 4 }}
 webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
     service:
-      name: skyhook-operator-webhook-service
+      name: {{ include "chart.webhookServiceName" . }}
       namespace: {{ .Release.Namespace }}
       path: /mutate-skyhook-nvidia-com-v1alpha1-skyhook
       port: 443
@@ -36,7 +41,7 @@ webhooks:
   - v1
   clientConfig:
     service:
-      name: skyhook-operator-webhook-service
+      name: {{ include "chart.webhookServiceName" . }}
       namespace: {{ .Release.Namespace }}
       path: /mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy
       port: 443
@@ -64,7 +69,7 @@ webhooks:
   - v1
   clientConfig:
     service:
-      name: skyhook-operator-webhook-service
+      name: {{ include "chart.webhookServiceName" . }}
       namespace: {{ .Release.Namespace }}
       path: /mutate-nodewright-nvidia-com-v1alpha1-nodewright
       port: 443
@@ -91,7 +96,7 @@ webhooks:
   - v1
   clientConfig:
     service:
-      name: skyhook-operator-webhook-service
+      name: {{ include "chart.webhookServiceName" . }}
       namespace: {{ .Release.Namespace }}
       path: /mutate-nodewright-nvidia-com-v1alpha1-deploymentpolicy
       port: 443

@@ -209,7 +209,7 @@ prepare_metrics_access() {
   kubectl -n "$NAMESPACE" create serviceaccount "$METRICS_SERVICE_ACCOUNT" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   kubectl create clusterrolebinding scale-test-metrics-reader-access \
-    --clusterrole=skyhook-operator-metrics-reader \
+    --clusterrole=nodewright-metrics-reader \
     --serviceaccount="${NAMESPACE}:${METRICS_SERVICE_ACCOUNT}" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }

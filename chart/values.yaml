@@ -139,8 +139,11 @@ estimatedNodeCount: 1
 webhook:
   ## secretName: name of the secret to store the webhook certificate
   secretName: webhook-cert
-  ## serviceName: name of the service to expose the webhook
-  serviceName: skyhook-operator-webhook-service
+  ## serviceName: name of the service to expose the webhook.
+  ## Empty derives it from the chart fullname (`<fullname>-webhook-service`). The
+  ## operator is handed this name as WEBHOOK_SERVICE_NAME so its self-signed
+  ## serving cert carries the matching SAN; overriding it renames both together.
+  serviceName: ""
   ## enable: "true" will enable the webhook setup in the operator controller.
   ## Default is "true" and is required for production.
   enable: true
@@ -162,11 +165,15 @@ cleanup:
   ## The job will be killed if it exceeds this time.
   jobTimeoutSeconds: 120
 
-## selectorMigration: pre-upgrade hook that repairs an immutable Deployment
-## selector left over from an older chart (e.g. the skyhook-operator ->
-## nodewright rename). It deletes the controller-manager Deployment ONLY when
-## its live selector does not match the chart's desired selector, so helm can
-## recreate it. It is a no-op on normal upgrades.
+## selectorMigration: pre-upgrade hook for the upgrade states helm cannot patch
+## in place. It deletes the controller-manager Deployment, so helm recreates it,
+## and ONLY when one of these holds:
+##   - the live Deployment's selector does not match the chart's desired selector
+##     (spec.selector is immutable, e.g. across the skyhook-operator -> nodewright
+##     chart rename), or
+##   - the live operator predates label-based webhook discovery, which would
+##     otherwise deadlock the rollout when the webhook configurations are renamed.
+## It is a no-op on normal upgrades.
 selectorMigration:
   ## enabled: When true, run the selector-migration pre-upgrade hook. Safe to
   ## leave on; disable if your GitOps tooling manages the Deployment directly.

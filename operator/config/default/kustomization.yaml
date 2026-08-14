@@ -20,12 +20,9 @@ namespace: nodewright-operator-system
 # Value of this field is prepended to the
 # names of all resources, e.g. a deployment named
 # "wordpress" becomes "alices-wordpress".
-# The kubebuilder convention is for this to match the prefix of the namespace field
-# above; it deliberately does not right now. Renaming the in-cluster resource names is
-# a separate, riskier change than renaming the namespace (see #285: the last one broke
-# `helm upgrade` on the immutable Deployment selector), so the namespace moved to
-# nodewright first and the resource names still lag.
-namePrefix: skyhook-operator-
+# Kept in sync with the Helm chart, where the same names come from
+# `chart.fullname` and render `nodewright-*` by default (#440).
+namePrefix: nodewright-
 
 # Labels to add to all resources and selectors.
 #labels:

@@ -20,6 +20,8 @@ package controller
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,17 +32,22 @@ import (
 	. "github.com/onsi/gomega"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var _ = Describe("WebhookController", Ordered, func() {
 	var (
-		secretName  string
-		namespace   string
-		serviceName string
-		tmpDir      string
-		cachedCert  *webhookCert
+		secretName           string
+		namespace            string
+		serviceName          string
+		validatingConfigName string
+		mutatingConfigName   string
+		tmpDir               string
+		cachedCert           *webhookCert
 	)
 
 	BeforeAll(func() {
@@ -62,6 +69,8 @@ var _ = Describe("WebhookController", Ordered, func() {
 		secretName = "test-webhook-secret"
 		namespace = "test-namespace"
 		serviceName = "test-service"
+		validatingConfigName = "test-validating-webhook"
+		mutatingConfigName = "test-mutating-webhook"
 	})
 
 	Describe("generateCert", func() {
@@ -101,31 +110,143 @@ var _ = Describe("WebhookController", Ordered, func() {
 		})
 	})
 
-	Describe("webhookValidatingWebhookConfiguration", func() {
-		It("should create a ValidatingWebhookConfiguration with the correct CABundle", func() {
-			secret := &corev1.Secret{
-				Data: map[string][]byte{
-					"ca.crt": cachedCert.CABytes,
-				},
-			}
-			conf := webhookValidatingWebhookConfiguration(namespace, serviceName, secret)
-			Expect(conf).ToNot(BeNil())
-			Expect(conf.Webhooks).ToNot(BeEmpty())
-			Expect(conf.Webhooks[0].ClientConfig.CABundle).To(Equal(cachedCert.CABytes))
-		})
-	})
+	Describe("owned webhook configuration discovery", func() {
+		var controller *WebhookController
 
-	Describe("webhookMutatingWebhookConfiguration", func() {
-		It("should create a MutatingWebhookConfiguration with the correct CABundle", func() {
-			secret := &corev1.Secret{
-				Data: map[string][]byte{
-					"ca.crt": cachedCert.CABytes,
+		BeforeEach(func() {
+			controller = &WebhookController{namespace: namespace, opts: WebhookControllerOptions{SecretName: secretName, ServiceName: serviceName}}
+		})
+
+		It("finds configurations by label regardless of their name", func() {
+			controller.Client = fake.NewClientBuilder().WithObjects(
+				validatingWebhookConfig("any-name-at-all", namespace, serviceName, nil),
+				mutatingWebhookConfig("some-other-name", namespace, serviceName, nil),
+			).Build()
+
+			validating, err := controller.ownedValidatingWebhookConfigurations(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(validating).To(HaveLen(1))
+			Expect(validating[0].Name).To(Equal("any-name-at-all"))
+
+			mutating, err := controller.ownedMutatingWebhookConfigurations(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mutating).To(HaveLen(1))
+			Expect(mutating[0].Name).To(Equal("some-other-name"))
+		})
+
+		It("ignores configurations that target another namespace", func() {
+			// The webhook configurations are cluster-scoped, so a second install elsewhere
+			// matches the same label; without the namespace filter the two operators would
+			// overwrite each other's caBundle.
+			controller.Client = fake.NewClientBuilder().WithObjects(
+				validatingWebhookConfig("ours", namespace, serviceName, nil),
+				validatingWebhookConfig("theirs", "other-namespace", serviceName, nil),
+			).Build()
+
+			validating, err := controller.ownedValidatingWebhookConfigurations(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(validating).To(HaveLen(1))
+			Expect(validating[0].Name).To(Equal("ours"))
+		})
+
+		It("ignores configurations that dial a different Service in the same namespace", func() {
+			// Two installs can share a namespace. The caBundle only signs the cert for
+			// r.opts.ServiceName, so injecting it into a configuration that dials another
+			// Service would break that Service's admission rather than just being untidy.
+			controller.Client = fake.NewClientBuilder().WithObjects(
+				validatingWebhookConfig("ours", namespace, serviceName, nil),
+				validatingWebhookConfig("theirs", namespace, "someone-elses-webhook-service", nil),
+			).Build()
+
+			validating, err := controller.ownedValidatingWebhookConfigurations(context.Background())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(validating).To(HaveLen(1))
+			Expect(validating[0].Name).To(Equal("ours"))
+
+			changed, err := controller.updateValidatingWebhookConfiguration(context.Background(), cachedCert.CABytes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(changed).To(BeTrue())
+
+			theirs := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+			Expect(controller.Get(context.Background(), types.NamespacedName{Name: "theirs"}, theirs)).To(Succeed())
+			Expect(theirs.Webhooks[0].ClientConfig.CABundle).To(BeEmpty())
+		})
+
+		It("ignores configurations without the marker label", func() {
+			unlabelled := validatingWebhookConfig("unlabelled", namespace, serviceName, nil)
+			unlabelled.Labels = nil
+			controller.Client = fake.NewClientBuilder().WithObjects(unlabelled).Build()
+
+			_, err := controller.ownedValidatingWebhookConfigurations(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("creation is handled by the Helm chart"))
+		})
+
+		It("leaves a foreign webhook inside an owned configuration alone", func() {
+			// Ownership is claimed per configuration when ANY webhook dials our Service,
+			// but the caBundle only signs that one Service's cert, so a sibling webhook
+			// pointing elsewhere must not be written. Mutation scope has to match the
+			// scope that decided ownership.
+			conf := validatingWebhookConfig("mixed", namespace, serviceName, nil)
+			conf.Webhooks = append(conf.Webhooks, admissionregistrationv1.ValidatingWebhook{
+				Name: "foreign.example.com",
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{Name: "someone-elses-svc", Namespace: namespace},
 				},
+			})
+			controller.Client = fake.NewClientBuilder().WithObjects(conf).Build()
+
+			_, err := controller.updateValidatingWebhookConfiguration(context.Background(), cachedCert.CABytes)
+			Expect(err).NotTo(HaveOccurred())
+
+			got := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+			Expect(controller.Get(context.Background(), types.NamespacedName{Name: "mixed"}, got)).To(Succeed())
+			Expect(got.Webhooks[0].ClientConfig.CABundle).To(Equal(cachedCert.CABytes), "our webhook gets the CA")
+			Expect(got.Webhooks[1].ClientConfig.CABundle).To(BeEmpty(), "the foreign webhook must be untouched")
+		})
+
+		It("annotates a Forbidden update with the RBAC coupling that causes it", func() {
+			// Label discovery removes the name coupling from the lookup but not from the
+			// manager ClusterRole's resourceNames, so this is the one drift that can still
+			// happen. The bare apierror says nothing about why.
+			forbidden := apierrors.NewForbidden(
+				schema.GroupResource{Group: "admissionregistration.k8s.io", Resource: "validatingwebhookconfigurations"},
+				"renamed-config", fmt.Errorf("not allowed"))
+
+			err := updateWebhookConfigurationsErr("ValidatingWebhookConfiguration", "renamed-config", forbidden)
+			Expect(err.Error()).To(ContainSubstring("resourceNames"))
+			Expect(err.Error()).To(ContainSubstring("renamed-config"))
+			Expect(apierrors.IsForbidden(err)).To(BeTrue(), "the apierror must stay unwrapped-detectable")
+		})
+
+		It("injects the CA into every owned configuration, not just the first", func() {
+			// A chart upgrade that renames a configuration leaves both the old and the new
+			// object present for a moment; patching only one leaves the other failing closed.
+			controller.Client = fake.NewClientBuilder().WithObjects(
+				validatingWebhookConfig("old-name", namespace, serviceName, nil),
+				validatingWebhookConfig("new-name", namespace, serviceName, nil),
+				mutatingWebhookConfig("mutating", namespace, serviceName, nil),
+			).Build()
+
+			changed, err := controller.updateValidatingWebhookConfiguration(context.Background(), cachedCert.CABytes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(changed).To(BeTrue())
+
+			for _, name := range []string{"old-name", "new-name"} {
+				conf := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+				Expect(controller.Get(context.Background(), types.NamespacedName{Name: name}, conf)).To(Succeed())
+				Expect(conf.Webhooks[0].ClientConfig.CABundle).To(Equal(cachedCert.CABytes))
 			}
-			conf := webhookMutatingWebhookConfiguration(namespace, serviceName, secret)
-			Expect(conf).ToNot(BeNil())
-			Expect(conf.Webhooks).ToNot(BeEmpty())
-			Expect(conf.Webhooks[0].ClientConfig.CABundle).To(Equal(cachedCert.CABytes))
+
+			// The mutating path carries the same loop, so cover it here rather than
+			// leaving the fixture's mutating configuration asserted-on-by-nobody.
+			changed, err = controller.updateMutatingWebhookConfiguration(context.Background(), cachedCert.CABytes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(changed).To(BeTrue())
+
+			mut := &admissionregistrationv1.MutatingWebhookConfiguration{}
+			Expect(controller.Get(context.Background(), types.NamespacedName{Name: "mutating"}, mut)).To(Succeed())
+			Expect(mut.Webhooks[0].ClientConfig.CABundle).To(Equal(cachedCert.CABytes))
 		})
 	})
 
@@ -440,8 +561,8 @@ var _ = Describe("WebhookController", Ordered, func() {
 
 		It("should return nil when all checks pass", func() {
 			// Create webhook configurations
-			validatingWebhook := webhookValidatingWebhookConfiguration(namespace, serviceName, secret)
-			mutatingWebhook := webhookMutatingWebhookConfiguration(namespace, serviceName, secret)
+			validatingWebhook := validatingWebhookConfig(validatingConfigName, namespace, serviceName, secret.Data["ca.crt"])
+			mutatingWebhook := mutatingWebhookConfig(mutatingConfigName, namespace, serviceName, secret.Data["ca.crt"])
 
 			// Add webhook configurations to the fake client
 			controller.Client = fake.NewClientBuilder().
@@ -477,10 +598,39 @@ var _ = Describe("WebhookController", Ordered, func() {
 			Expect(err.Error()).To(ContainSubstring("not ready"))
 		})
 
+		It("should return error when a NON-FIRST webhook has a stale CA bundle", func() {
+			// The API server dials each webhook independently, so a first-entry-only
+			// readiness check reports the pod ready while later webhooks reject everything.
+			stale, err := generateCert("stale-service", namespace, 24*time.Hour)
+			Expect(err).NotTo(HaveOccurred())
+
+			validatingWebhook := validatingWebhookConfig(validatingConfigName, namespace, serviceName, secret.Data["ca.crt"])
+			validatingWebhook.Webhooks = append(validatingWebhook.Webhooks, admissionregistrationv1.ValidatingWebhook{
+				Name: deploymentPolicyValidatingWebhookName,
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service:  &admissionregistrationv1.ServiceReference{Name: serviceName, Namespace: namespace},
+					CABundle: stale.CABytes,
+				},
+			})
+			mutatingWebhook := mutatingWebhookConfig(mutatingConfigName, namespace, serviceName, secret.Data["ca.crt"])
+
+			controller.Client = fake.NewClientBuilder().
+				WithObjects(secret, validatingWebhook, mutatingWebhook).
+				Build()
+
+			err = writeCertAndKey(secret.Data["tls.crt"], secret.Data["tls.key"], tmpDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = controller.WebhookSecretReadyzCheck(nil)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(deploymentPolicyValidatingWebhookName))
+		})
+
 		It("should return error when webhook configurations are missing", func() {
 			err := controller.WebhookSecretReadyzCheck(nil)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
+			Expect(err.Error()).To(ContainSubstring("no ValidatingWebhookConfiguration labelled"))
+			Expect(err.Error()).To(ContainSubstring("creation is handled by the Helm chart"))
 		})
 
 		It("should return error when webhook configuration CA bundle doesn't match", func() {
@@ -491,8 +641,8 @@ var _ = Describe("WebhookController", Ordered, func() {
 			secretWithDifferentCA := secret.DeepCopy()
 			secretWithDifferentCA.Data["ca.crt"] = differentCert.CABytes
 
-			validatingWebhook := webhookValidatingWebhookConfiguration(namespace, serviceName, secretWithDifferentCA)
-			mutatingWebhook := webhookMutatingWebhookConfiguration(namespace, serviceName, secretWithDifferentCA)
+			validatingWebhook := validatingWebhookConfig(validatingConfigName, namespace, serviceName, secretWithDifferentCA.Data["ca.crt"])
+			mutatingWebhook := mutatingWebhookConfig(mutatingConfigName, namespace, serviceName, secretWithDifferentCA.Data["ca.crt"])
 
 			controller.Client = fake.NewClientBuilder().
 				WithObjects(secret, validatingWebhook, mutatingWebhook).
@@ -563,5 +713,87 @@ var _ = Describe("WebhookController", Ordered, func() {
 			Expect(updated).To(BeTrue())
 
 		})
+
+		It("should remint the certificate when the webhook Service has been renamed", func() {
+			// The cert Secret is operator-owned, not chart-owned, so it survives a chart
+			// upgrade that renames the webhook Service. A long-lived cert carrying the old
+			// SAN would then be reused and the API server would reject the webhook call with
+			// an x509 error until the cert expired.
+			cert, err := generateCert("old-webhook-service", namespace, certValidityDurationYear)
+			Expect(err).NotTo(HaveOccurred())
+
+			secret := cert.ToSecret(secretName, namespace, "old-webhook-service")
+			controller.Client = fake.NewClientBuilder().WithObjects(secret).Build()
+
+			err = writeCertAndKey([]byte(cert.TLSCert), []byte(cert.TLSKey), tmpDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			updated, err := controller.CheckOrUpdateWebhookCertSecret(context.Background(), secret)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue())
+			Expect(secret.Annotations[serviceAnnotationKey]).To(Equal(serviceName))
+
+			block, _ := pem.Decode(secret.Data["tls.crt"])
+			Expect(block).NotTo(BeNil())
+			parsed, err := x509.ParseCertificate(block.Bytes)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(parsed.DNSNames).To(ConsistOf(
+				fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace),
+				fmt.Sprintf("%s.%s.svc", serviceName, namespace),
+			))
+		})
+
+		It("should not remint the certificate when nothing has changed", func() {
+			cert, err := generateCert(serviceName, namespace, certValidityDurationYear)
+			Expect(err).NotTo(HaveOccurred())
+
+			secret := cert.ToSecret(secretName, namespace, serviceName)
+			controller.Client = fake.NewClientBuilder().WithObjects(secret).Build()
+
+			err = writeCertAndKey([]byte(cert.TLSCert), []byte(cert.TLSKey), tmpDir)
+			Expect(err).NotTo(HaveOccurred())
+
+			updated, err := controller.CheckOrUpdateWebhookCertSecret(context.Background(), secret)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeFalse())
+		})
 	})
 })
+
+// validatingWebhookConfig builds a chart-shaped ValidatingWebhookConfiguration: carrying the
+// marker label the operator selects on, and pointing its clientConfig at a Service in
+// namespace. The name is a free parameter precisely because the operator must not care
+// about it.
+func validatingWebhookConfig(name, namespace, serviceName string, caBundle []byte) *admissionregistrationv1.ValidatingWebhookConfiguration {
+	return &admissionregistrationv1.ValidatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: map[string]string{webhookConfigLabelKey: "true"},
+		},
+		Webhooks: []admissionregistrationv1.ValidatingWebhook{{
+			Name: skyhookValidatingWebhookName,
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				Service:  &admissionregistrationv1.ServiceReference{Name: serviceName, Namespace: namespace},
+				CABundle: caBundle,
+			},
+			Rules: skyhookRules(),
+		}},
+	}
+}
+
+func mutatingWebhookConfig(name, namespace, serviceName string, caBundle []byte) *admissionregistrationv1.MutatingWebhookConfiguration {
+	return &admissionregistrationv1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   name,
+			Labels: map[string]string{webhookConfigLabelKey: "true"},
+		},
+		Webhooks: []admissionregistrationv1.MutatingWebhook{{
+			Name: skyhookMutatingWebhookName,
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				Service:  &admissionregistrationv1.ServiceReference{Name: serviceName, Namespace: namespace},
+				CABundle: caBundle,
+			},
+			Rules: skyhookRules(),
+		}},
+	}
+}

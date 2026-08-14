@@ -29,3 +29,12 @@ fi
 
 ## remove operator
 ${HELM} delete $OPERATOR_NAME -n nodewright
+
+## The nodewright CRDs carry helm.sh/resource-policy: keep so a `helm rollback` cannot
+## cascade-delete every NodeWright (#464), which means `helm delete` deliberately leaves
+## them behind still stamped meta.helm.sh/release-name=$OPERATOR_NAME. Tests in this
+## directory share one namespace but install under DIFFERENT release names, so the next
+## test's install would fail with "invalid ownership metadata". Drop them here: keeping
+## them is a production guarantee, not a test-fixture one.
+kubectl delete crd nodewrights.nodewright.nvidia.com \
+    deploymentpolicies.nodewright.nvidia.com --ignore-not-found --timeout=120s

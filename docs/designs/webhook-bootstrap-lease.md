@@ -95,6 +95,34 @@ the dedicated bootstrap lease: a new pod can win
 who holds the main reconcile lease. Readiness flips green, Service endpoints
 rotate, the rollout completes.
 
+### Corollary: never look the webhook configurations up by name
+
+The dedicated lease only helps when a new pod can *win* it. It cannot help when the
+old pod is alive, holding the bootstrap lease, and stuck — which is exactly what a
+name-based lookup of the webhook configurations produces the moment those objects are
+renamed:
+
+1. The chart renames `{Validating,Mutating}WebhookConfiguration`.
+2. The old pod's `WebhookController` hard-errors on `... not found`, so its readiness
+   probe never goes green.
+3. The rolling update will not terminate an un-Ready old pod, so the old pod keeps
+   renewing the bootstrap lease.
+4. The new pod stays a follower, never mints the cert, never patches the caBundle.
+   `helm upgrade` fails with `Pending termination`, and the release stays wedged.
+
+The operator therefore selects these objects by the
+`nodewright.nvidia.com/webhook-config` label (filtered to configurations whose
+`clientConfig` dials its own webhook Service, since the caBundle it injects only
+signs that Service's certificate) and patches every match, so a rename is
+invisible to it. **Do not reintroduce a name-based lookup.** The chart must keep
+applying that label.
+
+This makes *future* renames safe. It could not save the one upgrade that introduced it
+(the operator already running was the name-based one), so the chart's
+`selectorMigration` pre-upgrade hook detects a pre-label-discovery operator — the live
+Deployment has no `WEBHOOK_SERVICE_NAME` env var — and deletes the Deployment so Helm
+recreates it.
+
 ### What this does NOT fix
 
 This design **cannot** retroactively fix the v0.7.x → v0.15.x upgrade
@@ -113,6 +141,10 @@ kubectl -n "$NS" delete pod <old-pod-1> <old-pod-2>                         # fr
 kubectl -n "$NS" delete lease 3c22c1ae.nvidia.com
 
 # Verify recovery:
+# The object names below are the pre-rename ones, which is what a v0.7.x-era install has.
+# On a chart from the resource-name rename onward they are nodewright-*; select the webhook
+# configuration by label instead of by name there:
+#   kubectl get mutatingwebhookconfiguration -l nodewright.nvidia.com/webhook-config
 kubectl -n "$NS" get secret webhook-cert -w
 kubectl get mutatingwebhookconfiguration skyhook-operator-mutating-webhook \
   -o jsonpath='{.webhooks[0].clientConfig.caBundle}' | wc -c                # must be > 0

@@ -14,19 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  labels:
-    app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/instance: metrics-reader
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/created-by: nodewright
-    app.kubernetes.io/part-of: nodewright
-    app.kubernetes.io/managed-by: kustomize
-  name: metrics-reader
-rules:
-- nonResourceURLs:
-  - /metrics
-  verbs:
-  - get
+## This upgrade has to land the locally-built operator image alongside the chart:
+## the pre-#440 operator looks its webhook configurations up by name, so it cannot
+## reach the renamed ones, while the new operator finds them by the
+## nodewright.nvidia.com/webhook-config label.
+## install-helm-chart.sh overrides the image from LOCAL_OPERATOR_IMG.
+controllerManager:
+  ## One replica keeps the post-upgrade rollout deterministic; the rename gap
+  ## this test measures is about object names, not replica count.
+  replicas: 1
+  podDisruptionBudget:
+    minAvailable: 0
+webhook:
+  enable: true
