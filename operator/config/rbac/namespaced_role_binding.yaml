@@ -21,8 +21,8 @@ metadata:
     app.kubernetes.io/name: rolebinding
     app.kubernetes.io/instance: manager-namespaced-rolebinding
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
   name: manager-namespaced-rolebinding
   namespace: system
