@@ -1,8 +1,7 @@
 # NodeWright (formerly Skyhook)
 
-[![Pipeline Status](https://github.com/NVIDIA/skyhook/actions/workflows/operator-ci.yaml/badge.svg)](https://github.com/NVIDIA/skyhook/actions/workflows/operator-ci.yaml)
-[![Coverage Status](https://coveralls.io/repos/github/NVIDIA/skyhook/badge.svg)](https://coveralls.io/github/NVIDIA/skyhook)
-[![Go Report Card](https://goreportcard.com/badge/github.com/NVIDIA/nodewright/operator)](https://goreportcard.com/report/github.com/NVIDIA/nodewright/operator)
+[![Pipeline Status](https://github.com/NVIDIA/nodewright/actions/workflows/operator-ci.yaml/badge.svg)](https://github.com/NVIDIA/nodewright/actions/workflows/operator-ci.yaml)
+[![Coverage Status](https://coveralls.io/repos/github/NVIDIA/nodewright/badge.svg)](https://coveralls.io/github/NVIDIA/nodewright)
 
 **NodeWright** is a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying host declaratively at scale.
 
@@ -333,7 +332,7 @@ Please report security vulnerabilities through [NVIDIA's Security Vulnerability 
 ## Support
 
 - **Support Level:** Maintained
-- **How to get help:** [GitHub Issues](https://github.com/NVIDIA/skyhook/issues) | [GitHub Discussions](https://github.com/NVIDIA/skyhook/discussions)
+- **How to get help:** [GitHub Issues](https://github.com/NVIDIA/nodewright/issues)
 - See [SUPPORT.md](SUPPORT.md) for more details.
 
 ## License

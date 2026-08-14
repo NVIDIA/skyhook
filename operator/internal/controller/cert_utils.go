@@ -63,10 +63,72 @@ func (c *webhookCert) ToSecret(name, namespace, serviceName string) *corev1.Secr
 	return secret
 }
 
-// generateCert generates a new CA and a new cert signed by the CA.
+// legacyWebhookServiceName is the webhook Service name used by every release before the
+// skyhook-operator -> nodewright resource rename (#440).
+//
+// RENAME-SHIM: the serving cert carries a SAN for this name as well as the current one.
+// Secret/webhook-cert is operator-owned, so it survives a `helm rollback` to a pre-rename
+// release, and the operator on that side has no remint-on-Service-change check to fix a
+// SAN that no longer matches the Service the API server dials. A single-name cert
+// therefore fails admission closed with x509 for the year it stays valid. Delete this and
+// the extra SAN when the rename window closes; expectedDNSNames then reduces to the
+// current Service alone and every existing cert is reminted by the SAN check below.
+const legacyWebhookServiceName = "skyhook-operator-webhook-service"
+
+// expectedDNSNames is the SAN set a serving cert for serviceName must carry. Single
+// source of truth for minting and for deciding whether an existing cert is still usable.
+func expectedDNSNames(serviceName, namespace string) []string {
+	names := []string{
+		fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace),
+		fmt.Sprintf("%s.%s.svc", serviceName, namespace),
+	}
+	if serviceName != legacyWebhookServiceName {
+		names = append(names,
+			fmt.Sprintf("%s.%s.svc.cluster.local", legacyWebhookServiceName, namespace),
+			fmt.Sprintf("%s.%s.svc", legacyWebhookServiceName, namespace),
+		)
+	}
+	return names
+}
+
+// certCoversDNSNames reports whether the leaf certificate in certPEM carries every name in
+// want. Read from the certificate rather than from the Secret's service annotation: the
+// annotation records what the minting operator intended, the SANs are what the API server
+// actually validates, and only the latter is authoritative when the two disagree (an older
+// operator wrote the Secret, or the expected set itself changed between versions).
+func certCoversDNSNames(certPEM []byte, want []string) (bool, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return false, fmt.Errorf("no PEM data in certificate")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, fmt.Errorf("parsing certificate: %w", err)
+	}
+
+	have := make(map[string]struct{}, len(cert.DNSNames))
+	for _, name := range cert.DNSNames {
+		have[name] = struct{}{}
+	}
+	for _, name := range want {
+		if _, ok := have[name]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// generateCert generates a new CA and a new cert signed by the CA, valid for the SANs a
+// serving cert for serviceName must carry.
+func generateCert(serviceName, namespace string, duration time.Duration) (*webhookCert, error) {
+	return generateCertWithDNSNames(expectedDNSNames(serviceName, namespace), duration)
+}
+
+// generateCertWithDNSNames generates a new CA and a new cert signed by the CA.
 // The CA is valid for the given duration.
 // The cert is valid for the given duration and has the given DNS names.
-func generateCert(serviceName, namespace string, duration time.Duration) (*webhookCert, error) {
+func generateCertWithDNSNames(dnsNames []string, duration time.Duration) (*webhookCert, error) {
 
 	// create a new CA
 	serialNumber, err := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
@@ -117,9 +179,8 @@ func generateCert(serviceName, namespace string, duration time.Duration) (*webho
 		return nil, err
 	}
 
-	dnsNames := []string{
-		fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace),
-		fmt.Sprintf("%s.%s.svc", serviceName, namespace),
+	if len(dnsNames) == 0 {
+		return nil, fmt.Errorf("at least one DNS name is required")
 	}
 	cert := &x509.Certificate{
 		SerialNumber: serialNumber,

@@ -123,6 +123,62 @@ This makes *future* renames safe. It could not save the one upgrade that introdu
 Deployment has no `WEBHOOK_SERVICE_NAME` env var — and deletes the Deployment so Helm
 recreates it.
 
+### Corollary: never hold the bootstrap lease you cannot use
+
+Label discovery removes the *name* coupling, but not the coupling to the webhook Service.
+Ownership is "configurations that dial the Service I was told to serve", because the
+caBundle only signs a certificate for that Service. So the moment the release moves to a
+different webhook Service name, the running pod owns nothing, and the original deadlock
+comes straight back in a new costume:
+
+1. The release changes the webhook Service name. That is the `skyhook-operator` →
+   `nodewright` rename, but also any change to `webhook.serviceName` or
+   `fullnameOverride`, which are ordinary chart values.
+2. The pod holding the bootstrap lease finds no configuration dialling its Service, so its
+   readiness probe never goes green.
+3. The rolling update will not terminate an un-Ready pod, so it keeps renewing the lease.
+4. The pod that *can* reach the current configurations stays a follower, never patches the
+   caBundle, and never goes Ready either. Nothing breaks the cycle.
+
+The operator therefore **relinquishes the bootstrap lease when it can no longer do the
+bootstrap job**. When no configuration dials its Service, it looks for one that dials some
+*other* Service in its own namespace. If it finds one, the release has moved on without
+this pod, and holding the lease is what is blocking recovery: the bootstrap manager is
+stopped, which drops the lease, and after a short delay a fresh one contends again.
+
+Three properties make this safe to do automatically:
+
+- **It is not destructive.** Nothing is deleted and no state changes. If no other pod takes
+  the lease, this one takes it back and carries on where it left off.
+- **It is scoped to the manager that holds the lease.** The reconcile manager, the webhook
+  server, and readiness are untouched; a pod that stands aside keeps serving admission.
+- **It waits.** A helm upgrade applies the Deployment and the webhook configurations in one
+  pass, so a healthy pod can observe the previous release's configurations for a moment.
+  The condition must hold continuously for `supersededGracePeriod` first, which separates
+  that blink from the durable state left by a rollback.
+
+Detection deliberately lists webhook configurations **without** the label filter that
+ownership uses: the release being rolled back to may predate that label entirely, which is
+exactly the case in [#469](https://github.com/NVIDIA/nodewright/issues/469). Every version
+of the manager ClusterRole grants `list` cluster-wide and without `resourceNames`, so this
+keeps working under the RBAC a rollback restores.
+
+### Corollary: the serving certificate must outlive the Service name
+
+`Secret/webhook-cert` is operator-owned, so Helm does not touch it on upgrade or rollback.
+A certificate minted for one Service name is therefore still sitting there, valid for up to
+a year, after the release has moved to a different one. The operator remints when the
+certificate's SANs no longer cover the Service it is serving, which handles the forward
+direction.
+
+The backward direction cannot be handled that way, because the operator on the other side
+of a rollback is an older binary that may have no such check. The certificate it inherits
+has to *already* be valid for the name it will serve. That is why the minted certificate
+carries a SAN for the pre-rename Service name as well as the current one
+(`legacyWebhookServiceName` in `cert_utils.go`, a `RENAME-SHIM` to be removed with the
+rename window). Without it the rollback converges and then fails admission closed with an
+x509 error, which is strictly worse than failing loudly.
+
 ### What this does NOT fix
 
 This design **cannot** retroactively fix the v0.7.x → v0.15.x upgrade

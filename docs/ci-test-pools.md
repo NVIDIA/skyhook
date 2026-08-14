@@ -39,12 +39,14 @@ need ctlptl's local image registry to serve the operator image under test. The
 three cluster-setup steps key off a shared list, so adding another registry-needing
 suite means adding its name to that list in all three places.
 
-Both also need **full history with tags** (`fetch-depth: 0`, `fetch-tags: true`,
-already set for the whole `tests` job): each materializes a released chart with
-`git archive chart/v0.17.1` to get a pre-rename baseline — `migration` for the API
-group rename, `helm-tests`' `helm-upgrade-rename-test` for the in-cluster resource
-name rename. Both fail early with an explicit message rather than a bare git error
-when the tag is missing.
+Both also start from the same `v0.17.1` pre-rename baseline: `migration` for the API
+group rename, `helm-tests`' `helm-upgrade-rollback-test` for the in-cluster resource
+name rename. `migration` materializes that chart with `git archive chart/v0.17.1`, so
+it needs **full history with tags** (`fetch-depth: 0`, `fetch-tags: true`, already set
+for the whole `tests` job) and fails early with an explicit message rather than a bare
+git error when the tag is missing. `helm-upgrade-rollback-test` pulls the published
+chart from the registry instead, and only reads git tags when asked to resolve the
+newest release rather than a pinned one.
 
 ### `migration`
 

@@ -21,9 +21,7 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 )
 
@@ -333,14 +331,11 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(err.Error()).To(ContainSubstring("policy-in-use"))
 			Expect(err.Error()).To(ContainSubstring("test-nodewright-using-policy"))
 
-			// Cleanup. The validating webhook on policy deletion queries NodeWright
-			// references via the client; envtest deletes are async, so the NodeWright
-			// can still be visible to the webhook for a brief window after Delete
-			// returns. Wait for it to actually be gone before deleting the policy.
+			// Cleanup. The validating webhook on policy deletion lists NodeWrights through
+			// the manager's cache, so wait on that cache rather than on k8sClient: the
+			// apiserver reports the delete before the informer has observed it.
 			Expect(k8sClient.Delete(ctx, nodewright)).To(Succeed())
-			Eventually(func() bool {
-				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: nodewright.Name}, &NodeWright{}))
-			}, "10s", "100ms").Should(BeTrue())
+			waitForNodeWrightGoneFromWebhookCache(nodewright.Name)
 			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 		})
 
@@ -384,13 +379,12 @@ var _ = Describe("DeploymentPolicy", func() {
 			}
 			Expect(k8sClient.Create(ctx, nodewright)).To(Succeed())
 
-			// Delete the NodeWright and wait for it to actually be gone before
-			// validating the policy delete — envtest deletes are async, see
-			// the cleanup race in the previous It block.
+			// Wait on the cache the webhook reads, not on the apiserver. ValidateDelete
+			// below lists NodeWrights through the manager's client, so a delete that
+			// k8sClient already reports as gone can still be visible to the informer,
+			// and the policy delete is denied with "still referenced by 1 NodeWright(s)".
 			Expect(k8sClient.Delete(ctx, nodewright)).To(Succeed())
-			Eventually(func() bool {
-				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: nodewright.Name}, &NodeWright{}))
-			}, "10s", "100ms").Should(BeTrue())
+			waitForNodeWrightGoneFromWebhookCache(nodewright.Name)
 
 			// Now deletion should succeed
 			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)

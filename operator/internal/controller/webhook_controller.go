@@ -40,6 +40,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	runtimecache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	controllerruntime "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -75,6 +76,15 @@ const (
 	certRotationThreshold    = 168 * time.Hour      // 7 days
 	certValidityDurationYear = 365 * 24 * time.Hour // 1 year
 
+	// How long the "no webhook configuration dials my Service" condition must hold before
+	// this operator gives up the bootstrap lease. A helm upgrade that renames the Service
+	// applies the Deployment and the webhook configurations in one pass, so a pod can
+	// briefly observe the previous release's configurations; the grace period keeps that
+	// from being mistaken for the durable state that follows a rollback. See
+	// docs/designs/webhook-bootstrap-lease.md.
+	supersededGracePeriod  = time.Minute
+	supersededPollInterval = 15 * time.Second
+
 	// Both of these stay on the LEGACY prefix, unlike webhookConfigLabelKey above, because
 	// they are not ours to choose: webhookCert.ToSecret (cert_utils.go) has written both
 	// keys under v1alpha1.METADATA_PREFIX since cert-manager was dropped, and every
@@ -98,12 +108,27 @@ type WebhookControllerOptions struct { // prefix these with WEBHOOK_
 	ServiceName string `env:"WEBHOOK_SERVICE_NAME, default=skyhook-operator-webhook-service"`
 }
 
+// errNoOwnedWebhookConfigurations reports that no webhook configuration dials the Service
+// this operator serves. It is a sentinel because the response depends on WHY: nothing
+// installed yet is a hard error worth retrying, whereas another operator's configurations
+// being installed here means this one has been superseded and must stand down.
+var errNoOwnedWebhookConfigurations = errors.New("no owned webhook configurations")
+
 type WebhookController struct {
 	client.Client
 	cache     runtimecache.Cache
 	namespace string
 	certDir   string
 	opts      WebhookControllerOptions
+
+	// relinquished signals that this operator should stop holding the webhook bootstrap
+	// lease. Buffered and written non-blocking, so a reconcile never waits on the reader.
+	relinquished chan struct{}
+	// supersededSince is when the superseded condition was first observed, zero when it
+	// does not hold. Deliberately in memory and not persisted: losing it on restart only
+	// delays standing down, which is the safe direction, and it is a debounce rather than
+	// progress that a later reconcile needs to resume.
+	supersededSince time.Time
 }
 
 func NewWebhookController(client client.Client, cache runtimecache.Cache, namespace, certDir string, opts WebhookControllerOptions) (*WebhookController, error) {
@@ -112,12 +137,32 @@ func NewWebhookController(client client.Client, cache runtimecache.Cache, namesp
 	}
 
 	return &WebhookController{
-		Client:    client,
-		cache:     cache,
-		namespace: namespace,
-		certDir:   certDir,
-		opts:      opts,
+		Client:       client,
+		cache:        cache,
+		namespace:    namespace,
+		certDir:      certDir,
+		opts:         opts,
+		relinquished: make(chan struct{}, 1),
 	}, nil
+}
+
+// Relinquished fires when this operator has concluded it cannot do the bootstrap job and
+// should release the webhook bootstrap lease so a pod that can will take it over. The
+// owner of the bootstrap manager is expected to stop it, wait, DrainRelinquished, and
+// contend again.
+func (r *WebhookController) Relinquished() <-chan struct{} {
+	return r.relinquished
+}
+
+// DrainRelinquished discards a pending relinquish signal, so that contending for the lease
+// again starts from a clean slate. Reconciles that were still in flight while the previous
+// manager shut down can leave one behind, and acting on it would cancel the next manager
+// before it ever reconciled.
+func (r *WebhookController) DrainRelinquished() {
+	select {
+	case <-r.relinquished:
+	default:
+	}
 }
 
 // Start implements the Runnable interface to ensure certificates are set up before the webhook server starts
@@ -155,6 +200,13 @@ func (r *WebhookController) NeedLeaderElection() bool {
 
 func (r *WebhookController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		// controller-runtime keeps used controller names in a PACKAGE-LEVEL set, so
+		// registering the same name twice in one process is an error. This controller is
+		// deliberately re-created against a fresh manager every time the bootstrap lease is
+		// relinquished and re-contended (see runWebhookBootstrap in cmd/manager), and it is
+		// the same logical controller each time, so sharing the name is the intent rather
+		// than the collision the check is guarding against.
+		WithOptions(controllerruntime.Options{SkipNameValidation: ptr(true)}).
 		For(&corev1.Secret{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			return obj.GetNamespace() == r.namespace && obj.GetName() == r.opts.SecretName
 		}))).
@@ -162,10 +214,10 @@ func (r *WebhookController) SetupWithManager(mgr ctrl.Manager) error {
 		// resetting caBundle) and fixes them immediately instead of waiting for the 24h requeue.
 		Watches(&admissionregistrationv1.ValidatingWebhookConfiguration{},
 			handler.EnqueueRequestsFromMapFunc(r.webhookConfigToSecret),
-			builder.WithPredicates(predicate.NewPredicateFuncs(hasWebhookConfigLabel))).
+			builder.WithPredicates(predicate.NewPredicateFuncs(r.watchedWebhookConfiguration))).
 		Watches(&admissionregistrationv1.MutatingWebhookConfiguration{},
 			handler.EnqueueRequestsFromMapFunc(r.webhookConfigToSecret),
-			builder.WithPredicates(predicate.NewPredicateFuncs(hasWebhookConfigLabel))).
+			builder.WithPredicates(predicate.NewPredicateFuncs(r.watchedWebhookConfiguration))).
 		Complete(r)
 }
 
@@ -220,11 +272,103 @@ func (r *WebhookController) Reconcile(ctx context.Context, req reconcile.Request
 
 	_, err = r.CheckOrUpdateWebhookConfigurations(ctx, secret)
 	if err != nil {
+		if errors.Is(err, errNoOwnedWebhookConfigurations) {
+			return r.handleNoOwnedConfigurations(ctx, err)
+		}
 		return reconcile.Result{}, err
 	}
 
+	r.supersededSince = time.Time{}
+
 	logger.Info("Reconciled webhook controller")
 	return reconcile.Result{RequeueAfter: 24 * time.Hour}, nil // requeue for periodic rotation/check
+}
+
+// handleNoOwnedConfigurations decides what to do when nothing dials this operator's Service.
+//
+// Two very different situations produce that state. The chart's configurations may simply
+// not be there (fresh install, webhooks disabled, someone deleted them), which is a real
+// error and stays one. Or the release may have moved to a different webhook Service and
+// left this operator behind, which is what a `helm rollback` across a Service rename does:
+// then holding the bootstrap lease is actively harmful, because the pod that CAN reach the
+// current configurations is blocked waiting for it, cannot inject its caBundle, never goes
+// Ready, and so never lets the rollout replace this pod. That is issue #469.
+func (r *WebhookController) handleNoOwnedConfigurations(ctx context.Context, cause error) (reconcile.Result, error) {
+	logger := log.FromContext(ctx)
+
+	other, err := r.supersedingService(ctx)
+	if err != nil {
+		return reconcile.Result{}, errors.Join(cause, err)
+	}
+
+	if other == "" {
+		r.supersededSince = time.Time{}
+		return reconcile.Result{}, cause
+	}
+
+	if r.supersededSince.IsZero() {
+		r.supersededSince = time.Now()
+		logger.Info("webhook configurations in this namespace dial another service; will relinquish the webhook bootstrap lease if this persists",
+			"service", r.opts.ServiceName, "otherService", other, "gracePeriod", supersededGracePeriod)
+	}
+
+	if time.Since(r.supersededSince) < supersededGracePeriod {
+		return reconcile.Result{RequeueAfter: supersededPollInterval}, nil
+	}
+
+	logger.Info("relinquishing the webhook bootstrap lease: no webhook configuration dials this operator's service",
+		"service", r.opts.ServiceName, "otherService", other)
+	select {
+	case r.relinquished <- struct{}{}:
+	default: // already signalled and not yet acted on
+	}
+
+	return reconcile.Result{}, nil
+}
+
+// supersedingService returns the name of a webhook Service in this namespace, other than
+// the one this operator serves, that some webhook configuration currently dials.
+//
+// Deliberately listed WITHOUT the webhookConfigLabelKey filter that ownership uses: the
+// configurations that supersede us are whatever the release now has, and a chart old
+// enough to be rolled back to may predate that label entirely. `list` is granted
+// cluster-wide and without resourceNames by every version of the manager ClusterRole, so
+// this keeps working under the RBAC a rollback restores.
+func (r *WebhookController) supersedingService(ctx context.Context) (string, error) {
+	validating := &admissionregistrationv1.ValidatingWebhookConfigurationList{}
+	if err := r.List(ctx, validating); err != nil {
+		return "", fmt.Errorf("listing ValidatingWebhookConfigurations: %w", err)
+	}
+	for i := range validating.Items {
+		for j := range validating.Items[i].Webhooks {
+			if name, ok := r.dialsAnotherOperator(validating.Items[i].Webhooks[j].ClientConfig.Service); ok {
+				return name, nil
+			}
+		}
+	}
+
+	mutating := &admissionregistrationv1.MutatingWebhookConfigurationList{}
+	if err := r.List(ctx, mutating); err != nil {
+		return "", fmt.Errorf("listing MutatingWebhookConfigurations: %w", err)
+	}
+	for i := range mutating.Items {
+		for j := range mutating.Items[i].Webhooks {
+			if name, ok := r.dialsAnotherOperator(mutating.Items[i].Webhooks[j].ClientConfig.Service); ok {
+				return name, nil
+			}
+		}
+	}
+
+	return "", nil
+}
+
+// dialsAnotherOperator is the inverse of dialsThisOperator, scoped to our namespace: a
+// webhook Service here that is not ours belongs to an operator that replaced us.
+func (r *WebhookController) dialsAnotherOperator(svc *admissionregistrationv1.ServiceReference) (string, bool) {
+	if svc == nil || svc.Namespace != r.namespace || svc.Name == r.opts.ServiceName {
+		return "", false
+	}
+	return svc.Name, true
 }
 
 // GetOrCreateWebhookCertSecret returns a new secret with the given name and the given CA and cert.
@@ -273,9 +417,15 @@ func (r *WebhookController) CheckOrUpdateWebhookCertSecret(ctx context.Context, 
 	// The Secret outlives the chart objects: helm does not own it, so renaming the webhook
 	// Service leaves a perfectly valid, unexpired cert whose SAN no longer matches the DNS
 	// name the API server dials, and admission fails closed with an x509 error until the
-	// cert expires (a year). Treat a missing annotation as a mismatch: it can only come from
-	// a cert minted before the annotation existed, and reminting is cheap.
-	serviceChanged := secret.Annotations[serviceAnnotationKey] != r.opts.ServiceName
+	// cert expires (a year). Ask the certificate, not the service annotation: the annotation
+	// says what the operator that minted it intended, while the SANs are what the API server
+	// validates, and they disagree whenever the expected set changes between versions. A
+	// cert that cannot be parsed is treated as needing replacement for the same reason.
+	sansCovered, err := certCoversDNSNames(secret.Data["tls.crt"], expectedDNSNames(r.opts.ServiceName, r.namespace))
+	if err != nil {
+		log.FromContext(ctx).Info("could not read the SANs on the existing webhook certificate; reminting", "error", err.Error())
+	}
+	serviceChanged := !sansCovered
 
 	// check if the secret is going to expire in the next 7 days or if the cert on disk is different from the secret
 	if !equal || serviceChanged || secret.Annotations[expirationAnnotationKey] < time.Now().Add(certRotationThreshold).Format(time.RFC3339) {
@@ -329,6 +479,51 @@ func hasWebhookConfigLabel(obj client.Object) bool {
 	return ok
 }
 
+// watchedWebhookConfiguration decides which webhook configuration events are worth a
+// reconcile: the ones this operator owns, plus any that dial a webhook Service in its own
+// namespace.
+//
+// The second half exists because the label alone answers the wrong question. It says
+// "could this be mine", and the events that matter most are the ones proving something
+// ISN'T: a rollback restores configurations from a release that predates the label, and
+// those are precisely what supersedingService looks for. Watching only labelled objects
+// would leave that detection dependent on some other event arriving. It is still not a
+// watch on every webhook configuration in the cluster, which would wake this controller
+// for every unrelated admission component installed alongside it.
+func (r *WebhookController) watchedWebhookConfiguration(obj client.Object) bool {
+	if hasWebhookConfigLabel(obj) {
+		return true
+	}
+
+	for _, svc := range webhookServiceRefs(obj) {
+		if svc != nil && svc.Namespace == r.namespace {
+			return true
+		}
+	}
+	return false
+}
+
+// webhookServiceRefs returns the clientConfig Service references of either flavour of
+// webhook configuration, and nothing for any other object.
+func webhookServiceRefs(obj client.Object) []*admissionregistrationv1.ServiceReference {
+	switch conf := obj.(type) {
+	case *admissionregistrationv1.ValidatingWebhookConfiguration:
+		refs := make([]*admissionregistrationv1.ServiceReference, 0, len(conf.Webhooks))
+		for i := range conf.Webhooks {
+			refs = append(refs, conf.Webhooks[i].ClientConfig.Service)
+		}
+		return refs
+	case *admissionregistrationv1.MutatingWebhookConfiguration:
+		refs := make([]*admissionregistrationv1.ServiceReference, 0, len(conf.Webhooks))
+		for i := range conf.Webhooks {
+			refs = append(refs, conf.Webhooks[i].ClientConfig.Service)
+		}
+		return refs
+	default:
+		return nil
+	}
+}
+
 // dialsThisOperator reports whether a single webhook's clientConfig points at the Service
 // this operator issues its serving certificate for.
 //
@@ -362,7 +557,7 @@ func (r *WebhookController) ownedValidatingWebhookConfigurations(ctx context.Con
 	}
 
 	if len(owned) == 0 {
-		return nil, fmt.Errorf("no ValidatingWebhookConfiguration labelled %s targets namespace %q; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled", webhookConfigLabelKey, r.namespace)
+		return nil, fmt.Errorf("no ValidatingWebhookConfiguration labelled %s targets namespace %q; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", webhookConfigLabelKey, r.namespace, errNoOwnedWebhookConfigurations)
 	}
 	return owned, nil
 }
@@ -386,7 +581,7 @@ func (r *WebhookController) ownedMutatingWebhookConfigurations(ctx context.Conte
 	}
 
 	if len(owned) == 0 {
-		return nil, fmt.Errorf("no MutatingWebhookConfiguration labelled %s targets namespace %q; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled", webhookConfigLabelKey, r.namespace)
+		return nil, fmt.Errorf("no MutatingWebhookConfiguration labelled %s targets namespace %q; creation is handled by the Helm chart. Ensure the chart is installed and webhooks are enabled: %w", webhookConfigLabelKey, r.namespace, errNoOwnedWebhookConfigurations)
 	}
 	return owned, nil
 }
