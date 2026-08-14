@@ -236,7 +236,7 @@ func (r *WebhookController) webhookConfigToSecret(_ context.Context, _ client.Ob
 // Secret in the cluster. The webhookBootstrapMgr cache in main.go is scoped to match; the two
 // must move together, since a cluster-wide Secret informer under this Role would be rejected
 // and the webhook would never bootstrap.
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete,namespace=skyhook
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete,namespace=system
 
 // Reconcile is the main function that reconciles the webhook controller
 func (r *WebhookController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {

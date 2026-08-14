@@ -172,7 +172,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: manager-role
-  namespace: skyhook
+  namespace: system
 rules:
 - apiGroups:
   - ""

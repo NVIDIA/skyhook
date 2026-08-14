@@ -408,11 +408,12 @@ func (r *SkyhookReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // Package stages run as batch/v1 Jobs; pods/log is read for the deadline failure-log snapshot.
 // Jobs and their pod logs are namespace-scoped rather than cluster-wide: every Job the operator
 // touches lives in its own namespace (the informer is scoped there in main.go, and every list
-// passes client.InNamespace), and pod logs are only read off those Jobs' child pods. The literal
-// below is rewritten by the kustomize namespace transformer and templated as .Release.Namespace
-// in the chart.
-//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete,namespace=skyhook
-//+kubebuilder:rbac:groups=core,resources=pods/log,verbs=get,namespace=skyhook
+// passes client.InNamespace), and pod logs are only read off those Jobs' child pods. controller-gen
+// requires a literal namespace, so this uses the same `system` placeholder as the rest of
+// config/: the kustomize namespace transformer rewrites it, and the chart templates
+// .Release.Namespace.
+//+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete,namespace=system
+//+kubebuilder:rbac:groups=core,resources=pods/log,verbs=get,namespace=system
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
