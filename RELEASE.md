@@ -35,7 +35,7 @@ Operator, agent, and CLI follow SemVer directly — MAJOR for breaking changes, 
 - **MINOR** — new features, new configuration options
 - **MAJOR** — breaking changes to the chart, or to its compatibility with the agent or operator
 
-The chart carries two versions: `version` tracks the chart itself, `appVersion` names the recommended operator version.
+The chart carries two versions: `version` tracks the chart itself, and `appVersion` names the operator version that chart release is built around. `appVersion` is the *fallback* operator image tag, used only when both `image.tag` and `image.digest` are omitted from values. The shipped `chart/values.yaml` sets both explicitly, and when a digest is present the digest is what determines the image pulled.
 
 Removing or breaking a public surface — a CRD field, CLI command or flag, annotation, env var, or metric — requires a deprecation period announced in the relevant `CHANGELOG.md` and a migration path in `docs/` before the removal ships. See [Deprecation and End-of-Life](GOVERNANCE.md#deprecation-and-end-of-life).
 
@@ -50,7 +50,9 @@ The shape of a release line:
 3. The final `vX.Y.0` is tagged on the same commit as the last good RC, with no code changes in between.
 4. Patches for that line (`vX.Y.1`, `vX.Y.2`, …) land on `main` first, are cherry-picked onto the same release branch, and are tagged there.
 
-Tags only ever live on release branches, never on `main`. The agent frequently rides along at its existing version; the chart is tagged on every release because `Chart.yaml` moves with it.
+Tags only ever live on release branches, never on `main`. This is a convention the tooling does not currently enforce: `scripts/release-tag.sh` tags whatever `HEAD` points at, and the release workflow publishes any matching tag push regardless of the branch it came from. Check what branch you are on before tagging.
+
+The agent frequently rides along at its existing version; the chart is tagged on every release because `Chart.yaml` moves with it.
 
 ## Where artifacts are published
 
