@@ -2,7 +2,7 @@
 
 This directory holds all the tests for the nodewright operator's helm chart. It covers template rendering, that tolerations and node affinity set in the chart actually take effect, that the admission webhooks reject invalid resources, and that the operator deploys successfully under an overridden name.
 
-`helm-upgrade-rename-test` is the odd one out: it installs the last pre-rename chart release (extracted from its git tag, the same way `k8s-tests/migration` does) and upgrades the working tree's chart over it. It exists because in-cluster resource names can only be renamed safely once, and a local render cannot reproduce the pre-rename objects that the upgrade has to clean up. It needs the checkout to have full history with tags (`fetch-depth: 0`, `fetch-tags: true`), which the CI `tests` job already sets.
+`helm-upgrade-rollback-test` is the odd one out: it installs the last pre-rename chart release from the registry, upgrades the working tree's chart over it, and then rolls back. It exists because in-cluster resource names can only be renamed safely once, and a local render cannot reproduce the pre-rename objects the upgrade has to clean up or the rollback has to restore. Its rollback half is the regression test for #469, where rolling back across the rename wedged with no Ready operator pod, so a failure there means that has come back.
 
 ## Test Image
 
