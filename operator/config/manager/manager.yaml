@@ -114,6 +114,20 @@ spec:
           # immediately. Remove with the legacy group at the removal release.
           - name: LEGACY_CLEANUP_DELAY
             value: "24h"
+          # JobTTLSucceeded/JobTTLFailed set ttlSecondsAfterFinished on completed
+          # package-stage Jobs by outcome; JobStageTimeout is the default per-attempt
+          # deadline when a package sets no stageTimeout (0 removes the time bound);
+          # JobBackoffLimit is how many retries a package stage gets after its first attempt
+          # before its Job goes terminal, so a stage runs at most JobBackoffLimit+1 times; it
+          # parks as erroring only if a retained attempt genuinely failed.
+          - name: JOB_TTL_SUCCEEDED
+            value: "1h"
+          - name: JOB_TTL_FAILED
+            value: "24h"
+          - name: JOB_STAGE_TIMEOUT
+            value: "1h"
+          - name: JOB_BACKOFF_LIMIT
+            value: "3"
           # MIGRATION-SHIM: keep the deprecated skyhook_* metric series exported
           # alongside nodewright_* so existing dashboards and alerts survive the
           # rename. "false" exports only nodewright_*. Remove with the legacy group

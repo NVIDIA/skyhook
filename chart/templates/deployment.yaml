@@ -103,6 +103,14 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.reapplyOnReboot }}
         - name: LEGACY_CLEANUP_DELAY
           value: {{ quote .Values.controllerManager.manager.env.legacyCleanupDelay }}
+        - name: JOB_TTL_SUCCEEDED
+          value: {{ quote .Values.controllerManager.manager.env.jobTtlSucceeded }}
+        - name: JOB_TTL_FAILED
+          value: {{ quote .Values.controllerManager.manager.env.jobTtlFailed }}
+        - name: JOB_STAGE_TIMEOUT
+          value: {{ quote .Values.controllerManager.manager.env.jobStageTimeout }}
+        - name: JOB_BACKOFF_LIMIT
+          value: {{ quote .Values.controllerManager.manager.env.jobBackoffLimit }}
         - name: PUBLISH_LEGACY_METRICS
           value: {{ quote .Values.controllerManager.manager.env.publishLegacyMetrics }}
         - name: RUNTIME_REQUIRED_TAINT

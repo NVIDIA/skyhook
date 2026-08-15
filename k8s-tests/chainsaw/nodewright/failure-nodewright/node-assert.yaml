@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -35,8 +35,7 @@ metadata:
             "version": "1.2.3",
             "image": "ghcr.io/nvidia/skyhook/agentless",
             "stage": "apply",
-            "state": "erroring",
-            (restarts > `0`): true
+            "state": "erroring"
         }
     }
     ## another way to do it

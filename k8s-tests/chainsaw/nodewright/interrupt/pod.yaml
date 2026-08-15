@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -47,7 +47,10 @@ spec:
     image: busybox:latest
     command: ["sh", "-c", "sleep 1000 && exit"]
 ---
-## testing remove an old version that should, this pod is running from old version of of the SCR - this will be deleted
+## A junk package pod: labelled and annotated as package invalid|1.2.3, which is not in the SCR spec.
+## Nothing adopts or reaps it; the point is that it must not reach node state. The pod watch sees its
+## init container exit 2, and the assert below requires nodeState_interrupt to hold jason only, so an
+## unguarded erroring write from an entry the operator never created fails this test.
 apiVersion: v1
 kind: Pod
 metadata:

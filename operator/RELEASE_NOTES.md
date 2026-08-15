@@ -209,12 +209,69 @@ For the full commit-level log see CHANGELOG.md.
 
 ### New Features
 
+- **Package stages now execute as `batch/v1` Jobs**, one per (NodeWright,
+  package, stage, node), instead of operator-managed raw pods. The lifecycle
+  state machine is unchanged — stages, Status/State derivation, interrupt /
+  cordon / drain sequencing and DeploymentPolicy all behave as before — but the
+  executor is now a Job, so `kubectl logs job/<name>` works during and after a
+  run and finished work is retained instead of deleted on completion.
+- **Failure logs survive the failure.** Each genuinely failing stage keeps up to
+  two full-log archive pods (its first failure and its most recent), including an
+  attempt killed by its own `stageTimeout` — the deadline fails the pod in place
+  rather than deleting it, so its logs are read like any other failed attempt's.
+  An interrupt Job, which keeps a whole-stage deadline, is the case where the pod
+  *is* deleted; there the operator falls back to a best-effort ~16KiB log tail in
+  the Job's `nodewright.nvidia.com/last-logs` annotation. Three limits are worth
+  knowing: an attempt with no container logs (an unpullable image, say) archives
+  nothing to read; an attempt the kubelet refused to admit is not a genuine
+  failure and is not archived at all; and the `last-logs` annotation is written
+  only while a Job passes through `FailureTarget`, so it can be absent when that
+  condition is never emitted.
+- **New per-package `stageTimeout`** bounds the wall-clock runtime of one attempt
+  at each of a package's stages. A hung stage (stuck script, unpullable image,
+  dead registry) is killed and retried instead of sitting `in_progress`
+  indefinitely. Unset uses the operator default; `"0"` removes the time bound.
+- **`pause` is now a true stop.** The pause annotation cascades to `spec.suspend`
+  on the NodeWright's unfinished Jobs, so the stage that is *currently executing*
+  is stopped rather than being allowed to finish. Resuming re-runs that stage
+  from the start of its current phase; the agent skips already-completed steps.
+  `disable` is unchanged and still does not stop in-flight work.
 - Add `spec.drainConfig` so interrupt drains can tune eviction, direct deletion,
   emptyDir handling, unmanaged-pod handling, DaemonSet skipping, timeout, and
   grace-period behavior.
 
 ### Changed
 
+- **A failing stage now gives up after a bounded number of retries.** Package
+  stage Jobs run with `backoffLimit` = `JOB_BACKOFF_LIMIT` (default 3), so a
+  stage runs at most four times before it is surfaced as `erroring` and left
+  alone until a `package rerun`/`reset`, a config or spec change, or the failed
+  Job's TTL expires. **This shortens self-healing from up to an hour to roughly
+  70 seconds** for a package that previously rode out transient environment
+  problems (a registry blip, a mount not up yet) by crash-looping until it
+  succeeded. If you depend on that behavior, raise `JOB_BACKOFF_LIMIT` (chart
+  value `controllerManager.manager.env.jobBackoffLimit`).
+  - Not every failed attempt counts against the package: pods lost to eviction,
+    preemption or node shutdown are ignored, and attempts the kubelet refused to
+    admit spend the budget but never mark a package `erroring` on their own.
+- **Finished Jobs are retained and then cleaned up on a timer**, controlled by
+  `JOB_TTL_SUCCEEDED` (default 1h) and `JOB_TTL_FAILED` (default 24h) — failure
+  logs outlive success logs. Both have a hard minimum of one minute; the
+  operator refuses to start below it, so `"0"` is not a way to disable retention.
+  - **A successful `uninstall` stage is the one exception and keeps no logs.**
+    A successful no-interrupt uninstall's completion *is* the removal of the
+    package's node-state entry, so its Job is eligible for rerun cleanup the
+    moment it finishes and never serves out `JOB_TTL_SUCCEEDED`. Starting an
+    uninstall also clears that package's retained apply/config Jobs. Failed
+    uninstalls are retained normally. A successful uninstall's output is
+    therefore unrecoverable — a known limitation, tracked in #443 and deferred
+    to a later release.
+- Editing `stageTimeout`, `JOB_STAGE_TIMEOUT` or `JOB_BACKOFF_LIMIT` applies to
+  the *next* stage Job, not one already running (a Job's pod template is
+  immutable). To apply a new value to work already under way, clear that Job
+  with `kubectl nodewright package rerun <package>`. Editing the **package
+  itself** does clear a stage that has already given up, so fixing a broken
+  image or config takes effect without waiting for the failure TTL.
 - **Metrics now use controller-runtime's built-in authentication and
   authorization filter.** The operator serves TLS metrics directly on `:8443`
   with controller-runtime's in-memory self-signed certificate. The manager
@@ -228,6 +285,33 @@ For the full commit-level log see CHANGELOG.md.
   tolerations use Kubernetes `ToleratesTaint` matching, and DaemonSet pods are
   identified from the controller owner reference instead of the previous owner
   reference count heuristic.
+
+### Upgrade notes
+
+- **Upgrade with no package work in flight.** Jobs and the pre-rename raw-pod
+  executor are never allowed to run side by side, so there is no dual path and
+  nothing is converted: because this release also carries the rename, every
+  operator that precedes it is a pre-rename one, and `legacyMigrationHold`
+  withholds all `NodeWright` reconciliation while any legacy `Skyhook` is still
+  rolling out. The new operator therefore cannot start a Job on a node the
+  pre-rename operator may still be mutating. Pre-upgrade package pods run to
+  completion as pods and are removed by the prune once `LEGACY_CLEANUP_DELAY`
+  elapses. This is the same quiet-window prerequisite the rename carries above —
+  see [docs/nodewright-migration.md](../docs/nodewright-migration.md).
+  - **If you upgrade anyway with a rollout in flight**, the failure mode is a
+    **stuck, cordoned node** rather than corruption or double execution: the hold
+    protects the node, the legacy `Skyhook` stays frozen at its stage, and
+    nothing progresses until you either roll back and let the rollout finish or
+    delete the legacy `Skyhook`.
+  - **Do not unpause or enable a migrated `NodeWright` until its pre-upgrade
+    package pods are gone.** The hold treats a paused or disabled `Skyhook` as
+    not-in-flight, deliberately, so migrating never forces you to unpause one —
+    but neither pre-Jobs pause nor disable stopped a *running* pod, so one of
+    those objects can cross the upgrade with a live raw pod. Unpausing or
+    enabling it before that pod exits puts a Job alongside it on the same host
+    `copyDir`; the agent's flag files make re-execution idempotent but are not a
+    lock, so that sequence is documented as unsupported rather than guarded.
+    Leaving the object paused or disabled is safe indefinitely.
 
 ## operator/v0.16.1 - 2026-05-22
 

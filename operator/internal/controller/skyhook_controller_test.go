@@ -27,6 +27,7 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/nodewright/operator/internal/controller/mock"
+	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	dalMock "github.com/NVIDIA/nodewright/operator/internal/dal/mock"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	wrapperMock "github.com/NVIDIA/nodewright/operator/internal/wrapper/mock"
@@ -39,10 +40,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -51,7 +54,7 @@ var _ = Describe("skyhook controller tests", func() {
 
 	var logger = log.FromContext(ctx)
 
-	It("should map only pods we created", func() {
+	It("should queue only pods we created", func() {
 
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -62,13 +65,14 @@ var _ = Describe("skyhook controller tests", func() {
 			},
 		}
 
-		ret := podHandlerFunc(ctx, pod)
-		Expect(ret).To(HaveLen(1))
-		Expect(ret[0].Name).To(BeEquivalentTo("pod---foobar"))
+		Expect(ownedPod().Create(event.CreateEvent{Object: pod})).To(BeTrue())
+		Expect(ownedPod().Update(event.UpdateEvent{ObjectNew: pod})).To(BeTrue())
 
-		pod.Labels = map[string]string{"foo": "bar"}
-		ret = podHandlerFunc(ctx, pod)
-		Expect(ret).To(BeNil())
+		foreign := pod.DeepCopy()
+		foreign.Labels = map[string]string{"foo": "bar"}
+		Expect(ownedPod().Create(event.CreateEvent{Object: foreign})).To(BeFalse())
+		Expect(ownedPod().Update(event.UpdateEvent{ObjectNew: foreign})).To(BeFalse())
+		Expect(ownedPod().Delete(event.DeleteEvent{Object: foreign})).To(BeFalse())
 
 	})
 
@@ -497,6 +501,10 @@ var _ = Describe("skyhook controller tests", func() {
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
 			AgentLogRoot:         "/log",
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -573,7 +581,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
@@ -637,7 +645,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			force := false
@@ -709,7 +717,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
@@ -779,7 +787,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{
@@ -842,7 +850,7 @@ var _ = Describe("skyhook controller tests", func() {
 			})
 
 			recorder := events.NewFakeRecorder(10)
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, recorder, opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), recorder, opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{
@@ -998,6 +1006,10 @@ var _ = Describe("skyhook controller tests", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -1034,6 +1046,43 @@ var _ = Describe("skyhook controller tests", func() {
 
 		opts.PauseImage = "bar"
 		Expect(opts.Validate()).ToNot(BeNil())
+
+		// reset to a fully valid set, then exercise the Job-related floors in isolation
+		opts = SkyhookOperatorOptions{
+			Namespace:            "skyhook",
+			MaxInterval:          time.Second * 61,
+			CopyDirRoot:          "/tmp",
+			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:           "foo:bar",
+			PauseImage:           "foo:bar",
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
+		}
+		Expect(opts.Validate()).To(BeNil())
+
+		// JobTTLSucceeded below the 1 minute floor
+		opts.JobTTLSucceeded = 30 * time.Second
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobTTLSucceeded = time.Hour
+
+		// JobTTLFailed below the 1 minute floor
+		opts.JobTTLFailed = 0
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobTTLFailed = 24 * time.Hour
+
+		// negative JobStageTimeout is rejected; 0 is allowed (removes the time bound)
+		opts.JobStageTimeout = -time.Second
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobStageTimeout = 0
+		Expect(opts.Validate()).To(BeNil())
+
+		// negative JobBackoffLimit is rejected; 0 is allowed (a single attempt, no retry)
+		opts.JobBackoffLimit = -1
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobBackoffLimit = 0
+		Expect(opts.Validate()).To(BeNil())
 	})
 	It("Should group skyhooks by node correctly", func() {
 		skyhooks := &v1alpha1.NodeWrightList{
@@ -1309,128 +1358,6 @@ var _ = Describe("skyhook controller tests", func() {
 		}
 		Expect(keys).To(ConsistOf("example.com/custom", "skyhook.nvidia.com"))
 	})
-	It("Pods should always tolerate runtime required taint", func() {
-		pod := createPodFromPackage(
-			operator.opts,
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageApply,
-		)
-		Expect(pod.Spec.Tolerations).To(ContainElements(opts.GetRuntimeRequiredTolerations()))
-	})
-	It("Interrupt pods should tolerate runtime required taint when it is runtime required", func() {
-		pod := createInterruptPodForPackage(
-			operator.opts,
-			&v1alpha1.Interrupt{
-				Type: v1alpha1.REBOOT,
-			},
-			"argEncode",
-
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageInterrupt,
-		)
-		Expect(pod.Spec.Tolerations).To(ContainElements(opts.GetRuntimeRequiredTolerations()))
-	})
-
-	It("Pods should not have imagePullSecrets when ImagePullSecret is empty", func() {
-		emptyOpts := SkyhookOperatorOptions{
-			Namespace:            "skyhook",
-			MaxInterval:          time.Second * 61,
-			ImagePullSecret:      "", // Empty - no pull secret
-			CopyDirRoot:          "/tmp",
-			ReapplyOnReboot:      true,
-			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
-			AgentImage:           "foo:bar",
-			PauseImage:           "foo:bar",
-		}
-
-		pod := createPodFromPackage(
-			emptyOpts,
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageApply,
-		)
-		Expect(pod.Spec.ImagePullSecrets).To(BeEmpty())
-	})
-
-	It("Interrupt pods should not have imagePullSecrets when ImagePullSecret is empty", func() {
-		emptyOpts := SkyhookOperatorOptions{
-			Namespace:            "skyhook",
-			MaxInterval:          time.Second * 61,
-			ImagePullSecret:      "", // Empty - no pull secret
-			CopyDirRoot:          "/tmp",
-			ReapplyOnReboot:      true,
-			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
-			AgentImage:           "foo:bar",
-			PauseImage:           "foo:bar",
-		}
-
-		pod := createInterruptPodForPackage(
-			emptyOpts,
-			&v1alpha1.Interrupt{
-				Type: v1alpha1.REBOOT,
-			},
-			"argEncode",
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageInterrupt,
-		)
-		Expect(pod.Spec.ImagePullSecrets).To(BeEmpty())
-	})
-
 	It("should generate deterministic pod names", func() {
 		// Setup basic test data
 		skyhook := &wrapper.Skyhook{
@@ -1505,78 +1432,6 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(len(longName)).To(BeNumerically("<=", 63), "Pod name should not exceed Kubernetes 63 character limit")
 		Expect(longName).To(MatchRegexp(`-[0-9a-f]+$`), "Pod name should end with a hash component")
 	})
-
-	It("should correctly identify if a pod matches a package", func() {
-
-		// Create a test package
-		testPackage := &v1alpha1.Package{
-			PackageRef: v1alpha1.PackageRef{
-				Name:    "test-package",
-				Version: "1.2.3",
-			},
-			Image: "test-image:1.2.3",
-			Resources: &v1alpha1.ResourceRequirements{
-				CPURequest:    resource.MustParse("100m"),
-				CPULimit:      resource.MustParse("200m"),
-				MemoryRequest: resource.MustParse("64Mi"),
-				MemoryLimit:   resource.MustParse("128Mi"),
-			},
-		}
-
-		// Create a test skyhook
-		testSkyhook := &wrapper.Skyhook{
-			NodeWright: &v1alpha1.NodeWright{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-skyhook",
-				},
-				Spec: v1alpha1.NodeWrightSpec{
-					Packages: v1alpha1.Packages{
-						"test-package": *testPackage,
-					},
-				},
-			},
-		}
-
-		// Stage to test
-		testStage := v1alpha1.StageApply
-
-		// Create actual pods that would be created by the operator functions
-		// First using CreatePodFromPackage
-		actualPod := createPodFromPackage(operator.opts, testPackage, testSkyhook, "test-node", testStage)
-
-		// Verify that the pod matches the package according to PodMatchesPackage
-		matches := podMatchesPackage(operator.opts, testPackage, *actualPod, testSkyhook, testStage)
-		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the pod it created")
-
-		// Now let's modify the package version and see if it correctly identifies non-matches
-		modifiedPackage := testPackage.DeepCopy()
-		modifiedPackage.Version = "1.2.4"
-
-		matches = podMatchesPackage(operator.opts, modifiedPackage, *actualPod, testSkyhook, testStage)
-		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when package version changed")
-
-		// Test with different stage
-		matches = podMatchesPackage(operator.opts, testPackage, *actualPod, testSkyhook, v1alpha1.StageConfig)
-		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when stage changed")
-
-		// Test with interrupt pods
-		interruptPod := createInterruptPodForPackage(
-			operator.opts,
-			&v1alpha1.Interrupt{
-				Type: v1alpha1.REBOOT,
-			},
-			"argEncode",
-			testPackage,
-			testSkyhook,
-			"test-node",
-			testStage,
-		)
-
-		// Verify that the interrupt pod matches the package
-		matches = podMatchesPackage(operator.opts, testPackage, *interruptPod, testSkyhook, testStage)
-		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the interrupt pod it created")
-	})
-
 	It("should generate valid volume names", func() {
 		tests := []struct {
 			name        string
@@ -1622,78 +1477,6 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(result).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`), "volume name should match kubernetes naming requirements")
 		}
 	})
-
-	It("should mount each configMap key as a subPath so image defaults are not clobbered", func() {
-		testPackage := &v1alpha1.Package{
-			PackageRef: v1alpha1.PackageRef{
-				Name:    "foo",
-				Version: "1.1.2",
-			},
-			Image: "foo/bar",
-			ConfigMap: map[string]string{
-				"b.sh": "echo b",
-				"a.sh": "echo a",
-				"c.sh": "echo c",
-			},
-		}
-		testSkyhook := &wrapper.Skyhook{
-			NodeWright: &v1alpha1.NodeWright{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			},
-		}
-
-		pod := createPodFromPackage(operator.opts, testPackage, testSkyhook, "node1", v1alpha1.StageApply)
-
-		container := pod.Spec.InitContainers[0]
-
-		// The configMap must never be mounted as a bare directory: that hides
-		// any files the package image baked in at /skyhook-package/configmaps.
-		for _, vm := range container.VolumeMounts {
-			if vm.MountPath == "/skyhook-package/configmaps" {
-				Fail("configMap must not be mounted as a directory; expected per-key subPath mounts")
-			}
-		}
-
-		// Collect the configMap mounts (those backed by the package volume).
-		configMapMounts := make([]corev1.VolumeMount, 0)
-		for _, vm := range container.VolumeMounts {
-			if vm.Name == testPackage.Name {
-				configMapMounts = append(configMapMounts, vm)
-			}
-		}
-
-		Expect(configMapMounts).To(HaveLen(3))
-		// Sorted-key order for a deterministic pod spec.
-		Expect(configMapMounts[0]).To(Equal(corev1.VolumeMount{
-			Name:      testPackage.Name,
-			MountPath: "/skyhook-package/configmaps/a.sh",
-			SubPath:   "a.sh",
-			ReadOnly:  true,
-		}))
-		Expect(configMapMounts[1]).To(Equal(corev1.VolumeMount{
-			Name:      testPackage.Name,
-			MountPath: "/skyhook-package/configmaps/b.sh",
-			SubPath:   "b.sh",
-			ReadOnly:  true,
-		}))
-		Expect(configMapMounts[2]).To(Equal(corev1.VolumeMount{
-			Name:      testPackage.Name,
-			MountPath: "/skyhook-package/configmaps/c.sh",
-			SubPath:   "c.sh",
-			ReadOnly:  true,
-		}))
-
-		// The underlying configMap volume is still mounted exactly once.
-		configMapVolumes := 0
-		for _, v := range pod.Spec.Volumes {
-			if v.Name == testPackage.Name {
-				configMapVolumes++
-				Expect(v.ConfigMap).NotTo(BeNil())
-			}
-		}
-		Expect(configMapVolumes).To(Equal(1))
-	})
-
 	It("should generate valid configmap names", func() {
 		tests := []struct {
 			name        string
@@ -2175,7 +1958,9 @@ var _ = Describe("Resource Comparison", func() {
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
 	})
+})
 
+var _ = Describe("cluster state compartments", func() {
 	It("should partition nodes into compartments", func() {
 		skyhooks := &v1alpha1.NodeWrightList{
 			Items: []v1alpha1.NodeWright{
@@ -2845,7 +2630,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2886,7 +2671,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 			v1alpha1.StateInProgress, v1alpha1.StageUninstallInterrupt, int32(0), "",
 		).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2923,7 +2708,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		// Defensive cleanup: RemoveState the old-version ref. No Upsert.
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2954,7 +2739,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -3930,7 +3715,7 @@ func TestHandleCompletePod_VersionComparison(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -4113,6 +3898,7 @@ var _ = Describe("TrackReboots reapply-on-reboot on a busy node", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts:     SkyhookOperatorOptions{ReapplyOnReboot: true},
 		}
@@ -4266,6 +4052,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				ReapplyOnReboot:      true,
@@ -4332,6 +4119,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				ReapplyOnReboot:      true,
@@ -4399,6 +4187,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				ReapplyOnReboot:      true,

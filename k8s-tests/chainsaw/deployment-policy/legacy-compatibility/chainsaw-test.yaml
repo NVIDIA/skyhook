@@ -73,6 +73,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying legacy compatibility metrics ==="
 
           # Verify metrics for synthetic __default__ compartment

@@ -86,6 +86,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying compartment metrics ==="
 
           # Verify matched nodes for each compartment
@@ -129,6 +130,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying final metrics ==="
 
           # All compartments should be 100% complete

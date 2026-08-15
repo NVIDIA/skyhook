@@ -83,9 +83,11 @@ spec:
               nodewright.nvidia.com/package: >-
                 {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"apply","image":"ghcr.io/nvidia/skyhook/agentless"}
             ownerReferences:
-              - apiVersion: nodewright.nvidia.com/v1alpha1
-                kind: NodeWright
-                name: interrupt-grouping
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
           spec:
             initContainers:
               - name: dax-init
@@ -118,9 +120,11 @@ spec:
               nodewright.nvidia.com/package: >-
                 {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"config","image":"ghcr.io/nvidia/skyhook/agentless"}
             ownerReferences:
-              - apiVersion: nodewright.nvidia.com/v1alpha1
-                kind: NodeWright
-                name: interrupt-grouping
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
           spec:
             initContainers:
               - name: dax-init
@@ -156,9 +160,11 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: nodewright.nvidia.com/v1alpha1
-                kind: NodeWright
-                name: interrupt-grouping
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
           spec:
             initContainers:
               - name: interrupt
@@ -191,9 +197,11 @@ spec:
               nodewright.nvidia.com/package: >-
                 {"name":"dax","version":"1.2.3","skyhook":"interrupt-grouping","stage":"post-interrupt","image":"ghcr.io/nvidia/skyhook/agentless"}
             ownerReferences:
-              - apiVersion: nodewright.nvidia.com/v1alpha1
-                kind: NodeWright
-                name: interrupt-grouping
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
           spec:
             initContainers:
               - name: dax-init

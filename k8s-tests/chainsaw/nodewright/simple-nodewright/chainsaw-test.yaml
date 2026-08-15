@@ -24,7 +24,7 @@ metadata:
 spec:
   timeouts:
     assert: 240s
-    exec: 90s
+    exec: 120s ## metrics_test.py waits internally up to TIMEOUT per check
     cleanup: 120s ## finalizer needs time to uncordon, remove labels/annotations, and GC pods
   catch: ## if errors, print the most important info
     - get:
@@ -58,6 +58,10 @@ spec:
     - script:
         skipLogOutput: true
         content: |
+          set -e
+          ## package stage transitions gate on pod and container startup, which can
+          ## stall well past the 30s default on a loaded runner
+          export TIMEOUT=90
           ../../metrics_test.py nodewright_node_target_count 1 -t nodewright_name=simple-skyhook
         outputs:
         - name: metricsToken
@@ -67,6 +71,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=dexter -t nodewright_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py nodewright_package_stage_count 1 -t package_name=dexter -t nodewright_name=simple-skyhook -t stage=config
     ## Deprecation-window coverage: the legacy skyhook_* series must carry the same
@@ -78,16 +83,23 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py skyhook_node_target_count 1 -t skyhook_name=simple-skyhook
           ../../metrics_test.py skyhook_package_state_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py skyhook_package_stage_count 1 -t package_name=dexter -t skyhook_name=simple-skyhook -t stage=config
     - assert:
         file: assert_pods.yaml
+    - assert:
+        file: assert_jobs.yaml
     - script:
         env:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
+          ## package stage transitions gate on pod and container startup, which can
+          ## stall well past the 30s default on a loaded runner
+          export TIMEOUT=90
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=dexter -t nodewright_name=simple-skyhook -t state=complete
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=spencer -t nodewright_name=simple-skyhook -t state=in_progress
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=foobar -t nodewright_name=simple-skyhook -t state=in_progress
@@ -104,6 +116,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=simple-skyhook -t status=complete
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=spencer -t nodewright_name=simple-skyhook -t state=complete
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=foobar -t nodewright_name=simple-skyhook -t state=complete

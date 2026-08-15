@@ -48,9 +48,16 @@ spec:
         file: nodewright.yaml
     - assert:
         file: node-assert.yaml
+    ## The retry budget is 4 attempts paced by Job-controller backoff (10s+20s+40s), so this
+    ## lands well after the erroring state above; give it its own window rather than widening
+    ## the whole test's.
+    - assert:
+        timeout: 300s
+        file: assert_timedout_job.yaml
     - script:
         skipLogOutput: true
         content: |
+          set -e
           ../../metrics_test.py nodewright_node_target_count 1 -t nodewright_name=failure-skyhook
         outputs:
         - name: metricsToken
@@ -60,6 +67,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=failure-skyhook -t status=erroring
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=dexter -t nodewright_name=failure-skyhook -t state=complete
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=failure -t nodewright_name=failure-skyhook -t state=erroring

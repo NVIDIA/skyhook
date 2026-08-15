@@ -63,6 +63,21 @@ For the full commit-level log see CHANGELOG.md.
   Anyone who already sets `fullnameOverride` or `nameOverride` keeps their own
   prefix on all of the above, unchanged.
 
+### New Features
+
+- **Package stage execution moved to `batch/v1` Jobs**, with four new operator
+  env values under `controllerManager.manager.env`:
+
+  | Value | Default | What it does |
+  | --- | --- | --- |
+  | `jobStageTimeout` | `"1h"` | Default per-attempt deadline for a package stage, when the package sets no `stageTimeout` of its own. `"0"` removes the time bound. |
+  | `jobBackoffLimit` | `"3"` | Retries after the first attempt before a stage's Job goes terminal — so at most four attempts. Spending the budget is not by itself a timeout: the stage is surfaced as `erroring` only if a retained attempt genuinely failed, since attempts the kubelet refused to admit spend the budget without ever running the package. |
+  | `jobTtlSucceeded` | `"1h"` | How long a succeeded stage Job (and its logs) is kept. Minimum `"1m"`. |
+  | `jobTtlFailed` | `"24h"` | How long a failed stage Job is kept, so failure logs outlive success logs. Minimum `"1m"`. |
+
+  The chart also gains `batch/job` RBAC for the operator; no values change is
+  required to upgrade.
+
 ### Bug Fixes (continued)
 
 - **`helm rollback` no longer destroys every NodeWright.** The chart ships its CRDs
@@ -170,6 +185,22 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Upgrade notes
 
+- **Run `helm upgrade` only when no package work is in flight.** The operator
+  that precedes this chart executes packages as raw pods, and the two execution
+  models are never allowed to overlap: the new operator withholds all
+  reconciliation while any pre-rename `Skyhook` is still rolling out. Upgrading
+  mid-rollout therefore leaves that node **cordoned and stalled** until you
+  `helm rollback` and let the rollout finish, or delete the legacy `Skyhook`.
+  Confirm every `Skyhook` reads `complete` first, and do not unpause or enable a
+  migrated `NodeWright` until its pre-upgrade package pods are gone. See the
+  operator release notes and
+  [docs/nodewright-migration.md](../docs/nodewright-migration.md).
+- **A crash-looping package now gives up after ~70 seconds instead of retrying
+  for up to an hour.** `jobBackoffLimit` bounds retries per stage; if you rely on
+  a package self-healing through transient environment problems, raise it before
+  upgrading. See the operator release notes for the full behavior change.
+- **`jobTtlSucceeded` / `jobTtlFailed` must be at least `"1m"`.** Setting `"0"`
+  to disable retention makes the operator fail validation at startup.
 - Remove any overrides under `controllerManager.kubeRbacProxy`; that values
   block no longer exists. Metrics remain available on HTTPS port `8443`.
   If you override `controllerManager.manager.env.metricsPort`, update it from

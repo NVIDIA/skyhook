@@ -469,6 +469,50 @@ func (_c *MockSkyhookNodeOnly_PruneLegacyMetadata_Call) RunAndReturn(run func() 
 	return _c
 }
 
+// ReloadState provides a mock function for the type MockSkyhookNodeOnly
+func (_mock *MockSkyhookNodeOnly) ReloadState() error {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReloadState")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func() error); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockSkyhookNodeOnly_ReloadState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReloadState'
+type MockSkyhookNodeOnly_ReloadState_Call struct {
+	*mock.Call
+}
+
+// ReloadState is a helper method to define mock.On call
+func (_e *MockSkyhookNodeOnly_Expecter) ReloadState() *MockSkyhookNodeOnly_ReloadState_Call {
+	return &MockSkyhookNodeOnly_ReloadState_Call{Call: _e.mock.On("ReloadState")}
+}
+
+func (_c *MockSkyhookNodeOnly_ReloadState_Call) Run(run func()) *MockSkyhookNodeOnly_ReloadState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_ReloadState_Call) Return(err error) *MockSkyhookNodeOnly_ReloadState_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_ReloadState_Call) RunAndReturn(run func() error) *MockSkyhookNodeOnly_ReloadState_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // RemoveState provides a mock function for the type MockSkyhookNodeOnly
 func (_mock *MockSkyhookNodeOnly) RemoveState(_package v1alpha1.PackageRef) error {
 	ret := _mock.Called(_package)

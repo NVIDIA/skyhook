@@ -74,6 +74,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ## Validate 2 nodes are targeted per skyhook
           ../../metrics_test.py nodewright_node_target_count 2 -t nodewright_name=strict-order-skyhook-gate
           ../../metrics_test.py nodewright_node_target_count 2 -t nodewright_name=strict-order-skyhook-aa
@@ -136,6 +137,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ## Validate per-node status counts
           ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=strict-order-skyhook-zzz -t status=blocked
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=foobar -t package_version=1.2 -t nodewright_name=strict-order-skyhook-zzz -t state=complete
@@ -202,6 +204,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ## b is paused, aa is waiting (blocked by gate's sequencing: all — the key proof)
           ../../metrics_test.py nodewright_status 1 -t nodewright_name=strict-order-skyhook-aa -t status=waiting
     - assert:
@@ -267,6 +270,8 @@ spec:
     - script:
         skipLogOutput: true
         content: |
+          set -e
+          ## Both nodes should have completed gate
           ../../metrics_test.py nodewright_node_status_count 2 -t nodewright_name=strict-order-skyhook-gate -t status=complete
         outputs:
         - name: metricsToken
@@ -304,6 +309,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ## Validate final state - both nodes complete
           ../../metrics_test.py nodewright_node_status_count 2 -t nodewright_name=strict-order-skyhook-gate -t status=complete
           ../../metrics_test.py nodewright_node_status_count 2 -t nodewright_name=strict-order-skyhook-aa -t status=complete

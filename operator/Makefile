@@ -115,20 +115,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object paths="./..."
 	$(MAKE) license-fmt ## fix up license headers
 
-# NOTE: intentionally NOT wired into `generate`. The nodewright.nvidia.com group is now
-# hand-maintained (the migration schemas have converged and the legacy group is frozen),
-# so NodeWright can evolve independently. This regenerator is kept for the rare case of
-# re-deriving the nodewright types from the legacy ones, but running it will overwrite any
-# hand edits to api/nodewright (e.g. the legacy-only read-only webhook divergence).
-.PHONY: generate-nodewright
-generate-nodewright: ## (manual, off by default) Re-derive the nodewright.nvidia.com API group from the legacy skyhook types.
-	../scripts/gen_nodewright.sh
-
-.PHONY: verify-nodewright-gen
-verify-nodewright-gen: manifests generate ## Fail if controller-gen output (deepcopy, CRDs, RBAC, webhook manifests) is stale vs source. The nodewright api types/webhooks are hand-maintained (gen_nodewright unhooked from make) so are not re-derived here.
-	@git diff --exit-code -- api/nodewright config/crd/bases config/rbac/role.yaml config/webhook/manifests.yaml || { echo "ERROR: generated outputs are stale; run 'make manifests generate' and commit."; exit 1; }
-
-.PHONY: generate-mocks 
+.PHONY: generate-mocks
 generate-mocks: mockery ## Generate code for interface mocking
 	$(MOCKERY) --config .mockery.yaml
 	$(MAKE) fmt ## fix up license headers

@@ -113,9 +113,11 @@ spec:
                   "image": "ghcr.io/nvidia/skyhook/agentless"
                 }
             ownerReferences:
-              - apiVersion: nodewright.nvidia.com/v1alpha1
-                kind: NodeWright
-                name: package-upgrade
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
           spec:
             initContainers:
               - name: nullptr-init

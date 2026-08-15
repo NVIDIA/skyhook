@@ -72,6 +72,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying initial metrics ==="
 
           # Verify matched nodes and ceiling for production compartment
@@ -111,6 +112,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying final metrics ==="
 
           # All nodes should be completed

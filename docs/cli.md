@@ -79,11 +79,22 @@ The CLI requires **operator version v0.8.0 or later** for full functionality of 
 | `reset --package` | ✅ Full (v0.7.5+) | ✅ Full |
 | `update-state` | ✅ Full (v0.7.5+) — see note | ✅ Full — see note |
 | `deployment-policy reset` | ❌ Not supported | ✅ Full |
-| `pause` | ❌ Not supported | ✅ Full |
+| `pause` | ❌ Not supported | ✅ Full — stop strength varies, see note |
 | `resume` | ❌ Not supported | ✅ Full |
 | `disable` | ❌ Not supported | ✅ Full |
 | `enable` | ❌ Not supported | ✅ Full |
 
+> **Note on `pause` stop strength:** the command works on every v0.8.0+ operator,
+> but *how hard it stops* is version-dependent, so the column above is about
+> availability only. On operators that run package stages as Jobs, pause suspends
+> the stage that is currently executing. On v0.8.0+ operators that predate that
+> change — and, briefly, for a stage still running as a pre-upgrade pod during the
+> upgrade itself — pause blocks all *new* stage scheduling but lets an in-flight
+> stage finish. (On v0.7.x and earlier the command does not exist at all; use
+> `spec.pause`.) `disable` never stops in-flight work on any version. See
+> [Emergency Stop](#emergency-stop) for the full semantics and for what `resume`
+> re-runs.
+>
 > **Note on `update-state` and `reset --package`:** These commands edit the
 > `nodewright.nvidia.com/nodeState_<nodewright>` annotation in-place. The
 > annotation's `map[string]PackageStatus` shape has been stable since
@@ -569,13 +580,27 @@ kubectl nodewright reset my-skyhook --package my-package:1.0 --confirm
 
 > **Note:** Requires operator v0.8.0+. For older operators, use `kubectl edit skyhook my-skyhook` and set `spec.pause: true`.
 
+**`pause` and `disable` stop different things.** `pause` is the one that can halt work already running: on operators that run package stages as Jobs it suspends the executing stage, and on older ones it blocks new scheduling only — see the version note below. `disable` takes the NodeWright out of processing so no *new* work is scheduled, but it does not stop a stage already under way; that stage runs to completion.
+
+They compose safely in either order: disabling a paused NodeWright leaves its suspended stages suspended rather than resuming them. Those stages resume only once **both** annotations are cleared — re-enabling on its own does nothing while the NodeWright is still paused. If you want everything stopped *now*, `pause` is the command.
+
 ```bash
 # Pause all processing
 kubectl nodewright pause my-skyhook --confirm
 
-# Or disable completely
+# Or prevent new work being scheduled
 kubectl nodewright disable my-skyhook --confirm
 ```
+
+> **How hard pause stops depends on the operator version.** On operators that run
+> package stages as Jobs, pause suspends the stage that is *currently executing* —
+> its pod is signaled to stop and nothing new starts until you `resume`, at which
+> point the stage re-runs from the start of its current phase (the agent skips
+> already-completed steps). On earlier operators — and, briefly, for a stage still
+> running as a pre-upgrade pod during an operator upgrade — a stage already in
+> flight finishes its current run before pause takes hold; pause still blocks all
+> *new* stage scheduling. If you need a running stage to stop immediately, confirm
+> the operator executes packages as Jobs.
 
 ## Output Formats
 

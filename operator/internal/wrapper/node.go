@@ -90,6 +90,7 @@ type SkyhookNodeOnly interface {
 	PruneLegacyMetadata() bool
 	// State returns the persisted NodeState for this node (from memory or annotations).
 	State() (v1alpha1.NodeState, error)
+	ReloadState() error
 	// SetState persists the given NodeState to the node's annotations and in-memory state.
 	SetState(state v1alpha1.NodeState) error
 	// RemoveState removes persisted state for the given package ref and updates annotations.
@@ -238,6 +239,26 @@ func (node *skyhookNode) Status() v1alpha1.Status {
 		return v1alpha1.StatusUnknown
 	}
 	return v1alpha1.GetStatus(status)
+}
+
+// ReloadState re-parses the node-state annotation into the cache. Callers use it after replacing
+// the underlying Node with one the apiserver returned, so the wrapper answers from what actually
+// landed rather than from the value the caller computed.
+//
+// It re-seeds rather than nils the cache, which is load-bearing and was got wrong once: IsComplete,
+// NextStage, GetComplete and PackageStatus read node.nodeState DIRECTLY rather than through
+// State(), so a nil cache reads as "no package has any state". A node that just completed then
+// reports incomplete, its MarkComplete event never fires, and the rollout stalls. Upsert is worse
+// still — NodeState.Upsert allocates a fresh map over a nil one, so the next write would drop every
+// other package's entry.
+func (node *skyhookNode) ReloadState() error {
+	node.nodeState = nil // force State() past its cache check
+	state, err := node.State()
+	if err != nil {
+		return fmt.Errorf("reloading node state for %s: %w", node.Name, err)
+	}
+	node.nodeState = state
+	return nil
 }
 
 // State returns the persisted NodeState for this node (from memory or annotations).

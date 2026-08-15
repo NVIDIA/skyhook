@@ -74,6 +74,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying compartment metrics ==="
 
           # Verify matched nodes metrics for each compartment
@@ -86,6 +87,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying ceiling metrics ==="
           
           # Verify ceiling (budget) for each compartment
@@ -125,6 +127,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying final metrics ==="
 
           # All compartments should have 100% completion and 0 in progress

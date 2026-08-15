@@ -40,6 +40,7 @@ spec:
     - script:
         skipLogOutput: true
         content: |
+          set -e
           ../../metrics_test.py nodewright_node_target_count 1 -t nodewright_name=delete-skyhook
         outputs:
         - name: metricsToken
@@ -49,6 +50,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=delete-skyhook -t status=complete
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=dexter -t nodewright_name=delete-skyhook -t state=complete
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=spencer -t nodewright_name=delete-skyhook -t state=complete
@@ -68,6 +70,7 @@ spec:
         - name: METRICS_TOKEN
           value: ($metricsToken)
         content: |
+          set -e
           ../../metrics_test.py nodewright_node_target_count 1 -t nodewright_name=delete-skyhook --not-found
           ../../metrics_test.py nodewright_node_status_count 1 -t nodewright_name=delete-skyhook -t status=complete --not-found
           ../../metrics_test.py nodewright_package_state_count 1 -t package_name=dexter -t nodewright_name=delete-skyhook -t state=complete --not-found
