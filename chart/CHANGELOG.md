@@ -5,6 +5,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [chart/v0.18.0] - 2026-08-17
+
+### Bug Fixes
+
+- *(operator)* Address drain config review feedback
+- *(api)* Reject inline tags and digests in package image
+- *(chart)* Repair immutable Deployment selector on skyhook->nodewright upgrade
+- *(operator)* Grant events.k8s.io RBAC so recorded events aren't rejected
+- *(chart)* Coerce PDB/replicas to int before comparing in validations
+- *(metrics)* Replace kube-rbac-proxy with controller-runtime auth
+- *(chart)* Template hardcoded skyhook-operator resource names
+- *(chart)* Template the namespaced RBAC names
+- *(operator)* Address review findings in the Jobs execution path
+- *(chart)* Fully qualify alpine/kubectl image for short-name-enforcing runtimes
+
+### New Features
+
+- *(operator)* Add configurable drain behavior
+- Rename the Skyhook API to NodeWright with a rollback-safe migration bridge
+- *(operator)* Job builders and stage-timeout/TTL options
+- *(operator)* Swap package/interrupt execution to Jobs (#303 part 1)
+- *(chart)* Expose Job TTL/stage-timeout options via the chart
+- *(operator)* Treat a stage timeout as a retryable failure
+- *(cli)* Default install namespace to nodewright, discover it at runtime
+- *(operator)* Default runtime-required taint key to nodewright.nvidia.com
+- *(operator)* Publish nodewright_* metrics alongside deprecated skyhook_*
+
+### Other Tasks
+
+- Bump chart versions
+- *(operator)* Describe backoffLimit as retries and fix the deadline-expiry text
+- *(operator)* Separate the retry budget from the parking decision
+- *(operator)* StageTimeout applies to the next Job, not one already running
+- *(operator)* Say what stageTimeout 0 does not bound
+- *(chart)* Document the Job TTL floor and the Job env knobs
+- Repoint tooling and prose at the moved docs/ paths
+
+
 ## [chart/v0.17.1] - 2026-06-26
 
 ### Bug Fixes
@@ -19,54 +57,38 @@ All notable changes to this project will be documented in this file.
 
 ### New Features
 
-- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release-tag helper 
+- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release-tag helper
 
 ### Other Tasks
 
-- *(docs)* Update docs around release and location of helm chart 
+- *(docs)* Update docs around release and location of helm chart
 - *(chart)* Bump to v0.16.0 with pinned operator and agent digests
-- Merge pull request #247 from NVIDIA/chore/chart-bump-v0.16.0
-
-chore(chart): bump to v0.16.0 with pinned operator and agent digests
-- Merge pull request #250 from NVIDIA/fix/chart
-
-fix(chart): agent container path pointing to skyhook not nodewright
-- Merge pull request #255 from NVIDIA/chore/chart-bump-v0.16.1
-
-chore(chart): bump to v0.16.1 with operator webhook cert deadlock fix
+- *(chart)* Bump to v0.16.1 with operator webhook cert deadlock fix
 - Bump chart versions
 
 ## [chart/v0.16.1] - 2026-05-26
 
 ### Other Tasks
 
-- Merge pull request #255 from NVIDIA/chore/chart-bump-v0.16.1
-
-chore(chart): bump to v0.16.1 with operator webhook cert deadlock fix
-- Merge pull request #256 from NVIDIA/feat/cherry-pick
-
-Feat: cherry pick
+- *(chart)* Bump to v0.16.1 with operator webhook cert deadlock fix
 
 ## [chart/v0.16.0] - 2026-05-22
 
 ### Bug Fixes
 
-- Update helm chart for drift 
+- Update helm chart for drift
 
 ### New Features
 
-- Pick to 16 
+- Pick to 16
 
 ### Other Tasks
 
-- Run helm tests with ctlptl registry 
-- Update go and libs to latest 
-- Parallelize e2e tests by pool and add merge gates 
-- *(docs)* Update docs around release and location of helm chart  
+- Run helm tests with ctlptl registry
+- Update go and libs to latest
+- Parallelize e2e tests by pool and add merge gates
+- *(docs)* Update docs around release and location of helm chart
 - *(chart)* Bump to v0.16.0 with pinned operator and agent digests
-- Merge pull request #248 from NVIDIA/cherry-pick/chart-to-v0.16.0
-
-chore(chart): bump to v0.16.0 with pinned operator and agent digests
 
 ## [chart/v0.15.1] - 2026-04-14
 
@@ -99,7 +121,7 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 
 ### Other Tasks
 
-- Version bump 
+- Version bump
 
 ## [chart/v0.13.0] - 2026-03-03
 
@@ -113,8 +135,8 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 
 ### Other Tasks
 
-- Chart version bump  
-- Update chart with versions 
+- Chart version bump
+- Update chart with versions
 
 ## [chart/v0.12.1] - 2026-02-10
 
@@ -124,7 +146,7 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 
 ### Other Tasks
 
-- Chart version bump 
+- Chart version bump
 
 ## [chart/v0.12.0] - 2026-02-06
 
@@ -141,7 +163,7 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 ### Other Tasks
 
 - *(chart)* Update versions
-- *(chart)* Update versions 
+- *(chart)* Update versions
 
 ## [chart/v0.11.1] - 2026-01-12
 
@@ -154,7 +176,7 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 ### Bug Fixes
 
 - *(chart)* Add missing rbac for deploymentpolicies
-- Sync chart CRD deploymentPolicy type and add smoke test 
+- Sync chart CRD deploymentPolicy type and add smoke test
 - Un namespace policies
 - Bad webhook rules
 
@@ -168,7 +190,7 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 ### Bug Fixes
 
 - *(chart)* Add missing rbac for deploymentpolicies
-- Sync chart CRD deploymentPolicy type and add smoke test 
+- Sync chart CRD deploymentPolicy type and add smoke test
 
 ### Other Tasks
 
@@ -178,22 +200,22 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 
 ### Bug Fixes
 
-- *(chart)* Resolve kubernetes security scan violations for compliance 
-- *(chart)* Use image tags instead of digest for multi-registry support 
+- *(chart)* Resolve kubernetes security scan violations for compliance
+- *(chart)* Use image tags instead of digest for multi-registry support
 
 ### New Features
 
-- *(crd)* Add deployment policy 
-- Add DeploymentPolicy validation and defaults with tests 
-- Implement deployment strategies with compartment-based batching 
-- Compartment status 
-- *(operator)* Update k8s version to 1.34.0 
-- Add container sha as optional field to package 
+- *(crd)* Add deployment policy
+- Add DeploymentPolicy validation and defaults with tests
+- Implement deployment strategies with compartment-based batching
+- Compartment status
+- *(operator)* Update k8s version to 1.34.0
+- Add container sha as optional field to package
 
 ### Other Tasks
 
-- Update the chart k8s version, operator version, and agent version 
-- Release 0.10.0 
+- Update the chart k8s version, operator version, and agent version
+- Release 0.10.0
 
 ## [chart/v0.9.2] - 2025-08-28
 
@@ -201,7 +223,7 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 
 - Update agent version
 - Update agent version
-- Update chart k8s version requirement 
+- Update chart k8s version requirement
 
 ## [chart/v0.9.1] - 2025-08-25
 
@@ -216,15 +238,15 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 - *(chart)* Fix broken helm chart tests
 - *(operator)* Make metrics binding disabled by default
 - *(chart/metrics)* Update for prometheus auto scraping and rbac examples
-- *(chart)* Set back to v6.1.4 agent due to bug in v6.2.0 
+- *(chart)* Set back to v6.1.4 agent due to bug in v6.2.0
 
 ### New Features
 
 - *(chart)* Enable scraping of metrics by prometheus
 - *(operator)* Update k8s sdk version
-- Fix agent for distroless and have scr name in flag/history/log 
+- Fix agent for distroless and have scr name in flag/history/log
 - *(chart)* Add node affinity for operator pod configuration
-- *(operator)* Added disabled, paused, waiting, and blocked statuses for skyhooks and nodes 
+- *(operator)* Added disabled, paused, waiting, and blocked statuses for skyhooks and nodes
 
 ### Other Tasks
 
@@ -248,6 +270,7 @@ chore(chart): bump to v0.16.0 with pinned operator and agent digests
 - How we compare interrupt pods
 - Reviews
 - *(operator)* Missed changes related to changing min value for priority
+- *(chart)* Fix broken helm chart tests
 
 ### New Features
 

@@ -22,6 +22,10 @@ header = """
 All notable changes to this project will be documented in this file.
 
 """
+# `commit.message` is only the conventional-commit description when the commit
+# parses as one; with filter_unconventional = false everything else keeps its full
+# raw message, body included. Hence `split | first`: one changelog bullet is one
+# subject line, never a commit body.
 body = """
 {% if version %}\
     ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
@@ -32,7 +36,7 @@ body = """
     ### {{ group | striptags | trim | upper_first }}
     {% for commit in commits %}
         - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
-            {{ commit.message | upper_first }}\
+            {{ commit.message | split(pat="\n") | first | trim | upper_first }}\
             {% if commit.remote.username %} by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}){%- endif %}\
     {% endfor %}
 {% endfor %}\n
@@ -47,9 +51,21 @@ conventional_commits = true
 filter_unconventional = false
 split_commits = false
 commit_preprocessors = [
+    # Some PRs were squashed with GitHub's merge-style subject, so the real
+    # conventional message sits in the body: `Merge pull request #N from ...\n\n
+    # chore(chart): bump ...`. Drop the subject line so the body is parsed and
+    # grouped normally. On release branches this commit is often the only one the
+    # path filter keeps, so without this the whole release section renders empty.
+    { pattern = '^Merge pull request #[0-9]+ from \S+[ \t]*\r?\n\s*\r?\n', replace = "" },
     { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" },
 ]
 commit_parsers = [
+    # Skip real merge commits by parent count, not by subject: they duplicate the
+    # branch commits already listed individually, and branch-sync merges carry
+    # git's `# Conflicts:` block plus hand-written merge prose in their body. The
+    # subject alone can't decide this, because the squashes handled above look
+    # identical and do carry content.
+    { field = "merge_commit", pattern = "true", skip = true },
     { message = "^feat", group = "New Features" },
     { message = "^fix", group = "Bug Fixes" },
     { message = "^bug", group = "Bug Fixes" },
