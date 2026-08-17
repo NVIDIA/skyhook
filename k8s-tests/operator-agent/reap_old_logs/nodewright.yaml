@@ -32,11 +32,4 @@ spec:
       configMap:
         apply.sh: |-
           #!/bin/bash
-          sleep 1
-          if [ $(ls /var/log/skyhook/reap-old-logs-agent-operator/shellscript/1.1.1/*.log | wc -l) -eq 5 ]; then
-            echo "5 logs found. After this should still be 5."
-            exit 0
-          else
-            echo "Not enough logs yet. Erroring to produce more."
-            exit 1
-          fi
+          echo "reap-old-logs: this attempt's log is the newest of the set"

@@ -22,6 +22,7 @@ on:
     paths:
       - agent/**
       - '!agent/go/**'
+      - k8s-tests/operator-agent/**
       - containers/agent.Dockerfile
       - .github/actions/**
       - operator/versions.yaml
@@ -36,6 +37,7 @@ on:
     paths:
       - agent/**
       - '!agent/go/**'
+      - k8s-tests/operator-agent/**
       - containers/agent.Dockerfile
       - .github/actions/**
       - operator/versions.yaml
