@@ -1,6 +1,6 @@
 # Metrics
 
-The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a NodeWright Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../../operator/internal/controller/metrics.go).
+The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a NodeWright Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go).
 
 ## Deprecated: the `skyhook_*` metric names
 
@@ -110,7 +110,7 @@ Note: When a NodeWright is deleted all metrics for that NodeWright are no longer
 
 ## Testing
 
-See the script [metrics_test.py](../../../k8s-tests/chainsaw/metrics_test.py) that will let you test for the existence or absence of metrics based on name and labels. The metrics endpoint requires a bearer token authorized for the `/metrics` non-resource URL. Create a scraper identity and bind it to the chart's metrics-reader role:
+See the script [metrics_test.py](../../k8s-tests/chainsaw/metrics_test.py) that will let you test for the existence or absence of metrics based on name and labels. The metrics endpoint requires a bearer token authorized for the `/metrics` non-resource URL. Create a scraper identity and bind it to the chart's metrics-reader role:
 ```bash
 kubectl -n nodewright create serviceaccount metrics-reader
 kubectl create clusterrolebinding metrics-reader-access \

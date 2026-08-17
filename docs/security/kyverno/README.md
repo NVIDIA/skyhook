@@ -7,7 +7,7 @@ This directory contains example [Kyverno](https://kyverno.io/) policies for use 
 
 **Note:**
 
-- This directory was previously at the repo root and has been moved to `docs/kyverno/` for clarity.
+- This directory was previously at the repo root and has been moved to `docs/security/kyverno/` for clarity.
 - If you use these policies, ensure you enable the `skyhook-viewer-role` in your Helm values and bind Kyverno to that role.
 
-See the main [README](../README.md) for more information about NodeWright. 
+See the main [README](../../README.md) for more information about NodeWright. 

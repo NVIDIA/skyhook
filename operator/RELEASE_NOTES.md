@@ -51,7 +51,7 @@ For the full commit-level log see CHANGELOG.md.
 
   `kubectl nodewright` discovers the operator's namespace rather than assuming one, so
   it keeps working against a `skyhook`-namespace install. See
-  [docs/nodewright-migration.md](../docs/nodewright-migration.md#install-namespace-skyhook---nodewright).
+  [docs/getting-started/migration.md](../docs/getting-started/migration.md#install-namespace-skyhook---nodewright).
 
 ### Deprecations
 
@@ -74,11 +74,11 @@ For the full commit-level log see CHANGELOG.md.
   **The legacy set is removed in operator v0.20.0**, the same release that removes
   the legacy `skyhook.nvidia.com` API group, so there is one deadline rather than
   two. Update dashboards and alerts before then. See
-  [docs/metrics/README.md](../docs/metrics/README.md) and the
-  [migration guide](../docs/nodewright-migration.md#metrics).
+  [docs/observability/metrics.md](../docs/observability/metrics.md) and the
+  [migration guide](../docs/getting-started/migration.md#metrics).
 
   Note this roughly doubles the operator's exported series count for the duration of
-  the window; see [docs/operator_resources_at_scale.md](../docs/operator_resources_at_scale.md).
+  the window; see [docs/operations/resources-at-scale.md](../docs/operations/resources-at-scale.md).
   If you have already migrated your dashboards, or never consumed the legacy names,
   set `PUBLISH_LEGACY_METRICS=false` (chart:
   `controllerManager.manager.env.publishLegacyMetrics`) to drop the deprecated half
@@ -112,7 +112,7 @@ For the full commit-level log see CHANGELOG.md.
   before operator v0.20.0, after which the legacy key is neither tolerated nor
   removed. To stay on the old key in the meantime, set it explicitly via
   `controllerManager.manager.env.runtimeRequiredTaint`. See
-  [docs/runtime_required.md](../docs/runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
+  [docs/user-guide/runtime-required.md](../docs/user-guide/runtime-required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 - **The primary CRD is renamed from `Skyhook` (`skyhook.nvidia.com/v1alpha1`) to
   `NodeWright` (`nodewright.nvidia.com/v1alpha1`), and `DeploymentPolicy` moves to
@@ -139,7 +139,7 @@ For the full commit-level log see CHANGELOG.md.
     restart.
   - The legacy `skyhook.nvidia.com` group remains available for a two-minor-release
     migration window spanning v0.18.x and v0.19.x, and is removed in operator v0.20.0.
-  - **See [docs/nodewright-migration.md](../docs/nodewright-migration.md)** for the
+  - **See [docs/getting-started/migration.md](../docs/getting-started/migration.md)** for the
     full migration guide, the pre-upgrade check, and a verification checklist.
 
 ### Bug Fixes
@@ -297,7 +297,7 @@ For the full commit-level log see CHANGELOG.md.
   pre-rename operator may still be mutating. Pre-upgrade package pods run to
   completion as pods and are removed by the prune once `LEGACY_CLEANUP_DELAY`
   elapses. This is the same quiet-window prerequisite the rename carries above —
-  see [docs/nodewright-migration.md](../docs/nodewright-migration.md).
+  see [docs/getting-started/migration.md](../docs/getting-started/migration.md).
   - **If you upgrade anyway with a rollout in flight**, the failure mode is a
     **stuck, cordoned node** rather than corruption or double execution: the hold
     protects the node, the legacy `Skyhook` stays frozen at its stage, and
@@ -384,6 +384,6 @@ and CR deletion behave. Affects the Operator, Webhook, and CRD.
 
 ### Migration
 
-See [`docs/uninstall.md`](../docs/uninstall.md) for the API reference, workflow
+See [`docs/user-guide/uninstall.md`](../docs/user-guide/uninstall.md) for the API reference, workflow
 examples, cancellation semantics, webhook rules, and migration guidance from
 the previous remove-from-spec behavior.

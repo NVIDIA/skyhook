@@ -175,4 +175,4 @@ will time out again.
 - Use appropriate `podNonInterruptLabels` selectors to identify important workloads that should block interrupts
 - Consider the impact of node cordoning on cluster capacity
 - Monitor package logs during interrupt operations for troubleshooting
-- Use Grafana dashboards to monitor interrupt operations and track package state transitions across your cluster (see [docs/metrics/](metrics/) for dashboard setup and configuration)
+- Use Grafana dashboards to monitor interrupt operations and track package state transitions across your cluster (see [docs/observability/metrics.md](../observability/metrics.md) for dashboard setup and configuration)

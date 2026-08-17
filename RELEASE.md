@@ -7,7 +7,7 @@
 
 What a consumer or new contributor needs to know: how versions are numbered, when releases happen, where artifacts are published, and what support an older version gets.
 
-This page is a summary. The step-by-step runbook maintainers follow is [`docs/release-process.md`](docs/release-process.md); the versioning rules in full are in [`docs/versioning.md`](docs/versioning.md).
+This page is a summary. The step-by-step runbook maintainers follow is [`docs/contributing/release-process.md`](docs/contributing/release-process.md); the versioning rules in full are in [`docs/operations/versioning.md`](docs/operations/versioning.md).
 
 ## Versioning
 
