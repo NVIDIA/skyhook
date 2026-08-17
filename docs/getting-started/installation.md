@@ -2,19 +2,68 @@
 
 NodeWright is installed via Helm as an OCI artifact from GitHub Container Registry.
 
-For prerequisites, install commands, and configuration options, see the [project README](../../README.md#installation-via-helm).
+## Prerequisites
 
-## Quick install
+- Kubernetes cluster (tested on v1.30+)
+- Helm 3.x installed
+- Container registry access credentials (if using private registries)
+
+## Install NodeWright
 
 ```bash
+# The chart is distributed as an OCI artifact on GitHub Container Registry.
+# Helm 3.8+ supports OCI natively — no `helm repo add` needed.
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
   --version v0.17.1 \
   --namespace nodewright \
   --create-namespace
 ```
 
+> **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`.
+
+> **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above.
+
+## Configure Image Pull Secrets (if needed)
+
+If you're using private container registries, create the necessary secrets:
+
+```bash
+kubectl create secret generic node-init-secret \
+  --from-file=.dockerconfigjson=${HOME}/.docker/config.json \
+  --type=kubernetes.io/dockerconfigjson \
+  --namespace nodewright
+```
+
+NodeWright currently uses a single shared image pull secret for all packages, and agent/operator containers. If you need access to multiple registries, combine the credentials into one `dockerconfigjson` secret with multiple registry auths.
+
+## Verify Installation
+
+```bash
+# Check that the operator is running
+kubectl get pods -n nodewright
+
+# Wait for the deployment to be available
+kubectl wait --for=condition=Available deployment -l control-plane=controller-manager -n nodewright --timeout=300s
+
+# Wait for the operator pod to be ready
+kubectl wait --for=condition=Ready pod -l control-plane=controller-manager -n nodewright --timeout=300s
+
+# Verify the CRDs are installed
+kubectl get crd | grep nodewright
+```
+
+## Uninstalling
+
+By default, the Helm chart includes a pre-delete hook that automatically cleans up all NodeWright and DeploymentPolicy resources before uninstalling:
+
+```bash
+helm uninstall nodewright --namespace nodewright
+```
+
+For more details on explicit package uninstall, see [Uninstall](../user-guide/uninstall.md).
+
 ## Related
 
 - [Kubernetes support matrix](../operations/kubernetes-support.md)
 - [Versioning](../operations/versioning.md)
-- [Uninstall](../user-guide/uninstall.md)
+- [Migration from Skyhook](migration.md)
