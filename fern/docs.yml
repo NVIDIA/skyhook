@@ -22,10 +22,6 @@ navbar-links:
   - type: github
     value: https://github.com/NVIDIA/nodewright
 
-experimental:
-  mdx-components:
-    - ./components
-
 products:
   - display-name: NodeWright
     path: ../docs/index.yml

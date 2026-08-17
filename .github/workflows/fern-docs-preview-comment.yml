@@ -1,5 +1,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # Workflow 2 of 2 for Fern doc previews.
 #
@@ -22,9 +34,15 @@ permissions:
   pull-requests: write
   actions: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name || github.repository }}-${{ github.event.workflow_run.head_branch || github.event.workflow_run.id }}
+  cancel-in-progress: true
+
 jobs:
   preview:
     runs-on: ubuntu-latest
+    # runs-on: linux-amd64-cpu8  # NVIDIA self-hosted runner
+    timeout-minutes: 15
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Download fern sources and metadata
@@ -47,9 +65,10 @@ jobs:
 
       - name: Install Fern CLI
         run: |
+          set -euo pipefail
           VERSION=$(jq -r .version fern/fern.config.json)
-          if [[ "$VERSION" != "latest" ]] && ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::fern.config.json .version must be 'latest' or a semver string"
+          if ! [[ "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?|latest)$ ]]; then
+            echo "::error::fern.config.json .version '$VERSION' is not a valid semver or 'latest'"
             exit 1
           fi
           npm install -g "fern-api@${VERSION}"
@@ -61,9 +80,9 @@ jobs:
           HEAD_REF: ${{ steps.metadata.outputs.head_ref }}
         working-directory: ./fern
         run: |
-          OUTPUT=$(fern generate --docs --preview --id "$HEAD_REF" 2>&1)
-          echo "$OUTPUT"
-          URL=$(echo "$OUTPUT" | grep -oP 'Published docs to \K.*(?= \()')
+          set -o pipefail
+          fern generate --docs --preview --id "$HEAD_REF" 2>&1 | tee /tmp/fern-output.log
+          URL=$(grep -oP 'Published docs to \K.*(?= \()' /tmp/fern-output.log || true)
           if [ -z "$URL" ]; then
             echo "::error::Failed to generate preview URL. See fern output above."
             exit 1
@@ -85,7 +104,7 @@ jobs:
             echo "page_links=" >> "$GITHUB_OUTPUT"; exit 0
           fi
 
-          BASE_URL=$(echo "$PREVIEW_URL" | grep -oP 'https?://[^/]+')
+          BASE_URL="${PREVIEW_URL%/}"
           FILES_PARAM=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//' \
             | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=',/'))")
           RESPONSE=$(curl -sf -H "FERN_TOKEN: $FERN_TOKEN" "${PREVIEW_URL}/api/fern-docs/get-slug-for-file?files=${FILES_PARAM}" 2>/dev/null) || {

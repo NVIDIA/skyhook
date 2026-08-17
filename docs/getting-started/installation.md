@@ -20,7 +20,6 @@ helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
 ```
 
 > **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`.
-
 > **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above.
 
 ## Configure Image Pull Secrets (if needed)
