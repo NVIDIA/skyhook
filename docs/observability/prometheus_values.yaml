@@ -17,7 +17,7 @@
 # Example of scraping each authenticated HTTPS pod endpoint. The Prometheus
 # ServiceAccount must be bound to nodewright-metrics-reader (named
 # skyhook-operator-metrics-reader before the resource-name rename, so re-point an
-# existing binding). See docs/metrics/README.md.
+# existing binding). See docs/observability/metrics.md.
 extraScrapeConfigs: |
   - job_name: 'nodewright'
     metrics_path: /metrics

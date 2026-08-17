@@ -348,7 +348,7 @@ mid-flight as well as at the end. Two full passes were run and agreed case for c
 the cases above against a Jobs operator and needed no code change: child pods inherit the full label
 set, so the CLI's label queries resolve identically, and post-completion `package logs` gets better
 because the Job is retained. The version-dependent stop-strength of `pause` is recorded in
-[`docs/cli.md`](../user-guide/cli.md)'s compatibility matrix.
+[`docs/user-guide/cli.md`](../user-guide/cli.md)'s compatibility matrix.
 
 **Upgrade.** The hold is what makes the upgrade safe, and it was validated separately, on the rename
 pass: an upgrade started mid-rollout held without taking over the node (requeuing roughly every 20s,

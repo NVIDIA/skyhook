@@ -72,7 +72,7 @@ func EnsureNodeWrightServed(disco discovery.DiscoveryInterface) error {
 	if skyhookServed {
 		return fmt.Errorf(
 			"this CLI targets the %s API group, but the cluster's operator only serves the legacy %s group; "+
-				"upgrade to a NodeWright-capable operator (see docs/cli.md)",
+				"upgrade to a NodeWright-capable operator (see docs/user-guide/cli.md)",
 			nwv1.GroupVersion.Group, skyhookv1.GroupVersion.Group)
 	}
 	return nil

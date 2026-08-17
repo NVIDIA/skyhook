@@ -373,7 +373,7 @@ alerts before then. `skyhook_*` help text in `/metrics` names its replacement an
 Dual-publishing roughly doubles the exported series count. Once your dashboards and alerts are migrated,
 set `PUBLISH_LEGACY_METRICS=false` (chart: `controllerManager.manager.env.publishLegacyMetrics`) to drop
 the deprecated half early rather than waiting for v0.20.0. The full metric reference and the opt-out are in
-[docs/metrics/README.md](../observability/metrics.md).
+[docs/observability/metrics.md](../observability/metrics.md).
 
 ## Downstream consumers (e.g. aicr)
 

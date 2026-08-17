@@ -240,7 +240,7 @@ make grafana-password
 
 Use the file [prometheus_values.yaml](prometheus_values.yaml) as an example of configuring a scraper job for NodeWright. Note: This can be used directly with the prometheus community chart:
 ```bash
-helm install prometheus prometheus-community/prometheus -f ../docs/metrics/prometheus_values.yaml
+helm install prometheus prometheus-community/prometheus -f ../docs/observability/prometheus_values.yaml
 ```
 
 ### Auto discovery

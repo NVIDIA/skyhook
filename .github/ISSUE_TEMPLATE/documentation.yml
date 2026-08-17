@@ -65,7 +65,7 @@ body:
       label: Where is it?
       description: The page URL, or the file path in this repository. If it is missing entirely, tell us where you looked for it.
       placeholder: |
-        docs/interrupt_flow.md, "Draining a node" section
+        docs/architecture/interrupt-flow.md, "Draining a node" section
         or: https://github.com/NVIDIA/nodewright/blob/main/README.md#stages
     validations:
       required: true

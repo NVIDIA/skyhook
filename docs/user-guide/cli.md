@@ -362,12 +362,12 @@ something a CR manifest edit can change. The default key did move to
 deprecation window, so an `additionalTolerations` entry naming the legacy key
 stays valid. Migrating it is a change to your **provisioning** config (autoscaler,
 node pool, `--register-with-taints`), not to your CRs; see
-[docs/runtime_required.md](runtime-required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
+[docs/user-guide/runtime-required.md](runtime-required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 The operator's mirror controller already converts the live objects in the
 cluster automatically; the edit above is only for the manifests in your source
 of truth (git / GitOps). See
-[docs/nodewright-migration.md](../getting-started/migration.md) for the full flow.
+[docs/getting-started/migration.md](../getting-started/migration.md) for the full flow.
 
 ### Deployment Policy Commands
 

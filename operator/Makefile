@@ -609,11 +609,11 @@ metrics:
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
 
-	../docs/metrics/generate-dashboards.sh
-	$(KUBECTL) apply -f ../docs/metrics/grafana-dashboards-configmap.yaml
+	../docs/observability/generate-dashboards.sh
+	$(KUBECTL) apply -f ../docs/observability/grafana-dashboards-configmap.yaml
 
-	helm upgrade --install prometheus prometheus-community/prometheus -f ../docs/metrics/prometheus_values.yaml
-	helm upgrade --install grafana grafana/grafana -f ../docs/metrics/grafana_values.yaml
+	helm upgrade --install prometheus prometheus-community/prometheus -f ../docs/observability/prometheus_values.yaml
+	helm upgrade --install grafana grafana/grafana -f ../docs/observability/grafana_values.yaml
 	echo "kubectl port-forward svc/prometheus-server 9090:80"
 
 .PHONY: metrics-undeploy
@@ -622,7 +622,7 @@ metrics-undeploy:
 	helm uninstall grafana
 
 	$(KUBECTL) delete configmap grafana-dashboards
-	rm -rf ../docs/metrics/grafana-dashboards-configmap.yaml
+	rm -rf ../docs/observability/grafana-dashboards-configmap.yaml
 
 .PHONY: grafana-password
 grafana-password:

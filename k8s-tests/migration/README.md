@@ -47,7 +47,7 @@ The cluster must be a clean pre-rename baseline. Phase 1 refuses to run if `node
 | 3 | `helm upgrade` to the working-tree chart |
 | 4 | Asserts state migrated and nothing re-ran |
 | 5 | Asserts legacy objects went read-only |
-| 6 | Follows `docs/nodewright-migration.md` verbatim |
+| 6 | Follows `docs/getting-started/migration.md` verbatim |
 | 7 | Asserts the prune after `LEGACY_CLEANUP_DELAY` |
 | 8 | Asserts the migration hold |
 

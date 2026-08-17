@@ -355,12 +355,12 @@ phase_5() {
 }
 
 #######################################################################
-# Phase 6: follow docs/nodewright-migration.md verbatim
+# Phase 6: follow docs/getting-started/migration.md verbatim
 #######################################################################
 phase_6() {
 	log_phase 6 "follow the migration guide's own commands verbatim"
 
-	## This is the doc's own command, run as written (docs/cli.md, "Migrating manifests
+	## This is the doc's own command, run as written (docs/user-guide/cli.md, "Migrating manifests
 	## to NodeWright"). It rewrites apiVersion and kind ONLY. A blanket
 	## s|skyhook\.nvidia\.com/|...|g would also rewrite the nodeSelectors key, which
 	## names the user's own node label rather than anything the operator owns.
@@ -544,7 +544,7 @@ phase_8() {
 	## Skyhook's STATUS does not bump its generation, so the mirror does not touch the
 	## NodeWright and no reconcile is queued. With every object settled, nothing triggers
 	## one for many minutes and a plain wait is a coin flip. A restart is also the
-	## faithful scenario: docs/nodewright-migration.md describes the hold as an
+	## faithful scenario: docs/getting-started/migration.md describes the hold as an
 	## on-startup protection for an operator upgraded while a rollout was in flight,
 	## which is exactly a fresh process finding a non-complete legacy Skyhook.
 	restart_operator "with $HOLD_NAME parked in_progress"
