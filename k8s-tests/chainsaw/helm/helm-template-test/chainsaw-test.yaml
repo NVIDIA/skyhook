@@ -253,7 +253,7 @@ spec:
           helm template test-release ${CHART} -n nodewright \
             -s templates/selector-migration-job.yaml
         check:
-          "(contains($stdout, 'image: alpine/kubectl'))": true
+          "(contains($stdout, 'image: docker.io/alpine/kubectl'))": true
           ## must stay digest-pinned, not a floating tag
           "(contains($stdout, '@sha256:'))": true
           "(contains($stdout, 'bitnami'))": false
