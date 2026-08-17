@@ -175,7 +175,8 @@ webhook:
   ## pre-delete hooks and the selector-migration pre-upgrade hook). Pinned to a
   ## maintained, versioned, multi-arch alpine/kubectl release; keep the tag in
   ## skew with the supported Kubernetes range and bump per docs/contributing/release-process.md.
-  removalImage: alpine/kubectl
+  ## Keep the registry host explicit: short-name-enforcing runtimes reject unqualified references.
+  removalImage: docker.io/alpine/kubectl
   removalTag: 1.36.2
   removalDigest: "sha256:01d138ce994b684abc62d9cfdff44de42a4c8996dcc12626dd0193afc3fb5a95"
 

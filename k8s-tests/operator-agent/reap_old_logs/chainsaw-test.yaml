@@ -38,13 +38,34 @@ spec:
           ## clean up from prior runs
           ../check_node.sh kind-worker "rm -rf /var/log/skyhook/reap-old-logs-agent-operator || true" ".*" 2
           ../check_node.sh kind-worker "rm -rf /var/lib/skyhook/reap-old-logs-agent-operator || true" ".*" 2
+    - script:
+        content: |
+          ## Seed more logs than the agent keeps, so the package has something to reap on its
+          ## first attempt. Deliberately not driven by repeated failures: the operator gives a
+          ## stage only JOB_BACKOFF_LIMIT+1 attempts, so a test that needs N failed attempts to
+          ## produce N logs silently re-encodes that budget and breaks when it changes.
+          ## The seeds carry real timestamps rather than an obvious placeholder because the Go
+          ## agent parses the timestamp out of the name and skips any log it cannot parse, so a
+          ## placeholder would be reaped by the Python agent and ignored by the Go one (#221).
+          dir=/var/log/skyhook/reap-old-logs-agent-operator/shellscript/1.1.1
+          ../check_node.sh kind-worker "mkdir -p $dir && touch $dir/shellscript_run.sh-2020-01-0{1,2,3,4,5,6,7}-000000.log && ls $dir/*.log | wc -l" '^7$' 2
     - apply:
         file: nodewright.yaml
     - assert:
         file: assert.yaml
     - script:
         content: |
-          ../check_node.sh kind-worker "ls /var/log/skyhook/reap-old-logs-agent-operator/shellscript/1.1.1/*.log | wc -l" "5" 2
+          ## 7 seeds plus this attempt's own logs come back down to 5. Counting survivors rather
+          ## than naming them keeps this agnostic about which 5: the Python agent ranks by mtime,
+          ## where all 7 seeds tie, and the Go agent ranks by the timestamp in the name. ls -rt
+          ## lists oldest first, so a failure prints the surviving set rather than just a count.
+          dir=/var/log/skyhook/reap-old-logs-agent-operator/shellscript/1.1.1
+          ../check_node.sh kind-worker "ls -rt $dir/*.log | wc -l" '^5$' 5
+          ## One attempt writes 4 logs (apply and config, each with its check step) and only the
+          ## apply step echoes this, making it the oldest of the four. Finding it in a survivor
+          ## pins that the reaper counted from the newest end rather than trimming the wrong
+          ## side, which the count alone would pass either way.
+          ../check_node.sh kind-worker "cat $dir/*.log" 'newest' 5
   - finally:
     - delete:
         file: nodewright.yaml

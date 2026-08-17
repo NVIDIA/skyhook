@@ -71,7 +71,7 @@ spec:
         emptyDir: {}
       containers:
       - name: selector-migration
-        image: {{ .Values.webhook.removalImage | default "alpine/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "latest" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "latest" }}{{- end }}
+        image: {{ .Values.webhook.removalImage | default "docker.io/alpine/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "latest" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "latest" }}{{- end }}
         imagePullPolicy: Always
         env:
         - name: KUBECACHEDIR
