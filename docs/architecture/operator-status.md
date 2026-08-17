@@ -152,7 +152,7 @@ cordon → wait → drain → upgrade (if upgrading) → config → interrupt �
 
 ## NodeWright Status Fields
 
-The NodeWright resource's `.status` object includes fields that track batch rollout state. Two fields are particularly relevant for [batch stickiness](deployment_policy.md#batch-stickiness) and [node ordering](ordering_of_skyhooks.md#node-order-within-a-rollout):
+The NodeWright resource's `.status` object includes fields that track batch rollout state. Two fields are particularly relevant for [batch stickiness](../user-guide/deployment-policy.md#batch-stickiness) and [node ordering](ordering.md#node-order-within-a-rollout):
 
 | Field | Definition |
 |-------|------------|

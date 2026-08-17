@@ -513,4 +513,4 @@ For problematic releases:
 1. Tag new patch release with fixes
 2. For critical issues: Update chart `appVersion` to previous stable version
 
-See [versioning.md](versioning.md) for version strategy details. 
+See [versioning.md](../operations/versioning.md) for version strategy details. 

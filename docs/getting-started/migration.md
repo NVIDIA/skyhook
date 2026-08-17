@@ -32,7 +32,7 @@
    pruned later (see [Rollback window](#rollback-window-legacy_cleanup_delay)).
 2. **Rename your CRs** (in git for GitOps, or by re-applying for Helm/manual): change `apiVersion` and
    `kind`, keep the same `metadata.name`. This is a mechanical group/kind swap with no change to the spec
-   body; see the sed one-liner in [the CLI reference](cli.md#migrating-manifests-to-nodewright).
+   body; see the sed one-liner in [the CLI reference](../user-guide/cli.md#migrating-manifests-to-nodewright).
 3. **Delete the old `Skyhook`/`DeploymentPolicy` CRs**, but only after confirming the corresponding
    `NodeWright` exists and is being reconciled (see [safe deletion](#safe-deletion-ordering)). Delete the
    legacy `DeploymentPolicy` objects too. The mirrored `NodeWright` objects are the real, reconciled
@@ -108,7 +108,7 @@ is separate: it only controls warnings about untracked objects and does not affe
 
    Same for `DeploymentPolicy` (only `apiVersion` changes; `kind` stays `DeploymentPolicy`). This is a
    mechanical group/kind swap; see the sed one-liner in
-   [the CLI reference](cli.md#migrating-manifests-to-nodewright). The commit should **remove** the old
+   [the CLI reference](../user-guide/cli.md#migrating-manifests-to-nodewright). The commit should **remove** the old
    `Skyhook` manifest and **add** the `NodeWright` manifest so Argo prunes the old and adopts the new in
    one sync.
 
@@ -151,7 +151,7 @@ are usually authored separately (not part of the operator chart); adjust to your
    `nodeSelectors` and `podNonInterruptLabels` keys, which name **your** node and pod labels rather than
    anything the operator owns. Rewriting them points the CR at a key nothing carries, so it matches nothing,
    and it turns this step into a real spec change instead of the no-op adoption described above. See
-   [the CLI reference](cli.md#migrating-manifests-to-nodewright) for what else to rename by hand.
+   [the CLI reference](../user-guide/cli.md#migrating-manifests-to-nodewright) for what else to rename by hand.
 
 3. **Delete the old CRs** once you have confirmed the `NodeWright` exists and reconciles (see
    [safe deletion](#safe-deletion-ordering)):
@@ -306,7 +306,7 @@ are never rewritten. Its default did move in the rename, from
 The operator applies only the configured key, but tolerates and removes **both** for the deprecation
 window, so nodes stamped with the legacy key by an autoscaler or node template are not stranded
 unschedulable. Update your provisioning config before operator v0.20.0; see
-[runtime_required.md](runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
+[runtime_required.md](../user-guide/runtime-required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 This is transition-only behavior and is removed together with the `skyhook.nvidia.com` group in
 operator v0.20.0.
@@ -333,7 +333,7 @@ What this does change:
 - **`kubectl nodewright`.** With no `--namespace`, the CLI discovers the operator's namespace
   rather than assuming one, so it keeps working against a `skyhook`-namespace install. It checks
   `nodewright`, then `skyhook` (printing a one-line note), then sweeps cluster-wide. See
-  [the CLI reference](cli.md#namespace-resolution).
+  [the CLI reference](../user-guide/cli.md#namespace-resolution).
 
 If you do want to move an existing install, treat it as an uninstall and reinstall, not a
 migration:
@@ -373,7 +373,7 @@ alerts before then. `skyhook_*` help text in `/metrics` names its replacement an
 Dual-publishing roughly doubles the exported series count. Once your dashboards and alerts are migrated,
 set `PUBLISH_LEGACY_METRICS=false` (chart: `controllerManager.manager.env.publishLegacyMetrics`) to drop
 the deprecated half early rather than waiting for v0.20.0. The full metric reference and the opt-out are in
-[docs/metrics/README.md](metrics/README.md).
+[docs/metrics/README.md](../observability/metrics.md).
 
 ## Downstream consumers (e.g. aicr)
 
@@ -406,7 +406,7 @@ The legacy `skyhook.nvidia.com` group is kept for a two-minor-release migration 
 
 This is the single date every transition-only behavior keys off: the legacy API group, the per-node
 metadata prune, the legacy runtime-required taint key (see
-[runtime_required.md](runtime_required.md#deprecation-window)), and the legacy `skyhook_*` metric names
+[runtime_required.md](../user-guide/runtime-required.md#deprecation-window)), and the legacy `skyhook_*` metric names
 (see [Metrics](#metrics) below) all end together in v0.20.0. In the
 removal release:
 

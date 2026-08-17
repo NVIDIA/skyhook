@@ -216,7 +216,7 @@ Today the `nodewright.nvidia.com/pause` annotation (the CLI's **Emergency Stop**
 
 Failure logs thus outlive success logs. If the operator is down when a Job finishes, the TTL is simply set on resync — level-triggered, no timer lost. Where failure logs actually live: the archive pod for a genuinely-failing step, the `last-logs` annotation for hangs and never-started containers, and the agent's host-side logs (`SKYHOOK_LOG_DIR`) behind both.
 
-Scale: succeeded pods are retained for the success window — roughly `nodes × packages × 3 stages` extra terminated pods at peak — plus at most two archived failed pods (the first and latest failures) per actively-failing stage. Keep `JOB_TTL_SUCCEEDED` short; note that kube-controller-manager's terminated-pod GC may reap retained *pods* (not Jobs) earlier on large clusters, which is exactly why the completion path has a no-child-pod fallback. Sizing guidance lives in [`operator_resources_at_scale.md`](../operator_resources_at_scale.md).
+Scale: succeeded pods are retained for the success window — roughly `nodes × packages × 3 stages` extra terminated pods at peak — plus at most two archived failed pods (the first and latest failures) per actively-failing stage. Keep `JOB_TTL_SUCCEEDED` short; note that kube-controller-manager's terminated-pod GC may reap retained *pods* (not Jobs) earlier on large clusters, which is exactly why the completion path has a no-child-pod fallback. Sizing guidance lives in [`operator_resources_at_scale.md`](../operations/resources-at-scale.md).
 
 ### Finished-Job lifecycle: naming and reruns
 
@@ -348,7 +348,7 @@ mid-flight as well as at the end. Two full passes were run and agreed case for c
 the cases above against a Jobs operator and needed no code change: child pods inherit the full label
 set, so the CLI's label queries resolve identically, and post-completion `package logs` gets better
 because the Job is retained. The version-dependent stop-strength of `pause` is recorded in
-[`docs/cli.md`](../cli.md)'s compatibility matrix.
+[`docs/cli.md`](../user-guide/cli.md)'s compatibility matrix.
 
 **Upgrade.** The hold is what makes the upgrade safe, and it was validated separately, on the rename
 pass: an upgrade started mid-rollout held without taking over the node (requeuing roughly every 20s,

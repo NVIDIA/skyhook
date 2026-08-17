@@ -5,9 +5,9 @@
 
 **NodeWright** is a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying host declaratively at scale.
 
-> **Note:** NodeWright is being renamed from Skyhook, and the rename has now landed for the core surfaces. The Helm chart, operator image, CLI (`kubectl nodewright`), and the CRDs (`nodewright.nvidia.com/v1alpha1`, Kind `NodeWright`; `DeploymentPolicy` moves to the same group) are published under `nodewright`. Existing `skyhook.nvidia.com`/`Skyhook` resources keep working during the transition: the operator auto-imports them to NodeWright and preserves per-node state (no package re-run), and legacy writes emit a deprecation warning. The agent image and the default install namespace (`skyhook`) still use `skyhook` for now. See the [migration guide](docs/nodewright-migration.md).
+> **Note:** NodeWright is being renamed from Skyhook, and the rename has now landed for the core surfaces. The Helm chart, operator image, CLI (`kubectl nodewright`), and the CRDs (`nodewright.nvidia.com/v1alpha1`, Kind `NodeWright`; `DeploymentPolicy` moves to the same group) are published under `nodewright`. Existing `skyhook.nvidia.com`/`Skyhook` resources keep working during the transition: the operator auto-imports them to NodeWright and preserves per-node state (no package re-run), and legacy writes emit a deprecation warning. The agent image and the default install namespace (`skyhook`) still use `skyhook` for now. See the [migration guide](docs/getting-started/migration.md).
 >
-> **Distribution change (v0.16.0+):** NodeWright is now distributed exclusively through GitHub Container Registry (`ghcr.io`) — both the container images and the Helm chart (as an OCI artifact). Publication to `nvcr.io` / the NGC Helm repository (`helm.ngc.nvidia.com`) is paused and is planned to return in a future release. **Existing users installing from NGC need to switch to the OCI install below.** See [Distribution: ghcr.io only (for now)](docs/release-process.md#distribution-ghcrio-only-for-now) for the full story.
+> **Distribution change (v0.16.0+):** NodeWright is now distributed exclusively through GitHub Container Registry (`ghcr.io`) — both the container images and the Helm chart (as an OCI artifact). Publication to `nvcr.io` / the NGC Helm repository (`helm.ngc.nvidia.com`) is paused and is planned to return in a future release. **Existing users installing from NGC need to switch to the OCI install below.** See [Distribution: ghcr.io only (for now)](docs/contributing/release-process.md#distribution-ghcrio-only-for-now) for the full story.
 
 ## Why NodeWright?
 
@@ -50,9 +50,9 @@ NodeWright works in any Kubernetes environment (self-managed, on-prem, cloud) an
 - **Pod Non Interrupt Labels:**  labels for pods to **never** interrupt
 - **Package Interrupt:** service (containerd, cron, any thing systemd), or reboot
 - **Additional Tolerations:**  are tolerations added to the packages
-- [**Runtime Required**](docs/runtime_required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
-- **Resource Management:** NodeWright uses Kubernetes [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/) to set default CPU and memory requests/limits for all containers in its namespace. You can override these defaults per-package in your NodeWright CR. Strict validation is enforced: if you set any resource override, you must set all four fields (cpuRequest, cpuLimit, memoryRequest, memoryLimit), and limits must be >= requests. See [docs/resource_management.md](docs/resource_management.md) for details and examples.
-- [**Explicit Uninstall**](docs/uninstall.md): controlled, explicit uninstall of packages from nodes with `uninstall.enabled` and `uninstall.apply` fields, webhook guards, finalizer-driven cleanup on CR deletion, and cancel support.
+- [**Runtime Required**](docs/user-guide/runtime-required.md): requires node to come into the cluster with a taint, and will do work prior to removing custom taint.
+- **Resource Management:** NodeWright uses Kubernetes [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/) to set default CPU and memory requests/limits for all containers in its namespace. You can override these defaults per-package in your NodeWright CR. Strict validation is enforced: if you set any resource override, you must set all four fields (cpuRequest, cpuLimit, memoryRequest, memoryLimit), and limits must be >= requests. See [docs/operations/resource-management.md](docs/operations/resource-management.md) for details and examples.
+- [**Explicit Uninstall**](docs/user-guide/uninstall.md): controlled, explicit uninstall of packages from nodes with `uninstall.enabled` and `uninstall.apply` fields, webhook guards, finalizer-driven cleanup on CR deletion, and cancel support.
 
 ## Pre-built Packages
 
@@ -79,11 +79,11 @@ helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
   --create-namespace
 ```
 
-> **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`. NGC / `nvcr.io` distribution is paused — see [docs/release-process.md#distribution-ghcrio-only-for-now](docs/release-process.md#distribution-ghcrio-only-for-now).
+> **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`. NGC / `nvcr.io` distribution is paused — see [docs/contributing/release-process.md#distribution-ghcrio-only-for-now](docs/contributing/release-process.md#distribution-ghcrio-only-for-now).
 >
 > **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above. If you also want to keep the existing in-cluster release name (e.g. `skyhook`), substitute it for `nodewright` in the `helm install` command — the chart works either way.
 >
-> **Already installed in the `skyhook` namespace?** Stay there. The documented namespace for **new** installs moved from `skyhook` to `nodewright`, but Kubernetes namespaces cannot be renamed in place and Helm cannot move a release between namespaces, so there is nothing to migrate and no deadline. `kubectl nodewright` finds the operator in either namespace automatically. See [docs/nodewright-migration.md#install-namespace](docs/nodewright-migration.md#install-namespace-skyhook---nodewright).
+> **Already installed in the `skyhook` namespace?** Stay there. The documented namespace for **new** installs moved from `skyhook` to `nodewright`, but Kubernetes namespaces cannot be renamed in place and Helm cannot move a release between namespaces, so there is nothing to migrate and no deadline. `kubectl nodewright` finds the operator in either namespace automatically. See [docs/getting-started/migration.md#install-namespace](docs/getting-started/migration.md#install-namespace-skyhook---nodewright).
 
 ### Configure Image Pull Secrets (if needed)
 
@@ -231,7 +231,7 @@ kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.metadata
 The operator will apply steps in a package throughout different lifecycle stages. This ensures that the right steps are applied in the right situations and in the correct order.
 
 - Upgrade: This stage runs whenever a package's version is upgraded in the NodeWright CR.
-- Uninstall: This stage runs only when explicitly requested — either by setting `uninstall.apply: true` on a package with `uninstall.enabled: true`, or during NodeWright CR deletion (finalizer-driven) for `uninstall.enabled: true` packages. See [Explicit Uninstall](docs/uninstall.md).
+- Uninstall: This stage runs only when explicitly requested — either by setting `uninstall.apply: true` on a package with `uninstall.enabled: true`, or during NodeWright CR deletion (finalizer-driven) for `uninstall.enabled: true` packages. See [Explicit Uninstall](docs/user-guide/uninstall.md).
 - Apply: This stage will always be ran at least once.
 - Config: This stage will run when a configmap is changed and on the first SCR application.
 - Interrupt: This stage will run when a package has an interrupt defined or a key's value in a packages configmap changes which has a config interrupt defined.
@@ -252,14 +252,14 @@ For packages that require interrupts, the node is first cordoned and drained to 
 
 This ensures that when operations like kernel module unloading or system reboots are required, they happen after workloads have been safely removed and any necessary pre-interrupt package operations have completed.
 
-**NOTE**: Uninstall is explicit. Removing a package from the SCR does **not** automatically run the uninstall stage. For packages with `uninstall.enabled: true`, the webhook rejects removal until `uninstall.apply: true` has been set and the uninstall has completed on all nodes; packages with `uninstall.enabled: false` (or unset) can be removed without an uninstall pod, and their prior node state is preserved as a marker. See [Explicit Uninstall](docs/uninstall.md).
+**NOTE**: Uninstall is explicit. Removing a package from the SCR does **not** automatically run the uninstall stage. For packages with `uninstall.enabled: true`, the webhook rejects removal until `uninstall.apply: true` has been set and the uninstall has completed on all nodes; packages with `uninstall.enabled: false` (or unset) can be removed without an uninstall pod, and their prior node state is preserved as a marker. See [Explicit Uninstall](docs/user-guide/uninstall.md).
 
 **Semantic versioning is strictly enforced in the operator** in order to support upgrade and uninstall. Semantic versioning allows the
 operator to know which way the package is going while also enforcing best versioning practices.
 
-**For detailed information about our versioning strategy, git tagging conventions, and component release process, see [docs/versioning.md](docs/versioning.md) and [docs/release-process.md](docs/release-process.md).**
+**For detailed information about our versioning strategy, git tagging conventions, and component release process, see [docs/operations/versioning.md](docs/operations/versioning.md) and [docs/contributing/release-process.md](docs/contributing/release-process.md).**
 
-**For definitions of Status, State, and Stage concepts used throughout the operator, see [docs/operator-status-definitions.md](docs/operator-status-definitions.md).**
+**For definitions of Status, State, and Stage concepts used throughout the operator, see [docs/architecture/operator-status.md](docs/architecture/operator-status.md).**
 
 ## Packages
 
@@ -284,7 +284,7 @@ See the [examples/](examples/) directory for sample manifests, usage patterns, a
 
 ## Kyverno Policy Examples
 
-See [docs/kyverno/README.md](docs/kyverno/README.md) for example Kyverno policies and guidance on restricting images or packages in NodeWright resources.
+See [docs/security/kyverno/README.md](docs/security/kyverno/README.md) for example Kyverno policies and guidance on restricting images or packages in NodeWright resources.
 
 ## [NodeWright Operator](operator/README.md)
 
@@ -294,7 +294,7 @@ The operator is a Kubernetes operator that monitors cluster events and coordinat
 
 The agent is what does the operator's work and is a separate container from the package. The agent knows how to read a package (/skyhook_package/config.json) and implements the [lifecycle](#stages) packages go through.
 
-## [NodeWright CLI](docs/cli.md)
+## [NodeWright CLI](docs/user-guide/cli.md)
 
 A kubectl plugin for managing NodeWright deployments, packages, and nodes. Provides SRE tooling for inspecting node/package state, forcing re-runs, managing node lifecycle, and retrieving logs.
 
@@ -312,7 +312,7 @@ cp bin/nodewright /usr/local/bin/kubectl-nodewright # or another directory in $P
 kubectl nodewright version
 ```
 
-See the [full CLI documentation](docs/cli.md) for detailed usage and examples.
+See the [full CLI documentation](docs/user-guide/cli.md) for detailed usage and examples.
 
 ## Contributing
 

@@ -190,7 +190,7 @@ Nodes selected for a batch remain in that batch until every node has reached a d
 
 Batch membership is tracked via `NodePriority` in the NodeWright status. A node stays in `NodePriority` from the time it is picked for a batch until it completes all packages. This state is persisted in the CRD, so it survives controller restarts.
 
-Each package pod also receives a `SKYHOOK_NODE_ORDER` environment variable reflecting the node's monotonic position in the rollout. See [Node Order Within a Rollout](ordering_of_skyhooks.md#node-order-within-a-rollout) for details.
+Each package pod also receives a `SKYHOOK_NODE_ORDER` environment variable reflecting the node's monotonic position in the rollout. See [Node Order Within a Rollout](../architecture/ordering.md#node-order-within-a-rollout) for details.
 
 ---
 
@@ -430,7 +430,7 @@ spec:
 
 ## Monitoring
 
-Deployment Policy rollout behavior is exposed via Prometheus metrics. See [Metrics documentation](metrics/README.md) for details.
+Deployment Policy rollout behavior is exposed via Prometheus metrics. See [Metrics documentation](../observability/metrics.md) for details.
 
 ---
 
