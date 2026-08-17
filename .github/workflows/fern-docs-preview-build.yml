@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Workflow 1 of 2 for Fern doc previews.
+#
+# Collects the fern/ and docs/ sources and PR metadata from the (possibly
+# untrusted) PR branch and uploads them as an artifact. No secrets are used
+# here, so this is safe to run on fork PRs via the regular pull_request trigger.
+#
+# The companion workflow (fern-docs-preview-comment.yml) picks up the artifact,
+# builds the preview with DOCS_FERN_TOKEN, and posts the PR comment.
+
+name: "Preview Fern Docs: Build"
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'fern/**'
+      - '.github/workflows/fern-docs-preview-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Save PR metadata
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          mkdir -p preview-metadata
+          echo "$PR_NUMBER" > preview-metadata/pr_number
+          echo "$HEAD_REF" > preview-metadata/head_ref
+          git diff --name-only "origin/${BASE_REF}...HEAD" -- '*.md' > preview-metadata/changed_md_files 2>/dev/null || true
+
+      - name: Upload fern sources and metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: fern-preview
+          path: |
+            fern/
+            docs/
+            preview-metadata/
+          retention-days: 1

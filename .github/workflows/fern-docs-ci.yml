@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Fern docs (check)
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'fern/**'
+      - '.github/workflows/fern-docs-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Fern CLI
+        run: |
+          VERSION=$(jq -r .version fern/fern.config.json)
+          if [[ "$VERSION" != "latest" ]] && ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::fern.config.json .version must be 'latest' or a semver string"
+            exit 1
+          fi
+          npm install -g "fern-api@${VERSION}"
+
+      - name: Check MDX safety
+        run: |
+          BAD=$(grep -rn '<img\b[^>]*[^/]>\|<img>' docs/ fern/ --include="*.md" --include="*.mdx" || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::Non-self-closing <img> tags found (MDX requires <img ... />):"
+            echo "$BAD"
+            exit 1
+          fi
+
+      - name: Fern check
+        working-directory: ./fern
+        run: fern check
+
+      - name: Check MDX validity
+        working-directory: ./fern
+        run: fern docs md check
+
+      - name: Check broken links
+        working-directory: ./fern
+        run: fern docs broken-links

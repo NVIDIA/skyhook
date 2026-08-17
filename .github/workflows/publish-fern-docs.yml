@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Publishes the Fern documentation site when a docs tag is pushed or manually triggered.
+#
+# To publish:  git tag docs/v1.0.0 && git push origin docs/v1.0.0
+# Or use the "Run workflow" button in the Actions tab.
+#
+# Required configuration:
+# - Organization secret: DOCS_FERN_TOKEN (from `fern token` for the nvidia Fern org)
+
+name: Publish Fern Docs
+
+on:
+  push:
+    tags:
+      - 'docs/v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fern-publish
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-tags: true
+
+      - name: Checkout frozen version content
+        run: |
+          set -eo pipefail
+          for version_file in fern/versions/v*.yml; do
+            [ -e "$version_file" ] || continue
+            version=$(basename "$version_file" .yml)
+            if git rev-parse "$version" >/dev/null 2>&1; then
+              mkdir -p "fern/versions/${version}-content"
+              git archive "$version" -- docs/ | tar -x --strip-components=1 -C "fern/versions/${version}-content"
+              find "fern/versions/${version}-content" -name '*.md' -exec sed -i 's/<img \([^>]*[^/]\)>/<img \1 \/>/g' {} +
+              echo "Extracted docs from $version"
+            else
+              echo "::warning::Tag $version not found — skipping content checkout"
+            fi
+          done
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Fern CLI
+        run: |
+          VERSION=$(jq -r .version fern/fern.config.json)
+          npm install -g "fern-api@${VERSION}"
+
+      - name: Stamp version in docs.yml
+        run: |
+          VERSION=$(curl -sf https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
+          if [ -n "$VERSION" ] && [ "$VERSION" != "null" ]; then
+            sed -i 's/display-name: NodeWright/display-name: "NodeWright · '"${VERSION}"'"/' fern/docs.yml
+          fi
+          echo "--- docs.yml products after stamp ---"
+          grep "display-name:" fern/docs.yml
+
+      - name: Publish Docs
+        env:
+          FERN_TOKEN: ${{ secrets.DOCS_FERN_TOKEN }}
+        working-directory: ./fern
+        run: |
+          set -o pipefail
+          fern generate --docs 2>&1 | tee /tmp/fern-output.log
+          URL=$(grep -oP 'Published docs to \K.*(?= \()' /tmp/fern-output.log || true)
+          if [ -n "$URL" ]; then
+            echo "### Published: [$URL]($URL)" >> "$GITHUB_STEP_SUMMARY"
+          fi
