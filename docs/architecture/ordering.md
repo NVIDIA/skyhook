@@ -74,7 +74,7 @@ In this example, fast nodes can install drivers independently, but all nodes mus
 
 The sections above cover ordering of NodeWrights relative to each other. This section covers ordering of **nodes** within a single NodeWright's rollout.
 
-When a [DeploymentPolicy](deployment_policy.md) controls the batch rollout, each package pod receives a `SKYHOOK_NODE_ORDER` environment variable — a zero-indexed integer reflecting the node's position in the overall rollout order.
+When a [DeploymentPolicy](../user-guide/deployment-policy.md) controls the batch rollout, each package pod receives a `SKYHOOK_NODE_ORDER` environment variable — a zero-indexed integer reflecting the node's position in the overall rollout order.
 
 - The first batch's nodes are assigned `0, 1, 2, ...`
 - The second batch continues from where the first left off (e.g., `3, 4, 5, ...`)
@@ -97,7 +97,7 @@ fi
 
 `SKYHOOK_NODE_ORDER` reflects rollout order within a single NodeWright only. Cross-NodeWright ordering is controlled by `priority` and `sequencing` (documented above). If a NodeWright is reset via `kubectl nodewright reset`, the node order restarts from `0`.
 
-See [Batch Stickiness](deployment_policy.md#batch-stickiness) for details on how batches are kept intact during rollout.
+See [Batch Stickiness](../user-guide/deployment-policy.md#batch-stickiness) for details on how batches are kept intact during rollout.
 
 ---
 

@@ -1,6 +1,6 @@
 # Metrics
 
-The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a NodeWright Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../operator/internal/controller/metrics.go).
+The current metrics supplied by the Operator are intended to be sufficient to determine the state of application of a NodeWright Custom Resource within a cluster. These metrics are defined at [internal/controller/metrics.go](../../../operator/internal/controller/metrics.go).
 
 ## Deprecated: the `skyhook_*` metric names
 
@@ -15,7 +15,7 @@ As part of the Skyhook to NodeWright rename, every metric moved from the `skyhoo
 
 Both carry identical values and identical remaining labels, so a query migrates by swapping the prefix and the one label key. Nothing else changes.
 
-The legacy set is removed in **v0.20.0**, the same release that removes the legacy `skyhook.nvidia.com` API group (see [the migration guide](../nodewright-migration.md)), so there is one deadline to plan against rather than two. Everything documented below uses the current names.
+The legacy set is removed in **v0.20.0**, the same release that removes the legacy `skyhook.nvidia.com` API group (see [the migration guide](../getting-started/migration.md)), so there is one deadline to plan against rather than two. Everything documented below uses the current names.
 
 ### Opting out early
 
@@ -63,7 +63,7 @@ The deprecated collectors are then unregistered at startup and `skyhook_*` disap
 
 ## Rollout Metrics (Deployment Policy)
 
-These metrics track the rollout progress and health of compartments defined in a DeploymentPolicy. See [Deployment Policy documentation](../deployment_policy.md) for details on compartments and strategies.
+These metrics track the rollout progress and health of compartments defined in a DeploymentPolicy. See [Deployment Policy documentation](../user-guide/deployment-policy.md) for details on compartments and strategies.
 
  * `nodewright_rollout_matched_nodes` : Number of nodes matched by this compartment's selector. Tags:
     * `nodewright_name` : The name of the NodeWright Custom Resource
@@ -110,7 +110,7 @@ Note: When a NodeWright is deleted all metrics for that NodeWright are no longer
 
 ## Testing
 
-See the script [metrics_test.py](../../k8s-tests/chainsaw/metrics_test.py) that will let you test for the existence or absence of metrics based on name and labels. The metrics endpoint requires a bearer token authorized for the `/metrics` non-resource URL. Create a scraper identity and bind it to the chart's metrics-reader role:
+See the script [metrics_test.py](../../../k8s-tests/chainsaw/metrics_test.py) that will let you test for the existence or absence of metrics based on name and labels. The metrics endpoint requires a bearer token authorized for the `/metrics` non-resource URL. Create a scraper identity and bind it to the chart's metrics-reader role:
 ```bash
 kubectl -n nodewright create serviceaccount metrics-reader
 kubectl create clusterrolebinding metrics-reader-access \
