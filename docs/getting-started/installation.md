@@ -8,7 +8,7 @@ For prerequisites, install commands, and configuration options, see the [project
 
 ```bash
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.17.1 \
+  --version v0.18.0 \
   --namespace nodewright \
   --create-namespace
 ```
