@@ -942,7 +942,7 @@ spec:
           value: ($CHART)
         content: |
           ## Users bind their own Prometheus ServiceAccount to this ClusterRole by name
-          ## (docs/metrics/README.md), so it is the one renamed object the chart cannot
+          ## (docs/observability/metrics.md), so it is the one renamed object the chart cannot
           ## fix up for them. Exactly one ClusterRole, under the new name.
           rendered=$(helm template test-release ${CHART} -n nodewright \
             -s templates/metrics-reader-rbac.yaml)

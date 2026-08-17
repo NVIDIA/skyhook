@@ -37,7 +37,7 @@ For the full commit-level log see CHANGELOG.md.
   package pods, and the `NodeWright` and `DeploymentPolicy` CRDs are cluster-scoped,
   so no command changes which CRs it sees. This says nothing about Skyhook-only
   operators, which remain unsupported for unrelated reasons. See
-  [docs/cli.md](../../../docs/cli.md#namespace-resolution) for the full resolution
+  [docs/user-guide/cli.md](../../../docs/user-guide/cli.md#namespace-resolution) for the full resolution
   order and the situation matrix.
 
   The cluster-wide sweep needs cluster-scoped Deployment list permission. Users

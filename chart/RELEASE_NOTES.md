@@ -58,7 +58,7 @@ For the full commit-level log see CHANGELOG.md.
      Re-point any ClusterRoleBinding at the new name; the rule is identical, so
      nothing else changes. A binding left on the old name fails as an empty scrape
      rather than a visible error, so make the swap when you upgrade. See
-     [docs/metrics/README.md](../docs/metrics/README.md).
+     [docs/observability/metrics.md](../docs/observability/metrics.md).
 
   Anyone who already sets `fullnameOverride` or `nameOverride` keeps their own
   prefix on all of the above, unchanged.
@@ -136,7 +136,7 @@ For the full commit-level log see CHANGELOG.md.
         runtimeRequiredTaint: skyhook.nvidia.com=runtime-required:NoSchedule
   ```
 
-  See [docs/runtime_required.md](../docs/runtime_required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
+  See [docs/user-guide/runtime-required.md](../docs/user-guide/runtime-required.md#taint-key-rename-skyhooknvidiacom---nodewrightnvidiacom).
 
 ### Bug Fixes
 
@@ -194,7 +194,7 @@ For the full commit-level log see CHANGELOG.md.
   Confirm every `Skyhook` reads `complete` first, and do not unpause or enable a
   migrated `NodeWright` until its pre-upgrade package pods are gone. See the
   operator release notes and
-  [docs/nodewright-migration.md](../docs/nodewright-migration.md).
+  [docs/getting-started/migration.md](../docs/getting-started/migration.md).
 - **A crash-looping package now gives up after ~70 seconds instead of retrying
   for up to an hour.** `jobBackoffLimit` bounds retries per stage; if you rely on
   a package self-healing through transient environment problems, raise it before
@@ -215,7 +215,7 @@ For the full commit-level log see CHANGELOG.md.
   because standard annotation-based jobs cannot supply that authentication or
   trust configuration and would continuously report a failed target. Configure
   an authenticated endpoints-discovery job as shown in
-  `docs/metrics/prometheus_values.yaml` instead.
+  `docs/observability/prometheus_values.yaml` instead.
 
 - No action is required: the selector-migration hook runs automatically on
   `helm upgrade` and only recreates the Deployment when its selector is stale.

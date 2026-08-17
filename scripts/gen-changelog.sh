@@ -224,7 +224,7 @@ if [[ -n "$NEXT_VERSION" ]]; then
             echo "ERROR: cutting patch ${COMPONENT}/${NEXT_VERSION}, but no release branch" >&2
             echo "       release/${next_mm}.x (or origin/release/${next_mm}.x) exists." >&2
             echo "       Create it and cherry-pick the fix(es) onto it first." >&2
-            echo "       See docs/release-process.md (Patch Release Workflow)." >&2
+            echo "       See docs/contributing/release-process.md (Patch Release Workflow)." >&2
             exit 1
         fi
         CUT_RANGE="${prev_same_line}..${CUT_REF}"

@@ -35,7 +35,7 @@ For all security-related concerns, please visit NVIDIA's Product Security portal
 
 ## Supported Versions
 
-NodeWright releases its components independently, each following [Semantic Versioning](https://semver.org/). Security fixes are released against the latest minor of each component. Critical fixes may be backported to the most recent prior release branch (`release/v{MAJOR.MINOR}.x`), at the maintainers' discretion; see [docs/versioning.md](docs/versioning.md).
+NodeWright releases its components independently, each following [Semantic Versioning](https://semver.org/). Security fixes are released against the latest minor of each component. Critical fixes may be backported to the most recent prior release branch (`release/v{MAJOR.MINOR}.x`), at the maintainers' discretion; see [docs/operations/versioning.md](docs/operations/versioning.md).
 
 | Component | Tag prefix | Supported |
 |---|---|---|
@@ -48,7 +48,7 @@ The current version of each line is whatever the newest tag with that prefix say
 
 Older minors are not patched. If you are running one, upgrade to the latest release of that component. The full list is on the [releases page](https://github.com/NVIDIA/nodewright/releases).
 
-Kubernetes version support is a separate policy: we CI-test and support the **latest four Kubernetes minor versions**. See [docs/kubernetes-support.md](docs/kubernetes-support.md) for the current window and what happens when it moves.
+Kubernetes version support is a separate policy: we CI-test and support the **latest four Kubernetes minor versions**. See [docs/operations/kubernetes-support.md](docs/operations/kubernetes-support.md) for the current window and what happens when it moves.
 
 ## Verifying Release Artifacts
 

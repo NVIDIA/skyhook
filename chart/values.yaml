@@ -94,7 +94,7 @@ controllerManager:
       ## `skyhook.nvidia.com=runtime-required:NoSchedule` to the key below. For the deprecation window the operator
       ## also tolerates and removes the legacy key, so a cluster whose autoscaler/node template still stamps
       ## `skyhook.nvidia.com` keeps working. Update that provisioning config before the removal release; see
-      ## docs/runtime_required.md.
+      ## docs/user-guide/runtime-required.md.
       runtimeRequiredTaint: nodewright.nvidia.com=runtime-required:NoSchedule
       ## puaseImage: is the image used for the pause container in the operator controller.
       pauseImage: registry.k8s.io/pause:3.10
@@ -174,7 +174,7 @@ webhook:
   ## kubectl image used by the maintenance jobs (webhook + skyhook cleanup
   ## pre-delete hooks and the selector-migration pre-upgrade hook). Pinned to a
   ## maintained, versioned, multi-arch alpine/kubectl release; keep the tag in
-  ## skew with the supported Kubernetes range and bump per docs/release-process.md.
+  ## skew with the supported Kubernetes range and bump per docs/contributing/release-process.md.
   removalImage: alpine/kubectl
   removalTag: 1.36.2
   removalDigest: "sha256:01d138ce994b684abc62d9cfdff44de42a4c8996dcc12626dd0193afc3fb5a95"

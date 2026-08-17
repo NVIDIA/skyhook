@@ -17,7 +17,7 @@
 # limitations under the License.
 
 ## Rolls the release back to the pre-rename baseline and requires it to converge.
-## This is the escape hatch docs/nodewright-migration.md offers, so it has to work
+## This is the escape hatch docs/getting-started/migration.md offers, so it has to work
 ## with no manual steps: see #469.
 
 RELEASE=$1

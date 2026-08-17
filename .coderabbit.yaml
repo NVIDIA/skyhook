@@ -60,12 +60,12 @@ knowledge_base:
       - operator/README.md
       - agent/README.md
       # Domain vocabulary and semantic rules reviewers should enforce
-      - docs/operator-status-definitions.md
-      - docs/resource_management.md
-      - docs/versioning.md
-      - docs/interrupt_flow.md
-      - docs/runtime_required.md
-      - docs/ordering_of_skyhooks.md
+      - docs/architecture/operator-status.md
+      - docs/operations/resource-management.md
+      - docs/operations/versioning.md
+      - docs/architecture/interrupt-flow.md
+      - docs/user-guide/runtime-required.md
+      - docs/architecture/ordering.md
 
 chat:
   auto_reply: true

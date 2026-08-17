@@ -1,6 +1,6 @@
 # helm-upgrade-rollback-test
 
-The standing test for moving a real release forward and back: install the previously published chart, upgrade to the working tree, roll back to where we started, roll forward again, uninstall. Both directions have to work unattended, because `docs/nodewright-migration.md` offers rollback as the escape hatch when an upgrade goes wrong.
+The standing test for moving a real release forward and back: install the previously published chart, upgrade to the working tree, roll back to where we started, roll forward again, uninstall. Both directions have to work unattended, because `docs/getting-started/migration.md` offers rollback as the escape hatch when an upgrade goes wrong.
 
 This is meant to be permanent and version-agnostic. It is the place to put any claim of the form "upgrading from the last release does X" or "rolling back from this release does Y", regardless of what is changing in a given cycle.
 

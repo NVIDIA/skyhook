@@ -48,7 +48,7 @@ Reference the issue in your PR description (`closes #1234`) so it closes on merg
 1. Fork the repository and create a branch from `main`.
 2. Make your changes and ensure tests pass (`make test` in the relevant component directory).
 3. Run `make fmt` to format code and add license headers.
-4. When you bump a Go or Python dependency, run `make notices` and commit the refreshed `THIRD_PARTY_NOTICES.md` files alongside your change. See [`docs/release-process.md`](docs/release-process.md) for the workflow.
+4. When you bump a Go or Python dependency, run `make notices` and commit the refreshed `THIRD_PARTY_NOTICES.md` files alongside your change. See [`docs/contributing/release-process.md`](docs/contributing/release-process.md) for the workflow.
 5. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message and sign off (see below).
 6. Open a pull request against `main`. The PR template will guide you through the checklist.
 
@@ -102,7 +102,7 @@ Most new host behavior does **not** require changing the operator. NodeWright's 
 1. **Start with an existing generalist package.** [`NVIDIA/nodewright-packages`](https://github.com/NVIDIA/nodewright-packages) publishes ready-made ones. The `shellscript` package runs commands you supply in the CR's `configMap` — no image build at all. [`examples/simple/scr.yaml`](examples/simple/scr.yaml) is a working example.
 2. **Build your own when you need more.** A package image ships its step scripts plus a `/skyhook-package/config.json` that the agent validates and dispatches on. The agent runs steps inside the host root mount and writes completion flags so finished stages are skipped on re-run.
 3. **Version it with SemVer.** This is not cosmetic: the operator compares package versions to decide upgrade vs. downgrade vs. fresh apply, so a package that misreports its version will take the wrong lifecycle path.
-4. **Consume secrets at runtime**, never baked into the image — see [`docs/providing_secrets_to_packages.md`](docs/providing_secrets_to_packages.md).
+4. **Consume secrets at runtime**, never baked into the image — see [`docs/user-guide/providing-secrets.md`](docs/user-guide/providing-secrets.md).
 
 Package *contents* live with their authors rather than in this repository — see [Project Scope](GOVERNANCE.md#project-scope).
 
@@ -111,7 +111,7 @@ Package *contents* live with their authors rather than in this repository — se
 If you are changing NodeWright itself rather than writing a package:
 
 - **A new interrupt type** implements the agent's `Interrupt` contract — `Type` for the wire identity, `Run` for execution against an `execution.Config`, `Serialize` for the operator-facing form. Retry state and completion flags stay outside the interrupt. See the execution-contract notes in [`agent/README.md`](agent/README.md).
-- **A new CLI subcommand** goes under `operator/cmd/cli/app/` and talks to the cluster through `operator/internal/cli/client`, not the apiserver directly. Anything version-gated must also land in the compatibility matrix in [`docs/cli.md`](docs/cli.md).
+- **A new CLI subcommand** goes under `operator/cmd/cli/app/` and talks to the cluster through `operator/internal/cli/client`, not the apiserver directly. Anything version-gated must also land in the compatibility matrix in [`docs/user-guide/cli.md`](docs/user-guide/cli.md).
 - **A new CRD field** requires `make manifests generate`, mirrored edits in both `operator/config/` and `chart/`, and a docs update in the same PR.
 
 In every case, find the nearest existing example and match it. A new pattern that has no precedent in the target package should be called out explicitly in your PR description — what you introduced, why the existing patterns didn't fit, and why it should become the convention.

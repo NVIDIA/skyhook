@@ -18,7 +18,7 @@ NodeWright was developed for modifying the underlying host OS in Kubernetes clus
 - **configMap:** per package
 - **env vars:** per package
 - **additionalTolerations:**  are tolerations added to the packages
-- [**runtimeRequired**](../docs/runtime_required.md): gates general workloads behind a taint the node carries (either on join, or applied by the operator with `autoTaintNewNodes`), and does its work prior to removing that taint.
+- [**runtimeRequired**](../docs/user-guide/runtime-required.md): gates general workloads behind a taint the node carries (either on join, or applied by the operator with `autoTaintNewNodes`), and does its work prior to removing that taint.
 
 ## Important Chart Settings
 
@@ -38,7 +38,7 @@ Settings | Description | Default |
 | controllerManager.manager.env.jobStageTimeout | Default deadline for a package stage Job when the package sets no `stageTimeout` of its own. "0" disables the deadline. The value is fixed when a stage's Job is created, so changing it does not affect a stage already running — clear that Job (`kubectl nodewright package rerun`) to apply a new value to work already under way. | "1h" |
 | controllerManager.manager.env.jobBackoffLimit | How many retries a package stage gets after its first attempt before its Job goes terminal, so a stage runs at most `jobBackoffLimit`+1 times. "0" gives a single attempt with no retry. Like `jobStageTimeout`, the value is fixed when a stage's Job is created. | "3" |
 | controllerManager.manager.env.legacyCleanupDelay | MIGRATION-SHIM (`skyhook.nvidia.com` → `nodewright.nvidia.com`): how long after a Skyhook finishes migrating the operator keeps its legacy node state, pods, and ConfigMap labels as a rollback window before pruning them. "0" prunes immediately. Removed at the removal release. | "24h" |
-| controllerManager.manager.env.publishLegacyMetrics | Keep exporting the deprecated `skyhook_*` metric series (with the `skyhook_name` label) alongside the current `nodewright_*` ones, so Grafana dashboards and Prometheus alerts written against the old names keep working across the rename. Set `"false"` to export only `nodewright_*`, which halves the operator's exported series count but breaks any consumer still querying the legacy names. The legacy series are removed unconditionally in operator v0.20.0. See [docs/metrics/README.md](../docs/metrics/README.md). | "true" |
+| controllerManager.manager.env.publishLegacyMetrics | Keep exporting the deprecated `skyhook_*` metric series (with the `skyhook_name` label) alongside the current `nodewright_*` ones, so Grafana dashboards and Prometheus alerts written against the old names keep working across the rename. Set `"false"` to export only `nodewright_*`, which halves the operator's exported series count but breaks any consumer still querying the legacy names. The legacy series are removed unconditionally in operator v0.20.0. See [docs/observability/metrics.md](../docs/observability/metrics.md). | "true" |
 | controllerManager.manager.env.runtimeRequiredTaint | Nodes are expected to carry this taint, either by joining with it (e.g. the `--register-with-taints` kubelet flag) or via `autoTaintNewNodes: true` on the NodeWright, which makes the operator apply it. NodeWright **package** pods tolerate it automatically (the controller-manager pod does not; see `controllerManager.tolerations` and the note below), and the operator removes it from a node once every `runtimeRequired: true` NodeWright targeting that node has completed on it (completion on other nodes does not affect removal). During the rename deprecation window the operator additionally tolerates and removes the legacy `skyhook.nvidia.com=runtime-required:NoSchedule` taint, but never applies it. | nodewright.nvidia.com=runtime-required:NoSchedule | 
 | controllerManager.manager.image.repository | Where to get the image from | "ghcr.io/nvidia/nodewright/operator" |
 | controllerManager.manager.image.tag | what version of the operator to run | defaults to appVersion |
@@ -52,7 +52,7 @@ Settings | Description | Default |
 | estimatedNodeCount | estimated number of nodes in the cluster, this is used to calculate the resources for the operator controller | 1 |
 | rbac.createSkyhookViewerRole | create a `ClusterRole` that grants read-only access to NodeWright and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
 | rbac.createSkyhookEditorRole | create a `ClusterRole` that grants read/write access to NodeWright and DeploymentPolicy resources. Aggregate-bind to your own users/groups. | false |
-| limitRange.default | namespace-wide default CPU/memory **limits** applied to every container that doesn't set its own. Set both `default` and `defaultRequest` (or omit `limitRange` entirely to disable). See [../docs/resource_management.md](../docs/resource_management.md). | cpu: 500m, memory: 512Mi |
+| limitRange.default | namespace-wide default CPU/memory **limits** applied to every container that doesn't set its own. Set both `default` and `defaultRequest` (or omit `limitRange` entirely to disable). See [../docs/operations/resource-management.md](../docs/operations/resource-management.md). | cpu: 500m, memory: 512Mi |
 | limitRange.defaultRequest | namespace-wide default CPU/memory **requests** applied to every container that doesn't set its own. | cpu: 250m, memory: 256Mi |
 | cleanup.enabled | Automatically delete all NodeWright and DeploymentPolicy resources during helm uninstall. Recommended to prevent orphaned CRs. | true |
 | cleanup.jobTimeoutSeconds | Hard deadline for the entire cleanup job during uninstall. The job will be killed if it exceeds this time. | 120 |
@@ -82,11 +82,11 @@ If you use public images (default operator `ghcr.io/nvidia/nodewright/operator` 
 
 ### Resource Management
 
-NodeWright uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your NodeWright CR. Strict validation is enforced. See [../docs/resource_management.md](../docs/resource_management.md) for details and examples.
+NodeWright uses Kubernetes LimitRange to set default CPU/memory requests/limits for all containers in the namespace. You can override these per-package in your NodeWright CR. Strict validation is enforced. See [../docs/operations/resource-management.md](../docs/operations/resource-management.md) for details and examples.
 
 ## Versioning
 
-This Helm chart follows independent versioning from the operator and agent components. The chart's `appVersion` field specifies the recommended stable operator version that provides a good default for installations. See [../docs/versioning.md](../docs/versioning.md) for more details on versioning.
+This Helm chart follows independent versioning from the operator and agent components. The chart's `appVersion` field specifies the recommended stable operator version that provides a good default for installations. See [../docs/operations/versioning.md](../docs/operations/versioning.md) for more details on versioning.
 
 ### Chart Version vs App Version
 

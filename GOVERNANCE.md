@@ -76,7 +76,7 @@ A maintainer is considered **inactive** after six months with no substantive con
 
 ## Deprecation and End-of-Life
 
-Components are versioned and released independently under the rules in [`docs/versioning.md`](docs/versioning.md). Removing or breaking a public surface (CRD field, CLI command or flag, annotation, env var, or metric) requires a deprecation period announced in the relevant `CHANGELOG.md` and a migration path in `docs/` before the removal ships. The `skyhook.nvidia.com` to `nodewright.nvidia.com` transition documented in [`docs/nodewright-migration.md`](docs/nodewright-migration.md) is the reference example.
+Components are versioned and released independently under the rules in [`docs/operations/versioning.md`](docs/operations/versioning.md). Removing or breaking a public surface (CRD field, CLI command or flag, annotation, env var, or metric) requires a deprecation period announced in the relevant `CHANGELOG.md` and a migration path in `docs/` before the removal ships. The `skyhook.nvidia.com` to `nodewright.nvidia.com` transition documented in [`docs/getting-started/migration.md`](docs/getting-started/migration.md) is the reference example.
 
 ## Changing This Document
 

@@ -29,7 +29,7 @@ For the equations below the variables are as follows:
 
 Between operator v0.18.0 and v0.20.0 every metric is published twice, once under the current
 `nodewright_*` name and once under the deprecated `skyhook_*` name (see
-[docs/metrics/README.md](metrics/README.md)). That roughly doubles the operator's exported series count
+[docs/observability/metrics.md](../observability/metrics.md)). That roughly doubles the operator's exported series count
 for the duration of the window.
 
 This affects the Prometheus side rather than the operator: series count drives scrape payload size and
