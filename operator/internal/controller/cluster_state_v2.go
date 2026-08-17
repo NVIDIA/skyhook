@@ -34,7 +34,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	k8staints "k8s.io/kubernetes/pkg/util/taints"
 )
 
 // tracks original objects
@@ -227,9 +226,12 @@ func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1al
 // getAutoTaintNodes returns nodes that should be auto-tainted with the runtime-required taint.
 // A node should be auto-tainted if:
 // 1. It matches a Skyhook with RuntimeRequired=true AND AutoTaintNewNodes=true
-// 2. It doesn't already have the runtime-required taint
+// 2. It doesn't already carry any recognised runtime-required taint (the configured one
+// or the legacy skyhook.nvidia.com one a provisioner may still be stamping) — a node
+// pre-tainted with the legacy key is already gated, so adding a second taint would only
+// make it harder to reason about
 // 3. It has no Skyhook annotations (it's a "new" node)
-func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
+func (cs *clusterState) getAutoTaintNodes(recognised []corev1.Taint) []*corev1.Node {
 	seen := make(map[types.UID]bool)
 	result := make([]*corev1.Node, 0)
 	for _, skyhook := range cs.skyhooks {
@@ -242,7 +244,7 @@ func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
 				continue
 			}
 			seen[node.UID] = true
-			if k8staints.TaintExists(node.Spec.Taints, &taint) {
+			if hasAnyTaint(node, recognised) {
 				continue
 			}
 			if nodeWrapper.HasSkyhookAnnotations() {
@@ -907,9 +909,9 @@ func (s *skyhookNodes) UpdateCondition(logger logr.Logger) bool {
 	byStatus := wrapper.SkyhookReadyConditionStatusGroups(nodeStatuses, nodeNames)
 
 	if wrapper.SkyhookReadyConditionMessageTruncated(byStatus) {
-		logger.WithName("skyhook-ready-condition").Info(
+		logger.WithName("nodewright-ready-condition").Info(
 			"Ready condition message truncated; full per-status node lists",
-			"skyhook", s.skyhook.Name,
+			"nodewright", s.skyhook.Name,
 			"complete", byStatus[v1alpha1.StatusComplete],
 			"inProgress", byStatus[v1alpha1.StatusInProgress],
 			"blocked", byStatus[v1alpha1.StatusBlocked],
@@ -950,16 +952,16 @@ func (s *skyhookNodes) UpdateCondition(logger logr.Logger) bool {
 }
 
 type NodePicker struct {
-	logger                    logr.Logger
-	priorityNodes             map[string]time.Time
-	runtimeRequiredToleration corev1.Toleration
+	logger                     logr.Logger
+	priorityNodes              map[string]time.Time
+	runtimeRequiredTolerations []corev1.Toleration
 }
 
-func NewNodePicker(logger logr.Logger, runtimeRequiredToleration corev1.Toleration) *NodePicker {
+func NewNodePicker(logger logr.Logger, runtimeRequiredTolerations []corev1.Toleration) *NodePicker {
 	return &NodePicker{
-		logger:                    logger,
-		priorityNodes:             make(map[string]time.Time),
-		runtimeRequiredToleration: runtimeRequiredToleration,
+		logger:                     logger,
+		priorityNodes:              make(map[string]time.Time),
+		runtimeRequiredTolerations: runtimeRequiredTolerations,
 	}
 }
 
@@ -1039,7 +1041,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 	}, s.GetSkyhook().Spec.AdditionalTolerations...)
 
 	if s.GetSkyhook().Spec.RuntimeRequired {
-		tolerations = append(tolerations, np.runtimeRequiredToleration)
+		tolerations = append(tolerations, np.runtimeRequiredTolerations...)
 	}
 
 	// All skyhooks now use compartments (with a default 100% compartment if none specified)
@@ -1110,7 +1112,7 @@ func (np *NodePicker) updateTaintToleranceCondition(s SkyhookNodes, nodesWithTai
 	if len(nodesWithTaintTolerationIssue) > 0 {
 		message := fmt.Sprintf("Node [%s] has taints that are not tolerable. Skipping.", strings.Join(nodesWithTaintTolerationIssue, ", "))
 		if len(nodesWithTaintTolerationIssue) > wrapper.ReadyConditionNodeListLimit {
-			np.logger.Info("Condition message truncated for nodes with taint toleration issues", "skyhook", s.GetSkyhook().Name, "nodes", nodesWithTaintTolerationIssue)
+			np.logger.Info("Condition message truncated for nodes with taint toleration issues", "nodewright", s.GetSkyhook().Name, "nodes", nodesWithTaintTolerationIssue)
 			message = fmt.Sprintf("%d nodes have taints that are not tolerable. Skipping.", len(nodesWithTaintTolerationIssue))
 		}
 
@@ -1139,7 +1141,7 @@ func (np *NodePicker) updateIgnoredNodesCondition(s SkyhookNodes, ignoredNodes [
 	if len(ignoredNodes) > 0 {
 		message := fmt.Sprintf("Node [%s] has ignore label set. Skipping.", strings.Join(ignoredNodes, ", "))
 		if len(ignoredNodes) > wrapper.ReadyConditionNodeListLimit {
-			np.logger.Info("Condition message truncated for ignored nodes", "skyhook", s.GetSkyhook().Name, "nodes", ignoredNodes)
+			np.logger.Info("Condition message truncated for ignored nodes", "nodewright", s.GetSkyhook().Name, "nodes", ignoredNodes)
 			message = fmt.Sprintf("%d nodes have ignore label set. Skipping.", len(ignoredNodes))
 		}
 
@@ -1561,7 +1563,7 @@ func (skyhook *skyhookNodes) Migrate(logger logr.Logger) error {
 	}
 
 	if err := skyhook.skyhook.Migrate(logger); err != nil {
-		return fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.skyhook.Name, err)
+		return fmt.Errorf("error migrating nodewright [%s]: %w", skyhook.skyhook.Name, err)
 	}
 
 	if from == "" { // before this was a thing v0.4.0 and before
@@ -1585,7 +1587,7 @@ func (skyhook *skyhookNodes) AddCompartment(name string, compartment *wrapper.Co
 func (skyhook *skyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) error {
 	compartment, ok := skyhook.compartments[name]
 	if !ok {
-		return fmt.Errorf("compartment %q not found for skyhook %q - missing deployment policy", name, skyhook.skyhook.Name)
+		return fmt.Errorf("compartment %q not found for nodewright %q - missing deployment policy", name, skyhook.skyhook.Name)
 	}
 	compartment.AddNode(node)
 	return nil

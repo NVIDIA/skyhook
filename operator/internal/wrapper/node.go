@@ -90,6 +90,7 @@ type SkyhookNodeOnly interface {
 	PruneLegacyMetadata() bool
 	// State returns the persisted NodeState for this node (from memory or annotations).
 	State() (v1alpha1.NodeState, error)
+	ReloadState() error
 	// SetState persists the given NodeState to the node's annotations and in-memory state.
 	SetState(state v1alpha1.NodeState) error
 	// RemoveState removes persisted state for the given package ref and updates annotations.
@@ -122,7 +123,15 @@ var _ SkyhookNode = &skyhookNode{}
 
 const (
 	cordonAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/cordon_"
-	cordonAnnotationValue  = "true"
+
+	// The node-condition types UpdateCondition writes, as the trailing segment of
+	// "<prefix>/<skyhookName>/<type>". Named because the 0.18.0 migration shim has to
+	// recognise exactly this set when deciding which conditions are the operator's to
+	// migrate; a new type added here without updating that shim would silently stop
+	// being carried across the rename.
+	conditionTypeNotReady = "NotReady"
+	conditionTypeErroring = "Erroring"
+	cordonAnnotationValue = "true"
 )
 
 // NewSkyhookNodeOnly most of use cases for the wrapper just needs name, so this stub is for making helpers for those use cases,
@@ -230,6 +239,26 @@ func (node *skyhookNode) Status() v1alpha1.Status {
 		return v1alpha1.StatusUnknown
 	}
 	return v1alpha1.GetStatus(status)
+}
+
+// ReloadState re-parses the node-state annotation into the cache. Callers use it after replacing
+// the underlying Node with one the apiserver returned, so the wrapper answers from what actually
+// landed rather than from the value the caller computed.
+//
+// It re-seeds rather than nils the cache, which is load-bearing and was got wrong once: IsComplete,
+// NextStage, GetComplete and PackageStatus read node.nodeState DIRECTLY rather than through
+// State(), so a nil cache reads as "no package has any state". A node that just completed then
+// reports incomplete, its MarkComplete event never fires, and the rollout stalls. Upsert is worse
+// still — NodeState.Upsert allocates a fresh map over a nil one, so the next write would drop every
+// other package's entry.
+func (node *skyhookNode) ReloadState() error {
+	node.nodeState = nil // force State() past its cache check
+	state, err := node.State()
+	if err != nil {
+		return fmt.Errorf("reloading node state for %s: %w", node.Name, err)
+	}
+	node.nodeState = state
+	return nil
 }
 
 // State returns the persisted NodeState for this node (from memory or annotations).
@@ -642,16 +671,16 @@ func (node *skyhookNode) UpdateCondition() {
 	}
 
 	cond := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/NotReady", v1alpha1.METADATA_PREFIX, node.skyhookName)),
+		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/%s", v1alpha1.METADATA_PREFIX, node.skyhookName, conditionTypeNotReady)),
 		Status:             condStatus,
 		LastHeartbeatTime:  metav1.Now(),
 		LastTransitionTime: metav1.Now(),
 		Reason:             readyReason,
-		Message:            fmt.Sprintf("Skyhook %s Ready", node.skyhookName),
+		Message:            fmt.Sprintf("NodeWright %s Ready", node.skyhookName),
 	}
 
 	errorCond := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/Erroring", v1alpha1.METADATA_PREFIX, node.skyhookName)),
+		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/%s", v1alpha1.METADATA_PREFIX, node.skyhookName, conditionTypeErroring)),
 		Status:             errorStatus,
 		LastHeartbeatTime:  metav1.Now(),
 		LastTransitionTime: metav1.Now(),
@@ -669,7 +698,7 @@ func (node *skyhookNode) UpdateCondition() {
 			}
 		case cond.Type:
 			condFound = true
-			if condition.Reason != cond.Reason && condition.Message == cond.Message {
+			if condition.Reason != cond.Reason || condition.Message != cond.Message {
 				node.Node.Status.Conditions[i] = cond // update it with the new condition
 				node.updated = true
 			}

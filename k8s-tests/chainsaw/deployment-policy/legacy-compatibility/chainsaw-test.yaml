@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
@@ -65,13 +62,23 @@ spec:
   - name: verify-metrics
     try:
     - script:
+        skipLogOutput: true
         content: |
+          ../../metrics_test.py nodewright_rollout_matched_nodes 6 -t nodewright_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
+          set -e
           echo "=== Verifying legacy compatibility metrics ==="
-          
+
           # Verify metrics for synthetic __default__ compartment
-          ../../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
-          ../../metrics_test.py skyhook_rollout_ceiling 3 -t skyhook_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
-          
+          ../../metrics_test.py nodewright_rollout_ceiling 3 -t nodewright_name=legacy-interruption-budget-test -t policy_name=legacy -t compartment_name=__default__ -t strategy=fixed
+
           # Verify that the legacy policy name is "legacy" and not a real policy
           echo "✓ Legacy compatibility metrics verified!"
           echo "✓ Metrics use policy_name=legacy for backwards compatibility"

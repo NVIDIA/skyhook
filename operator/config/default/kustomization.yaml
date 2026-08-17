@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -15,14 +15,14 @@
 # limitations under the License.
 
 # Adds namespace to all resources.
-namespace: skyhook-operator-system
+namespace: nodewright-operator-system
 
 # Value of this field is prepended to the
 # names of all resources, e.g. a deployment named
 # "wordpress" becomes "alices-wordpress".
-# Note that it should also match with the prefix (text before '-') of the namespace
-# field above.
-namePrefix: skyhook-operator-
+# Kept in sync with the Helm chart, where the same names come from
+# `chart.fullname` and render `nodewright-*` by default (#440).
+namePrefix: nodewright-
 
 # Labels to add to all resources and selectors.
 #labels:
@@ -45,7 +45,7 @@ patches:
 # Protect the /metrics endpoint by putting it behind auth.
 # If you want your controller-manager to expose the /metrics
 # endpoint w/o any authn/z, please comment the following line.
-- path: manager_auth_proxy_patch.yaml
+- path: manager_metrics_patch.yaml
 
 # [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix including the one in
 # crd/kustomization.yaml

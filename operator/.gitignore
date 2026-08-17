@@ -32,7 +32,7 @@ Dockerfile.cross
 .terraform.lock.hcl
 __debug_bin*
 
-docs/metrics/grafana-dashboards-configmap.yaml
+docs/observability/grafana-dashboards-configmap.yaml
 
 examples
 

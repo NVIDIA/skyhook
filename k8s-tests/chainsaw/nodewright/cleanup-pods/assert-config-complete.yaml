@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -18,7 +18,7 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: cleanup-pods
     nodewright.nvidia.com/package: bb-1.2
@@ -32,9 +32,12 @@ metadata:
         "image": "ghcr.io/nvidia/skyhook/agentless"
       }
   ownerReferences:
-    - apiVersion: nodewright.nvidia.com/v1alpha1
-      kind: NodeWright
-      name: cleanup-pods
+    ## controller: true proves the pod is the Job's child, not merely referencing one. The Job's
+    ## own name is deliberately not asserted: it carries a config hash, so pinning it here would
+    ## break every test on any change to the naming scheme. assert_jobs.yaml covers Job ownership.
+    - apiVersion: batch/v1
+      kind: Job
+      controller: true
 spec:
   terminationGracePeriodSeconds: 46
   initContainers:

@@ -19,6 +19,31 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Changed
 
+- **The `--namespace` default moved from `skyhook` to `nodewright`, and the CLI now
+  discovers the operator's namespace instead of assuming it.** The documented install
+  namespace moved with the rename, but a namespace cannot be renamed in place, so
+  installs that predate the rename legitimately stay in `skyhook` forever. A blind
+  default change would have answered "not found" for every one of them.
+
+  With no `--namespace`, the CLI now checks `nodewright`, then `skyhook` (printing a
+  one-line note to stderr when the legacy namespace is what answered), then sweeps
+  cluster-wide for an operator in some other namespace, and only then falls back to
+  `nodewright` so the command's own lookup reports the specific miss. An explicit
+  `--namespace` is always used verbatim, with no discovery and no note.
+
+  Within the set of operators this CLI supports at all (NodeWright-capable ones, per
+  the Breaking Changes above), the namespace change introduces **no** new
+  incompatibility: the namespace is only used to locate the operator Deployment and
+  package pods, and the `NodeWright` and `DeploymentPolicy` CRDs are cluster-scoped,
+  so no command changes which CRs it sees. This says nothing about Skyhook-only
+  operators, which remain unsupported for unrelated reasons. See
+  [docs/user-guide/cli.md](../../../docs/user-guide/cli.md#namespace-resolution) for the full resolution
+  order and the situation matrix.
+
+  The cluster-wide sweep needs cluster-scoped Deployment list permission. Users
+  without it lose only that last discovery step; the `nodewright`/`skyhook` probes
+  and explicit `--namespace` are unaffected.
+
 - Commands that read or write `NodeWright` resources now run a preflight check on
   the served API groups. When the cluster serves only the legacy
   `skyhook.nvidia.com` group and not `nodewright.nvidia.com`, they fail fast with

@@ -27,6 +27,7 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/nodewright/operator/internal/controller/mock"
+	"github.com/NVIDIA/nodewright/operator/internal/dal"
 	dalMock "github.com/NVIDIA/nodewright/operator/internal/dal/mock"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	wrapperMock "github.com/NVIDIA/nodewright/operator/internal/wrapper/mock"
@@ -39,10 +40,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -51,7 +54,7 @@ var _ = Describe("skyhook controller tests", func() {
 
 	var logger = log.FromContext(ctx)
 
-	It("should map only pods we created", func() {
+	It("should queue only pods we created", func() {
 
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -62,13 +65,14 @@ var _ = Describe("skyhook controller tests", func() {
 			},
 		}
 
-		ret := podHandlerFunc(ctx, pod)
-		Expect(ret).To(HaveLen(1))
-		Expect(ret[0].Name).To(BeEquivalentTo("pod---foobar"))
+		Expect(ownedPod().Create(event.CreateEvent{Object: pod})).To(BeTrue())
+		Expect(ownedPod().Update(event.UpdateEvent{ObjectNew: pod})).To(BeTrue())
 
-		pod.Labels = map[string]string{"foo": "bar"}
-		ret = podHandlerFunc(ctx, pod)
-		Expect(ret).To(BeNil())
+		foreign := pod.DeepCopy()
+		foreign.Labels = map[string]string{"foo": "bar"}
+		Expect(ownedPod().Create(event.CreateEvent{Object: foreign})).To(BeFalse())
+		Expect(ownedPod().Update(event.UpdateEvent{ObjectNew: foreign})).To(BeFalse())
+		Expect(ownedPod().Delete(event.DeleteEvent{Object: foreign})).To(BeFalse())
 
 	})
 
@@ -125,7 +129,7 @@ var _ = Describe("skyhook controller tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, skyhook := range clusterState.skyhooks {
-					picker := NewNodePicker(logger, opts.GetRuntimeRequiredToleration())
+					picker := NewNodePicker(logger, opts.GetRuntimeRequiredTolerations())
 					pick := picker.SelectNodes(skyhook)
 					Expect(pick).To(HaveLen(expected))
 				}
@@ -185,7 +189,7 @@ var _ = Describe("skyhook controller tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, skyhook := range clusterState.skyhooks {
-					picker := NewNodePicker(logger, opts.GetRuntimeRequiredToleration())
+					picker := NewNodePicker(logger, opts.GetRuntimeRequiredTolerations())
 					pick := picker.SelectNodes(skyhook)
 					Expect(pick).To(HaveLen(expected))
 				}
@@ -497,6 +501,10 @@ var _ = Describe("skyhook controller tests", func() {
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
 			AgentLogRoot:         "/log",
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -573,7 +581,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
@@ -637,7 +645,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			force := false
@@ -709,7 +717,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
@@ -779,7 +787,7 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, events.NewFakeRecorder(10), opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{
@@ -842,7 +850,7 @@ var _ = Describe("skyhook controller tests", func() {
 			})
 
 			recorder := events.NewFakeRecorder(10)
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, recorder, opts)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), recorder, opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			node := &corev1.Node{
@@ -872,7 +880,7 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drained).To(BeFalse())
 			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
-			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [skyhook:drain-timeout]")))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [nodewright:drain-timeout]")))
 			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0]")))
 		})
 	})
@@ -998,6 +1006,10 @@ var _ = Describe("skyhook controller tests", func() {
 			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
 			AgentImage:           "foo:bar",
 			PauseImage:           "foo:bar",
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
 		}
 		Expect(opts.Validate()).To(BeNil())
 
@@ -1034,6 +1046,43 @@ var _ = Describe("skyhook controller tests", func() {
 
 		opts.PauseImage = "bar"
 		Expect(opts.Validate()).ToNot(BeNil())
+
+		// reset to a fully valid set, then exercise the Job-related floors in isolation
+		opts = SkyhookOperatorOptions{
+			Namespace:            "skyhook",
+			MaxInterval:          time.Second * 61,
+			CopyDirRoot:          "/tmp",
+			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
+			AgentImage:           "foo:bar",
+			PauseImage:           "foo:bar",
+			JobOperatorOptions: JobOperatorOptions{
+				JobTTLSucceeded: time.Hour,
+				JobTTLFailed:    24 * time.Hour,
+			},
+		}
+		Expect(opts.Validate()).To(BeNil())
+
+		// JobTTLSucceeded below the 1 minute floor
+		opts.JobTTLSucceeded = 30 * time.Second
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobTTLSucceeded = time.Hour
+
+		// JobTTLFailed below the 1 minute floor
+		opts.JobTTLFailed = 0
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobTTLFailed = 24 * time.Hour
+
+		// negative JobStageTimeout is rejected; 0 is allowed (removes the time bound)
+		opts.JobStageTimeout = -time.Second
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobStageTimeout = 0
+		Expect(opts.Validate()).To(BeNil())
+
+		// negative JobBackoffLimit is rejected; 0 is allowed (a single attempt, no retry)
+		opts.JobBackoffLimit = -1
+		Expect(opts.Validate()).ToNot(BeNil())
+		opts.JobBackoffLimit = 0
+		Expect(opts.Validate()).To(BeNil())
 	})
 	It("Should group skyhooks by node correctly", func() {
 		skyhooks := &v1alpha1.NodeWrightList{
@@ -1279,154 +1328,36 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(to_remove).To(HaveLen(1))
 		Expect(to_remove[0].UID).To(BeEquivalentTo(nodeA.UID))
 	})
-	It("CreateTolerationForTaint should tolerate the passed taint", func() {
-		taint := corev1.Taint{
-			Key:    "skyhook.nvidia.com",
-			Value:  "runtime-required",
-			Effect: "NoSchedule",
-		}
-		toleration := opts.GetRuntimeRequiredToleration()
-		Expect(toleration.ToleratesTaint(logger, &taint, false)).To(BeTrue())
+	It("CreateTolerationForTaint should tolerate both the configured and the legacy taint", func() {
+		tolerations := opts.GetRuntimeRequiredTolerations()
 
-	})
-	It("Pods should always tolerate runtime required taint", func() {
-		pod := createPodFromPackage(
-			operator.opts,
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageApply,
-		)
-		found_toleration := false
-		expected_toleration := opts.GetRuntimeRequiredToleration()
-		for _, toleration := range pod.Spec.Tolerations {
-			if toleration.Key == expected_toleration.Key && toleration.Value == expected_toleration.Value && toleration.Effect == expected_toleration.Effect {
-				found_toleration = true
-				break
-			}
+		for _, taint := range []corev1.Taint{
+			{Key: "nodewright.nvidia.com", Value: "runtime-required", Effect: "NoSchedule"},
+			{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: "NoSchedule"},
+		} {
+			Expect(CheckTaintToleration(logger, tolerations, []corev1.Taint{taint})).To(BeTrue(), "expected %s to be tolerated", taint.Key)
 		}
-		Expect(found_toleration).To(BeTrue())
-	})
-	It("Interrupt pods should tolerate runtime required taint when it is runtime required", func() {
-		pod := createInterruptPodForPackage(
-			operator.opts,
-			&v1alpha1.Interrupt{
-				Type: v1alpha1.REBOOT,
-			},
-			"argEncode",
-
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageInterrupt,
-		)
-		found_toleration := false
-		expected_toleration := opts.GetRuntimeRequiredToleration()
-		for _, toleration := range pod.Spec.Tolerations {
-			if toleration.Key == expected_toleration.Key && toleration.Value == expected_toleration.Value && toleration.Effect == expected_toleration.Effect {
-				found_toleration = true
-				break
-			}
-		}
-		Expect(found_toleration).To(BeTrue())
 	})
 
-	It("Pods should not have imagePullSecrets when ImagePullSecret is empty", func() {
-		emptyOpts := SkyhookOperatorOptions{
-			Namespace:            "skyhook",
-			MaxInterval:          time.Second * 61,
-			ImagePullSecret:      "", // Empty - no pull secret
-			CopyDirRoot:          "/tmp",
-			ReapplyOnReboot:      true,
-			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
-			AgentImage:           "foo:bar",
-			PauseImage:           "foo:bar",
-		}
+	It("An operator configured with the legacy taint does not list it twice", func() {
+		legacyOpts := opts
+		legacyOpts.RuntimeRequiredTaint = legacyRuntimeRequiredTaint
 
-		pod := createPodFromPackage(
-			emptyOpts,
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageApply,
-		)
-		Expect(pod.Spec.ImagePullSecrets).To(BeEmpty())
+		Expect(legacyOpts.GetRuntimeRequiredTaints()).To(HaveLen(1))
+		Expect(legacyOpts.GetRuntimeRequiredTaints()[0].Key).To(Equal("skyhook.nvidia.com"))
+		Expect(legacyOpts.GetRuntimeRequiredTolerations()).To(HaveLen(1))
 	})
 
-	It("Interrupt pods should not have imagePullSecrets when ImagePullSecret is empty", func() {
-		emptyOpts := SkyhookOperatorOptions{
-			Namespace:            "skyhook",
-			MaxInterval:          time.Second * 61,
-			ImagePullSecret:      "", // Empty - no pull secret
-			CopyDirRoot:          "/tmp",
-			ReapplyOnReboot:      true,
-			RuntimeRequiredTaint: "skyhook.nvidia.com=runtime-required:NoSchedule",
-			AgentImage:           "foo:bar",
-			PauseImage:           "foo:bar",
+	It("A custom configured taint is recognised alongside the legacy taint", func() {
+		customOpts := opts
+		customOpts.RuntimeRequiredTaint = "example.com/custom=runtime-required:NoSchedule"
+
+		keys := make([]string, 0)
+		for _, taint := range customOpts.GetRuntimeRequiredTaints() {
+			keys = append(keys, taint.Key)
 		}
-
-		pod := createInterruptPodForPackage(
-			emptyOpts,
-			&v1alpha1.Interrupt{
-				Type: v1alpha1.REBOOT,
-			},
-			"argEncode",
-			&v1alpha1.Package{
-				PackageRef: v1alpha1.PackageRef{
-					Name:    "foo",
-					Version: "1.1.2",
-				},
-				Image: "foo/bar",
-			},
-			&wrapper.Skyhook{
-				NodeWright: &v1alpha1.NodeWright{
-					Spec: v1alpha1.NodeWrightSpec{
-						RuntimeRequired: true,
-					},
-				},
-			},
-			"node1",
-			v1alpha1.StageInterrupt,
-		)
-		Expect(pod.Spec.ImagePullSecrets).To(BeEmpty())
+		Expect(keys).To(ConsistOf("example.com/custom", "skyhook.nvidia.com"))
 	})
-
 	It("should generate deterministic pod names", func() {
 		// Setup basic test data
 		skyhook := &wrapper.Skyhook{
@@ -1501,78 +1432,6 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(len(longName)).To(BeNumerically("<=", 63), "Pod name should not exceed Kubernetes 63 character limit")
 		Expect(longName).To(MatchRegexp(`-[0-9a-f]+$`), "Pod name should end with a hash component")
 	})
-
-	It("should correctly identify if a pod matches a package", func() {
-
-		// Create a test package
-		testPackage := &v1alpha1.Package{
-			PackageRef: v1alpha1.PackageRef{
-				Name:    "test-package",
-				Version: "1.2.3",
-			},
-			Image: "test-image:1.2.3",
-			Resources: &v1alpha1.ResourceRequirements{
-				CPURequest:    resource.MustParse("100m"),
-				CPULimit:      resource.MustParse("200m"),
-				MemoryRequest: resource.MustParse("64Mi"),
-				MemoryLimit:   resource.MustParse("128Mi"),
-			},
-		}
-
-		// Create a test skyhook
-		testSkyhook := &wrapper.Skyhook{
-			NodeWright: &v1alpha1.NodeWright{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-skyhook",
-				},
-				Spec: v1alpha1.NodeWrightSpec{
-					Packages: v1alpha1.Packages{
-						"test-package": *testPackage,
-					},
-				},
-			},
-		}
-
-		// Stage to test
-		testStage := v1alpha1.StageApply
-
-		// Create actual pods that would be created by the operator functions
-		// First using CreatePodFromPackage
-		actualPod := createPodFromPackage(operator.opts, testPackage, testSkyhook, "test-node", testStage)
-
-		// Verify that the pod matches the package according to PodMatchesPackage
-		matches := podMatchesPackage(operator.opts, testPackage, *actualPod, testSkyhook, testStage)
-		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the pod it created")
-
-		// Now let's modify the package version and see if it correctly identifies non-matches
-		modifiedPackage := testPackage.DeepCopy()
-		modifiedPackage.Version = "1.2.4"
-
-		matches = podMatchesPackage(operator.opts, modifiedPackage, *actualPod, testSkyhook, testStage)
-		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when package version changed")
-
-		// Test with different stage
-		matches = podMatchesPackage(operator.opts, testPackage, *actualPod, testSkyhook, v1alpha1.StageConfig)
-		Expect(matches).To(BeFalse(), "PodMatchesPackage should not match when stage changed")
-
-		// Test with interrupt pods
-		interruptPod := createInterruptPodForPackage(
-			operator.opts,
-			&v1alpha1.Interrupt{
-				Type: v1alpha1.REBOOT,
-			},
-			"argEncode",
-			testPackage,
-			testSkyhook,
-			"test-node",
-			testStage,
-		)
-
-		// Verify that the interrupt pod matches the package
-		matches = podMatchesPackage(operator.opts, testPackage, *interruptPod, testSkyhook, testStage)
-		Expect(matches).To(BeTrue(), "PodMatchesPackage should recognize the interrupt pod it created")
-	})
-
 	It("should generate valid volume names", func() {
 		tests := []struct {
 			name        string
@@ -1618,78 +1477,6 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(result).To(MatchRegexp(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`), "volume name should match kubernetes naming requirements")
 		}
 	})
-
-	It("should mount each configMap key as a subPath so image defaults are not clobbered", func() {
-		testPackage := &v1alpha1.Package{
-			PackageRef: v1alpha1.PackageRef{
-				Name:    "foo",
-				Version: "1.1.2",
-			},
-			Image: "foo/bar",
-			ConfigMap: map[string]string{
-				"b.sh": "echo b",
-				"a.sh": "echo a",
-				"c.sh": "echo c",
-			},
-		}
-		testSkyhook := &wrapper.Skyhook{
-			NodeWright: &v1alpha1.NodeWright{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			},
-		}
-
-		pod := createPodFromPackage(operator.opts, testPackage, testSkyhook, "node1", v1alpha1.StageApply)
-
-		container := pod.Spec.InitContainers[0]
-
-		// The configMap must never be mounted as a bare directory: that hides
-		// any files the package image baked in at /skyhook-package/configmaps.
-		for _, vm := range container.VolumeMounts {
-			if vm.MountPath == "/skyhook-package/configmaps" {
-				Fail("configMap must not be mounted as a directory; expected per-key subPath mounts")
-			}
-		}
-
-		// Collect the configMap mounts (those backed by the package volume).
-		configMapMounts := make([]corev1.VolumeMount, 0)
-		for _, vm := range container.VolumeMounts {
-			if vm.Name == testPackage.Name {
-				configMapMounts = append(configMapMounts, vm)
-			}
-		}
-
-		Expect(configMapMounts).To(HaveLen(3))
-		// Sorted-key order for a deterministic pod spec.
-		Expect(configMapMounts[0]).To(Equal(corev1.VolumeMount{
-			Name:      testPackage.Name,
-			MountPath: "/skyhook-package/configmaps/a.sh",
-			SubPath:   "a.sh",
-			ReadOnly:  true,
-		}))
-		Expect(configMapMounts[1]).To(Equal(corev1.VolumeMount{
-			Name:      testPackage.Name,
-			MountPath: "/skyhook-package/configmaps/b.sh",
-			SubPath:   "b.sh",
-			ReadOnly:  true,
-		}))
-		Expect(configMapMounts[2]).To(Equal(corev1.VolumeMount{
-			Name:      testPackage.Name,
-			MountPath: "/skyhook-package/configmaps/c.sh",
-			SubPath:   "c.sh",
-			ReadOnly:  true,
-		}))
-
-		// The underlying configMap volume is still mounted exactly once.
-		configMapVolumes := 0
-		for _, v := range pod.Spec.Volumes {
-			if v.Name == testPackage.Name {
-				configMapVolumes++
-				Expect(v.ConfigMap).NotTo(BeNil())
-			}
-		}
-		Expect(configMapVolumes).To(Equal(1))
-	})
-
 	It("should generate valid configmap names", func() {
 		tests := []struct {
 			name        string
@@ -1974,6 +1761,48 @@ var _ = Describe("Resource Comparison", func() {
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeTrue())
 	})
 
+	// Unlike its neighbours, this spec round-trips the pod through the envtest
+	// apiserver instead of comparing two in-process structs. A DeepCopy can never
+	// observe that apimachinery rewrites a quantity into its canonical form
+	// ("4000m" -> "4", "8192Mi" -> "8Gi") when the pod is serialized, so the pod the
+	// operator reads back is not byte-identical to the one it created.
+	It("should match when the pod's quantities were canonicalized by the apiserver", func() {
+		newPackage := *package_
+		newPackage.Resources = &v1alpha1.ResourceRequirements{
+			CPURequest:    resource.MustParse("2000m"),
+			CPULimit:      resource.MustParse("4000m"),
+			MemoryRequest: resource.MustParse("4096Mi"),
+			MemoryLimit:   resource.MustParse("8192Mi"),
+		}
+		skyhook.Spec.Packages["test-package"] = newPackage
+
+		// "test-node", not the "testNode" the sibling specs use: spec.nodeName must be
+		// a lowercase RFC 1123 subdomain, which only a real apiserver enforces.
+		pod := createPodFromPackage(operator.opts, &newPackage, skyhook, "test-node", v1alpha1.StageApply)
+		Expect(SetPackages(pod, skyhook.NodeWright, newPackage.Image, v1alpha1.StageApply, &newPackage)).To(Succeed())
+
+		// Capture what the operator built before Create: the client overwrites pod in
+		// place with the apiserver's response, which is the rewrite under test.
+		built := pod.Spec.InitContainers[0].Resources.DeepCopy()
+
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, pod))).To(Succeed())
+		})
+
+		observedPod := &corev1.Pod{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod), observedPod)).To(Succeed())
+		observed := observedPod.Spec.InitContainers[0].Resources
+
+		Expect(observed.Limits.Cpu().Cmp(*built.Limits.Cpu())).To(Equal(0),
+			"guard: the apiserver must change only representation, never value")
+		Expect(observed.Limits.Memory().Cmp(*built.Limits.Memory())).To(Equal(0),
+			"guard: the apiserver must change only representation, never value")
+
+		Expect(podMatchesPackage(operator.opts, &newPackage, *observedPod, skyhook, v1alpha1.StageApply)).To(BeTrue(),
+			"a pod read back from the apiserver must still match the package that created it")
+	})
+
 	It("should not match when resources differ", func() {
 		// Setup: Add resources to package and expected pod
 		newPackage := *package_
@@ -2129,7 +1958,9 @@ var _ = Describe("Resource Comparison", func() {
 
 		Expect(podMatchesPackage(operator.opts, &newPackage, *actualPod, skyhook, v1alpha1.StageApply)).To(BeFalse())
 	})
+})
 
+var _ = Describe("cluster state compartments", func() {
 	It("should partition nodes into compartments", func() {
 		skyhooks := &v1alpha1.NodeWrightList{
 			Items: []v1alpha1.NodeWright{
@@ -2799,7 +2630,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2840,7 +2671,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 			v1alpha1.StateInProgress, v1alpha1.StageUninstallInterrupt, int32(0), "",
 		).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2877,7 +2708,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		// Defensive cleanup: RemoveState the old-version ref. No Upsert.
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -2908,7 +2739,7 @@ func TestHandleCompletePod_WI4(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -3884,7 +3715,7 @@ func TestHandleCompletePod_VersionComparison(t *testing.T) {
 		mockNode := wrapperMock.NewMockSkyhookNodeOnly(t)
 		mockNode.EXPECT().RemoveState(v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"}).Return(nil)
 
-		r := &SkyhookReconciler{dal: mockDAL}
+		r := &JobReconciler{dal: mockDAL}
 		packagePtr := &PackageSkyhook{
 			PackageRef: v1alpha1.PackageRef{Name: "my-pkg", Version: "1.0.0"},
 			Skyhook:    "test-skyhook",
@@ -4067,6 +3898,7 @@ var _ = Describe("TrackReboots reapply-on-reboot on a busy node", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts:     SkyhookOperatorOptions{ReapplyOnReboot: true},
 		}
@@ -4163,7 +3995,7 @@ var _ = Describe("ProcessInterrupt skipped-package promotion", func() {
 
 var _ = Describe("TrackReboots auto-taint on reboot", func() {
 	const (
-		defaultRuntimeRequiredTaint = "skyhook.nvidia.com=runtime-required:NoSchedule"
+		defaultRuntimeRequiredTaint = "nodewright.nvidia.com=runtime-required:NoSchedule"
 		oldBootID                   = "boot-A"
 		newBootID                   = "boot-B"
 	)
@@ -4174,7 +4006,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 			nodeName    = "auto-taint-reboot-node"
 		)
 		nodeLabel := map[string]string{"auto-taint-reboot-test": "yes"}
-		autoTaintAnnotationKey := fmt.Sprintf("%s/autoTaint_skyhook.nvidia.com", v1alpha1.METADATA_PREFIX)
+		autoTaintAnnotationKey := fmt.Sprintf("%s/autoTaint_nodewright.nvidia.com", v1alpha1.METADATA_PREFIX)
 
 		// Node arrives without the taint (it was removed after previous completion)
 		// but retains the autoTaint annotation from the original auto-taint.
@@ -4220,6 +4052,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				ReapplyOnReboot:      true,
@@ -4237,7 +4070,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 		live := &corev1.Node{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
 		Expect(live.Spec.Taints).To(ContainElement(
-			Equal(corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}),
+			Equal(corev1.Taint{Key: "nodewright.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}),
 		), "runtime-required taint must be re-applied after reboot when all three conditions are met")
 	})
 
@@ -4286,6 +4119,7 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 
 		r := &SkyhookReconciler{
 			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				ReapplyOnReboot:      true,
@@ -4302,7 +4136,155 @@ var _ = Describe("TrackReboots auto-taint on reboot", func() {
 		live := &corev1.Node{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
 		Expect(live.Spec.Taints).ToNot(ContainElement(
-			HaveField("Key", "skyhook.nvidia.com"),
+			HaveField("Key", "nodewright.nvidia.com"),
 		), "taint must NOT be re-applied when AutoTaintNewNodes is false")
+	})
+
+	It("should NOT stack a second taint on a node that already carries the legacy one", func() {
+		const (
+			skyhookName = "legacy-taint-reboot-sh"
+			nodeName    = "legacy-taint-reboot-node"
+		)
+		nodeLabel := map[string]string{"legacy-taint-reboot-test": "yes"}
+		legacyTaint := corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
+
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nodeName,
+				Labels: nodeLabel,
+			},
+			Spec: corev1.NodeSpec{Taints: []corev1.Taint{legacyTaint}},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+		node.Status.NodeInfo.BootID = newBootID
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+		snapshotNode := node.DeepCopy()
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		skyhook := v1alpha1.NodeWright{
+			ObjectMeta: metav1.ObjectMeta{Name: skyhookName},
+			Spec: v1alpha1.NodeWrightSpec{
+				NodeSelector:      metav1.LabelSelector{MatchLabels: nodeLabel},
+				RuntimeRequired:   true,
+				AutoTaintNewNodes: true,
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+			Status: v1alpha1.NodeWrightStatus{
+				NodeBootIds: map[string]string{nodeName: oldBootID},
+			},
+		}
+
+		clusterState, err := BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
+			&corev1.NodeList{Items: []corev1.Node{*snapshotNode}},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		r := &SkyhookReconciler{
+			Client:   k8sClient,
+			dal:      dal.New(k8sClient, nil),
+			recorder: operator.recorder,
+			opts: SkyhookOperatorOptions{
+				ReapplyOnReboot:      true,
+				RuntimeRequiredTaint: defaultRuntimeRequiredTaint,
+			},
+		}
+
+		_, err = r.TrackReboots(ctx, clusterState)
+		if err != nil {
+			Expect(err.Error()).ToNot(ContainSubstring("node after reboot"))
+		}
+
+		live := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
+		Expect(live.Spec.Taints).To(ContainElement(Equal(legacyTaint)))
+		Expect(live.Spec.Taints).ToNot(ContainElement(HaveField("Key", "nodewright.nvidia.com")),
+			"a node already gated by the legacy taint must not also get the new one")
+	})
+})
+
+var _ = Describe("HandleRuntimeRequired legacy taint removal", func() {
+	newReconciler := func(configured string) *SkyhookReconciler {
+		return &SkyhookReconciler{
+			Client:   k8sClient,
+			recorder: operator.recorder,
+			opts: SkyhookOperatorOptions{
+				RuntimeRequiredTaint: configured,
+			},
+		}
+	}
+
+	removeTaintsFor := func(r *SkyhookReconciler, nodeName string, nodeTaints []corev1.Taint) []corev1.Taint {
+		nodeLabel := map[string]string{"runtime-required-removal-test": nodeName}
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName, Labels: nodeLabel},
+			Spec:       corev1.NodeSpec{Taints: nodeTaints},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		skyhook := v1alpha1.NodeWright{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName + "-sh"},
+			Spec: v1alpha1.NodeWrightSpec{
+				NodeSelector:    metav1.LabelSelector{MatchLabels: nodeLabel},
+				RuntimeRequired: true,
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+		}
+
+		clusterState, err := BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
+			&corev1.NodeList{Items: []corev1.Node{*node.DeepCopy()}},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Mark the package complete on the node so the taint becomes removable.
+		_, nodeWrapper := clusterState.skyhooks[0].GetNode(nodeName)
+		Expect(nodeWrapper).ToNot(BeNil())
+		pkg := skyhook.Spec.Packages[pkgRef.Name]
+		Expect(nodeWrapper.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, v1alpha1.StageConfig, int32(0), "")).To(Succeed())
+
+		Expect(r.HandleRuntimeRequired(ctx, clusterState)).To(Succeed())
+
+		live := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())
+		return live.Spec.Taints
+	}
+
+	legacyTaint := corev1.Taint{Key: "skyhook.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
+	newTaint := corev1.Taint{Key: "nodewright.nvidia.com", Value: "runtime-required", Effect: corev1.TaintEffectNoSchedule}
+	unrelatedTaint := corev1.Taint{Key: "nvidia.com/gpu", Value: "present", Effect: corev1.TaintEffectNoSchedule}
+
+	// envtest stamps its own node.kubernetes.io/not-ready taint on created Nodes, so the
+	// assertions name the keys under test rather than the whole taint list.
+	expectRuntimeRequiredGone := func(remaining []corev1.Taint) {
+		GinkgoHelper()
+		Expect(remaining).To(ContainElement(Equal(unrelatedTaint)), "unrelated taints must be preserved")
+		Expect(remaining).ToNot(ContainElement(HaveField("Key", "skyhook.nvidia.com")))
+		Expect(remaining).ToNot(ContainElement(HaveField("Key", "nodewright.nvidia.com")))
+	}
+
+	It("removes the legacy taint from a node the provisioner still stamps with it", func() {
+		r := newReconciler("nodewright.nvidia.com=runtime-required:NoSchedule")
+		expectRuntimeRequiredGone(removeTaintsFor(r, "legacy-only-node", []corev1.Taint{legacyTaint, unrelatedTaint}))
+	})
+
+	It("removes both keys when a node somehow carries both", func() {
+		r := newReconciler("nodewright.nvidia.com=runtime-required:NoSchedule")
+		expectRuntimeRequiredGone(removeTaintsFor(r, "both-keys-node", []corev1.Taint{legacyTaint, newTaint, unrelatedTaint}))
+	})
+
+	It("still removes the legacy taint when the operator is pinned to the legacy key", func() {
+		r := newReconciler(legacyRuntimeRequiredTaint)
+		expectRuntimeRequiredGone(removeTaintsFor(r, "pinned-legacy-node", []corev1.Taint{legacyTaint, unrelatedTaint}))
 	})
 })

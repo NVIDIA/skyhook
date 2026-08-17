@@ -32,4 +32,4 @@ scripts/gen-changelog.sh operator
 for c in operator agent chart cli; do scripts/gen-changelog.sh "$c"; done
 ```
 
-See `docs/release-process.md` for the full changelog and release-tagging workflow.
+See `docs/contributing/release-process.md` for the full changelog and release-tagging workflow.

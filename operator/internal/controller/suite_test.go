@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sethvargo/go-envconfig"
 
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -118,7 +119,9 @@ var _ = BeforeSuite(func() {
 	operator, err = NewSkyhookReconciler(
 		k8sManager.GetScheme(),
 		k8sManager.GetClient(),
-		k8sManager.GetEventRecorder("skyhook-controller"),
+		k8sManager.GetAPIReader(),
+		k8sfake.NewClientset(),
+		k8sManager.GetEventRecorder("nodewright-controller"),
 		opts,
 	)
 	Expect(err).ToNot(HaveOccurred())

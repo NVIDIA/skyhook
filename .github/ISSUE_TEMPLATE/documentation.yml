@@ -1,0 +1,102 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+name: Documentation
+description: Report documentation that is missing, unclear, wrong, or out of date
+title: "[DOC]: "
+type: Documentation
+labels: ["needs-triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping us improve the docs. You do not need to know the fix —
+        telling us what confused you is enough, and is genuinely useful.
+
+  - type: dropdown
+    id: problem_kind
+    attributes:
+      label: What kind of documentation problem is this?
+      options:
+        - Missing — something is not documented at all
+        - Unclear — it is documented, but I could not follow it
+        - Incorrect — it says something that is not true
+        - Out of date — it describes older behavior
+        - Broken link or example that does not work
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part(s) of the project does this documentation cover? Select all that apply; this helps us route the issue.
+      multiple: true
+      options:
+        - Operator (controller-manager)
+        - Agent (package executor)
+        - Helm chart
+        - CLI (kubectl nodewright)
+        - CI / tooling
+        - Tests (e2e / chainsaw)
+        - Docs / examples
+        - Other / Unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Where is it?
+      description: The page URL, or the file path in this repository. If it is missing entirely, tell us where you looked for it.
+      placeholder: |
+        docs/architecture/interrupt-flow.md, "Draining a node" section
+        or: https://github.com/NVIDIA/nodewright/blob/main/README.md#stages
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or missing?
+      description: What did you expect to find, and what did you find instead? If something was ambiguous, quoting the sentence that tripped you up helps a lot.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What should it say instead?
+      description: Optional. A rough suggestion is fine — we will edit for style. If you would rather send a pull request, say so and we will assign the issue to you.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else — what you were trying to do, what you tried, versions involved.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/NVIDIA/nodewright/blob/main/CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow NodeWright's Code of Conduct
+          required: true
+        - label: I have searched the [open documentation issues](https://github.com/NVIDIA/nodewright/issues?q=is%3Aopen+is%3Aissue+type%3ADocumentation) and have found no duplicates
+          required: true

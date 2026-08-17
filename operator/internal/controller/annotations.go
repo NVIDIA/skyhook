@@ -21,10 +21,27 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// packageAnnotationKey is the annotation every package executor carries to round-trip
+// the package it runs: a Pod today, and a batch/v1 Job plus its pod template once
+// stages run as Jobs.
+const packageAnnotationKey = v1alpha1.METADATA_PREFIX + "/package"
+
+// isNil reports whether obj is nil, catching both a nil interface and a typed-nil
+// pointer (e.g. a (*corev1.Pod)(nil)). These helpers take an interface, so a plain
+// obj == nil misses the typed-nil case, which would then panic in GetAnnotations.
+func isNil(obj metav1.Object) bool {
+	if obj == nil {
+		return true
+	}
+	v := reflect.ValueOf(obj)
+	return v.Kind() == reflect.Pointer && v.IsNil()
+}
 
 type PackageSkyhook struct {
 	v1alpha1.PackageRef `json:",inline"`
@@ -35,12 +52,15 @@ type PackageSkyhook struct {
 	Invalid             bool           `json:"invalid,omitempty"`
 }
 
-// GetPackage returns the package from the pod annotations
-func GetPackage(pod *corev1.Pod) (*PackageSkyhook, error) {
-	if pod == nil {
+// GetPackage returns the package from the object's annotations. These helpers take
+// metav1.Object rather than client.Object because they only touch metadata and must
+// also accept a *corev1.PodTemplateSpec (the Job pod template), which satisfies
+// metav1.Object but not client.Object (it has no runtime.Object methods).
+func GetPackage(obj metav1.Object) (*PackageSkyhook, error) {
+	if isNil(obj) {
 		return nil, nil
 	}
-	s, ok := pod.Annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)]
+	s, ok := obj.GetAnnotations()[packageAnnotationKey]
 	if !ok {
 		return nil, nil
 	}
@@ -53,9 +73,9 @@ func GetPackage(pod *corev1.Pod) (*PackageSkyhook, error) {
 	return ret, nil
 }
 
-// SetPackages sets the package in the pod annotations
-func SetPackages(pod *corev1.Pod, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
-	if pod == nil || _package == nil {
+// SetPackages sets the package in the object's annotations
+func SetPackages(obj metav1.Object, skyhook *v1alpha1.NodeWright, image string, stage v1alpha1.Stage, _package *v1alpha1.Package) error {
+	if isNil(obj) || _package == nil {
 		return nil
 	}
 
@@ -72,23 +92,29 @@ func SetPackages(pod *corev1.Pod, skyhook *v1alpha1.NodeWright, image string, st
 		return fmt.Errorf("error marshalling package: %w", err)
 	}
 
-	if pod.Annotations == nil {
-		pod.Annotations = map[string]string{}
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
 	}
-	pod.Annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	annotations[packageAnnotationKey] = string(data)
+	obj.SetAnnotations(annotations)
 
 	return nil
 }
 
-// InvalidatePackage invalidates a package and updates the pod, which will trigger the pod to be deleted
-func InvalidatePackage(pod *corev1.Pod) error {
-	if pod == nil {
+// InvalidatePackage invalidates a package and updates the object, which will trigger the executor to be deleted
+func InvalidatePackage(obj metav1.Object) error {
+	if isNil(obj) {
 		return nil
 	}
 
-	pkg, err := GetPackage(pod)
+	pkg, err := GetPackage(obj)
 	if err != nil {
 		return fmt.Errorf("error getting package: %w", err)
+	}
+	// No package annotation to invalidate: GetPackage returns nil when absent.
+	if pkg == nil {
+		return nil
 	}
 
 	pkg.Invalid = true
@@ -98,20 +124,29 @@ func InvalidatePackage(pod *corev1.Pod) error {
 		return fmt.Errorf("error marshalling package: %w", err)
 	}
 
-	pod.Annotations[fmt.Sprintf("%s/package", v1alpha1.METADATA_PREFIX)] = string(data)
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[packageAnnotationKey] = string(data)
+	obj.SetAnnotations(annotations)
 
 	return nil
 }
 
 // IsInvalidPackage returns true if the package is invalid
-func IsInvalidPackage(pod *corev1.Pod) (bool, error) {
-	if pod == nil {
+func IsInvalidPackage(obj metav1.Object) (bool, error) {
+	if isNil(obj) {
 		return false, nil
 	}
 
-	pkg, err := GetPackage(pod)
+	pkg, err := GetPackage(obj)
 	if err != nil {
 		return false, fmt.Errorf("error getting package: %w", err)
+	}
+	// No package annotation: an object without one is not an invalid package.
+	if pkg == nil {
+		return false, nil
 	}
 	return pkg.Invalid, nil
 }

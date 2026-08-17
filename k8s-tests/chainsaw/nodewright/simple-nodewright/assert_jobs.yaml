@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# assert_pods.yaml checks that a package pod is owned by its Job. This closes the other half of
+# that chain (Job owned by the NodeWright, controller-managed, so the whole tree GCs with the CR)
+# and pins the run-to-completion defaults the operator builds the Job with, which the pod assert
+# cannot see.
+---
+kind: Job
+apiVersion: batch/v1
+metadata:
+  namespace: nodewright
+  labels:
+    nodewright.nvidia.com/name: simple-skyhook
+    nodewright.nvidia.com/package: spencer-3.2.3
+    nodewright.nvidia.com/stage: apply
+  ownerReferences:
+    - apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
+      name: simple-skyhook
+      controller: true
+      blockOwnerDeletion: true
+spec:
+  parallelism: 1
+  completions: 1
+  # A timeout is a retryable failure like any other, so the bound is per attempt (on the pod
+  # template below) and this is how many retries the stage gets after its first attempt
+  # before it times out — 3 retries, so 4 attempts in total.
+  backoffLimit: 3
+  # Replace only once the previous pod is fully gone, so two executors never share the hostPath.
+  podReplacementPolicy: Failed
+  template:
+    spec:
+      restartPolicy: Never
+      # Operator default JOB_STAGE_TIMEOUT (1h); no package here sets stageTimeout.
+      activeDeadlineSeconds: 3600
+---
+kind: Job
+apiVersion: batch/v1
+metadata:
+  namespace: nodewright
+  labels:
+    nodewright.nvidia.com/name: simple-skyhook
+    nodewright.nvidia.com/package: foobar-1.2
+    nodewright.nvidia.com/stage: apply
+  ownerReferences:
+    - apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
+      name: simple-skyhook
+      controller: true
+      blockOwnerDeletion: true
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      activeDeadlineSeconds: 3600
+---

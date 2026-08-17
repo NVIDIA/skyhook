@@ -137,10 +137,31 @@ spec:
           fi
           {{- end }}
 
+          {{/* MIGRATION-SHIM (skyhook-operator -> nodewright resource rename, #440).
+               An operator from before that change looks its webhook configurations up by
+               NAME. This upgrade renames them, so that running operator hard-errors on
+               "skyhook-operator-validating-webhook not found", never goes Ready, never
+               releases the webhook bootstrap lease (docs/designs/webhook-bootstrap-lease.md),
+               and therefore never gets terminated by the rolling update: helm upgrade wedges
+               on "Pending termination". The new operator finds them by label instead, so this
+               is a one-time rollover, not a recurring cost.
+
+               WEBHOOK_SERVICE_NAME is the marker: no chart before #440 set it, so its absence
+               on the live Deployment means the running operator predates label discovery.
+               Deleting the Deployment here costs a short operator gap and lets helm recreate
+               it; the alternative is a stuck release that needs a manual kubectl delete pod.
+               Drop this block once the rename window closes. */}}
+          if ! kubectl get deployment "$DEPLOY" -n "$NS" \
+               -o jsonpath='{.spec.template.spec.containers[?(@.name=="manager")].env[*].name}' \
+               2>/dev/null | tr ' ' '\n' | grep -qx 'WEBHOOK_SERVICE_NAME'; then
+            echo "live operator predates label-based webhook discovery (no WEBHOOK_SERVICE_NAME); it cannot survive the webhook rename"
+            mismatch=1
+          fi
+
           if [ "$mismatch" -eq 1 ]; then
-            echo "Deployment selector does not match desired; deleting so helm upgrade can recreate it"
+            echo "deleting Deployment $DEPLOY so helm upgrade can recreate it"
             kubectl delete deployment "$DEPLOY" -n "$NS" --ignore-not-found
           else
-            echo "Deployment selector already matches desired; nothing to do"
+            echo "Deployment selector matches desired and the live operator understands label-based webhook discovery; nothing to do"
           fi
 {{- end }}

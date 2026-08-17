@@ -32,7 +32,9 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	//+kubebuilder:scaffold:imports
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimachineryruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,6 +50,7 @@ import (
 
 var cfg *rest.Config
 var k8sClient client.Client
+var cachedClient client.Client
 var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
@@ -106,6 +109,8 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
+	cachedClient = mgr.GetClient()
+
 	err = (&Skyhook{}).SetupWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -139,3 +144,28 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
+
+// waitForPolicyInWebhookCache blocks until the manager's cache has observed the named
+// DeploymentPolicy. The Skyhook validating webhook reads through that cache, while
+// k8sClient reads straight from the apiserver, so a Skyhook created immediately after
+// its policy races the informer and is denied with "deploymentPolicy ... not found".
+// Waiting on the same client the webhook uses closes that window.
+func waitForPolicyInWebhookCache(name string) {
+	GinkgoHelper()
+	Eventually(func() error {
+		return cachedClient.Get(ctx, types.NamespacedName{Name: name}, &DeploymentPolicy{})
+	}, "10s", "100ms").Should(Succeed())
+}
+
+// waitForSkyhookGoneFromWebhookCache blocks until the manager's cache has observed that the
+// named Skyhook is deleted. Deleting a DeploymentPolicy through the apiserver runs the
+// REGISTERED validating webhook, which lists Skyhooks through the manager's cached client —
+// unlike the webhook the specs construct directly, which is handed k8sClient. So a delete
+// that k8sClient already reports as gone can still be visible to that informer, and the
+// policy delete is rejected with "still referenced by 1 Skyhook(s)".
+func waitForSkyhookGoneFromWebhookCache(name string) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		return apierrors.IsNotFound(cachedClient.Get(ctx, types.NamespacedName{Name: name}, &Skyhook{}))
+	}, "10s", "100ms").Should(BeTrue())
+}

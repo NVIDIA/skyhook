@@ -8,7 +8,7 @@ The canonical file lives at `.claude/CLAUDE.md`. The root-level `AGENTS.md` is a
 
 Skyhook (being renamed to NodeWright) is a Kubernetes-aware package manager for safely modifying host infrastructure at scale. It coordinates the node lifecycle (cordon → drain → apply package → interrupt/reboot → uncordon) as controlled rollouts gated by interruption budgets and deployment policies.
 
-Rename status: the project is transitioning from Skyhook → NodeWright. The namespace (`skyhook`) still uses `skyhook` pending its migration. Components already moved to `nodewright`: the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), the operator image (`ghcr.io/nvidia/nodewright/operator`), the agent image (`ghcr.io/nvidia/nodewright/agent`, since `agent/v6.4.2`), the primary CRD group (`nodewright.nvidia.com/v1alpha1 NodeWright`; the legacy `skyhook.nvidia.com` group is kept read-only for a migration window), and the CLI plugin (`kubectl nodewright`, binary `kubectl-nodewright`). Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
+Rename status: the project is transitioning from Skyhook → NodeWright. Components already moved to `nodewright`: the install namespace (`nodewright` for new installs; existing installs stay in `skyhook` forever, since namespaces cannot be renamed in place), the Go module (`github.com/NVIDIA/nodewright/operator`), the Helm chart (`name: nodewright`, distributed at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`), the operator image (`ghcr.io/nvidia/nodewright/operator`), the agent image (`ghcr.io/nvidia/nodewright/agent`, since `agent/v6.4.2`), the primary CRD group (`nodewright.nvidia.com/v1alpha1 NodeWright`; the legacy `skyhook.nvidia.com` group is kept read-only for a migration window), and the CLI plugin (`kubectl nodewright`, binary `kubectl-nodewright`). Don't "fix" `nodewright` references back to `skyhook`, and don't preemptively rename what hasn't moved yet.
 
 ## Required reading: `docs/` (load every session)
 
@@ -17,25 +17,25 @@ Rename status: the project is transitioning from Skyhook → NodeWright. The nam
 Required (read on session start):
 
 - `docs/README.md` — docs index
-- `docs/operator-status-definitions.md` — **Status / State / Stage** vocabulary (distinct concepts; conflating them causes subtle bugs)
-- `docs/interrupt_flow.md` — cordon / drain / interrupt / uncordon sequence and `podNonInterruptLabels` semantics
-- `docs/runtime_required.md` — runtime-required taint flow and `AutoTaintNewNodes`
-- `docs/ordering_of_skyhooks.md` — priority, sequencing (`node` vs `all`), `SKYHOOK_NODE_ORDER`
-- `docs/deployment_policy.md` — cluster-scoped rollout shaping
-- `docs/resource_management.md` — strict resource-override validation (all 4 fields or none)
-- `docs/versioning.md` — per-component semver, strictly enforced
-- `docs/taints.md` — taint semantics
-- `docs/providing_secrets_to_packages.md` — how packages consume secrets
-- `docs/kubernetes-support.md` — supported K8s versions
-- `docs/operator_resources_at_scale.md` — scale characteristics
-- `docs/release-process.md`, `docs/releases.md` — release process and history
-- `docs/cli.md` — CLI reference (needed before touching `operator/cmd/cli/`)
+- `docs/architecture/operator-status.md` — **Status / State / Stage** vocabulary (distinct concepts; conflating them causes subtle bugs)
+- `docs/architecture/interrupt-flow.md` — cordon / drain / interrupt / uncordon sequence and `podNonInterruptLabels` semantics
+- `docs/user-guide/runtime-required.md` — runtime-required taint flow and `AutoTaintNewNodes`
+- `docs/architecture/ordering.md` — priority, sequencing (`node` vs `all`), `SKYHOOK_NODE_ORDER`
+- `docs/user-guide/deployment-policy.md` — cluster-scoped rollout shaping
+- `docs/operations/resource-management.md` — strict resource-override validation (all 4 fields or none)
+- `docs/operations/versioning.md` — per-component semver, strictly enforced
+- `docs/user-guide/taints.md` — taint semantics
+- `docs/user-guide/providing-secrets.md` — how packages consume secrets
+- `docs/operations/kubernetes-support.md` — supported K8s versions
+- `docs/operations/resources-at-scale.md` — scale characteristics
+- `docs/contributing/release-process.md`, `docs/contributing/releases.md` — release process and history
+- `docs/user-guide/cli.md` — CLI reference (needed before touching `operator/cmd/cli/`)
 
 Read on demand (not required up-front):
 
 - `docs/designs/` — design docs for existing features (consult before changing an existing feature)
 - `docs/plans/` — in-flight plans (check before starting new work in an area)
-- `docs/kyverno/`, `docs/metrics/` — policy and observability surfaces
+- `docs/security/kyverno/`, `docs/observability/` — policy and observability surfaces
 
 If a doc above is silent on a question you need to answer, say so explicitly rather than guess.
 
@@ -58,7 +58,7 @@ make build-cli          # kubectl-nodewright → bin/nodewright
 
 make unit-tests         # ginkgo unit tests + envtest (fake apiserver), writes to reporting/
 make test               # full suite: manifests, generate, fmt, vet, lint, unit + e2e + cli-e2e + helm + operator-agent
-make e2e-tests          # chainsaw e2e against current cluster (set POOL=<name> to run one pool — see docs/ci-test-pools.md)
+make e2e-tests          # chainsaw e2e against current cluster (set POOL=<name> to run one pool — see docs/contributing/ci-test-pools.md)
 make watch-tests        # ginkgo watch mode
 
 make run                # runs controller as background process against current kubeconfig (ENABLE_WEBHOOKS=false by default)
@@ -100,7 +100,7 @@ E2E tests use [chainsaw](https://kyverno.github.io/chainsaw/) against a real clu
 
 ### CRDs (see `operator/api/v1alpha1/`)
 
-- **Skyhook** (namespaced) — desired state: a DAG of `packages` (container image + version + configMap + optional `dependsOn`), node selector, interruption budget, additional tolerations, runtime-required flag, priority/sequencing, optional `DeploymentPolicy` reference.
+- **Skyhook** / **NodeWright** (cluster-scoped) — desired state: a DAG of `packages` (container image + version + configMap + optional `dependsOn`), node selector, interruption budget, additional tolerations, runtime-required flag, priority/sequencing, optional `DeploymentPolicy` reference. Both CRDs are cluster-scoped, so the install namespace only ever determines where the operator and its package pods live, never which CRs a client sees.
 - **DeploymentPolicy** (cluster-scoped) — rollout shape: batch sizing, pause/resume windows, cross-Skyhook ordering.
 
 CRD types are kubebuilder-annotated (`//+kubebuilder:…`). Any change to these files **must** be followed by `make manifests generate` — the generated `zz_generated.deepcopy.go`, CRD YAML under `config/crd/bases/`, and webhook config are all consumed at build time.
@@ -119,7 +119,7 @@ CRD types are kubebuilder-annotated (`//+kubebuilder:…`). Any change to these 
 
 ### Status / State / Stage (vocabulary — don't conflate)
 
-Three distinct concepts, intentionally named to look similar. Mixing them up causes subtle bugs. Full definitions in `docs/operator-status-definitions.md`; summary:
+Three distinct concepts, intentionally named to look similar. Mixing them up causes subtle bugs. Full definitions in `docs/architecture/operator-status.md`; summary:
 
 - **Status** — high-level health of a Skyhook or a node (e.g., `complete`, `blocked`, `waiting`, `paused`, `disabled`, `in_progress`, `erroring`, `unknown`). Derived from the collective States of the node's packages.
 - **State** — per-package execution outcome on a node (`complete`, `in_progress`, `skipped`, `erroring`, `unknown`).
@@ -151,6 +151,16 @@ Relevant env vars are documented in `agent/README.md`.
 ### CLI (`operator/cmd/cli/`)
 
 kubectl plugin (`kubectl nodewright …`). Subcommands under `app/`: `node`, `package`, `deploymentpolicy`, plus `reset`, `lifecycle` (pause/resume/disable/enable), `version`, `migrate`. Commands go through `operator/internal/cli/client` rather than talking to the apiserver directly. Recent operators use annotations (`nodewright.nvidia.com/pause`, `nodewright.nvidia.com/disable`) for pause/disable — not spec fields (the legacy Skyhook uses the `skyhook.nvidia.com/*` equivalents).
+
+## Secrets and credentials
+
+Hard boundaries. These are not style preferences — violating one means a rotation, not a revert.
+
+- **Never commit credentials, API keys, tokens, passwords, kubeconfigs, or private keys.** Nothing secret belongs in a tracked file: not in Go or Python source, not in test fixtures, not in `chart/values.yaml`, not in chainsaw manifests under `k8s-tests/`, not in `.github/workflows/`, and not in a commit message. Examples use an obvious placeholder (`REPLACE_ME`, `<your-token>`), never a real value that "happens to be expired".
+- **Never read a real credential into your output.** `~/.kube/config`, `~/.docker/config.json`, `~/.ssh/`, `~/.aws/`, and any `.env` are off limits — refer to them by path, don't cat them into the transcript, a file, or a PR description.
+- **Secret-bearing environment variables stay out of tracked files.** CI reads them via `${{ secrets.* }}`; local runs read them from your shell. Don't add a `.env` with real values, and never give a secret-bearing variable a hardcoded fallback default.
+- **Cluster secrets are mounted at runtime, never baked in.** Packages receive them through the mechanism in `docs/user-guide/providing-secrets.md` — a Kubernetes Secret projected into the package pod. Never inline a secret into a package `configMap`, a `NodeWright` CR, or a container image layer.
+- **Found a committed secret? Stop and report it.** Do not quietly delete it in a follow-up commit — the value survives in git history and has to be rotated regardless. Report it through `SECURITY.md`; do not open a public issue.
 
 ## Code style (Go)
 
@@ -289,17 +299,26 @@ When choosing between approaches, prioritize:
 - Observability is mandatory — structured `logr` messages, metrics via `controller/metrics.go`, events via the event recorder.
 - Boring first — prefer proven controller-runtime idioms over clever abstractions.
 
+## Issue and PR metadata (labels, type, priority)
+
+- **`.github/labels.yml` is the desired, closed set of labels.** It is the only source of truth, synced to GitHub with `make labels`. Because that sync creates and updates but never deletes, GitHub may currently carry undeclared extras; treat any label not defined in the file as one that should not exist, never as precedent for adding more.
+- **Never create a label.** No `gh label create`, no `gh issue create --label <something-new>`, no label creation through `gh api`. `make labels` does not prune, so a label invented once lingers on the repo forever until someone deletes it by hand. If a label you want is genuinely missing, add it to `.github/labels.yml` in a PR and stop there; do not create it on GitHub and backfill the file later.
+- **Priority is not a label.** It is a native GitHub issue Field (Urgent / High / Medium / Low) in the issue sidebar. **Maintainers set it during triage; agents and issue reporters do not set it at all.** Never apply `priority/*`, `P0` / `P1` / `P2`, or any severity label, and never write the Priority field from automation. If you think something is urgent, say so in the issue body and let a maintainer decide.
+- **Type is not a label either.** Bug / Enhancement / Documentation / Task / Epic / Initiative are native GitHub Issue Types, assigned by the issue forms via their `type:` key. `doc` is the one exception, and only because the PR path labeler applies it to docs-only PRs.
+- **When filing an issue, apply no labels yourself.** `.github/workflows/triage.yaml` adds `needs-triage` and infers `component/*` from the title and body; `.github/labeler.yml` handles PR path labels. Let that automation run rather than pre-labeling.
+
 ## Conventions and gotchas
 
 - **Vendoring**: Go deps are vendored. `make build`/`make test` pass `-mod=vendor` via `GOFLAGS`; `go get` is still fine but follow with `go mod vendor`.
 - **License headers**: every source file needs an Apache-2.0 header. `make license-fmt` (which runs as part of `make fmt`) shells out to [`addlicense`](https://github.com/google/addlicense) with `scripts/license-header.tmpl` — don't copy-paste headers by hand. It only **adds** headers to files that lack one; it never rewrites an existing header, so the copyright year is the year of first publication and is not bumped on edit (matching Google/Kubernetes practice). Files carrying a generated-code marker (`// Code generated … DO NOT EDIT.`) are skipped, which is a content check, not a filename check: a hand-written `zz_generated.*` would still get a header, and a generated file without the marker would too. `make license-header-check` is the CI gate; it fails if a tracked source file has no header, or has one that isn't `SPDX-License-Identifier: Apache-2.0`. New Go files get `//` line comments rather than the `/* */` block used by older files: a block comment above a `//go:build` constraint is not legal, so gofmt hoists the constraint and the two tools fight forever.
 - **Commits**: Conventional Commits format, with DCO sign-off (`git commit -s`). No pseudonyms.
 - **Docs are part of every PR.** If your change alters user-visible behavior (CRD field, CLI command/flag, env var, annotation, metric, lifecycle semantics, install/upgrade flow) or an architectural concept captured in `docs/`, update the affected doc page **in the same PR** — not a follow-up. If a doc page is wrong or stale because of your change, fix it. If your change makes an existing doc obsolete, delete the stale section rather than leaving two sources of truth. **A behavior-changing PR without a corresponding `docs/` update will be rejected in review** — treat this as a blocking requirement, not a nicety. Docs-only changes are fine on their own, but code changes without docs are not.
+- **`RELEASE_NOTES.md` is not a changelog, and most PRs do not belong in it.** Each component's `CHANGELOG.md` is generated from commit history and already records every change, so a hand-written note is duplication unless the reader has to **do** something or will be **surprised**: an action required at upgrade time, a deprecation with a deadline, a behavior they will notice and did not ask for, a new knob worth discovering. A bug fix that restores intended behavior needs no entry, however involved the fix was. Default to not adding one; the commit message and the linked issue carry the reasoning. Every entry that is only narrative makes the entries that matter harder to find.
 - **Container runtime**: the operator Makefile defaults to `podman` locally, `docker` in CI. Override via `DOCKER_CMD=docker`.
 - **`make run` is a background process**: it writes its PID to `reporting/int/run.PID`. Always pair with `make kill` before re-running; otherwise you'll have two managers fighting for leadership.
 - **`operator/config/` ↔ `chart/` must stay in sync**: `operator/config/` (kustomize) and `chart/` (Helm) describe the same deployment surface through two tools. Any change to one **must be mirrored into the other in the same PR** — a new RBAC rule, env var, volume mount, resource limit, webhook wiring, or CRD under `operator/config/` is only half-done until the equivalent edit lands under `chart/templates/` (and `chart/values.yaml` if it's a knob). `make generate-helm` can draft the mirror by running `helmify` over the kustomize output, but it overwrites hand-tuned chart files — read the diff carefully, revert the parts it gets wrong (templating variables, comments, ordering), and never commit the output blindly. For small changes, it's usually faster to hand-mirror than to re-generate.
 - **CLI ↔ operator contract must stay in sync.** The CLI (`operator/cmd/cli/`) is a client of the operator — it reads/writes CRs, annotations (`nodewright.nvidia.com/pause`, `…/disable`, `…/nodeState_*`, etc.), status fields, and relies on well-known label/finalizer names. When an operator change touches any of these surfaces (renamed annotation, new CRD field the CLI should surface, changed status shape, removed feature, new lifecycle operation), update the CLI **in the same PR**. A PR that changes a contract surface in `operator/` without a corresponding CLI update — or a justification for why the CLI is unaffected — should be rejected in review.
-- **CLI must remain backward-compatible with older operators where at all possible.** The CLI is distributed independently of the operator (users upgrade on different schedules) and is expected to work against any supported operator version. When adding a feature that depends on new operator behavior: feature-detect via `skyhook version` / CR schema presence / annotation probe, and fall back gracefully or emit a clear error naming the minimum operator version required. Do not silently no-op. The compatibility matrix in `docs/cli.md` (e.g., the v0.7.x vs v0.8.0 pause/disable table) is authoritative — every command with version-gated behavior **must** appear there.
-- **When breaking CLI backward compatibility is unavoidable**: (1) emit a runtime warning from the CLI when it detects an incompatible operator (naming the operator version it saw and the minimum required), (2) update the `docs/cli.md` compatibility matrix and note the break in prose, (3) record the break in `operator/cmd/cli/CHANGELOG.md` with a migration note, (4) bump the CLI major/minor per `docs/versioning.md`. Silent breakage is not acceptable — operators in production may lag the CLI by months, and a CLI that misbehaves without explanation is worse than one that refuses to run.
-- **Per-component version tags.** Components are released independently — tags are prefixed with the component name: `operator/v0.15.0`, `cli/v0.3.0`, `agent/v6.4.0`, `chart/v0.15.0`. `git tag --list 'operator/*' --sort=-v:refname | head -1` is how the operator Makefile computes `GIT_TAG_LAST`. A plain `git log --tags` without this knowledge is confusing. Each component also has its own `CHANGELOG.md` (root for chart+agent, `operator/` and `operator/cmd/cli/` for the Go components). See `docs/versioning.md` / `docs/release-process.md`.
+- **CLI must remain backward-compatible with older operators where at all possible.** The CLI is distributed independently of the operator (users upgrade on different schedules) and is expected to work against any supported operator version. When adding a feature that depends on new operator behavior: feature-detect via `skyhook version` / CR schema presence / annotation probe, and fall back gracefully or emit a clear error naming the minimum operator version required. Do not silently no-op. The compatibility matrix in `docs/user-guide/cli.md` (e.g., the v0.7.x vs v0.8.0 pause/disable table) is authoritative — every command with version-gated behavior **must** appear there.
+- **When breaking CLI backward compatibility is unavoidable**: (1) emit a runtime warning from the CLI when it detects an incompatible operator (naming the operator version it saw and the minimum required), (2) update the `docs/user-guide/cli.md` compatibility matrix and note the break in prose, (3) record the break in `operator/cmd/cli/CHANGELOG.md` with a migration note, (4) bump the CLI major/minor per `docs/operations/versioning.md`. Silent breakage is not acceptable — operators in production may lag the CLI by months, and a CLI that misbehaves without explanation is worse than one that refuses to run.
+- **Per-component version tags.** Components are released independently — tags are prefixed with the component name: `operator/v0.15.0`, `cli/v0.3.0`, `agent/v6.4.0`, `chart/v0.15.0`. `git tag --list 'operator/*' --sort=-v:refname | head -1` is how the operator Makefile computes `GIT_TAG_LAST`. A plain `git log --tags` without this knowledge is confusing. Each component also has its own `CHANGELOG.md` (root for chart+agent, `operator/` and `operator/cmd/cli/` for the Go components). See `docs/operations/versioning.md` / `docs/contributing/release-process.md`.
 - **`make test` in `operator/` is heavy**: it runs unit + four flavors of e2e and expects a running cluster. For quick iteration use `make unit-tests` (or `make watch-tests`).

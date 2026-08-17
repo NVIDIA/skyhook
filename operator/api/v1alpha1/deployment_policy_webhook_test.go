@@ -21,9 +21,7 @@ package v1alpha1
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 )
 
@@ -324,6 +322,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a Skyhook that references the policy
 			skyhook := &Skyhook{
@@ -357,9 +356,7 @@ var _ = Describe("DeploymentPolicy", func() {
 			// can still be visible to the webhook for a brief window after Delete
 			// returns. Wait for it to actually be gone before deleting the policy.
 			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
-			Eventually(func() bool {
-				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: skyhook.Name}, &Skyhook{}))
-			}, "10s", "100ms").Should(BeTrue())
+			waitForSkyhookGoneFromWebhookCache(skyhook.Name)
 			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 		})
 
@@ -381,6 +378,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a Skyhook that references the policy
 			skyhook := &Skyhook{
@@ -406,9 +404,7 @@ var _ = Describe("DeploymentPolicy", func() {
 			// validating the policy delete — envtest deletes are async, see
 			// the cleanup race in the previous It block.
 			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
-			Eventually(func() bool {
-				return errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: skyhook.Name}, &Skyhook{}))
-			}, "10s", "100ms").Should(BeTrue())
+			waitForSkyhookGoneFromWebhookCache(skyhook.Name)
 
 			// Now deletion should succeed
 			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)

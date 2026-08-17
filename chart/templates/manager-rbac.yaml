@@ -1,23 +1,46 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: skyhook-operator-manager-role
+  name: {{ include "chart.fullname" . }}-manager-role
   annotations:
     checkov.io/skip1: CKV_K8S_155=Operator must manage webhook configs for cert rotation
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 rules:
 - apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+- apiGroups:
   - admissionregistration.k8s.io
   resources:
   - mutatingwebhookconfigurations
   - validatingwebhookconfigurations
   resourceNames:
+  - {{ include "chart.validatingWebhookName" . }}
+  - {{ include "chart.mutatingWebhookName" . }}
+  {{- /* MIGRATION-SHIM (skyhook-operator -> nodewright resource rename, #440):
+         during the upgrade that crosses the rename both the pre-rename webhook
+         configurations and a not-yet-terminated old operator replica are still
+         around, and the pre-delete cleanup job deletes the legacy names as a
+         belt-and-braces. Drop these two entries once the rename window closes. */}}
   - skyhook-operator-validating-webhook
   - skyhook-operator-mutating-webhook
   verbs:
   - get
   - update
+  {{- /* delete is what the pre-delete cleanup job needs; without it that job's
+         `kubectl delete ...webhookconfiguration` was silently RBAC-denied and
+         the `|| true` swallowed the error. */}}
+  - delete
 - apiGroups:
   - admissionregistration.k8s.io
   resources:
@@ -88,18 +111,6 @@ rules:
   - pods/status
   verbs:
   - get
-- apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
 - apiGroups:
   - nodewright.nvidia.com
   resources:
@@ -176,16 +187,88 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: skyhook-operator-manager-rolebinding
+  name: {{ include "chart.fullname" . }}-manager-rolebinding
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: {{ include "chart.name" . }}
+    app.kubernetes.io/part-of: {{ include "chart.name" . }}
   {{- include "chart.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: skyhook-operator-manager-role
+  name: {{ include "chart.fullname" . }}-manager-role
+subjects:
+- kind: ServiceAccount
+  name: {{ include "chart.fullname" . }}-controller-manager
+  namespace: '{{ .Release.Namespace }}'
+---
+# Least privilege: these are the kinds the operator only ever touches inside its own namespace,
+# so they are a namespaced Role rather than part of the ClusterRole above.
+#
+#   secrets     only the operator's own webhook serving cert
+#   jobs        package-stage Jobs, all created here and every list passes InNamespace
+#   pods/log    read only off those Jobs' child pods, for the deadline failure snapshot
+#
+# Jobs and secrets each have a namespace-scoped informer in main.go and the two must stay in
+# step: a cluster-wide informer under this Role is rejected at LIST/WATCH and the operator fails
+# to start. pods/log has no informer — it is read through a namespaced Pods(ns).GetLogs call — but
+# still needs the namespaced verb here.
+# Pods and nodes stay in the ClusterRole — drain has to see workload pods on any node.
+# ConfigMaps are also a candidate but stay cluster-wide for now: scoping them correlated with
+# unexplained apply-to-config stalls in e2e/core.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "chart.fullname" . }}-manager-role
+  namespace: '{{ .Release.Namespace }}'
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "chart.fullname" . }}-manager-namespaced-rolebinding
+  namespace: '{{ .Release.Namespace }}'
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: {{ include "chart.name" . }}
+    app.kubernetes.io/part-of: {{ include "chart.name" . }}
+  {{- include "chart.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "chart.fullname" . }}-manager-role
 subjects:
 - kind: ServiceAccount
   name: {{ include "chart.fullname" . }}-controller-manager

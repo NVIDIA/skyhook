@@ -52,4 +52,4 @@ if [ -n "${LOCAL_OPERATOR_IMG:-}" ]; then
 fi
 
 ## install operator
-${HELM} upgrade --install ${OPERATOR_NAME} ../../../../chart -n skyhook -f ${VALUES_FILE_NAME} "${LOCAL_OPERATOR_IMG_ARGS[@]}"
+${HELM} upgrade --install ${OPERATOR_NAME} ../../../../chart -n nodewright -f ${VALUES_FILE_NAME} "${LOCAL_OPERATOR_IMG_ARGS[@]}"

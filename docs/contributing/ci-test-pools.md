@@ -1,0 +1,111 @@
+# CI test pools
+
+The nodewright chainsaw e2e suite (`k8s-tests/chainsaw/nodewright/`) is split into labeled pools that run as parallel CI jobs to keep wall-clock per matrix row under ~18 min.
+
+## Pools
+
+Every test under `k8s-tests/chainsaw/nodewright/*/chainsaw-test.yaml` has a top-level `metadata.labels.pool: <name>`:
+
+- `core` — fast smoke and feature tests; **also the fallback for any
+  test missing a `pool:` label**.
+- `interrupt` — cordon/drain/taint/runtime-required flows.
+- `uninstall` — uninstall, upgrade, downgrade lifecycle.
+- `lifecycle` — pause/disable/delete/finalizer/state.
+
+## Running locally
+
+```bash
+# All tests (default — same as before pools existed):
+make e2e-tests
+
+# A single pool:
+POOL=interrupt make e2e-tests
+```
+
+The `POOL` variable is honored by `operator/Makefile`'s `e2e-tests`
+target. `POOL=core` uses a `pool notin (...)` selector so unlabeled
+tests still run.
+
+## Suites that are not pools
+
+Not every matrix row is a chainsaw pool. Pools only subdivide
+`k8s-tests/chainsaw/nodewright/`; the other rows in the `tests` matrix are
+separate suites selected by `test-suite` and run via their own make target
+(`unit-tests`, `helm-tests`, `cli-e2e`, `deployment-policy`, `migration`).
+
+Two of them, `helm-tests` and `migration`, build their cluster with
+`make create-kind-cluster` (ctlptl) rather than `helm/kind-action`, because they
+need ctlptl's local image registry to serve the operator image under test. The
+three cluster-setup steps key off a shared list, so adding another registry-needing
+suite means adding its name to that list in all three places.
+
+Both also start from the same `v0.17.1` pre-rename baseline: `migration` for the API
+group rename, `helm-tests`' `helm-upgrade-rollback-test` for the in-cluster resource
+name rename. `migration` materializes that chart with `git archive chart/v0.17.1`, so
+it needs **full history with tags** (`fetch-depth: 0`, `fetch-tags: true`, already set
+for the whole `tests` job) and fails early with an explicit message rather than a bare
+git error when the tag is missing. `helm-upgrade-rollback-test` pulls the published
+chart from the registry instead, and only reads git tags when asked to resolve the
+newest release rather than a pinned one.
+
+### `migration`
+
+Runs `k8s-tests/migration/run.sh`: installs the last pre-rename release
+(`chart/v0.17.1` at operator `v0.17.0`) and upgrades to the commit under test,
+asserting per-node state migrates and no package re-runs. See
+`k8s-tests/migration/README.md`.
+
+Two requirements it does not share with the other suites:
+
+- **Full history with tags.** It materializes the old chart with
+  `git archive chart/v0.17.1`, so the checkout needs `fetch-depth: 0` and
+  `fetch-tags: true` (both already set for the whole `tests` job). Without them
+  the run fails early with an explicit message rather than a bare git error.
+- **A clean cluster.** Phase 1 refuses to run if `nodewright.nvidia.com` CRDs
+  already exist, since a pre-rename baseline is the point. It gets a fresh
+  cluster per run, so this only bites when running locally against a reused one.
+
+It runs on the primary Kind node image only. The upgrade path it exercises is the
+operator's own, not Kubernetes-version sensitive, and the run is long enough
+(cluster create, two helm installs, a real package rollout, a prune, two operator
+restarts) that a matrix over every supported version would not pay for itself.
+This row is the longest in the matrix and exceeds the ~18 min per-row target the
+pools are sized against.
+
+## Adding a new pool
+
+Three-file change, no branch-protection edits:
+
+1. Add `pool: <newpool>` to the relevant `chainsaw-test.yaml` files' `metadata.labels` block.
+2. Append `<newpool>` to the `pool:` matrix list in `.github/workflows/operator-ci.yaml`.
+3. Append `<newpool>` to `POOL_NON_DEFAULT` in `operator/Makefile` so the `core` pool's `notin (...)` selector excludes it.
+
+Worst case if step 3 is forgotten: the new pool's tests run twice (once in their pool, once in `core`). Noisy but not silently broken.
+
+## Code coverage
+
+Per-row coverage artifacts are named `coverage-<test-suite>[-<pool>]-k8s-<version>`. The `upload-coverage` job globs `coverage-*` and concatenates the per-row `cover.out` files (Go covdata `mode: set` format auto-deduplicates lines), producing a single combined profile uploaded to Coveralls — equivalent to the pre-pool combined profile.
+
+## Gate jobs
+
+Every workflow that gates merge publishes a check named **`ci-gate`**.
+GitHub composes same-named required checks across workflows, so branch
+protection on `main` requires only the single `ci-gate` name and every
+`ci-gate` that posts must pass.
+
+Workflows publishing `ci-gate`:
+
+- `lint-ci.yaml` — runs on every PR (no path filter). Guarantees a
+  `ci-gate` is always posted, even on doc-only changes.
+- `operator-ci.yaml`, `agent-ci.yaml` — wrapper job that depends on the
+  matrix and image-build jobs. Posts `ci-gate` only when the workflow's
+  paths trigger.
+- `commit-linting.yaml`, `security-checkov.yaml`,
+  `agentless-container.yaml` — single-job workflows wrap their worker
+  in a `ci-gate` job for uniformity.
+
+The `if: always()` + `jq -e '... result == "success"'` pattern is the
+standard fix for GitHub Actions' "skipped == green" pitfall. Each gate's
+`needs:` only lists jobs that always run — conditionally-skipped jobs
+(`create-manifest`/`upload-coverage` on fork PRs / tag builds) are
+deliberately excluded so legitimate skips don't fail the gate.

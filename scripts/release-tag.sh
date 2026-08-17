@@ -8,7 +8,7 @@
 #
 # Pushing a <component>/v* tag triggers the CI release workflow, so the push is
 # always a distinct, opt-in step. RC tags use the dotted `-rc.N` form so version
-# sort orders pre-releases correctly (see docs/release-process.md).
+# sort orders pre-releases correctly (see docs/contributing/release-process.md).
 #
 # The tag is created on the current HEAD. Make sure the release commit (chart
 # bump, CHANGELOG cut, etc.) is already committed and checked out before tagging.

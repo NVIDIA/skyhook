@@ -1,19 +1,20 @@
 # E2E Tests
 
-These are E2E tests using a declarative framework called [Chainsaw](https://github.com/kyverno/chainsaw). You define YAML files to create resources and assert that expected state is achieved.
+Most of these are E2E tests using a declarative framework called [Chainsaw](https://github.com/kyverno/chainsaw). You define YAML files to create resources and assert that expected state is achieved. The `migration` suite is the one exception; see below.
 
 ## Test Suites
 
-There are four classifications of E2E tests in this project:
-
-| Suite | Directory | Description |
-|-------|-----------|-------------|
-| **NodeWright** | [chainsaw/nodewright/](./chainsaw/nodewright/) | Core operator functionality tests |
-| **Helm** | [chainsaw/helm/](./chainsaw/helm/) | Helm chart deployment and configuration tests |
-| **Deployment Policy** | [chainsaw/deployment-policy/](./chainsaw/deployment-policy/) | Deployment policy and rollout strategy tests |
-| **CLI** | [chainsaw/cli/](./chainsaw/cli/) | kubectl-nodewright CLI command tests |
+| Suite | Directory | Framework | Description |
+|-------|-----------|-----------|-------------|
+| **NodeWright** | [chainsaw/nodewright/](./chainsaw/nodewright/) | Chainsaw | Core operator functionality tests |
+| **Helm** | [chainsaw/helm/](./chainsaw/helm/) | Chainsaw | Helm chart deployment and configuration tests |
+| **Deployment Policy** | [chainsaw/deployment-policy/](./chainsaw/deployment-policy/) | Chainsaw | Deployment policy and rollout strategy tests |
+| **CLI** | [chainsaw/cli/](./chainsaw/cli/) | Chainsaw | kubectl-nodewright CLI command tests |
+| **Migration** | [migration/](./migration/) | bash | Upgrade from the last pre-rename release and assert the Skyhook to NodeWright migration preserves node state |
 
 For more information on each suite, refer to their respective README files.
+
+**Why the migration suite is not Chainsaw.** Its central assertion is that a value is *unchanged across an operator upgrade*, which means capturing state before the upgrade and comparing after. Chainsaw asserts that the cluster matches a declared shape at a point in time; it has no way to carry a captured value across steps and diff against it. That suite is driven by [migration/run.sh](./migration/run.sh) instead, and is run by `make migration-test` rather than `make e2e-tests`. Add new tests to a Chainsaw suite unless you need that same before/after comparison.
 
 ## Creating a New Test
 

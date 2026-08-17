@@ -19,6 +19,9 @@
 package controller
 
 import (
+	"fmt"
+	"sync/atomic"
+
 	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	"github.com/prometheus/client_golang/prometheus"
@@ -29,7 +32,18 @@ const (
 	// LegacyPolicyName is used when no deployment policy is specified (backward compatibility)
 	LegacyPolicyName = "legacy"
 
+	// metricPrefix is the current metric-name prefix; legacyMetricPrefix is the
+	// pre-rename one, published alongside it for the deprecation window.
+	metricPrefix       = "nodewright_"
+	legacyMetricPrefix = "skyhook_"
+
+	// legacyMetricRemovalRelease is the release that drops the skyhook_* set. It is
+	// deliberately the same release that removes the legacy skyhook.nvidia.com API
+	// group (see docs/getting-started/migration.md) so users have one deadline, not two.
+	legacyMetricRemovalRelease = "v0.20.0"
+
 	// Prometheus label keys shared across multiple metric vectors.
+	labelNodeWrightName  = "nodewright_name"
 	labelSkyhookName     = "skyhook_name"
 	labelPackageName     = "package_name"
 	labelPackageVersion  = "package_version"
@@ -38,122 +52,195 @@ const (
 	labelStrategy        = "strategy"
 )
 
+// dualGaugeVec publishes one logical gauge under two series: the legacy
+// skyhook_<name> keyed by a skyhook_name label, and the current
+// nodewright_<name> keyed by nodewright_name. Every other label is identical.
+//
+// WHY: metric names and label keys are the identifiers users bake into Grafana
+// dashboards, Prometheus alerting rules, and recording rules, so the
+// Skyhook -> NodeWright rename cannot swap them in place without breaking every
+// consumer the moment they upgrade. Both series are written on every update for
+// the deprecation window, then the legacy half is deleted along with the legacy
+// API group.
+//
+// WHY fan out here rather than at the call sites: there are ~40 Set/Delete sites
+// across this file, and duplicating each one makes it possible to update a metric
+// under one name and silently forget the other, which is exactly the class of bug
+// a dashboard would surface only after the window closed.
+type dualGaugeVec struct {
+	// name is the unprefixed base name, e.g. "node_status_count". The two exported
+	// series are legacyMetricPrefix+name and metricPrefix+name.
+	name    string
+	legacy  *prometheus.GaugeVec
+	current *prometheus.GaugeVec
+}
+
+// newDualGaugeVec builds both halves from an unprefixed base name (e.g.
+// "node_status_count"). extraLabels follow the CR-name label, which is always first
+// and is the only label whose key differs between the two halves.
+func newDualGaugeVec(name, help string, extraLabels ...string) *dualGaugeVec {
+	return &dualGaugeVec{
+		name: name,
+		legacy: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: legacyMetricPrefix + name,
+				Help: fmt.Sprintf("%s (DEPRECATED: use %s%s with the %s label; removed in %s)",
+					help, metricPrefix, name, labelNodeWrightName, legacyMetricRemovalRelease),
+			},
+			append([]string{labelSkyhookName}, extraLabels...),
+		),
+		current: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: metricPrefix + name,
+				Help: help,
+			},
+			append([]string{labelNodeWrightName}, extraLabels...),
+		),
+	}
+}
+
+// legacyMetricsEnabled gates the deprecated half. Atomic rather than a plain bool
+// because DisableLegacyMetrics is called from main during startup while the specs
+// that exercise it run alongside other suites; the race detector flags the plain
+// read/write pair even though the production ordering is safe.
+var legacyMetricsEnabled atomic.Bool
+
+// DisableLegacyMetrics stops the deprecated skyhook_* series being exported, for
+// operators that would rather halve their series count than keep the compatibility
+// window. Call once at startup, before the manager starts, from the
+// PublishLegacyMetrics option. It is one-way: the window is a rollout concern, not
+// something to toggle at runtime.
+func DisableLegacyMetrics() {
+	legacyMetricsEnabled.Store(false)
+	for _, m := range allMetrics {
+		metrics.Registry.Unregister(m.legacy)
+	}
+}
+
+func (d *dualGaugeVec) Set(value float64, labelValues ...string) {
+	d.current.WithLabelValues(labelValues...).Set(value)
+	if legacyMetricsEnabled.Load() {
+		d.legacy.WithLabelValues(labelValues...).Set(value)
+	}
+}
+
+// Delete drops both halves unconditionally: an unregistered legacy vector is not
+// exported, but leaving series in it would resurrect them if it were ever
+// re-registered, and deleting from an empty vector is a no-op.
+func (d *dualGaugeVec) Delete(labelValues ...string) {
+	d.legacy.DeleteLabelValues(labelValues...)
+	d.current.DeleteLabelValues(labelValues...)
+}
+
+func (d *dualGaugeVec) collectors() []prometheus.Collector {
+	return []prometheus.Collector{d.legacy, d.current}
+}
+
 var (
-	// skyhook metrics
-	skyhook_status = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_status",
-			Help: "Binary metric indicating the status of the Skyhook Custom Resource (1 if in that status, 0 otherwise)",
-		},
-		[]string{labelSkyhookName, "status"},
+	// nodewright metrics
+	nodewright_status = newDualGaugeVec(
+		"status",
+		"Binary metric indicating the status of the NodeWright Custom Resource (1 if in that status, 0 otherwise)",
+		"status",
 	)
 
 	// node metrics
-	skyhook_node_status_count = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_node_status_count",
-			Help: "Number of nodes in the cluster by status for the Skyhook Custom Resource",
-		},
-		[]string{labelSkyhookName, "status"},
+	nodewright_node_status_count = newDualGaugeVec(
+		"node_status_count",
+		"Number of nodes in the cluster by status for the NodeWright Custom Resource",
+		"status",
 	)
 
-	skyhook_node_target_count = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_node_target_count",
-			Help: "Total number of nodes targeted by this Skyhook Custom Resource",
-		},
-		[]string{labelSkyhookName},
+	nodewright_node_target_count = newDualGaugeVec(
+		"node_target_count",
+		"Total number of nodes targeted by this NodeWright Custom Resource",
 	)
 
 	// package metrics
-	skyhook_package_state_count = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_package_state_count",
-			Help: "Number of nodes in the cluster by state for this package",
-		},
-		[]string{labelSkyhookName, labelPackageName, labelPackageVersion, "state"},
+	nodewright_package_state_count = newDualGaugeVec(
+		"package_state_count",
+		"Number of nodes in the cluster by state for this package",
+		labelPackageName, labelPackageVersion, "state",
 	)
 
-	skyhook_package_stage_count = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_package_stage_count",
-			Help: "Number of nodes in the cluster by stage for this package",
-		},
-		[]string{labelSkyhookName, labelPackageName, labelPackageVersion, "stage"},
+	nodewright_package_stage_count = newDualGaugeVec(
+		"package_stage_count",
+		"Number of nodes in the cluster by stage for this package",
+		labelPackageName, labelPackageVersion, "stage",
 	)
 
-	skyhook_package_restarts_count = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_package_restarts_count",
-			Help: "Number of restarts for this package on this node",
-		},
-		[]string{labelSkyhookName, labelPackageName, labelPackageVersion},
+	nodewright_package_restarts_count = newDualGaugeVec(
+		"package_restarts_count",
+		"Number of restarts for this package on this node",
+		labelPackageName, labelPackageVersion,
 	)
 
 	// rollout metrics (per-compartment)
-	skyhook_rollout_matched_nodes = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_matched_nodes",
-			Help: "Number of nodes matched by this compartment's selector",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_matched_nodes = newDualGaugeVec(
+		"rollout_matched_nodes",
+		"Number of nodes matched by this compartment's selector",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
 
-	skyhook_rollout_ceiling = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_ceiling",
-			Help: "Maximum number of nodes that can be in progress at once in this compartment",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_ceiling = newDualGaugeVec(
+		"rollout_ceiling",
+		"Maximum number of nodes that can be in progress at once in this compartment",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
 
-	skyhook_rollout_in_progress = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_in_progress",
-			Help: "Number of nodes currently in progress in this compartment",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_in_progress = newDualGaugeVec(
+		"rollout_in_progress",
+		"Number of nodes currently in progress in this compartment",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
 
-	skyhook_rollout_completed = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_completed",
-			Help: "Number of nodes completed in this compartment",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_completed = newDualGaugeVec(
+		"rollout_completed",
+		"Number of nodes completed in this compartment",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
 
-	skyhook_rollout_progress_percent = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_progress_percent",
-			Help: "Percentage of nodes completed in this compartment (0-100)",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_progress_percent = newDualGaugeVec(
+		"rollout_progress_percent",
+		"Percentage of nodes completed in this compartment (0-100)",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
 
-	skyhook_rollout_current_batch = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_current_batch",
-			Help: "Current batch number in the rollout strategy (0 if no batch processing)",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_current_batch = newDualGaugeVec(
+		"rollout_current_batch",
+		"Current batch number in the rollout strategy (0 if no batch processing)",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
 
-	skyhook_rollout_consecutive_failures = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_consecutive_failures",
-			Help: "Number of consecutive batch failures in this compartment",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_consecutive_failures = newDualGaugeVec(
+		"rollout_consecutive_failures",
+		"Number of consecutive batch failures in this compartment",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
 
-	skyhook_rollout_should_stop = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "skyhook_rollout_should_stop",
-			Help: "Binary metric indicating if rollout should be stopped due to failures (1 = stopped, 0 = continuing)",
-		},
-		[]string{labelSkyhookName, labelPolicyName, labelCompartmentName, labelStrategy},
+	nodewright_rollout_should_stop = newDualGaugeVec(
+		"rollout_should_stop",
+		"Binary metric indicating if rollout should be stopped due to failures (1 = stopped, 0 = continuing)",
+		labelPolicyName, labelCompartmentName, labelStrategy,
 	)
+
+	// allMetrics is the registration list; every dualGaugeVec above must appear here.
+	allMetrics = []*dualGaugeVec{
+		nodewright_status,
+		nodewright_node_status_count,
+		nodewright_node_target_count,
+		nodewright_package_state_count,
+		nodewright_package_stage_count,
+		nodewright_package_restarts_count,
+		nodewright_rollout_matched_nodes,
+		nodewright_rollout_ceiling,
+		nodewright_rollout_in_progress,
+		nodewright_rollout_completed,
+		nodewright_rollout_progress_percent,
+		nodewright_rollout_current_batch,
+		nodewright_rollout_consecutive_failures,
+		nodewright_rollout_should_stop,
+	}
 )
 
 func zeroOutSkyhookMetrics(skyhook SkyhookNodes) {
@@ -161,15 +248,15 @@ func zeroOutSkyhookMetrics(skyhook SkyhookNodes) {
 
 	// Clean up node status metrics
 	for _, status := range v1alpha1.Statuses {
-		skyhook_node_status_count.DeleteLabelValues(skyhookName, string(status))
+		nodewright_node_status_count.Delete(skyhookName, string(status))
 	}
 
 	// Clean up target count metric
-	skyhook_node_target_count.DeleteLabelValues(skyhookName)
+	nodewright_node_target_count.Delete(skyhookName)
 
 	// Clean up skyhook state metrics
 	for _, status := range v1alpha1.Statuses {
-		skyhook_status.DeleteLabelValues(skyhookName, string(status))
+		nodewright_status.Delete(skyhookName, string(status))
 	}
 
 	for _, _package := range skyhook.GetSkyhook().Spec.Packages {
@@ -181,14 +268,14 @@ func zeroOutSkyhookMetrics(skyhook SkyhookNodes) {
 }
 
 func zeroOutSkyhookPackageMetrics(skyhookName, packageName, packageVersion string) {
-	skyhook_package_restarts_count.DeleteLabelValues(skyhookName, packageName, packageVersion)
+	nodewright_package_restarts_count.Delete(skyhookName, packageName, packageVersion)
 
 	for _, state := range v1alpha1.States {
-		skyhook_package_state_count.DeleteLabelValues(skyhookName, packageName, packageVersion, string(state))
+		nodewright_package_state_count.Delete(skyhookName, packageName, packageVersion, string(state))
 	}
 
 	for _, stage := range v1alpha1.Stages {
-		skyhook_package_stage_count.DeleteLabelValues(skyhookName, packageName, packageVersion, string(stage))
+		nodewright_package_stage_count.Delete(skyhookName, packageName, packageVersion, string(stage))
 	}
 }
 
@@ -217,7 +304,7 @@ func ResetSkyhookMetricsToZero(skyhook SkyhookNodes) {
 }
 
 func SetNodeStatusMetrics(skyhookName string, status v1alpha1.Status, count float64) {
-	skyhook_node_status_count.WithLabelValues(skyhookName, string(status)).Set(count)
+	nodewright_node_status_count.Set(count, skyhookName, string(status))
 }
 
 func SetSkyhookStatusMetrics(skyhookName string, state v1alpha1.Status, active bool) {
@@ -225,35 +312,35 @@ func SetSkyhookStatusMetrics(skyhookName string, state v1alpha1.Status, active b
 	if active {
 		value = 1
 	}
-	skyhook_status.WithLabelValues(skyhookName, string(state)).Set(value)
+	nodewright_status.Set(value, skyhookName, string(state))
 }
 
 func SetPackageStateMetrics(skyhookName, packageName, packageVersion string, state v1alpha1.State, count float64) {
-	skyhook_package_state_count.WithLabelValues(skyhookName, packageName, packageVersion, string(state)).Set(count)
+	nodewright_package_state_count.Set(count, skyhookName, packageName, packageVersion, string(state))
 }
 
 func SetPackageStageMetrics(skyhookName, packageName, packageVersion string, stage v1alpha1.Stage, count float64) {
-	skyhook_package_stage_count.WithLabelValues(skyhookName, packageName, packageVersion, string(stage)).Set(count)
+	nodewright_package_stage_count.Set(count, skyhookName, packageName, packageVersion, string(stage))
 }
 
 func SetPackageRestartsMetrics(skyhookName, packageName, packageVersion string, restarts int32) {
-	skyhook_package_restarts_count.WithLabelValues(skyhookName, packageName, packageVersion).Set(float64(restarts))
+	nodewright_package_restarts_count.Set(float64(restarts), skyhookName, packageName, packageVersion)
 }
 
 func SetNodeTargetCountMetrics(skyhookName string, count float64) {
-	skyhook_node_target_count.WithLabelValues(skyhookName).Set(count)
+	nodewright_node_target_count.Set(count, skyhookName)
 }
 
 // zeroOutRolloutMetricsForCompartment removes rollout metrics for a specific compartment
 func zeroOutRolloutMetricsForCompartment(skyhookName, policyName, compartmentName, strategy string) {
-	skyhook_rollout_matched_nodes.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
-	skyhook_rollout_ceiling.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
-	skyhook_rollout_in_progress.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
-	skyhook_rollout_completed.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
-	skyhook_rollout_progress_percent.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
-	skyhook_rollout_current_batch.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
-	skyhook_rollout_consecutive_failures.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
-	skyhook_rollout_should_stop.DeleteLabelValues(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_matched_nodes.Delete(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_ceiling.Delete(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_in_progress.Delete(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_completed.Delete(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_progress_percent.Delete(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_current_batch.Delete(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_consecutive_failures.Delete(skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_should_stop.Delete(skyhookName, policyName, compartmentName, strategy)
 }
 
 // zeroOutSkyhookRolloutMetrics removes all rollout metrics for a skyhook
@@ -313,45 +400,36 @@ func ResetRolloutMetricsToZero(skyhook SkyhookNodes) {
 
 // SetRolloutMetrics sets the rollout metrics for a specific compartment
 func SetRolloutMetrics(skyhookName, policyName, compartmentName, strategy string, status v1alpha1.CompartmentStatus) {
-	skyhook_rollout_matched_nodes.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(float64(status.Matched))
-	skyhook_rollout_ceiling.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(float64(status.Ceiling))
-	skyhook_rollout_in_progress.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(float64(status.InProgress))
-	skyhook_rollout_completed.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(float64(status.Completed))
-	skyhook_rollout_progress_percent.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(float64(status.ProgressPercent))
+	nodewright_rollout_matched_nodes.Set(float64(status.Matched), skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_ceiling.Set(float64(status.Ceiling), skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_in_progress.Set(float64(status.InProgress), skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_completed.Set(float64(status.Completed), skyhookName, policyName, compartmentName, strategy)
+	nodewright_rollout_progress_percent.Set(float64(status.ProgressPercent), skyhookName, policyName, compartmentName, strategy)
 
 	// Set batch state metrics if present
 	if status.BatchState != nil {
-		skyhook_rollout_current_batch.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(float64(status.BatchState.CurrentBatch))
-		skyhook_rollout_consecutive_failures.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(float64(status.BatchState.ConsecutiveFailures))
+		nodewright_rollout_current_batch.Set(float64(status.BatchState.CurrentBatch), skyhookName, policyName, compartmentName, strategy)
+		nodewright_rollout_consecutive_failures.Set(float64(status.BatchState.ConsecutiveFailures), skyhookName, policyName, compartmentName, strategy)
 
 		shouldStop := float64(0)
 		if status.BatchState.ShouldStop {
 			shouldStop = 1
 		}
-		skyhook_rollout_should_stop.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(shouldStop)
+		nodewright_rollout_should_stop.Set(shouldStop, skyhookName, policyName, compartmentName, strategy)
 	} else {
 		// Set to 0 if no batch state
-		skyhook_rollout_current_batch.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(0)
-		skyhook_rollout_consecutive_failures.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(0)
-		skyhook_rollout_should_stop.WithLabelValues(skyhookName, policyName, compartmentName, strategy).Set(0)
+		nodewright_rollout_current_batch.Set(0, skyhookName, policyName, compartmentName, strategy)
+		nodewright_rollout_consecutive_failures.Set(0, skyhookName, policyName, compartmentName, strategy)
+		nodewright_rollout_should_stop.Set(0, skyhookName, policyName, compartmentName, strategy)
 	}
 }
 
 func init() {
-	metrics.Registry.MustRegister(
-		skyhook_status,
-		skyhook_node_status_count,
-		skyhook_node_target_count,
-		skyhook_package_state_count,
-		skyhook_package_stage_count,
-		skyhook_package_restarts_count,
-		skyhook_rollout_matched_nodes,
-		skyhook_rollout_ceiling,
-		skyhook_rollout_in_progress,
-		skyhook_rollout_completed,
-		skyhook_rollout_progress_percent,
-		skyhook_rollout_current_batch,
-		skyhook_rollout_consecutive_failures,
-		skyhook_rollout_should_stop,
-	)
+	// Default on: an operator that upgrades without setting PublishLegacyMetrics keeps
+	// exporting the deprecated series, so existing dashboards survive the rename.
+	legacyMetricsEnabled.Store(true)
+
+	for _, m := range allMetrics {
+		metrics.Registry.MustRegister(m.collectors()...)
+	}
 }

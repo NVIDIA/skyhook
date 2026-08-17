@@ -35,18 +35,18 @@ spec:
       apiVersion: nodewright.nvidia.com/v1alpha1
       kind: NodeWright
       name: drain-config-disable-eviction
-      namespace: skyhook
+      namespace: nodewright
       format: yaml
   - get:
       apiVersion: nodewright.nvidia.com/v1alpha1
       kind: NodeWright
       name: drain-config-timeout
-      namespace: skyhook
+      namespace: nodewright
       format: yaml
   - get:
       apiVersion: v1
       kind: Pod
-      namespace: skyhook
+      namespace: nodewright
       selector: app in (drain-config-pdb,drain-config-blocker)
       format: yaml
   steps:
@@ -56,29 +56,29 @@ spec:
     - script:
         content: |
           ../nodewright-cli reset drain-config-disable-eviction --confirm 2>/dev/null || true
-          kubectl -n skyhook delete nodewright drain-config-disable-eviction --ignore-not-found --wait=false
-          kubectl -n skyhook delete deployment drain-config-pdb --ignore-not-found --wait=false
-          kubectl -n skyhook delete pdb drain-config-pdb --ignore-not-found
-          kubectl -n skyhook delete configmap drain-config-original-pod --ignore-not-found
-          kubectl -n skyhook delete pod -l app=drain-config-pdb --ignore-not-found --wait=false
+          kubectl -n nodewright delete nodewright drain-config-disable-eviction --ignore-not-found --wait=false
+          kubectl -n nodewright delete deployment drain-config-pdb --ignore-not-found --wait=false
+          kubectl -n nodewright delete pdb drain-config-pdb --ignore-not-found
+          kubectl -n nodewright delete configmap drain-config-original-pod --ignore-not-found
+          kubectl -n nodewright delete pod -l app=drain-config-pdb --ignore-not-found --wait=false
     - apply:
         file: disable-eviction.yaml
     - script:
         content: |
-          kubectl -n skyhook rollout status deployment/drain-config-pdb --timeout=60s
-          pod="$(kubectl -n skyhook get pod -l app=drain-config-pdb -o jsonpath='{.items[0].metadata.name}')"
-          kubectl -n skyhook wait --for=condition=Ready "pod/${pod}" --timeout=30s
-          kubectl -n skyhook create configmap drain-config-original-pod --from-literal=name="${pod}" --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n skyhook wait --for=jsonpath='{.status.disruptionsAllowed}'=0 pdb/drain-config-pdb --timeout=60s
+          kubectl -n nodewright rollout status deployment/drain-config-pdb --timeout=60s
+          pod="$(kubectl -n nodewright get pod -l app=drain-config-pdb -o jsonpath='{.items[0].metadata.name}')"
+          kubectl -n nodewright wait --for=condition=Ready "pod/${pod}" --timeout=30s
+          kubectl -n nodewright create configmap drain-config-original-pod --from-literal=name="${pod}" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n nodewright wait --for=jsonpath='{.status.disruptionsAllowed}'=0 pdb/drain-config-pdb --timeout=60s
     - apply:
         file: disable-eviction-nodewright.yaml
     - script:
         content: |
-          kubectl -n skyhook wait --for=condition=Ready nodewright/drain-config-disable-eviction --timeout=180s
+          kubectl -n nodewright wait --for=condition=Ready nodewright/drain-config-disable-eviction --timeout=180s
     - script:
         content: |
-          pod="$(kubectl -n skyhook get configmap drain-config-original-pod -o jsonpath='{.data.name}')"
-          if kubectl -n skyhook get pod "${pod}" >/dev/null 2>&1; then
+          pod="$(kubectl -n nodewright get configmap drain-config-original-pod -o jsonpath='{.data.name}')"
+          if kubectl -n nodewright get pod "${pod}" >/dev/null 2>&1; then
             echo "expected original PDB-protected pod ${pod} to be deleted directly"
             exit 1
           fi
@@ -86,11 +86,11 @@ spec:
     - script:
         content: |
           ../nodewright-cli reset drain-config-disable-eviction --confirm 2>/dev/null || true
-          kubectl -n skyhook delete nodewright drain-config-disable-eviction --ignore-not-found --wait=false
-          kubectl -n skyhook delete deployment drain-config-pdb --ignore-not-found --wait=false
-          kubectl -n skyhook delete pdb drain-config-pdb --ignore-not-found
-          kubectl -n skyhook delete configmap drain-config-original-pod --ignore-not-found
-          kubectl -n skyhook delete pod -l app=drain-config-pdb --ignore-not-found --wait=false
+          kubectl -n nodewright delete nodewright drain-config-disable-eviction --ignore-not-found --wait=false
+          kubectl -n nodewright delete deployment drain-config-pdb --ignore-not-found --wait=false
+          kubectl -n nodewright delete pdb drain-config-pdb --ignore-not-found
+          kubectl -n nodewright delete configmap drain-config-original-pod --ignore-not-found
+          kubectl -n nodewright delete pod -l app=drain-config-pdb --ignore-not-found --wait=false
           kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o name | while read -r node; do kubectl uncordon "${node}" || true; done
   - name: timeout-surfaces-erroring
     description: Verify timeout marks the node erroring and emits a drain event when drain cannot proceed
@@ -98,15 +98,15 @@ spec:
     - script:
         content: |
           ../nodewright-cli reset drain-config-timeout --confirm 2>/dev/null || true
-          kubectl -n skyhook delete nodewright drain-config-timeout --ignore-not-found --wait=false
-          kubectl -n skyhook delete pod drain-config-blocker --ignore-not-found --wait=false
+          kubectl -n nodewright delete nodewright drain-config-timeout --ignore-not-found --wait=false
+          kubectl -n nodewright delete pod drain-config-blocker --ignore-not-found --wait=false
     - apply:
         file: timeout.yaml
     - wait:
         apiVersion: v1
         kind: Pod
         name: drain-config-blocker
-        namespace: skyhook
+        namespace: nodewright
         timeout: 30s
         for:
           condition:
@@ -114,7 +114,7 @@ spec:
             value: 'true'
     - script:
         content: |
-          kubectl -n skyhook wait --for=jsonpath='{.status.status}'=erroring nodewright/drain-config-timeout --timeout=180s
+          kubectl -n nodewright wait --for=jsonpath='{.status.status}'=erroring nodewright/drain-config-timeout --timeout=180s
     - assert:
         file: timeout-assert.yaml
     - script:
@@ -133,6 +133,6 @@ spec:
     - script:
         content: |
           ../nodewright-cli reset drain-config-timeout --confirm 2>/dev/null || true
-          kubectl -n skyhook delete nodewright drain-config-timeout --ignore-not-found --wait=false
-          kubectl -n skyhook delete pod drain-config-blocker --ignore-not-found --wait=false
+          kubectl -n nodewright delete nodewright drain-config-timeout --ignore-not-found --wait=false
+          kubectl -n nodewright delete pod drain-config-blocker --ignore-not-found --wait=false
           kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o name | while read -r node; do kubectl uncordon "${node}" || true; done

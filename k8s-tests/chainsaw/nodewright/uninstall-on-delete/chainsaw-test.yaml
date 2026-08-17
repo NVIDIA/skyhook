@@ -69,7 +69,7 @@ spec:
           kind: Pod
           apiVersion: v1
           metadata:
-            namespace: skyhook
+            namespace: nodewright
             labels:
               nodewright.nvidia.com/name: uninstall-on-delete
               nodewright.nvidia.com/package: enabled-pkg-2.1.4

@@ -31,7 +31,8 @@ LOCAL_REGISTRY ?= localhost:5005
 LOCAL_OPERATOR_IMG ?= $(LOCAL_REGISTRY)/skyhook-operator:testing
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
-SKYHOOK_NAMESPACE ?= skyhook
+SKYHOOK_NAMESPACE ?= nodewright
+METRICS_TEST_SERVICE_ACCOUNT ?= metrics-reader
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -114,20 +115,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object paths="./..."
 	$(MAKE) license-fmt ## fix up license headers
 
-# NOTE: intentionally NOT wired into `generate`. The nodewright.nvidia.com group is now
-# hand-maintained (the migration schemas have converged and the legacy group is frozen),
-# so NodeWright can evolve independently. This regenerator is kept for the rare case of
-# re-deriving the nodewright types from the legacy ones, but running it will overwrite any
-# hand edits to api/nodewright (e.g. the legacy-only read-only webhook divergence).
-.PHONY: generate-nodewright
-generate-nodewright: ## (manual, off by default) Re-derive the nodewright.nvidia.com API group from the legacy skyhook types.
-	../scripts/gen_nodewright.sh
-
-.PHONY: verify-nodewright-gen
-verify-nodewright-gen: manifests generate ## Fail if controller-gen output (deepcopy, CRDs, RBAC, webhook manifests) is stale vs source. The nodewright api types/webhooks are hand-maintained (gen_nodewright unhooked from make) so are not re-derived here.
-	@git diff --exit-code -- api/nodewright config/crd/bases config/rbac/role.yaml config/webhook/manifests.yaml || { echo "ERROR: generated outputs are stale; run 'make manifests generate' and commit."; exit 1; }
-
-.PHONY: generate-mocks 
+.PHONY: generate-mocks
 generate-mocks: mockery ## Generate code for interface mocking
 	$(MOCKERY) --config .mockery.yaml
 	$(MAKE) fmt ## fix up license headers
@@ -148,25 +136,24 @@ vulncheck: govulncheck ## Run govulncheck against code; fails on any reachable v
 vulncheck-all: govulncheck ## Run govulncheck in verbose mode, including module-level vulns not reachable from this code.
 	GOFLAGS="$(GOFLAGS)" $(GOVULNCHECK) -mode source -show verbose ./...
 
-## addlicense takes explicit paths, so enumerate tracked sources from git rather than
-## letting it walk the tree: an untracked local git worktree under .claude/ or a stray
-## venv would otherwise be rewritten. vendor/ and chart/ carry upstream headers.
+## addlicense takes explicit paths, so enumerate only tracked operator sources and
+## leave repository-wide formatting to the root Makefile. vendor/ carries upstream headers.
 LICENSE_HOLDER ?= NVIDIA CORPORATION & AFFILIATES
-LICENSE_TEMPLATE ?= scripts/license-header.tmpl
+LICENSE_TEMPLATE ?= ../scripts/license-header.tmpl
 license_files = git ls-files -- '*.go' '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*.Dockerfile' \
-	| grep -vE '^(operator|agent)/vendor/|^chart/'
+	| grep -vE '^vendor/'
 
 .PHONY: license-fmt
 license-fmt: addlicense ## Add the Apache-2.0 header to any source file missing one.
-	cd .. && $(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	$(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
 
 ## addlicense -check only asserts that *some* license marker is present, so an MIT or
 ## malformed header would pass. The old format_license.py replaced a wrong header
 ## outright; assert the SPDX identifier explicitly to keep that guarantee.
 .PHONY: license-header-check
 license-header-check: addlicense ## Fail if any tracked source file is missing an Apache-2.0 header.
-	cd .. && $(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
-	@cd .. && wrong=$$($(license_files) | while read -r f; do \
+	$(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	@wrong=$$($(license_files) | while read -r f; do \
 		grep -qE '^.{1,2} Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
 		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "  $$f"; \
 	done); \
@@ -255,16 +242,16 @@ CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 POOL_NON_DEFAULT := interrupt uninstall lifecycle
 POOL_NOTIN_SELECTOR := pool notin ($(shell echo $(POOL_NON_DEFAULT) | tr ' ' ','))
 
-e2e-tests: chainsaw install run build-cli ensure-test-symlinks ## Run end to end tests. Set POOL=<name> to run a single pool; unset runs all.
+e2e-tests: chainsaw install run build-cli ensure-test-symlinks prepare-metrics-test-access ## Run end to end tests. Set POOL=<name> to run a single pool; unset runs all.
 	## requires a cluster to be running with access
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
 ifeq ($(POOL),core)
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector '$(POOL_NOTIN_SELECTOR)' $(CHAINSAW_ARGS)
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector '$(POOL_NOTIN_SELECTOR)' $(CHAINSAW_ARGS)
 else ifneq ($(POOL),)
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector 'pool=$(POOL)' $(CHAINSAW_ARGS)
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector 'pool=$(POOL)' $(CHAINSAW_ARGS)
 else
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright $(CHAINSAW_ARGS)
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright $(CHAINSAW_ARGS)
 endif
 	$(MAKE) kill
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
@@ -336,8 +323,11 @@ push-local-image: docker-build ## Tag and push the locally-built operator image 
 
 .PHONY: rollout-local
 rollout-local: push-local-image ## push locally-built operator and restart the deployment
-	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout restart deployment -l app.kubernetes.io/name=skyhook-operator,control-plane=controller-manager
-	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout status deployment -l app.kubernetes.io/name=skyhook-operator,control-plane=controller-manager --timeout=60s
+	@# control-plane=controller-manager is the only label both install paths agree on:
+	@# the chart renders app.kubernetes.io/name=nodewright while the kustomize overlay
+	@# renders app.kubernetes.io/name=deployment (namePrefix renames resources, not labels).
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout restart deployment -l control-plane=controller-manager
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout status deployment -l control-plane=controller-manager --timeout=60s
 
 
 .PHONY: delete-kind-cluster
@@ -358,10 +348,19 @@ operator-agent-tests: chainsaw install ## Run operator agent tests.
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
-deployment-policy-tests: chainsaw install run ensure-test-symlinks ## Run all deployment policy E2E tests (requires 15-node cluster).
+.PHONY: migration-test
+migration-test: helm push-local-image ## Run the Skyhook->NodeWright upgrade migration test (needs a fresh kind cluster).
+	## Requires a CLEAN cluster: the test refuses to run if nodewright CRDs already
+	## exist, since a pre-rename baseline is the whole point. Run
+	## `make create-kind-cluster` first, and note push-local-image must come AFTER
+	## cluster creation because ctlptl recreates the local registry with the cluster.
+	LOCAL_OPERATOR_IMG=$(LOCAL_OPERATOR_IMG) HELM=$(HELM) KUBECTL=$(KUBECTL) \
+		../k8s-tests/migration/run.sh
+
+deployment-policy-tests: chainsaw install run ensure-test-symlinks prepare-metrics-test-access ## Run all deployment policy E2E tests (requires 15-node cluster).
 	## requires a 15-node cluster to be running with access
 	## use 'make create-deployment-policy-cluster' to create the cluster
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
@@ -393,8 +392,8 @@ else
 DOCKER_AUTH_FILE=${HOME}/.config/containers/auth.json
 endif
 
-setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook namespace
-	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
+setup-kind-cluster: ## setup kind cluster with local docker creds and nodewright namespace
+	## sets you local $(DOCKER_CMD) creds into a secret in kind in the nodewright namespace
 	## Dual-labelled during the NodeWright rename: the skyhook and deployment-policy
 	## pools select nodewright.nvidia.com/test-node; the not-yet-migrated cli pool still
 	## selects skyhook.nvidia.com/test-node. Drop the skyhook label once the cli pool moves.
@@ -407,6 +406,14 @@ setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook na
 	else \
 		echo "Skipping node-init-secret creation; docker auth file $(DOCKER_AUTH_FILE) not found"; \
 	fi
+
+.PHONY: prepare-metrics-test-access
+prepare-metrics-test-access:
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) create serviceaccount $(METRICS_TEST_SERVICE_ACCOUNT) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) create clusterrole metrics-test-reader --verb=get --non-resource-url=/metrics \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) create clusterrolebinding metrics-test-reader-access --clusterrole=metrics-test-reader \
+		--serviceaccount=$(SKYHOOK_NAMESPACE):$(METRICS_TEST_SERVICE_ACCOUNT) --dry-run=client -o yaml | $(KUBECTL) apply -f -
 
 
 create-kind-cluster: ctlptl validate-kind-node-image render-ctlptl-config ## creates or updates a kind cluster.
@@ -602,11 +609,11 @@ metrics:
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
 
-	../docs/metrics/generate-dashboards.sh
-	$(KUBECTL) apply -f ../docs/metrics/grafana-dashboards-configmap.yaml
+	../docs/observability/generate-dashboards.sh
+	$(KUBECTL) apply -f ../docs/observability/grafana-dashboards-configmap.yaml
 
-	helm upgrade --install prometheus prometheus-community/prometheus -f ../docs/metrics/prometheus_values.yaml
-	helm upgrade --install grafana grafana/grafana -f ../docs/metrics/grafana_values.yaml
+	helm upgrade --install prometheus prometheus-community/prometheus -f ../docs/observability/prometheus_values.yaml
+	helm upgrade --install grafana grafana/grafana -f ../docs/observability/grafana_values.yaml
 	echo "kubectl port-forward svc/prometheus-server 9090:80"
 
 .PHONY: metrics-undeploy
@@ -615,7 +622,7 @@ metrics-undeploy:
 	helm uninstall grafana
 
 	$(KUBECTL) delete configmap grafana-dashboards
-	rm -rf ../docs/metrics/grafana-dashboards-configmap.yaml
+	rm -rf ../docs/observability/grafana-dashboards-configmap.yaml
 
 .PHONY: grafana-password
 grafana-password:

@@ -24,7 +24,7 @@ metadata:
     app.kubernetes.io/instance: foobar
     app.kubernetes.io/name: nodewright
     control-plane: controller-manager
-  namespace: skyhook
+  namespace: nodewright
 spec:
   containers:
   - command:
@@ -36,11 +36,3 @@ spec:
       requests:
         cpu: 640m
         memory: 256Mi
-  - name: kube-rbac-proxy
-    resources:
-      limits:
-        cpu: 500m
-        memory: 128Mi
-      requests:
-        cpu: 5m
-        memory: 64Mi

@@ -95,7 +95,7 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: simple-skyhook-dexter-1.2.3
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: simple-skyhook
   ownerReferences:
@@ -119,7 +119,7 @@ data:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/skyhook-node-meta: simple-skyhook
   ownerReferences:

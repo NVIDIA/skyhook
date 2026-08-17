@@ -45,8 +45,8 @@ config:
   MD047: true   # single-trailing-newline
 
   # ─── Disabled (with reasoning) ────────────────────────────────────────
-  MD007: false  # ul-indent — several docs (docs/metrics/README.md,
-                # docs/taints.md, etc.) use a non-canonical ` * ` /
+  MD007: false  # ul-indent — several docs (docs/observability/metrics.md,
+                # docs/user-guide/taints.md, etc.) use a non-canonical ` * ` /
                 # `    * ` style; re-enabling = multi-doc rewrite.
   MD009: false  # trailing-spaces — git-cliff emits these in changelogs
                 # on every regen.

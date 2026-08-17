@@ -50,6 +50,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Set up Go for license tooling
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: operator/go.mod
+          cache: false
+      - name: Check license headers
+        run: make license-header-check
       - name: actionlint (workflow files)
         if: always()
         run: |
@@ -69,7 +76,7 @@ jobs:
       - name: markdownlint
         if: always()
         # SHA pinned to satisfy NVIDIA's enterprise allow-list.
-        uses: DavidAnson/markdownlint-cli2-action@6bf21b07787794f89a243495939cd651942aeabe
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff
         with:
           config: ci/.markdownlint-cli2.yaml
           globs: |

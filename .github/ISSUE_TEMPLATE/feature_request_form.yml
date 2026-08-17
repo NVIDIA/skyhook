@@ -39,18 +39,6 @@ body:
       required: true
 
   - type: dropdown
-    id: criticality
-    attributes:
-      label: How would you describe the priority of this feature request?
-      options:
-        - Critical (currently preventing usage)
-        - High
-        - Medium
-        - Low (would be nice)
-    validations:
-      required: true
-
-  - type: dropdown
     id: component
     attributes:
       label: Component

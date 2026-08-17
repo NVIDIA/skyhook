@@ -19,7 +19,7 @@ kind: ConfigMap
 apiVersion: v1
 metadata:
   name: simple-update-skyhook-baxter-2.3.1-test
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/name: simple-update-skyhook
   ownerReferences:
@@ -141,7 +141,7 @@ status:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  namespace: skyhook
+  namespace: nodewright
   labels:
     nodewright.nvidia.com/skyhook-node-meta: simple-update-skyhook
   ownerReferences:

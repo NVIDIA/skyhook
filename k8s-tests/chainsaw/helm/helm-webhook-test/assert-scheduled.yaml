@@ -24,7 +24,7 @@ metadata:
     app.kubernetes.io/instance: webhooks
     app.kubernetes.io/name: nodewright
     control-plane: controller-manager
-  namespace: skyhook
+  namespace: nodewright
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
@@ -33,7 +33,6 @@ metadata:
 spec:
   containers:
   - name: manager
-  - name: kube-rbac-proxy
 status:
   (conditions[?type == 'Ready']):
   - status: 'True'

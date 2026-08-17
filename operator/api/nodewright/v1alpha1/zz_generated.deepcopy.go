@@ -686,6 +686,11 @@ func (in *Package) DeepCopyInto(out *Package) {
 		*out = new(metav1.Duration)
 		**out = **in
 	}
+	if in.StageTimeout != nil {
+		in, out := &in.StageTimeout, &out.StageTimeout
+		*out = new(metav1.Duration)
+		**out = **in
+	}
 	if in.Uninstall != nil {
 		in, out := &in.Uninstall, &out.Uninstall
 		*out = new(Uninstall)
