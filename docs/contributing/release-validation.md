@@ -76,6 +76,42 @@ Paths: package scripts are copied to `/var/lib/skyhook/<cr>/<pkg>-<ver>-<uid>-<g
 land on the node at `/var/log/skyhook/<cr>/<pkg>/<ver>/*.log`, and per-package flags live under
 `/var/lib/skyhook/<cr>/flags/`.
 
+### Running it without wasting a day
+
+Learned by running this end to end. None of it is product behaviour; all of it costs an hour if you
+rediscover it.
+
+**Batch the operator restarts.** Four cases need non-default operator settings, and a restart is a
+minute each. Group them: everything on defaults first, then `JOB_TTL_SUCCEEDED=1m JOB_TTL_FAILED=3m`
+for F5, then the real agent for Part 3 (with `JOB_TTL_SUCCEEDED=1m` again for H3), then Part 4's
+chart installs. Note in the sign-off which cases ran under which settings.
+
+**Run the destructive cases last within their part.** F6 deletes a node, and the only way back is a
+cluster rebuild; do the rest of Part 2 first. Part 4 needs a rebuild between every case regardless,
+since the upgrade is the thing under test.
+
+**Check that `kubectl apply` succeeded before entering a wait loop.** The admission webhook is not
+serving the instant `helm --wait` returns, and a rejected apply plus a wait loop burns the loop's
+whole timeout on an object that was never created. Retry the apply until the object exists, then wait.
+
+**Wait on the right signal.**
+
+- Package work runs in **init containers**, so the pod sits `Pending` and never reaches `Running` —
+  poll `Job.status.active` or the node-state annotation instead of pod phase.
+- Do not poll CR `.status` immediately after an edit; it still reads the previous generation's value
+  for a beat. Node state keyed by package is the reliable read.
+- For an interrupt-in-flight case, confirm the CR actually reached `in_progress` before waiting for
+  the interrupt stage — a CR that never started produces a fixture that looks like the case but is not.
+
+**Read logs from every replica.** A chart install runs two replicas with leader election, and
+`kubectl logs deploy/<name>` picks one — usually the wrong one. Use
+`kubectl logs -l control-plane=controller-manager --prefix=false`, or a hold/sweep line will look
+absent when it fired on the other pod.
+
+**Budget the wall clock.** A Part 4 case is roughly cluster rebuild (2 min) + chart install (1 min) +
+baseline to `complete` (1–2 min) + upgrade (1–2 min) before the first assertion. If your shell has a
+command timeout, run those as separate steps rather than one script.
+
 ### Reset between cases
 
 Deleting the CR is not enough — per-CR node metadata deliberately survives, and a leftover entry
@@ -86,6 +122,7 @@ all of it:
 |---|---|
 | node annotations | `nodewright.nvidia.com/{nodeState,status,version,cordon}_<cr>` |
 | node label | `nodewright.nvidia.com/status_<cr>` — mirrors the annotation, easy to miss |
+| node label | the selector label you added to a **second** worker for L5 — leave it on and later single-node cases silently run twice |
 | node taint / spec | the runtime-required taint; `unschedulable` if a case interrupted mid-flight |
 | namespace | Jobs, their pods, and the per-node/package ConfigMaps |
 | host (Part 3) | `/var/lib/skyhook/<cr>`, `/var/log/skyhook/<cr>`, and any marker file the case wrote |
@@ -180,7 +217,8 @@ are collected first while the failed one remains; **node state is unchanged by c
 the failed Job is collected a fresh attempt appears — the slow-retry cadence, easy to mistake for
 churn.
 
-**F6 — a node disappears mid-run.** Delete a node while its package Job runs.
+**F6 — a node disappears mid-run.** *Destructive — run it after the rest of Part 2; recovering the
+node means rebuilding the cluster.* Delete a node while its package Job runs.
 Expect: the Job is foreground-deleted within a reconcile or two with a log line naming the reason, no
 replacement is created, the other nodes are unaffected, and the CR still reaches `complete`.
 
@@ -197,7 +235,9 @@ each append their own name to one host file, with an interrupt configured.
 Expect: the file's **line order** is `apply, config, post-interrupt` — the host is the witness, not
 node-state bookkeeping — and the node is cordoned across the interrupt Job.
 Note: step scripts use **underscores** (`apply_check.sh`, `post_interrupt.sh`), and there is no
-package `interrupt.sh` — the interrupt container receives the operator's interrupt descriptor.
+package `interrupt.sh` — the interrupt container receives the operator's interrupt descriptor. A
+script the agent cannot find is **not** an error: it logs `Could not find file ... was this in the
+configmap?` and reports success, so a typo'd filename and an intentionally absent step look identical.
 
 **H3 — host logs outlive the Job.** Re-run H1 with `JOB_TTL_SUCCEEDED=1m`.
 Expect: after the Jobs and pods are collected, `/var/log/skyhook/<cr>/…/*.log` and the host change are
@@ -216,7 +256,8 @@ non-idempotent step is multiplied by the retry budget.
 Expect: flipping `uninstall.apply: true` runs an uninstall-stage Job, the file is **gone from the
 node**, and the package entry leaves node state while its siblings are untouched. Then delete a CR
 whose *only* package is uninstall-enabled and confirm **no** `nodewright.nvidia.com/*` annotation
-survives on the node. Capture the uninstall output while the Job runs (see Known limitations).
+survives on the node — that CR must also use `shellscript`, since Part 3 runs the real agent; an
+`agentless` package here errors instead of completing and the annotations legitimately remain. Capture the uninstall output while the Job runs (see Known limitations).
 
 ## Part 4 — Upgrade from the previous release
 
@@ -227,7 +268,9 @@ the cluster between cases: the upgrade itself is the thing under test.
 package, node state unchanged, and the CR still `complete`. Also confirm the operator still runs in,
 and creates work in, the namespace it was installed into.
 
-**U2 — an in-flight rollout at upgrade.** Deliberately upgrade while a package is mid-stage.
+**U2 — an in-flight rollout at upgrade.** Deliberately upgrade while a package is mid-stage. Confirm
+the CR reads `in_progress` under the **previous** operator before upgrading; a CR that never started
+migrates as an empty-status object, which is a different case entirely.
 Expect: whatever the release's documented behaviour is — currently the operator holds rather than
 taking the node over, requeueing until the in-flight work finishes or is removed. Record that it does
 not take over a node another executor is still working.
@@ -272,13 +315,13 @@ Record per case: pass/fail, the build under test (`git_sha` from the operator's 
 and agent versions), and the evidence path. A failure blocks the release unless it is an already-known
 limitation above, or is explicitly accepted and filed.
 
-| Part | Cases | Result |
-|---|---|---|
-| 1 — lifecycle | L1–L6 | |
-| 2 — failure handling | F1–F6 | |
-| 3 — host effects | H1–H5 | |
-| 4 — upgrade | U1–U3 | |
-| 5 — lifecycle controls | C1–C2 | |
+| Part | Cases | Operator settings | Result |
+|---|---|---|---|
+| 1 — lifecycle | L1–L6 | defaults, `agentless` agent | |
+| 2 — failure handling | F1–F6 | defaults; F5 on `JOB_TTL_SUCCEEDED=1m JOB_TTL_FAILED=3m` | |
+| 3 — host effects | H1–H5 | real agent; H3 adds `JOB_TTL_SUCCEEDED=1m` | |
+| 4 — upgrade | U1–U3 | chart installs, rebuilt cluster per case | |
+| 5 — lifecycle controls | C1–C2 | defaults, `agentless` agent | |
 
 ### Not covered here
 
