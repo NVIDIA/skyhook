@@ -123,7 +123,7 @@ all of it:
 |---|---|
 | node annotations | `nodewright.nvidia.com/{nodeState,status,version,cordon}_<cr>` |
 | node label | `nodewright.nvidia.com/status_<cr>` — mirrors the annotation, easy to miss |
-| node label | the selector label you added to a **second** worker for L5 — leave it on and later single-node cases silently run twice |
+| node label | **remove** the selector label you added to a second worker for L5 — left in place, later single-node cases silently run across two nodes |
 | node taint / spec | the runtime-required taint; `unschedulable` if a case interrupted mid-flight |
 | namespace | Jobs, their pods, and the per-node/package ConfigMaps |
 | host (Part 3) | `/var/lib/skyhook/<cr>`, `/var/log/skyhook/<cr>`, and any marker file the case wrote |
@@ -209,20 +209,22 @@ recreated: an invisible self-heal worth watching once.
 with a request body:
 
 ```bash
-POD=<a running attempt>
+NS=nodewright                                   # the operator's namespace
+POD=$(kubectl -n "$NS" get pods --no-headers | grep -v Completed | head -1 | awk '{print $1}')
 cat > /tmp/eviction.json <<JSON
-{"apiVersion":"policy/v1","kind":"Eviction","metadata":{"name":"$POD","namespace":"<ns>"}}
+{"apiVersion":"policy/v1","kind":"Eviction","metadata":{"name":"$POD","namespace":"$NS"}}
 JSON
-kubectl create --raw "/api/v1/namespaces/<ns>/pods/$POD/eviction" -f /tmp/eviction.json
+kubectl create --raw "/api/v1/namespaces/$NS/pods/$POD/eviction" -f /tmp/eviction.json
 ```
 
 A successful call returns `"code": 201`. Expect: `status.failed` does **not** increase, a replacement attempt runs, the package never reads
 `erroring`. (A plain `kubectl delete pod` is not a disruption and does spend an attempt — a useful
 contrast.)
 
-**F5 — retention follows the outcome.** One succeeding and one failing package, run with short TTLs
-(`JOB_TTL_SUCCEEDED=1m JOB_TTL_FAILED=3m`; one minute is a hard floor the operator refuses to start
-below).
+**F5 — retention follows the outcome.** One succeeding and one failing package, run with short TTLs —
+`JOB_TTL_SUCCEEDED=1m JOB_TTL_FAILED=3m` on `make run`, or
+`controllerManager.manager.env.{jobTtlSucceeded,jobTtlFailed}` for a chart install. One minute is a
+hard floor: the operator refuses to start below it, which is itself worth confirming once.
 Expect: TTL is absent until a Job finishes, then set from the outcome; succeeded Jobs and their pods
 are collected first while the failed one remains; **node state is unchanged by collection**; and once
 the failed Job is collected a fresh attempt appears — the slow-retry cadence, easy to mistake for
@@ -249,6 +251,8 @@ Note: step scripts use **underscores** (`apply_check.sh`, `post_interrupt.sh`), 
 package `interrupt.sh` — the interrupt container receives the operator's interrupt descriptor. A
 script the agent cannot find is **not** an error: it logs `Could not find file ... was this in the
 configmap?` and reports success, so a typo'd filename and an intentionally absent step look identical.
+H2's assertion is what catches that: a step that did not run leaves no line, so a missing or misnamed
+script shows up as a short host file rather than a passing case. Check the line count, not just the order.
 
 **H3 — host logs outlive the Job.** Re-run H1 with `JOB_TTL_SUCCEEDED=1m`.
 Expect: after the Jobs and pods are collected, `/var/log/skyhook/<cr>/…/*.log` and the host change are

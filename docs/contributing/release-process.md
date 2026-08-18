@@ -66,8 +66,8 @@ git tag chart/v0.16.0-rc.1
 git push origin operator/v0.16.0-rc.1 chart/v0.16.0-rc.1
 
 # 5. Validate the RC against docs/contributing/release-validation.md. If issues are found,
-#    cherry-pick more fixes from main, bump Chart.yaml to v0.16.0-rc.2, and tag -rc.2.
-#    Repeat until clean.
+#    cherry-pick more fixes from main, bump Chart.yaml to the next RC (-rc.2, then -rc.3, ...),
+#    and tag it in full: operator/v0.16.0-rc.N and chart/v0.16.0-rc.N. Repeat until clean.
 
 # 6. Cut the final release on the same commit as the last good RC.
 #    Bump Chart.yaml to v0.16.0 (drop the -rc.N suffix) and commit.
