@@ -30,8 +30,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("RegularStep.Run in a chroot", func() {
-	It("executes an on-host step inside the mounted root", func() {
+var _ = Describe("shared step execution in a chroot", func() {
+	It("executes a command inside the mounted root", func() {
 		if os.Geteuid() != 0 {
 			Fail("chroot execution requires root privileges")
 		}
@@ -55,7 +55,6 @@ var _ = Describe("RegularStep.Run in a chroot", func() {
 			"step-helper",
 			WithArguments([]string{"-test.run=^TestStep$", "--", "exit", "0"}),
 		)
-
 		status, err := value.Run(context.Background(), config)
 
 		Expect(err).NotTo(HaveOccurred())

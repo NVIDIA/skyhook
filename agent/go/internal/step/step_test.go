@@ -47,13 +47,13 @@ var _ = Describe("Step interface", func() {
 		Expect(s.Path()).To(Equal("foo.sh"))
 	})
 
-	It("is satisfied by UpgradeStep and promotes Path through embedding", func() {
-		var s Step = UpgradeStep{RegularStep: RegularStep{ScriptPath: "foo.sh"}}
+	It("is satisfied by UpgradeStep and exposes its path", func() {
+		var s Step = UpgradeStep{ScriptPath: "foo.sh"}
 		Expect(s.Path()).To(Equal("foo.sh"))
 	})
 
-	It("promotes RegularStep fields to UpgradeStep through embedding", func() {
-		rs := RegularStep{
+	It("exposes the shared command fields on UpgradeStep", func() {
+		u := UpgradeStep{
 			Name:            "explicit-name",
 			ScriptPath:      "foo.sh",
 			Arguments:       []string{},
@@ -62,7 +62,6 @@ var _ = Describe("Step interface", func() {
 			OnHost:          true,
 			IdempotenceMode: Auto,
 		}
-		u := UpgradeStep{RegularStep: rs}
 
 		Expect(u.Name).To(Equal("explicit-name"))
 		Expect(u.ScriptPath).To(Equal("foo.sh"))
@@ -77,7 +76,7 @@ var _ = Describe("Step interface", func() {
 	It("supports type-switching between RegularStep and UpgradeStep", func() {
 		steps := []Step{
 			RegularStep{ScriptPath: "foo.sh"},
-			UpgradeStep{RegularStep: RegularStep{ScriptPath: "upgrade.sh"}},
+			UpgradeStep{ScriptPath: "upgrade.sh"},
 		}
 
 		var sawRegular, sawUpgrade bool
@@ -112,11 +111,40 @@ var _ = Describe("Decode", func() {
 		Expect(rs.Idempotence()).To(Equal(Auto))
 	})
 
-	It("leaves on_host at its zero value when absent", func() {
-		data := []byte(`{"path":"foo.sh","upgrade_step":false}`)
-		s, err := Decode(data)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(s.(RegularStep).OnHost).To(BeFalse())
+	It("defaults an omitted on_host to true for both step types", func() {
+		for _, data := range [][]byte{
+			[]byte(`{"path":"foo.sh","upgrade_step":false}`),
+			[]byte(`{"path":"upgrade.sh","upgrade_step":true}`),
+		} {
+			s, err := Decode(data)
+			Expect(err).NotTo(HaveOccurred())
+			switch value := s.(type) {
+			case RegularStep:
+				Expect(value.OnHost).To(BeTrue())
+			case UpgradeStep:
+				Expect(value.OnHost).To(BeTrue())
+			default:
+				Fail("unexpected step type")
+			}
+		}
+	})
+
+	It("preserves an explicit on_host false for both step types", func() {
+		for _, data := range [][]byte{
+			[]byte(`{"path":"foo.sh","on_host":false,"upgrade_step":false}`),
+			[]byte(`{"path":"upgrade.sh","on_host":false,"upgrade_step":true}`),
+		} {
+			s, err := Decode(data)
+			Expect(err).NotTo(HaveOccurred())
+			switch value := s.(type) {
+			case RegularStep:
+				Expect(value.OnHost).To(BeFalse())
+			case UpgradeStep:
+				Expect(value.OnHost).To(BeFalse())
+			default:
+				Fail("unexpected step type")
+			}
+		}
 	})
 
 	It("decodes the legacy idempotence boolean", func() {

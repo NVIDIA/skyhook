@@ -55,8 +55,8 @@ type Ledger struct {
 // Versions is the current package version and the previously recorded host
 // version. It is returned to callers instead of mutating a step in place.
 type Versions struct {
-	Current  string
 	Previous string
+	Current  string
 }
 
 // Store records completed version transitions for one package and reports the
