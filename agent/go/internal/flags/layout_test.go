@@ -21,6 +21,7 @@ package flags
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +35,7 @@ var _ = Describe("Layout", func() {
 		root := GinkgoT().TempDir()
 		layout := DefaultLayout(root)
 
+		Expect(layout.RootMount()).To(Equal(root))
 		Expect(layout.StateDir()).To(Equal(filepath.Join(root, "etc", "skyhook")))
 		Expect(layout.FlagDir()).To(Equal(filepath.Join(root, "etc", "skyhook", "flags")))
 		Expect(layout.HistoryDir()).To(Equal(filepath.Join(root, "etc", "skyhook", "history")))
@@ -88,17 +90,41 @@ var _ = Describe("log paths", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(path).To(Equal(filepath.Join(
 			root,
-			"var", "log", "skyhook", "driver", "1.2.3", "scripts", "apply.sh-2026-06-30-103456.log",
+			"var", "log", "skyhook", "driver", "1.2.3", "scripts", "apply.sh-2026-06-30-103456.000000000.log",
 		)))
 	})
 
-	It("creates the parent directory when preparing a log", func() {
-		path, err := layout.PrepareLogFile(cfg, "scripts/apply.sh", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	It("creates a rooted log file and its parent directory", func() {
+		path, file, err := layout.CreateLogFile(
+			cfg,
+			"scripts/apply.sh",
+			time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+			0o600,
+		)
 		Expect(err).NotTo(HaveOccurred())
+		Expect(file.Close()).To(Succeed())
 
 		info, err := os.Stat(filepath.Dir(path))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(info.IsDir()).To(BeTrue())
+	})
+
+	It("does not reuse a log path when timestamps collide", func() {
+		at := time.Date(2026, 1, 2, 3, 4, 5, 123, time.UTC)
+		firstPath, first, err := layout.CreateLogFile(cfg, "apply.sh", at, 0o600)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(first.Close()).To(Succeed())
+		secondPath, second, err := layout.CreateLogFile(cfg, "apply.sh", at, 0o600)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(second.Close()).To(Succeed())
+		Expect(os.Remove(firstPath)).To(Succeed())
+		thirdPath, third, err := layout.CreateLogFile(cfg, "apply.sh", at, 0o600)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(third.Close()).To(Succeed())
+
+		Expect(secondPath).NotTo(Equal(firstPath))
+		Expect(secondPath).To(Equal(strings.TrimSuffix(firstPath, ".log") + "-1.log"))
+		Expect(thirdPath).To(Equal(strings.TrimSuffix(firstPath, ".log") + "-2.log"))
 	})
 
 	It("derives a literal log selector", func() {
@@ -122,8 +148,8 @@ var _ = Describe("log paths", func() {
 		_, err := layout.LogFilePattern(invalidConfig, "apply.sh")
 		Expect(err).To(MatchError(ContainSubstring(`building log file pattern for step "apply.sh": resolving package log path`)))
 
-		_, err = layout.PrepareLogFile(invalidConfig, "apply.sh", time.Now())
-		Expect(err).To(MatchError(ContainSubstring(`preparing log file for step "apply.sh": resolving log file path`)))
+		_, _, err = layout.CreateLogFile(invalidConfig, "apply.sh", time.Now(), 0o600)
+		Expect(err).To(MatchError(ContainSubstring(`creating log file for step "apply.sh": resolving log file path`)))
 
 		_, err = layout.packageLogDir(invalidConfig, "apply.sh")
 		Expect(err).To(MatchError(ContainSubstring(`building package log path for step "apply.sh": validating package path`)))
