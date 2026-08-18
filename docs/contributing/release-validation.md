@@ -20,7 +20,8 @@ execution model the Job YAML plus the operator log slice usually reconstruct wha
 
 ## Setup
 
-A kind cluster is sufficient for everything except Part 4's scale caveats.
+A kind cluster is sufficient throughout. Part 4 additionally needs the **previous** release's chart
+and a cluster rebuilt between each of its cases, since the upgrade itself is what is under test.
 
 ```bash
 cd operator
@@ -202,10 +203,20 @@ Expect: pods fail immediately with `OutOfcpu`/`OutOfmemory` and **no container s
 never ran a line of script must not be blamed. The Job then goes terminal, is swept, and the stage is
 recreated: an invisible self-heal worth watching once.
 
-**F4 — a disruption costs nothing.** Evict a running attempt through the eviction subresource so
-`DisruptionTarget` is actually set:
-`kubectl create --raw /api/v1/namespaces/<ns>/pods/<pod>/eviction -f -`.
-Expect: `status.failed` does **not** increase, a replacement attempt runs, the package never reads
+**F4 — a disruption costs nothing.** Evict a running attempt through the eviction **subresource** so
+`DisruptionTarget` is actually set. `kubectl create -f` on an `Eviction` object does not work
+(`no matches for kind "Eviction" in version "policy/v1"`) — it has to be the raw subresource call,
+with a request body:
+
+```bash
+POD=<a running attempt>
+cat > /tmp/eviction.json <<JSON
+{"apiVersion":"policy/v1","kind":"Eviction","metadata":{"name":"$POD","namespace":"<ns>"}}
+JSON
+kubectl create --raw "/api/v1/namespaces/<ns>/pods/$POD/eviction" -f /tmp/eviction.json
+```
+
+A successful call returns `"code": 201`. Expect: `status.failed` does **not** increase, a replacement attempt runs, the package never reads
 `erroring`. (A plain `kubectl delete pod` is not a disruption and does spend an attempt — a useful
 contrast.)
 
