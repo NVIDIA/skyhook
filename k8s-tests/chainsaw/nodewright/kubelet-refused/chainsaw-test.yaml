@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kubelet-refused
+  labels:
+    pool: core
+spec:
+  timeouts:
+    assert: 300s
+  catch:
+    - get:
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
+        name: kubelet-refused
+        format: yaml
+    - script:
+        content: |
+          kubectl get jobs -n nodewright -l nodewright.nvidia.com/name=kubelet-refused -o yaml || true
+          kubectl get pods -n nodewright -l nodewright.nvidia.com/name=kubelet-refused -o wide || true
+          kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o yaml || true
+  steps:
+  - name: refused-attempts-spend-the-budget
+    description: >
+      An attempt the kubelet refuses never starts a container, so it produces no evidence
+      that the package failed -- only that it could not be placed. It still costs a retry,
+      which is what makes the next assertion the interesting one.
+    try:
+    - script:
+        content: |
+          ../nodewright-cli reset kubelet-refused --confirm 2>/dev/null || true
+    - create:
+        file: nodewright.yaml
+    - assert:
+        ## OutOfcpu is set by the kubelet at admission. The pod is Failed with no container
+        ## statuses at all, which is precisely the shape the "genuine failure" predicate has
+        ## to distinguish from a package that ran and exited non-zero.
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: kubelet-refused
+              nodewright.nvidia.com/package: greedy-1.2.3
+          status:
+            phase: Failed
+            reason: OutOfcpu
+
+  - name: a-package-that-never-ran-is-not-erroring
+    description: >
+      The assertion this test exists for. Blaming the package here would park a stage that
+      has not executed a single line of its script, and the node -- not the package -- is
+      what needs attention.
+    try:
+    - script:
+        ## Poll rather than assert once: the budget is spent over several attempts, and the
+        ## claim is that the state never flips during any of them, not that it happens to be
+        ## right at one instant.
+        timeout: 240s
+        content: |
+          ## Track the highest status.failed seen rather than waiting for a fixed number.
+          ## The operator sweeps a terminal Job whose attempts were all refused and recreates
+          ## the stage, which resets the counter -- that self-heal is correct behaviour, so an
+          ## exit condition of "failed reaches backoffLimit+1" is a race the sweep can win.
+          ## Several refused attempts plus a state that never flips is the actual claim.
+          max=0
+          for i in $(seq 1 30); do
+            state=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e \
+              -o jsonpath='{.items[*].metadata.annotations.nodewright\.nvidia\.com/nodeState_kubelet-refused}')
+            if echo "$state" | grep -q "erroring"; then
+              echo "FAIL: package marked erroring by attempts the kubelet refused"
+              echo "state: $state"
+              exit 1
+            fi
+            failed=$(kubectl get jobs -n nodewright \
+              -l nodewright.nvidia.com/name=kubelet-refused,nodewright.nvidia.com/stage=apply \
+              -o jsonpath='{.items[*].status.failed}')
+            failed=${failed:-0}
+            [ "$failed" -gt "$max" ] 2>/dev/null && max=$failed
+            echo "check ${i}: failed=${failed} max=${max} state=${state:-none}"
+            if [ "$max" -ge 2 ] 2>/dev/null; then
+              echo "OK: ${max} refused attempts observed and the package never went erroring"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "FAIL: never observed repeated refusals; the fixture may no longer exceed node capacity"
+          exit 1
+            fi
+            failed=$(kubectl get jobs -n nodewright \
+              -l nodewright.nvidia.com/name=kubelet-refused,nodewright.nvidia.com/stage=apply \
+              -o jsonpath='{.items[*].status.failed}')
+            echo "check ${i}: failed=${failed:-0} state=${state:-none}"
+            if [ "${failed:-0}" -ge 4 ] 2>/dev/null; then
+              echo "OK: budget spent (failed=$failed) and never erroring"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "FAIL: the retry budget was never spent; the fixture may no longer be refused"
+          exit 1

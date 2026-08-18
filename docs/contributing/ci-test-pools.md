@@ -48,6 +48,21 @@ git error when the tag is missing. `helm-upgrade-rollback-test` pulls the publis
 chart from the registry instead, and only reads git tags when asked to resolve the
 newest release rather than a pinned one.
 
+### `operator-agent`
+
+Runs `k8s-tests/operator-agent/` — the only suite that exercises the **real agent** rather than
+the `agentless` package image, so the only one that proves a package's scripts run on the host.
+
+`agent-ci.yaml` already runs it when the *agent* changes, against a freshly built agent. This row
+covers the other direction: the operator is what builds the pod the agent runs in — its args,
+mounts, copy dir and `config.json` — and until this row existed, an operator change could break
+that contract without any suite noticing.
+
+It resolves `AGENT_IMAGE` from `chart/values.yaml` rather than pinning a version in the workflow,
+so bumping the agent in one place cannot leave this row testing an older one. The suite refuses to
+run without an explicit `AGENT_IMAGE`, because `operator/Makefile`'s global default is the
+`agentless` image, which would pass every case while executing nothing.
+
 ### `migration`
 
 Runs `k8s-tests/migration/run.sh`: installs the last pre-rename release

@@ -1,0 +1,135 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: disruption-casualty
+  labels:
+    pool: core
+spec:
+  timeouts:
+    assert: 240s
+  catch:
+    - get:
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
+        name: disruption-casualty
+        format: yaml
+    - script:
+        content: |
+          kubectl get jobs -n nodewright -l nodewright.nvidia.com/name=disruption-casualty -o yaml || true
+          kubectl get pods -n nodewright -l nodewright.nvidia.com/name=disruption-casualty -o wide || true
+  steps:
+  - name: evict-a-running-attempt
+    description: >
+      The Job's podFailurePolicy ignores failures carrying DisruptionTarget, so a node
+      drain or a preemption costs no retry. Only the eviction API sets that condition --
+      a plain delete does not -- so this has to go through the subresource.
+    try:
+    - script:
+        content: |
+          ../nodewright-cli reset disruption-casualty --confirm 2>/dev/null || true
+    - create:
+        file: nodewright.yaml
+    ## Wait for a genuinely executing attempt. Package work runs in init containers, so the
+    ## pod stays Pending for the whole stage; a running init container is the signal, not
+    ## status.phase. Same reasoning as pause-suspends-jobs.
+    - script:
+        timeout: 240s
+        content: |
+          for i in $(seq 1 80); do
+            running=$(kubectl get pods -n nodewright \
+              -l nodewright.nvidia.com/name=disruption-casualty,nodewright.nvidia.com/stage=apply \
+              -o jsonpath='{.items[*].status.initContainerStatuses[*].state.running.startedAt}' 2>/dev/null)
+            if [ -n "$running" ]; then
+              echo "apply stage is executing (startedAt: $running)"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "no apply pod reached a running init container within timeout"
+          exit 1
+    - script:
+        ## kubectl create -f on an Eviction fails with "no matches for kind Eviction in
+        ## version policy/v1" -- eviction is a subresource, not a namespaced object, so it
+        ## has to be POSTed to the pod's /eviction path with --raw.
+        content: |
+          set -e
+          POD=$(kubectl get pods -n nodewright \
+            -l nodewright.nvidia.com/name=disruption-casualty,nodewright.nvidia.com/stage=apply \
+            --no-headers | grep -v Completed | head -1 | awk '{print $1}')
+          echo "evicting $POD"
+          ## Steps get their own shell, so hand the name over on disk for the next one.
+          echo "$POD" > /tmp/disruption-casualty-pod
+          cat > /tmp/disruption-casualty-eviction.json <<JSON
+          {"apiVersion":"policy/v1","kind":"Eviction","metadata":{"name":"$POD","namespace":"nodewright"}}
+          JSON
+          kubectl create --raw "/api/v1/namespaces/nodewright/pods/$POD/eviction" \
+            -f /tmp/disruption-casualty-eviction.json
+
+  - name: the-eviction-costs-no-retry-budget
+    description: >
+      status.failed staying empty is the whole claim: an evicted attempt is replaced
+      without being counted, so a drain cannot walk a healthy package into erroring by
+      exhausting its budget.
+    try:
+    - script:
+        timeout: 180s
+        content: |
+          ## Stops as soon as a *different* attempt pod exists: that is the moment the claim is
+          ## proven (the stage carried on and the budget was untouched), and holding longer only
+          ## costs the pool wall-clock.
+          evicted=$(cat /tmp/disruption-casualty-pod)
+          for i in $(seq 1 30); do
+            failed=$(kubectl get jobs -n nodewright \
+              -l nodewright.nvidia.com/name=disruption-casualty,nodewright.nvidia.com/stage=apply \
+              -o jsonpath='{.items[*].status.failed}')
+            state=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e \
+              -o jsonpath='{.items[*].metadata.annotations.nodewright\.nvidia\.com/nodeState_disruption-casualty}')
+            if [ -n "$failed" ] && [ "$failed" != "0" ]; then
+              echo "FAIL: the eviction spent a retry (status.failed=$failed); podFailurePolicy did not ignore DisruptionTarget"
+              exit 1
+            fi
+            if echo "$state" | grep -q "erroring"; then
+              echo "FAIL: the evicted attempt was recorded as a package failure"
+              echo "state: $state"
+              exit 1
+            fi
+            current=$(kubectl get pods -n nodewright \
+              -l nodewright.nvidia.com/name=disruption-casualty,nodewright.nvidia.com/stage=apply \
+              --no-headers 2>/dev/null | grep -v Completed | awk '{print $1}' | grep -v "^${evicted}$" | head -1)
+            echo "check ${i}: status.failed=${failed:-empty} replacement=${current:-none}"
+            if [ -n "$current" ]; then
+              echo "OK: replacement ${current} running, budget untouched, never erroring"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "FAIL: no replacement attempt appeared after the eviction"
+          exit 1
+    - assert:
+        ## A replacement attempt exists, so the stage genuinely carried on rather than
+        ## passing the previous check by having no pods at all.
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: disruption-casualty
+              nodewright.nvidia.com/stage: apply
