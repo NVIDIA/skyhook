@@ -14,7 +14,7 @@ NodeWright is installed via Helm as an OCI artifact from GitHub Container Regist
 # The chart is distributed as an OCI artifact on GitHub Container Registry.
 # Helm 3.8+ supports OCI natively — no `helm repo add` needed.
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.17.1 \
+  --version v0.18.0 \
   --namespace nodewright \
   --create-namespace
 ```
