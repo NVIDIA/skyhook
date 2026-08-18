@@ -45,7 +45,7 @@ func (i Idempotence) Validate() error {
 	}
 }
 
-// MarshalJSON encodes idempotence as the wire bool Python uses:
+// MarshalJSON encodes idempotence as the wire bool the legacy agent uses:
 // true == Disabled (the step manages its own idempotence), false ==
 // Auto. Owning the codec here lets the step structs serialize via
 // stdlib without a custom marshaler.

@@ -19,17 +19,20 @@
 package main
 
 import (
-	"fmt"
-	"log/slog"
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/NVIDIA/nodewright/agent/internal/agent"
 )
 
 func main() {
-	// Establish the agent's structured-logging seam. Packages (e.g.
-	// config.Loader.Load) log through *slog.Logger and fall back to
-	// slog.Default() when passed nil, so wiring it here once keeps that
-	// default sane for the whole process.
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
+	defer stop()
 
-	fmt.Println("Hello, World!")
+	nodewrightAgent := agent.New()
+	exitCode := nodewrightAgent.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+
+	os.Exit(int(exitCode))
 }

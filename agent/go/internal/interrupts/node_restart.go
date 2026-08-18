@@ -59,7 +59,10 @@ func (n NodeRestart) Run(ctx context.Context, config execution.Config) (executio
 	if result.Signal != nil || result.ExitCode != command.SuccessExitCode {
 		return execution.StatusFailed, nil
 	}
-	return execution.StatusSuccess, nil
+	// An exit-zero reboot only proves shutdown was enqueued. Report failure so
+	// the interrupt pod retries after the node returns and the boot-ID marker can
+	// prove that a reboot actually occurred.
+	return execution.StatusFailed, nil
 }
 
 func nodeRestartCompleted(result command.Result) bool {

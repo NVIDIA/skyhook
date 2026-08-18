@@ -94,6 +94,50 @@ func (_c *MockStep_Encode_Call) RunAndReturn(run func() ([]byte, error)) *MockSt
 	return _c
 }
 
+// ExecutionMetadata provides a mock function for the type MockStep
+func (_mock *MockStep) ExecutionMetadata() step.ExecutionMetadata {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExecutionMetadata")
+	}
+
+	var r0 step.ExecutionMetadata
+	if returnFunc, ok := ret.Get(0).(func() step.ExecutionMetadata); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(step.ExecutionMetadata)
+	}
+	return r0
+}
+
+// MockStep_ExecutionMetadata_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExecutionMetadata'
+type MockStep_ExecutionMetadata_Call struct {
+	*mock.Call
+}
+
+// ExecutionMetadata is a helper method to define mock.On call
+func (_e *MockStep_Expecter) ExecutionMetadata() *MockStep_ExecutionMetadata_Call {
+	return &MockStep_ExecutionMetadata_Call{Call: _e.mock.On("ExecutionMetadata")}
+}
+
+func (_c *MockStep_ExecutionMetadata_Call) Run(run func()) *MockStep_ExecutionMetadata_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockStep_ExecutionMetadata_Call) Return(executionMetadata step.ExecutionMetadata) *MockStep_ExecutionMetadata_Call {
+	_c.Call.Return(executionMetadata)
+	return _c
+}
+
+func (_c *MockStep_ExecutionMetadata_Call) RunAndReturn(run func() step.ExecutionMetadata) *MockStep_ExecutionMetadata_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Fingerprint provides a mock function for the type MockStep
 func (_mock *MockStep) Fingerprint() (string, error) {
 	ret := _mock.Called()

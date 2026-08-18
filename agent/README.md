@@ -36,8 +36,39 @@ are paths inside the agent container, resolved through the mounted host root.
 Each Go interrupt owns its command construction and execution. The `Interrupt`
 contract exposes `Type` for the wire identity, `Run` for execution using an
 `execution.Config`, and `Serialize` for the operator-facing representation.
-Retry state and completion flags remain orchestration concerns outside the
-interrupt implementations.
+The orchestration layer uses the legacy agent's indexed completion-marker names
+for each interrupt command and resource ID, so an agent upgrade resumes after
+the last completed command. Node restarts use an indexed pending marker
+containing the host boot ID: a changed boot ID promotes the marker to complete,
+while an unchanged boot ID retries the restart. This keeps reboot completion
+independent of the signal used to terminate the agent or its child process.
+
+Successful steps write both the legacy-compatible completion marker and the
+Go-native fingerprint marker. Either marker prevents a step from running again,
+which preserves idempotence when moving between agent implementations.
+
+The Go entrypoint accepts the current operator forms:
+
+```text
+agent MODE ROOT_MOUNT COPY_DIR
+agent interrupt ROOT_MOUNT COPY_DIR INTERRUPT_DATA
+```
+
+It also accepts the legacy forms, which default `ROOT_MOUNT` to `/root`:
+
+```text
+agent MODE COPY_DIR
+agent interrupt COPY_DIR INTERRUPT_DATA
+```
+
+SIGTERM cancels the active step or interrupt and prevents later steps from
+starting. A failed operation or runtime error exits with status 1; malformed
+arguments exit with status 2.
+
+The entrypoint preserves the legacy agent's dashed startup banner because
+operator diagnostics and end-to-end tests consume that output.
+Before each step that runs, it also prints the legacy-compatible execution
+header: `MODE PATH ARGUMENTS RETURNCODES IDEMPOTENCE ON_HOST`.
 
 ### Container Image Build
 
@@ -48,14 +79,26 @@ interrupt implementations.
 
 ## Environment variables
 
-There are a number of environment variables that can be used to control how the controller works
+There are a number of environment variables that can be used to control how the agent works.
 
 1. `COPY_RESOLV` if set to `"false"` it will NOT copy the container's `/etc/resolv.conf` to the host.
-1. `OVERLAY_ALWAYS_RUN_STEP` if set to `"true"` it will ignore any step flags and always run every step. A warning will be printed to stdout if it sees a flag file.
-1. `SKYHOOK_AGENT_BUFFER_LIMIT` defaults to 8KB. This is how much of the log of each step it will read before syncing the data to stdout/stderr and the log file. It is recommended to keep this somewhat low to avoid excessive delay between a step emitting some information and seeing it in the docker logs or in the log file.
+1. `OVERLAY_ALWAYS_RUN_STEP` if set to `"true"` it will ignore any step flags and always run every step. A warning is logged if it sees a flag file.
+1. `SKYHOOK_AGENT_WRITE_LOGS` defaults to `"true"`. Step and interrupt output is streamed directly to stdout/stderr and also written under `SKYHOOK_LOG_DIR`. Set it to `"false"` to stream without retaining host log files.
 
-The following are enviroment variables expected to be set by either the build system or skyhook-operator. It is not recommended they be changed manually.
+`SKYHOOK_AGENT_BUFFER_LIMIT` applies only to the legacy agent. The Go agent
+streams command output directly and does not buffer it.
 
-1. `OVERLAY_FRAMEWORK_VERSION` this the version of the current overlay. It is expected that this gets set by the docker build system. It is required to be able to manage the history file. It must be in the format of `{package name}-{version}`
-1. `SKYHOOK_RESOURCE_ID` this is used to determine if an interrupt should be rerun. Interrupts are only run once per `SKYHOOK_RESOURCE_ID`. Skyhook operator should make this unique per conifguration of the package.
-1. `SKYHOOK_NODE_ORDER` zero-indexed monotonic position of this node in the rollout. The first batch's nodes get `0, 1, 2, ...` and subsequent batches continue from where the previous batch left off. Useful for kubeadm upgrade workflows where the first node (`SKYHOOK_NODE_ORDER=0`) runs a different command than subsequent nodes. See [Node Order Within a Rollout](../docs/architecture/ordering.md#node-order-within-a-rollout) for details.
+The following environment variables are required and are expected to be set by either the build system or skyhook-operator. It is not recommended that they be changed manually.
+
+1. `OVERLAY_FRAMEWORK_VERSION` is the version of the current overlay. It is expected that this gets set by the docker build system. It is required to be able to manage the history file. It must be in the format of `{package name}-{version}`.
+1. `SKYHOOK_RESOURCE_ID` is used to determine if an interrupt should be rerun. Interrupts are only run once per `SKYHOOK_RESOURCE_ID`. Skyhook operator should make this unique per configuration of the package.
+
+The following environment variables are optional and use the documented defaults when unset:
+
+1. `SKYHOOK_DATA_DIR` is the package data source used by legacy invocations when the operator has not already populated `COPY_DIR`. It defaults to `/skyhook-package`.
+1. `SKYHOOK_ROOT_DIR` is the host state root for flags, interrupt markers, and history. It defaults to `/etc/skyhook`.
+1. `SKYHOOK_LOG_DIR` is the host log root. It defaults to `/var/log/skyhook`.
+
+The following environment variable is optional:
+
+1. `SKYHOOK_NODE_ORDER` is a zero-indexed monotonic position of this node in the rollout. The first batch's nodes get `0, 1, 2, ...` and subsequent batches continue from where the previous batch left off. Useful for kubeadm upgrade workflows where the first node (`SKYHOOK_NODE_ORDER=0`) runs a different command than subsequent nodes. See [Node Order Within a Rollout](../docs/architecture/ordering.md#node-order-within-a-rollout) for details.

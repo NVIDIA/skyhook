@@ -58,13 +58,17 @@ func applyExecutablePermissions(
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("command executable %q is not a regular file: %w", command.Executable, fs.ErrPermission)
 	}
-	if info.Mode().Perm() == command.Permissions {
+	permissions := command.Permissions
+	if command.RequiredPermissions != 0 {
+		permissions = info.Mode().Perm() | command.RequiredPermissions
+	}
+	if info.Mode().Perm() == permissions {
 		return nil
 	}
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("running command %q: %w", command.Executable, err)
 	}
-	if err := file.Chmod(command.Permissions); err != nil {
+	if err := file.Chmod(permissions); err != nil {
 		return fmt.Errorf("setting permissions on %q: %w", command.Executable, err)
 	}
 	return nil

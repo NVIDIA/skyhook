@@ -45,6 +45,7 @@ var _ = Describe("NodeRestart", func() {
 			Signal:   syscall.SIGKILL,
 		})).To(BeFalse())
 		Expect(nodeRestartCompleted(command.Result{ExitCode: 15})).To(BeFalse())
+		Expect(nodeRestartCompleted(command.Result{ExitCode: command.SuccessExitCode})).To(BeFalse())
 	})
 
 	It("validates context and execution configuration", func() {
