@@ -36,19 +36,35 @@ inherits the caller's stderr, so start it detached and redirect:
 
 ```bash
 make kill
-AGENT_IMAGE=ghcr.io/nvidia/nodewright/agent:<version> make run > /tmp/nw-operator.log 2>&1 &
+AGENT_IMAGE=<see the table below> make run > /tmp/nw-operator.log 2>&1 &
 ```
 
-> **The setup mistake that invalidates Part 3.** `operator/Makefile` defaults
-> `AGENT_IMAGE ?= $(IMG_REPO)/agentless:6.2.0`, and a chart install pins its own agent digest.
-> `agentless` never reads `config.json`, never enters the host mount, and writes nothing to the node
-> — every Part 3 case will appear to pass while proving nothing. **Confirm the injected image before
-> asserting anything:**
->
-> ```bash
-> grep -o '"AgentImage":"[^"]*"' /tmp/nw-operator.log     # local run
-> kubectl -n <ns> get deploy -o jsonpath='{..env}' | tr ',' '\n' | grep -i agent   # chart install
-> ```
+### The agent image has to match the fixture
+
+**`AGENT_IMAGE` is not one setting for the whole run.** The operator injects it as the executor
+beside every package, and the two fixture families need different ones — a mismatch fails every case
+in the part, or worse, passes them while proving nothing:
+
+| Part | Package fixture | `AGENT_IMAGE` |
+|---|---|---|
+| 1, 2, 5 | `skyhook/agentless` | `ghcr.io/nvidia/skyhook/agentless:6.2.0` — the `operator/Makefile` default, so no override needed |
+| 3 | `skyhook-packages/shellscript` | `ghcr.io/nvidia/nodewright/agent:<version>` — the real agent |
+| 4 | either | whatever the chart under test pins; override `controllerManager.manager.agent.*` (repository, tag, **and `digest: ""`**) if the fixture needs the other one |
+
+So **restart the operator between Part 3 and the rest** — `make kill`, then `make run` with the other
+value. The two failure modes look nothing alike, which is the tell:
+
+- Real agent + an `agentless` package: every stage fails with
+  `FileNotFoundError: .../config.json` — `agentless` ships no agent config for the real agent to read.
+- `agentless` + a `shellscript` package: stages **pass** having executed nothing, because `agentless`
+  sleeps and exits without entering the host mount. This is the one that silently invalidates Part 3.
+
+**Confirm the injected image before asserting anything:**
+
+```bash
+grep -o '"AgentImage":"[^"]*"' /tmp/nw-operator.log     # local run
+kubectl -n <ns> get deploy -o jsonpath='{..env}' | tr ',' '\n' | grep -i agent   # chart install
+```
 
 Host assertions go through the debugger pod:
 
