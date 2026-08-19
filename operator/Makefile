@@ -472,15 +472,37 @@ merge-coverage: ## Merge per-suite coverage profiles into reporting/cover.out.
 	fi
 	@$(MAKE) --no-print-directory filter-coverage
 
+# The guard below is deliberately paranoid, because every way this can go wrong
+# ends in the same place: an empty profile that replaces a good one and reports
+# 0% to Coveralls, with nothing in the log to say the pattern was at fault.
+#   - an empty COVERAGE_EXCLUDE makes `grep -v -E ''` match every line (exit 1)
+#   - a pattern that matches everything does the same (exit 1)
+#   - an invalid ERE truncates the redirect target *before* grep reports the
+#     error (exit 2), so the output file is already destroyed by then
+# Hence: refuse on any exit above 1, and refuse on an empty result whatever the
+# exit status, leaving cover.out untouched in both cases.
 .PHONY: filter-coverage
 filter-coverage: ## Drop $(COVERAGE_EXCLUDE) paths from reporting/cover.out.
-	@if [ -f $(REPORTING)/cover.out ]; then \
-		before=$$(grep -c '' $(REPORTING)/cover.out); \
-		grep -v -E '$(COVERAGE_EXCLUDE)' $(REPORTING)/cover.out > $(REPORTING)/cover.filtered.out || true; \
-		mv $(REPORTING)/cover.filtered.out $(REPORTING)/cover.out; \
-		after=$$(grep -c '' $(REPORTING)/cover.out); \
-		echo "coverage: excluded $$((before - after)) of $$before profile blocks matching '$(COVERAGE_EXCLUDE)'"; \
-	fi
+	@if [ ! -f $(REPORTING)/cover.out ]; then exit 0; fi; \
+	if [ -z '$(COVERAGE_EXCLUDE)' ]; then \
+		echo "coverage: COVERAGE_EXCLUDE is empty, reporting the unfiltered profile"; \
+		exit 0; \
+	fi; \
+	before=$$(wc -l < $(REPORTING)/cover.out | tr -d '[:space:]'); \
+	if grep -v -E '$(COVERAGE_EXCLUDE)' $(REPORTING)/cover.out > $(REPORTING)/cover.filtered.out; then \
+		status=0; \
+	else \
+		status=$$?; \
+	fi; \
+	if [ $$status -gt 1 ] || [ ! -s $(REPORTING)/cover.filtered.out ]; then \
+		rm -f $(REPORTING)/cover.filtered.out; \
+		echo "ERROR: COVERAGE_EXCLUDE='$(COVERAGE_EXCLUDE)' produced no usable profile (grep exit $$status)." >&2; \
+		echo "       $(REPORTING)/cover.out left unchanged." >&2; \
+		exit 1; \
+	fi; \
+	mv $(REPORTING)/cover.filtered.out $(REPORTING)/cover.out; \
+	after=$$(wc -l < $(REPORTING)/cover.out | tr -d '[:space:]'); \
+	echo "coverage: excluded $$((before - after)) of $$before profile blocks matching '$(COVERAGE_EXCLUDE)'"
 
 .PHONY: lint
 lint: golangci-lint license-header-check ## Run golangci-lint linter & yamllint

@@ -96,6 +96,8 @@ Per-row coverage artifacts are named `coverage-<test-suite>[-<pool>]-k8s-<versio
 
 **What does not belong here:** hand-written code. An exclusion moves the number without changing what is tested. If a piece of code is genuinely not worth testing, say so in a comment where it lives; do not hide it from the total.
 
+**If you edit `COVERAGE_EXCLUDE`,** note that `filter-coverage` refuses any pattern that leaves nothing behind — an invalid expression, or one broad enough to match every line — and leaves `cover.out` untouched rather than uploading an empty profile that would report 0%. Setting it to empty is allowed and simply reports the unfiltered profile.
+
 ## Gate jobs
 
 Every workflow that gates merge publishes a check named **`ci-gate`**.
