@@ -5,8 +5,23 @@ NodeWright is installed via Helm as an OCI artifact from GitHub Container Regist
 ## Prerequisites
 
 - Kubernetes cluster (tested on v1.30+)
-- Helm 3.x installed
+- Helm 3.8+ installed (required for native OCI support)
 - Container registry access credentials (if using private registries)
+
+## Configure Image Pull Secrets (if needed)
+
+If you're using private container registries, create the namespace and secret before installing so the release can reference it:
+
+```bash
+kubectl create namespace nodewright
+
+kubectl create secret generic node-init-secret \
+  --from-file=.dockerconfigjson=${HOME}/.docker/config.json \
+  --type=kubernetes.io/dockerconfigjson \
+  --namespace nodewright
+```
+
+NodeWright currently uses a single shared image pull secret for all packages, and agent/operator containers. If you need access to multiple registries, combine the credentials into one `dockerconfigjson` secret with multiple registry auths.
 
 ## Install NodeWright
 
@@ -16,24 +31,14 @@ NodeWright is installed via Helm as an OCI artifact from GitHub Container Regist
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
   --version v0.18.0 \
   --namespace nodewright \
-  --create-namespace
+  --create-namespace \
+  --set imagePullSecret=node-init-secret
 ```
+
+Omit `--set imagePullSecret=node-init-secret` if you're pulling from public registries only.
 
 > **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`.
 > **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above.
-
-## Configure Image Pull Secrets (if needed)
-
-If you're using private container registries, create the necessary secrets:
-
-```bash
-kubectl create secret generic node-init-secret \
-  --from-file=.dockerconfigjson=${HOME}/.docker/config.json \
-  --type=kubernetes.io/dockerconfigjson \
-  --namespace nodewright
-```
-
-NodeWright currently uses a single shared image pull secret for all packages, and agent/operator containers. If you need access to multiple registries, combine the credentials into one `dockerconfigjson` secret with multiple registry auths.
 
 ## Verify Installation
 
