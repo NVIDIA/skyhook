@@ -95,11 +95,6 @@ func (s *Skyhook) SetNodeState(nodeName string, nodestate v1alpha1.NodeState) {
 	}
 }
 
-func (s *Skyhook) GetComplete(node string) {
-	//nodeState := s.Status.NodeState[node]
-
-}
-
 // AddConfigUpdates Adds the specified package and key to the config updates
 func (s *Skyhook) AddConfigUpdates(_package string, newKeys ...string) {
 	if s.Status.ConfigUpdates == nil {

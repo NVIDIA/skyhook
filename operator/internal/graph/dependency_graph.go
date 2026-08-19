@@ -62,10 +62,6 @@ type vertex[T any] struct {
 	object  T
 }
 
-func (v *vertex[T]) IsRoot() bool {
-	return len(v.edges) == 0
-}
-
 func (d *dag[T]) Add(name string, object T, dependencies ...string) error {
 
 	if _, ok := d.vertices[name]; ok {

@@ -19,11 +19,9 @@
 package v1alpha1
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -107,11 +105,6 @@ const (
 	// starts the next priority level (global ordering)
 	SequencingAll SequencingMode = "all"
 )
-
-// IsPerNodeSequencing returns true if this skyhook uses per-node priority ordering
-func (spec *SkyhookSpec) IsPerNodeSequencing() bool {
-	return spec.Sequencing != SequencingAll
-}
 
 // BuildGraph turns packages in the a graph of dependencies
 func (spec *SkyhookSpec) BuildGraph() (graph.DependencyGraph[*Package], error) {
@@ -396,30 +389,6 @@ type Interrupt struct {
 	Services []string `json:"services,omitempty"`
 }
 
-// ToArgs base64 encoded json of self
-func (i *Interrupt) ToArgs() (string, error) {
-
-	// HACK: choosing to do it this way so the CRD interface is not tied to the agent
-	clone := i.DeepCopy() // make copy as to not alter this
-
-	switch clone.Type { // update type to match what the agent is expecting
-	case REBOOT:
-		clone.Type = InterruptType("node_restart")
-	case SERVICE:
-		clone.Type = InterruptType("service_restart")
-	case NOOP:
-		clone.Type = InterruptType("no_op")
-	case RESTART_ALL_SERVICES:
-		clone.Type = InterruptType("restart_all_services")
-	}
-
-	data, err := json.Marshal(clone)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(data), nil
-}
-
 const (
 	REBOOT               InterruptType = "reboot"
 	SERVICE              InterruptType = "service"
@@ -542,21 +511,6 @@ func (ns *NodeState) Upsert(_package PackageRef, image string, state State, stag
 	return true
 }
 
-// RemoveState removes specified package from Node State
-func (ns *NodeState) RemoveState(_package PackageRef) bool {
-	if *ns == nil {
-		return false
-	}
-
-	_, ok := (*ns)[_package.GetUniqueName()]
-	if ok {
-		delete(*ns, _package.GetUniqueName())
-		return true
-	}
-
-	return false
-}
-
 // IsUninstallCycleInProgress returns true if the named package is anywhere in
 // the uninstall cycle on this node — either the uninstall pod phase
 // (StageUninstall) or the post-uninstall interrupt phase
@@ -582,13 +536,6 @@ func (ns *NodeState) IsUninstalled(uniqueName string) bool {
 	}
 	_, ok := (*ns)[uniqueName]
 	return !ok
-}
-
-func (ns *NodeState) Get(name string) *PackageStatus {
-	if s, ok := (*ns)[name]; ok {
-		return &s
-	}
-	return nil
 }
 
 // IsComplete checks if the number of complete frames is equal to total packages,
@@ -689,10 +636,6 @@ func (ns *NodeState) Contains(packages Packages) bool {
 	}
 
 	return true
-}
-
-func (left *NodeState) Equal(right *NodeState) bool {
-	return reflect.DeepEqual(left, right)
 }
 
 // GetComplete returns a list of packages that are complete
@@ -905,40 +848,6 @@ const (
 	StatusUnknown    Status = "unknown"
 )
 
-func GetStatus(s string) Status {
-	switch Status(s) {
-	case StatusComplete:
-		return StatusComplete
-	case StatusBlocked:
-		return StatusBlocked
-	case StatusWaiting:
-		return StatusWaiting
-	case StatusDisabled:
-		return StatusDisabled
-	case StatusPaused:
-		return StatusPaused
-	case StatusInProgress:
-		return StatusInProgress
-	case StatusErroring:
-		return StatusErroring
-	default:
-		return StatusUnknown
-	}
-}
-
-func StateToStatus(s State) Status {
-	switch s {
-	case StateComplete:
-		return StatusComplete
-	case StateErroring:
-		return StatusErroring
-	case StateInProgress:
-		return StatusInProgress
-	default:
-		return StatusUnknown
-	}
-}
-
 //+kubebuilder:object:root=true
 //+kubebuilder:printcolumn:name="Status",type=string,JSONPath=".status.status"
 //+kubebuilder:printcolumn:name="Priority",type=integer,JSONPath=".spec.priority"
@@ -972,11 +881,6 @@ func init() {
 	SchemeBuilder.Register(&Skyhook{}, &SkyhookList{})
 }
 
-// WasUpdated returns true if this instance of skyhook has been updated
-func (s *Skyhook) WasUpdated() bool {
-	return s.Generation > 1 && s.Generation > s.Status.ObservedGeneration
-}
-
 func (s *Skyhook) IsPaused() bool {
 	if s.Annotations == nil {
 		return false
@@ -995,45 +899,4 @@ func (s *Skyhook) IsDisabled() bool {
 		return val == "true"
 	}
 	return false
-}
-
-// ShouldResetBatchStateOnCompletion determines whether batch state should be reset
-// based on the Skyhook's deployment policy options and the referenced DeploymentPolicy.
-// The Skyhook's deploymentPolicyOptions takes precedence over the DeploymentPolicy setting.
-// Returns false by default if neither is set.
-func (s *Skyhook) ShouldResetBatchStateOnCompletion(policy *DeploymentPolicy) bool {
-	// Check Skyhook-level override first (highest precedence)
-	if s.Spec.DeploymentPolicyOptions != nil && s.Spec.DeploymentPolicyOptions.ResetBatchStateOnCompletion != nil {
-		return *s.Spec.DeploymentPolicyOptions.ResetBatchStateOnCompletion
-	}
-
-	// Check DeploymentPolicy setting
-	if policy != nil && policy.Spec.ResetBatchStateOnCompletion != nil {
-		return *policy.Spec.ResetBatchStateOnCompletion
-	}
-
-	// Default to false if neither is set
-	return false
-}
-
-// ResetCompartmentBatchStates resets all compartment batch states to fresh values.
-// Returns true if any compartments were reset, false if there was nothing to reset.
-func (s *Skyhook) ResetCompartmentBatchStates() bool {
-	if len(s.Status.CompartmentStatuses) == 0 {
-		return false
-	}
-
-	for name, cs := range s.Status.CompartmentStatuses {
-		cs.BatchState = &BatchProcessingState{
-			CurrentBatch:        1,
-			ConsecutiveFailures: 0,
-			CompletedNodes:      0,
-			FailedNodes:         0,
-			ShouldStop:          false,
-			LastBatchSize:       0,
-			LastBatchFailed:     false,
-		}
-		s.Status.CompartmentStatuses[name] = cs
-	}
-	return true
 }
