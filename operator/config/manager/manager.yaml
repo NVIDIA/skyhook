@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -22,8 +22,8 @@ metadata:
     app.kubernetes.io/name: namespace
     app.kubernetes.io/instance: system
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
   name: system
 ---
@@ -37,8 +37,8 @@ metadata:
     app.kubernetes.io/name: deployment
     app.kubernetes.io/instance: controller-manager
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: nodewright
+    app.kubernetes.io/part-of: nodewright
     app.kubernetes.io/managed-by: kustomize
 spec:
   selector:
@@ -86,7 +86,7 @@ spec:
         - /manager
         env:
           - name: METRICS_PORT
-            value: ":8080"
+            value: ":8443"
           - name: PROBE_PORT
             value: ":8081"
           - name: LEADER_ELECTION
@@ -95,20 +95,51 @@ spec:
             value: info
           - name: ENABLE_WEBHOOKS
             value: "true"
+          # Must match the Service the overlay renders (config/default namePrefix +
+          # config/webhook/service.yaml). The operator puts WEBHOOK_SERVICE_NAME in
+          # the SAN of the serving cert it mints, so a mismatch fails admission
+          # closed rather than erroring at startup.
+          - name: WEBHOOK_SERVICE_NAME
+            value: nodewright-webhook-service
           - name: NAMESPACE
-            value: skyhook-operator-system
+            value: nodewright-operator-system
           - name: IMAGE_PULL_SECRET
             value: ""
           - name: COPY_DIR_ROOT
             value: /var/lib/skyhook
           - name: REAPPLY_ON_REBOOT
             value: "false"
-          - name: RUNTIME_REQUIRED_TAINT_KEY
-            value: skyhook.nvidia.com=runtime-required:NoSchedule
+          # MIGRATION-SHIM: rollback window before pruning legacy skyhook.nvidia.com
+          # node state / pods / ConfigMap labels after a Skyhook migrates. 0 prunes
+          # immediately. Remove with the legacy group at the removal release.
+          - name: LEGACY_CLEANUP_DELAY
+            value: "24h"
+          # JobTTLSucceeded/JobTTLFailed set ttlSecondsAfterFinished on completed
+          # package-stage Jobs by outcome; JobStageTimeout is the default per-attempt
+          # deadline when a package sets no stageTimeout (0 removes the time bound);
+          # JobBackoffLimit is how many retries a package stage gets after its first attempt
+          # before its Job goes terminal, so a stage runs at most JobBackoffLimit+1 times; it
+          # parks as erroring only if a retained attempt genuinely failed.
+          - name: JOB_TTL_SUCCEEDED
+            value: "1h"
+          - name: JOB_TTL_FAILED
+            value: "24h"
+          - name: JOB_STAGE_TIMEOUT
+            value: "1h"
+          - name: JOB_BACKOFF_LIMIT
+            value: "3"
+          # MIGRATION-SHIM: keep the deprecated skyhook_* metric series exported
+          # alongside nodewright_* so existing dashboards and alerts survive the
+          # rename. "false" exports only nodewright_*. Remove with the legacy group
+          # at the removal release.
+          - name: PUBLISH_LEGACY_METRICS
+            value: "true"
+          - name: RUNTIME_REQUIRED_TAINT
+            value: nodewright.nvidia.com=runtime-required:NoSchedule
           - name: PAUSE_IMAGE
             value: registry.k8s.io/pause:3.10
           - name: AGENT_IMAGE
-            value: ghcr.io/nvidia/skyhook/agent:latest
+            value: ghcr.io/nvidia/nodewright/agent:latest
         image: controller:latest
         name: manager
         securityContext:

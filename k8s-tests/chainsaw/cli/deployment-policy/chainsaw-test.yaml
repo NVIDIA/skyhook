@@ -30,12 +30,12 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-dp-reset-test --confirm 2>/dev/null || true
-          kubectl delete skyhook cli-dp-reset-test --ignore-not-found
+          ../nodewright-cli reset cli-dp-reset-test --confirm 2>/dev/null || true
+          kubectl delete nodewright cli-dp-reset-test --ignore-not-found
           kubectl delete deploymentpolicy cli-dp-reset-policy --ignore-not-found
           # Label 2 worker nodes so batch progression occurs (1→2 batches)
-          kubectl label node kind-worker skyhook.nvidia.com/dp-reset-test=true --overwrite 2>/dev/null || true
-          kubectl label node kind-worker2 skyhook.nvidia.com/dp-reset-test=true --overwrite 2>/dev/null || true
+          kubectl label node kind-worker nodewright.nvidia.com/dp-reset-test=true --overwrite 2>/dev/null || true
+          kubectl label node kind-worker2 nodewright.nvidia.com/dp-reset-test=true --overwrite 2>/dev/null || true
           echo "✓ State reset complete"
 
   # Step 1: Apply deployment policy with exponential strategy
@@ -48,7 +48,7 @@ spec:
   - name: setup-skyhook
     try:
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
         file: assert-complete-preserved.yaml
 
@@ -58,7 +58,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli deployment-policy reset cli-dp-reset-test --confirm
+          ../nodewright-cli deployment-policy reset cli-dp-reset-test --confirm
           sleep 2
     - assert:
         file: assert-manual-reset.yaml
@@ -68,15 +68,15 @@ spec:
     try:
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           name: cli-dp-reset-test
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
+          apiVersion: nodewright.nvidia.com/v1alpha1
           kind: DeploymentPolicy
           name: cli-dp-reset-policy
     - script:
         content: |
-          kubectl label node kind-worker skyhook.nvidia.com/dp-reset-test- 2>/dev/null || true
-          kubectl label node kind-worker2 skyhook.nvidia.com/dp-reset-test- 2>/dev/null || true
+          kubectl label node kind-worker nodewright.nvidia.com/dp-reset-test- 2>/dev/null || true
+          kubectl label node kind-worker2 nodewright.nvidia.com/dp-reset-test- 2>/dev/null || true

@@ -1,0 +1,344 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helm-upgrade-rollback
+spec:
+  ## Installs a real released chart and upgrades over it, so it owns the cluster
+  ## for its duration.
+  concurrent: false
+  ##
+  ## Steps are numbered because their ORDER is part of the test: every upgrade assertion
+  ## runs before the rollback ones, and has to stay there. Chainsaw abandons a test at its
+  ## first failed step, so the day the rollback regresses, anything written below it stops
+  ## running. That does not weaken those assertions, it disables them outright, with no
+  ## failure to tell you. Put new upgrade claims in 01-04.
+  ##
+  timeouts:
+    assert: 300s
+    exec: 600s
+  steps:
+
+  - name: 01-install-previous-released-chart
+    try:
+    - script:
+        content: |
+          ## RENAME-SHIM: the version argument. Steady state for this test is no
+          ## argument at all, which resolves the newest published release. It is
+          ## pinned to the last chart released before the resource-name rename
+          ## (#440) only until that window closes: its in-cluster names are all
+          ## `skyhook-operator-*`, and advancing it to a post-rename chart makes
+          ## the rename claims below assert nothing. Same version the
+          ## k8s-tests/migration suite pins. Drop the argument to retire this.
+          ../install-previous-chart.sh v0.17.1
+    - assert:
+        file: assert-legacy-names.yaml
+    catch:
+    - script:
+        content: |
+          ./cleanup.sh nodewright
+
+  - name: 02-upgrade-to-branch-chart
+    try:
+    - script:
+        content: |
+          ../install-helm-chart.sh nodewright
+    - assert:
+        file: assert-renamed.yaml
+    catch:
+    - script:
+        content: |
+          ./cleanup.sh nodewright
+
+  ## RENAME-SHIM: this entire step. It enumerates the nine objects the one-time
+  ## `skyhook-operator-*` to `nodewright-*` rename removes; a normal upgrade between two
+  ## post-rename releases removes nothing, so this goes away with the rename window.
+  - name: 03-legacy-names-are-gone
+    try:
+    - error:
+        resource:
+          apiVersion: admissionregistration.k8s.io/v1
+          kind: ValidatingWebhookConfiguration
+          metadata:
+            name: skyhook-operator-validating-webhook
+    - error:
+        resource:
+          apiVersion: admissionregistration.k8s.io/v1
+          kind: MutatingWebhookConfiguration
+          metadata:
+            name: skyhook-operator-mutating-webhook
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: skyhook-operator-manager-role
+    ## The upgrade must remove the pre-rename ClusterRole, so a binding left pointing at
+    ## it stops working outright rather than silently half-working.
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: skyhook-operator-metrics-reader
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: skyhook-operator-manager-rolebinding
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: skyhook-operator-leader-election-role
+            namespace: nodewright
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: skyhook-operator-leader-election-rolebinding
+            namespace: nodewright
+    - error:
+        resource:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: skyhook-operator-webhook-service
+            namespace: nodewright
+    - error:
+        resource:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: skyhook-operator-controller-manager-metrics-service
+            namespace: nodewright
+    catch:
+    - script:
+        content: |
+          ./cleanup.sh nodewright
+
+  - name: 04-admission-works-after-upgrade
+    try:
+    - script:
+        content: |
+          ## The caBundle the operator injects has to land on the RENAMED
+          ## configurations, and the serving cert's SAN has to match the RENAMED
+          ## Service, or this apply fails with a TLS error rather than the
+          ## admission rejection the webhook is supposed to produce.
+          kubectl apply -f invalid-nodewright.yaml 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: invalid CR was accepted; the validating webhook is not being reached"
+            kubectl delete nodewright upgrade-rename-reject --ignore-not-found
+            exit 1
+          fi
+          if grep -qi "x509\|tls\|certificate" err.txt; then
+            echo "ERROR: webhook failed on TLS, not validation; cert SAN does not match the renamed Service"
+            exit 1
+          fi
+          if ! grep -q "admission webhook \"validate-nodewright.nvidia.com\" denied the request" err.txt; then
+            echo "ERROR: rejected for the wrong reason"
+            exit 1
+          fi
+          echo "✓ admission reached the renamed webhook configuration"
+    catch:
+    - script:
+        content: |
+          ./cleanup.sh nodewright
+
+  ## Everything from here down is the rollback half, and the regression test for #469,
+  ## where this wedged with zero Ready operator pods until the operator learned to give up
+  ## a webhook bootstrap lease it can no longer use.
+  - name: 05-rollback-to-the-previous-release
+    try:
+    ## Revision 1 is the baseline install above; revision 2 is the upgrade.
+    - script:
+        content: |
+          ./rollback-to-baseline.sh nodewright 1
+    - assert:
+        file: assert-rolled-back.yaml
+    ## #464: the CRDs live in templates/ (they interpolate the conversion-webhook Service
+    ## name), so helm manages them as release resources. Rolling back to the pre-rename
+    ## revision drops them from the rendered manifest, and without helm.sh/resource-policy:
+    ## keep helm DELETES them, cascade-deleting every NodeWright object. Short timeout on
+    ## purpose: the rollback has already returned, so the CRDs either survived or they did
+    ## not, and the suite-wide 300s would turn a real regression into a five-minute wait
+    ## for a verdict that is already decided.
+    - assert:
+        timeout: 30s
+        resource:
+          apiVersion: apiextensions.k8s.io/v1
+          kind: CustomResourceDefinition
+          metadata:
+            name: nodewrights.nodewright.nvidia.com
+    - assert:
+        timeout: 30s
+        resource:
+          apiVersion: apiextensions.k8s.io/v1
+          kind: CustomResourceDefinition
+          metadata:
+            name: deploymentpolicies.nodewright.nvidia.com
+    ## The renamed objects have to be gone, otherwise "the rollback converged" could be
+    ## satisfied by a half-applied release that still has the post-rename surface.
+    - error:
+        resource:
+          apiVersion: admissionregistration.k8s.io/v1
+          kind: ValidatingWebhookConfiguration
+          metadata:
+            name: nodewright-validating-webhook
+    - error:
+        resource:
+          apiVersion: admissionregistration.k8s.io/v1
+          kind: MutatingWebhookConfiguration
+          metadata:
+            name: nodewright-mutating-webhook
+    - error:
+        resource:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: nodewright-webhook-service
+            namespace: nodewright
+    catch: ## the wedge is a rollout that never settles, so show what both sides are doing
+    - describe:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: nodewright-controller-manager
+        namespace: nodewright
+    - get:
+        apiVersion: v1
+        kind: Pod
+        namespace: nodewright
+        selector: control-plane=controller-manager
+        format: yaml
+    - podLogs:
+        namespace: nodewright
+        selector: control-plane=controller-manager
+        container: manager
+        tail: 100
+    - events:
+        namespace: nodewright
+    - script:
+        content: |
+          ./cleanup.sh nodewright
+
+  - name: 06-admission-works-after-rollback
+    try:
+    - script:
+        content: |
+          ## Readiness only compares the caBundle, so a pod can report Ready while
+          ## admission is still broken: Secret/webhook-cert is operator-owned and survives
+          ## the rollback carrying a SAN for the Service the newer release named, and the
+          ## baseline operator does not remint on a Service-name change (that check
+          ## arrived with #463).
+          ##
+          ## RENAME-SHIM: the fixture and the expected webhook name. The CR is on the
+          ## legacy API group because the rolled-back operator serves nothing else; with a
+          ## post-rename baseline this becomes another invalid-nodewright.yaml against
+          ## validate-nodewright.nvidia.com.
+          kubectl apply -f invalid-skyhook.yaml 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: invalid CR was accepted; the validating webhook is not being reached"
+            kubectl delete skyhook rollback-reject --ignore-not-found
+            exit 1
+          fi
+          if grep -qi "x509\|tls\|certificate" err.txt; then
+            echo "ERROR: webhook failed on TLS, not validation; the surviving cert's SAN does not match the restored Service"
+            exit 1
+          fi
+          if ! grep -q "admission webhook \"validate-skyhook.nvidia.com\" denied the request" err.txt; then
+            echo "ERROR: rejected for the wrong reason"
+            exit 1
+          fi
+          echo "✓ admission reached the restored webhook configuration"
+    catch:
+    - script:
+        content: |
+          ./cleanup.sh nodewright
+
+  - name: 07-roll-forward-again
+    try:
+    - script:
+        content: |
+          ## Rolling forward a second time has to work too: an operator that upgraded,
+          ## rolled back, and cannot be upgraded again has no usable escape hatch. The
+          ## pre-upgrade hook fires again here because the live Deployment is once more
+          ## the pre-label-discovery one.
+          ../install-helm-chart.sh nodewright
+    - assert:
+        file: assert-renamed.yaml
+    catch:
+    - script:
+        content: |
+          ./cleanup.sh nodewright
+
+  - name: 08-uninstall-leaves-nothing-behind
+    try:
+    - script:
+        content: |
+          ../uninstall-helm-chart.sh nodewright
+    - error:
+        resource:
+          apiVersion: admissionregistration.k8s.io/v1
+          kind: ValidatingWebhookConfiguration
+          metadata:
+            name: nodewright-validating-webhook
+    - error:
+        resource:
+          apiVersion: admissionregistration.k8s.io/v1
+          kind: MutatingWebhookConfiguration
+          metadata:
+            name: nodewright-mutating-webhook
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: nodewright-manager-role
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: nodewright-metrics-reader
+    ## RENAME-SHIM: uninstall must not leave the pre-rename ClusterRole behind either,
+    ## since the upgrade adopted rather than replaced it. Goes with the rename window.
+    - error:
+        resource:
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: skyhook-operator-metrics-reader
+    - error:
+        resource:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: webhook-cert
+            namespace: nodewright
+    finally:
+    - script:
+        content: |
+          ./cleanup.sh nodewright

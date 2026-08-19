@@ -7,6 +7,14 @@
 
 Want to contribute to Skyhook (NodeWright)? We welcome bug reports, feature requests, and pull requests.
 
+## Code of Conduct
+
+This project is governed by the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating you are expected to uphold it. Report unacceptable behavior to GitHub_Conduct@nvidia.com. See [Community standards](#community-standards) for how reports are handled.
+
+## Governance
+
+Maintainers, decision-making, and the process for becoming a maintainer are documented in [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md). Path-level review ownership is in [`.github/CODEOWNERS`](.github/CODEOWNERS).
+
 ## Filing Issues
 
 - **Bug reports**: Use the [bug report template](https://github.com/NVIDIA/nodewright/issues/new?template=bug_report_form.yml).
@@ -14,13 +22,99 @@ Want to contribute to Skyhook (NodeWright)? We welcome bug reports, feature requ
 - **Questions**: Use [GitHub Discussions](https://github.com/NVIDIA/nodewright/discussions).
 - **Security vulnerabilities**: Do **not** file a public issue. See [SECURITY.md](SECURITY.md).
 
+## Claiming an Issue
+
+Want to work on an issue? Claim it so others know it is taken. Comment on the issue and a bot will handle the assignment:
+
+- `/assign`: assign the issue to yourself (only if it is currently unassigned).
+- `/assign @user`: assign one other person (only if the issue is unassigned).
+- `/unassign`: release your claim on the issue.
+
+We use a single-owner model: an issue is assigned to at most one person. `/assign` is refused while the issue already has an assignee, and `/unassign` only ever removes your own claim, so nobody can drop someone else's. GitHub only lets you assign the commenter/self, someone who has commented on the issue, a user with write access, or an org member with read access; if a requested user cannot be assigned, the bot replies to say so.
+
 ## Pull Requests
+
+### Open an issue first
+
+Non-trivial changes start with an issue, not a pull request. Open one (or find an existing one), and wait for a maintainer to acknowledge it before you start writing code. The issue is where we confirm the change is wanted, agree on an approach, and tell you if something similar is already in flight — all of which are cheaper to sort out before you have a branch. A pull request that arrives with no linked, acknowledged issue may be closed and asked to start as one.
+
+Two exceptions:
+
+- **Trivial changes** — typo and formatting fixes, broken links, comment corrections — can go straight to a pull request.
+- **Security vulnerabilities never start with a public issue.** Report them through [SECURITY.md](SECURITY.md) instead. PSIRT owns triage and the disclosure date and will coordinate the fix with you, including the pull request itself, so that nothing reveals the issue before the embargo lifts.
+
+Reference the issue in your PR description (`closes #1234`) so it closes on merge. Note that this ONLY applies to public issues and PRs closing security MUST NOT reference the non-public security issue.
 
 1. Fork the repository and create a branch from `main`.
 2. Make your changes and ensure tests pass (`make test` in the relevant component directory).
 3. Run `make fmt` to format code and add license headers.
-4. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message and sign off (see below).
-5. Open a pull request against `main`. The PR template will guide you through the checklist.
+4. When you bump a Go or Python dependency, run `make notices` and commit the refreshed `THIRD_PARTY_NOTICES.md` files alongside your change. See [`docs/contributing/release-process.md`](docs/contributing/release-process.md) for the workflow.
+5. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message and sign off (see below).
+6. Open a pull request against `main`. The PR template will guide you through the checklist.
+
+### Running the CI checks locally
+
+Everything CI gates on can be run before you push. Run these from the component directory you touched:
+
+```bash
+# Operator / CLI (from operator/)
+make unit-tests          # ginkgo unit tests + envtest — the fast inner loop
+make lint                # golangci-lint + license check
+make fmt                 # gofmt + license headers; CI fails if this leaves a diff
+make test                # the full suite: unit + e2e + cli-e2e + helm + operator-agent
+
+# Agent (from agent/)
+make test                # hatch test with coverage
+make fmt
+
+# Repo-wide (from the root)
+make license-header-check   # the same gate CI runs
+```
+
+`make test` in `operator/` is heavy — it runs four flavors of e2e and expects a running cluster (`make create-kind-cluster`). For iteration, `make unit-tests` is usually what you want; let CI run the rest.
+
+Prefer the Makefile over raw `go test` / `golangci-lint` invocations. The targets encode `-mod=vendor`, license-header formatting, envtest setup, and CRD/deepcopy generation ordering; calling the tools directly skips some of that and produces drift. Run `make help` to see what is available.
+
+### How your pull request gets reviewed
+
+- **Reviewers are assigned automatically** from [`.github/CODEOWNERS`](.github/CODEOWNERS) based on the paths you touched. You do not need to find a reviewer yourself.
+- **One approval from a code owner** for the affected paths is enough for most changes. Changes to a public contract — a CRD field, CLI flag, annotation, metric, or lifecycle semantics — additionally require approval from a maintainer who did not author the change.
+- **All required checks must pass** before merge, and the branch must be up to date with `main`. Every gating workflow publishes a check named `ci-gate`; GitHub composes them into a single required status.
+- **Decisions are made by lazy consensus.** A change is accepted if no maintainer raises a blocking objection within a reasonable review window — at least five business days for non-trivial changes. A maintainer blocking a change must give a concrete technical rationale and an actionable path forward. The full process, including how to escalate a disagreement, is in [GOVERNANCE.md](GOVERNANCE.md#decision-making).
+- **If your PR goes quiet**, comment on it — a ping is welcome and is the fastest way to get it moving. A bot also nudges the author on PRs with no activity for 14 days.
+
+Review is a conversation, not a gate to get past. If you disagree with a review comment, say so and explain why; reviewers are expected to engage with the reasoning rather than insist.
+
+### AI-Assisted Contributions Policy
+
+We welcome the use of AI tools (e.g., Claude, GitHub Copilot, ChatGPT) to help you write code, brainstorm, or refactor. However, we maintain a strict human-in-the-loop policy for all submissions:
+
+- **Full accountability**: By submitting a PR, you (the human author) accept full responsibility for the code: its correctness, security, maintainability, and license compliance. "The AI wrote it" is not an acceptable explanation for bugs or security flaws.
+- **Understand what you submit**: Do not submit AI-generated code you do not fully understand. Reviewers expect you to explain and defend every line of code in your PR.
+- **Follow the project rules**: Coding assistants must follow the guidance in [`.claude/CLAUDE.md`](.claude/CLAUDE.md) (symlinked as [`AGENTS.md`](AGENTS.md)), including running `make fmt`, `make test`, and keeping `docs/` in sync.
+
+## Extending NodeWright
+
+Most new host behavior does **not** require changing the operator. NodeWright's primary extension point is a **package**: a container image the operator runs on each selected node, whose steps the agent executes through the lifecycle stages (uninstall, upgrade, apply, config, interrupt, post-interrupt).
+
+### Writing a package
+
+1. **Start with an existing generalist package.** [`NVIDIA/nodewright-packages`](https://github.com/NVIDIA/nodewright-packages) publishes ready-made ones. The `shellscript` package runs commands you supply in the CR's `configMap` — no image build at all. [`examples/simple/scr.yaml`](examples/simple/scr.yaml) is a working example.
+2. **Build your own when you need more.** A package image ships its step scripts plus a `/skyhook-package/config.json` that the agent validates and dispatches on. The agent runs steps inside the host root mount and writes completion flags so finished stages are skipped on re-run.
+3. **Version it with SemVer.** This is not cosmetic: the operator compares package versions to decide upgrade vs. downgrade vs. fresh apply, so a package that misreports its version will take the wrong lifecycle path.
+4. **Consume secrets at runtime**, never baked into the image — see [`docs/user-guide/providing-secrets.md`](docs/user-guide/providing-secrets.md).
+
+Package *contents* live with their authors rather than in this repository — see [Project Scope](GOVERNANCE.md#project-scope).
+
+### Extension points inside this repository
+
+If you are changing NodeWright itself rather than writing a package:
+
+- **A new interrupt type** implements the agent's `Interrupt` contract — `Type` for the wire identity, `Run` for execution against an `execution.Config`, `Serialize` for the operator-facing form. Retry state and completion flags stay outside the interrupt. See the execution-contract notes in [`agent/README.md`](agent/README.md).
+- **A new CLI subcommand** goes under `operator/cmd/cli/app/` and talks to the cluster through `operator/internal/cli/client`, not the apiserver directly. Anything version-gated must also land in the compatibility matrix in [`docs/user-guide/cli.md`](docs/user-guide/cli.md).
+- **A new CRD field** requires `make manifests generate`, mirrored edits in both `operator/config/` and `chart/`, and a docs update in the same PR.
+
+In every case, find the nearest existing example and match it. A new pattern that has no precedent in the target package should be called out explicitly in your PR description — what you introduced, why the existing patterns didn't fit, and why it should become the convention.
 
 ## Developer Certificate of Origin (DCO)
 
@@ -70,7 +164,9 @@ By making a contribution to this project, I certify that:
 
 Then you just add a line to every git commit message:
 
-    Signed-off-by: Joe Smith <joe.smith@email.com>
+```
+Signed-off-by: Joe Smith <joe.smith@email.com>
+```
 
 Use your real name (sorry, no pseudonyms or anonymous contributions.)
 
@@ -101,3 +197,27 @@ make license-fmt
 
 This adds the license header based on the LICENSE file and removes/replaces any existing header. Component Makefiles also run this automatically via `make fmt`.
 
+## Community standards
+
+We enforce the [Code of Conduct](CODE_OF_CONDUCT.md) in every project space: issues, pull requests, discussions, and any venue where someone is representing NodeWright.
+
+### Reporting
+
+Send reports to GitHub_Conduct@nvidia.com. Include what happened, where, when, and links if the incident is public. You do not need to be the target of the behavior to report it.
+
+### Response timeline
+
+- **Acknowledgement within 3 business days.** You get a confirmation that the report was received and who is handling it.
+- **Resolution within 14 business days** for most reports. If an investigation needs longer, we tell you that before day 14 and give an updated estimate.
+- **Immediate action** for ongoing harassment, threats, or doxxing, ahead of the full investigation.
+
+Reporter identity is shared only with the people investigating. Outcomes follow the [Enforcement Guidelines](CODE_OF_CONDUCT.md#enforcement-guidelines) ladder: correction, warning, temporary ban, permanent ban.
+
+### Out of scope
+
+The following are handled elsewhere, not through a conduct report:
+
+- **Security vulnerabilities**: see [SECURITY.md](SECURITY.md). Do not file a public issue.
+- **Technical disagreements**, including rejected pull requests and design decisions you disagree with. Escalate through the process in [GOVERNANCE.md](GOVERNANCE.md#decision-making).
+- **Conduct in venues unrelated to NodeWright**, unless it creates a credible safety risk for someone in this community.
+- **NVIDIA employment or HR matters**, which go through NVIDIA's internal channels.

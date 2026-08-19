@@ -24,20 +24,20 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewSkyhookWrapper(s *v1alpha1.Skyhook) *Skyhook {
+func NewSkyhookWrapper(s *v1alpha1.NodeWright) *Skyhook {
 	return &Skyhook{
-		Skyhook: s,
+		NodeWright: s,
 	}
 }
 
 type Skyhook struct {
-	*v1alpha1.Skyhook
+	*v1alpha1.NodeWright
 	// nodes []*corev1.Node
 	// Updated is set to true when the skyhook has been updated, used to track changes to the skyhook
 	// and to determine if the skyhook needs to be updated in the API
@@ -199,26 +199,25 @@ func (s *Skyhook) SetNodesInProgress(nodesInProgress int) {
 	s.Updated = true
 }
 
+// AddCondition adds or updates a condition by type, following K8s API
+// conventions: LastTransitionTime is preserved when Status is unchanged so
+// re-asserting the same condition every reconcile is a true no-op. Without
+// this, every refresh would set Updated=true (since callers pass
+// metav1.Now()) and downstream gates that short-circuit on Updated — notably
+// ReportState — would prevent the rest of Reconcile from running.
 func (s *Skyhook) AddCondition(cond metav1.Condition) {
+	_ = AddSkyhookCondition(s, cond)
+}
 
-	if s.Skyhook.Status.Conditions == nil {
-		s.Skyhook.Status.Conditions = make([]metav1.Condition, 0)
-	}
-
-	for i, c := range s.Skyhook.Status.Conditions {
-		if c.Type == cond.Type {
-			if c.Reason == cond.Reason && c.Message == cond.Message &&
-				c.LastTransitionTime == cond.LastTransitionTime && c.ObservedGeneration == cond.ObservedGeneration {
-				return // same, do nothing
-			}
+// RemoveCondition removes a condition by type if it exists.
+func (s *Skyhook) RemoveCondition(condType string) {
+	for i, c := range s.NodeWright.Status.Conditions {
+		if c.Type == condType {
+			s.NodeWright.Status.Conditions = append(s.NodeWright.Status.Conditions[:i], s.NodeWright.Status.Conditions[i+1:]...)
 			s.Updated = true
-			s.Skyhook.Status.Conditions[i] = cond // update
 			return
 		}
 	}
-
-	s.Skyhook.Status.Conditions = append(s.Skyhook.Status.Conditions, cond)
-	s.Updated = true
 }
 
 func (s *Skyhook) SetVersion() {

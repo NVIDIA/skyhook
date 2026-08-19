@@ -62,6 +62,11 @@ type SkyhookSpec struct {
 	// InterruptionBudget configures how many nodes that match node selectors that allowed to be interrupted at once.
 	InterruptionBudget InterruptionBudget `json:"interruptionBudget,omitempty"`
 
+	// DrainConfig tunes how nodes are drained before running interrupt packages.
+	// If unset, the operator preserves its existing drain behavior.
+	// +optional
+	DrainConfig *DrainConfig `json:"drainConfig,omitempty"`
+
 	// Packages are the DAG of packages to be applied to nodes.
 	Packages Packages `json:"packages,omitempty"`
 
@@ -145,17 +150,29 @@ func (f Packages) Names() {
 	}
 }
 
-// Images removes the image tag if set on image
-func (f Packages) Images() {
-	for k := range f {
-		m := f[k]
-		image, _, found := strings.Cut(m.Image, ":")
-		if found {
-			m.Image = image
-		}
-
-		f[k] = m
+// splitImageReference splits a container image reference into its repository,
+// tag, and digest. tag and digest are nil when their separator (":" or "@") is
+// absent, and non-nil (possibly pointing at "") when the separator is present,
+// so callers can distinguish "no tag" from an empty "repo:". A trailing
+// "@digest" is separated first, and a colon before the final "/" is treated as
+// a registry port rather than a tag separator (e.g. "localhost:5000/org/pkg"
+// has no tag).
+func splitImageReference(image string) (repository string, tag, digest *string) {
+	repository = image
+	if index := strings.LastIndex(repository, "@"); index >= 0 {
+		d := repository[index+1:]
+		digest = &d
+		repository = repository[:index]
 	}
+
+	lastSlash := strings.LastIndex(repository, "/")
+	if lastColon := strings.LastIndex(repository, ":"); lastColon > lastSlash {
+		t := repository[lastColon+1:]
+		tag = &t
+		repository = repository[:lastColon]
+	}
+
+	return repository, tag, digest
 }
 
 func (f *Packages) UnmarshalJSON(data []byte) error {
@@ -163,11 +180,10 @@ func (f *Packages) UnmarshalJSON(data []byte) error {
 	var ret map[string]Package
 	err := json.Unmarshal(data, &ret)
 	if err != nil {
-		return err
+		return fmt.Errorf("unmarshalling packages: %w", err)
 	}
 
 	*f = Packages(ret)
-	f.Images()
 	f.Names()
 	return nil
 }
@@ -194,6 +210,64 @@ func (i *InterruptionBudget) Validate() error {
 	return nil
 }
 
+type DrainConfig struct {
+	// DisableEviction bypasses the eviction API and deletes pods directly.
+	// This bypasses PodDisruptionBudgets.
+	// +optional
+	//+kubebuilder:default=false
+	//+nullable
+	DisableEviction *bool `json:"disableEviction,omitempty"`
+
+	// DeleteEmptyDirData allows draining pods that use emptyDir volumes.
+	// Defaults to true to preserve the operator's existing behavior.
+	// +optional
+	//+kubebuilder:default=true
+	//+nullable
+	DeleteEmptyDirData *bool `json:"deleteEmptyDirData,omitempty"`
+
+	// Force allows draining pods not managed by a controller.
+	// Defaults to true to preserve the operator's existing behavior.
+	// +optional
+	//+kubebuilder:default=true
+	//+nullable
+	Force *bool `json:"force,omitempty"`
+
+	// IgnoreDaemonSets skips DaemonSet-managed pods during drain.
+	// Defaults to true to preserve the operator's existing behavior.
+	// +optional
+	//+kubebuilder:default=true
+	//+nullable
+	IgnoreDaemonSets *bool `json:"ignoreDaemonSets,omitempty"`
+
+	// Timeout bounds how long the operator waits for a node to drain.
+	// Zero or unset means no timeout.
+	// +optional
+	//+nullable
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+
+	// GracePeriod overrides the grace period used on pod eviction/delete.
+	// Unset uses each pod's own terminationGracePeriodSeconds.
+	// +optional
+	//+nullable
+	GracePeriod *metav1.Duration `json:"gracePeriod,omitempty"`
+}
+
+func (d *DrainConfig) Validate() error {
+	if d == nil {
+		return nil
+	}
+
+	if d.Timeout != nil && d.Timeout.Duration < 0 {
+		return errors.New("drainConfig.timeout must be greater than or equal to 0")
+	}
+
+	if d.GracePeriod != nil && d.GracePeriod.Duration < 0 {
+		return errors.New("drainConfig.gracePeriod must be greater than or equal to 0")
+	}
+
+	return nil
+}
+
 type PackageRef struct {
 	// Name of the package. Do not set unless you know what your doing. Comes from map key.
 	//+optional
@@ -216,19 +290,41 @@ type ResourceRequirements struct {
 	MemoryLimit   resource.Quantity `json:"memoryLimit,omitempty"`
 }
 
+// Uninstall configures explicit uninstall support for a package.
+type Uninstall struct {
+	// Enabled declares this package supports uninstall (has uninstall.sh/uninstall_check.sh).
+	// When true, the operator will run uninstall pods before allowing package removal
+	// and during CR deletion cleanup.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled"`
+
+	// Apply triggers the uninstall workflow on all target nodes.
+	// Only valid when Enabled is true (webhook rejects apply=true with enabled=false).
+	// Set to false (or remove) to cancel a pending uninstall.
+	// +kubebuilder:default=false
+	Apply bool `json:"apply"`
+}
+
 // Package is a container that contains the skyhook agent plus some work to do, plus any dependencies to be run first.
 type Package struct {
 	PackageRef `json:",inline"`
 
-	// Image is the container image to run. Do not included the tag, that is set in the version.
-	//+kubebuilder:example="alpine"
+	// Image is the container image to run, given as a registry/repository reference with
+	// no tag or digest (e.g. "ghcr.io/nvidia/skyhook-packages/shellscript" or a ported
+	// registry like "localhost:5000/org/pkg"). The version field supplies the tag, and
+	// containerSHA pins an exact digest. The webhook rejects any inline tag or
+	// "@sha256:..." digest embedded in image, and image must be non-empty with no
+	// whitespace.
+	//+kubebuilder:example="ghcr.io/nvidia/skyhook-packages/shellscript"
 	//+kubebuilder:validation:Required
+	//+kubebuilder:validation:Pattern=`^\S+$`
 	Image string `json:"image"`
 
 	// ContainerSHA is the SHA256 digest of the container image for verification purposes.
 	// When specified, this will be used instead of the version tag to pull the exact image.
-	// Format: sha256:1234567890abcdef...
+	// Format: sha256:<64 lowercase hex chars>
 	//+kubebuilder:example="sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	//+kubebuilder:validation:Pattern=`^sha256:[0-9a-f]{64}$`
 	//+optional
 	ContainerSHA string `json:"containerSHA,omitempty"`
 
@@ -268,10 +364,25 @@ type Package struct {
 	// GracefulShutdown is the graceful shutdown timeout for the package, if not set, uses k8s default
 	//+optional
 	GracefulShutdown *metav1.Duration `json:"gracefulShutdown,omitempty"`
+
+	// Uninstall configures explicit uninstall support for this package.
+	// +optional
+	Uninstall *Uninstall `json:"uninstall,omitempty"`
 }
 
 func (f *Package) HasInterrupt() bool {
 	return f.Interrupt != nil
+}
+
+// UninstallEnabled returns true if this package has uninstall support enabled.
+func (f *Package) UninstallEnabled() bool {
+	return f != nil && f.Uninstall != nil && f.Uninstall.Enabled
+}
+
+// IsUninstalling returns true if this package is actively being uninstalled
+// (both enabled and apply must be true).
+func (f *Package) IsUninstalling() bool {
+	return f.UninstallEnabled() && f.Uninstall.Apply
 }
 
 type InterruptType string
@@ -446,6 +557,33 @@ func (ns *NodeState) RemoveState(_package PackageRef) bool {
 	return false
 }
 
+// IsUninstallCycleInProgress returns true if the named package is anywhere in
+// the uninstall cycle on this node — either the uninstall pod phase
+// (StageUninstall) or the post-uninstall interrupt phase
+// (StageUninstallInterrupt). This is the node-annotation-level answer to
+// "has uninstall started?" — distinct from Package.IsUninstalling() which only
+// answers "is uninstall requested in the spec?"
+func (ns *NodeState) IsUninstallCycleInProgress(uniqueName string) bool {
+	if *ns == nil {
+		return false
+	}
+	status, ok := (*ns)[uniqueName]
+	if !ok {
+		return false
+	}
+	return status.Stage == StageUninstall || status.Stage == StageUninstallInterrupt
+}
+
+// IsUninstalled returns true if the named package is absent from this node's
+// state, meaning uninstall has completed (absent = uninstalled per D2).
+func (ns *NodeState) IsUninstalled(uniqueName string) bool {
+	if *ns == nil {
+		return true
+	}
+	_, ok := (*ns)[uniqueName]
+	return !ok
+}
+
 func (ns *NodeState) Get(name string) *PackageStatus {
 	if s, ok := (*ns)[name]; ok {
 		return &s
@@ -454,17 +592,29 @@ func (ns *NodeState) Get(name string) *PackageStatus {
 }
 
 // IsComplete checks if the number of complete frames is equal to total packages,
-// and that the set of packages contain the same packages
+// and that the set of packages contain the same packages.
+// Packages that are being uninstalled (IsUninstalling) and are absent from node
+// state are treated as "done" — they don't block completion.
 func (ns *NodeState) IsComplete(packages Packages, interrupt map[string][]*Interrupt, config map[string][]string) bool {
-	if len(packages) <= len(ns.GetComplete(packages, interrupt, config)) { // is greater than because if we change packages in CSR
-		// If there is still an uninstall package then the node isn't complete
-		for _, packageStatus := range *ns {
-			if packageStatus.Stage == StageUninstall {
+	// Build the set of "active" packages: exclude those where uninstall is
+	// requested and has completed (absent from node state = uninstalled).
+	activePackages := make(Packages)
+	for name, pkg := range packages {
+		if pkg.IsUninstalling() && ns.IsUninstalled(pkg.GetUniqueName()) {
+			continue // uninstall completed — don't require for completion
+		}
+		activePackages[name] = pkg
+	}
+
+	if len(activePackages) <= len(ns.GetComplete(activePackages, interrupt, config)) {
+		// If a current spec package is still in the uninstall cycle the node isn't complete.
+		for _, pkg := range activePackages {
+			if ns.IsUninstallCycleInProgress(pkg.GetUniqueName()) {
 				return false
 			}
 		}
 
-		return ns.Contains(packages)
+		return ns.Contains(activePackages)
 	}
 
 	return false
@@ -490,16 +640,24 @@ func (ns *NodeState) NextStage(_package *Package, interrupt map[string][]*Interr
 		return nil
 	}
 
+	// StageInterrupt → StagePostInterrupt is unconditional even in the
+	// no-interrupt map: if a package has reached StageInterrupt at any point,
+	// the dynamic HasInterrupt(config) signal may have decayed by now
+	// (Status.ConfigUpdates can be cleared or never persist due to a 409 on the
+	// spec patch), but the package still needs to escape. The with-interrupt
+	// map deliberately omits StageUninstall → StageApply (PR #200) so that
+	// with-interrupt uninstalls route via StageUninstallInterrupt instead — do
+	// not collapse the two maps into one.
 	nextStage := map[Stage]Stage{
 		StageUninstall: StageApply,
 		StageApply:     StageConfig,
 		StageUpgrade:   StageConfig,
+		StageInterrupt: StagePostInterrupt,
 	}
 
 	if hasInterrupt := (*ns).HasInterrupt(*_package, interrupt, config); hasInterrupt {
 		nextStage = map[Stage]Stage{
 			StageUpgrade:   StageConfig,
-			StageUninstall: StageApply,
 			StageApply:     StageConfig,
 			StageConfig:    StageInterrupt,
 			StageInterrupt: StagePostInterrupt,
@@ -542,16 +700,9 @@ func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Inte
 
 	ret := make([]string, 0)
 
-	for _, packageStatus := range *ns {
-		_package, found := packages[packageStatus.Name]
-		if found && _package.Version == packageStatus.Version && packageStatus.State == StateComplete {
-			hasInterrupt := (*ns).HasInterrupt(_package, interrupt, config)
-
-			if hasInterrupt && packageStatus.Stage == StagePostInterrupt {
-				ret = append(ret, fmt.Sprintf("%s|%s", packageStatus.Name, packageStatus.Version))
-			} else if !hasInterrupt && packageStatus.Stage == StageConfig {
-				ret = append(ret, fmt.Sprintf("%s|%s", packageStatus.Name, packageStatus.Version))
-			}
+	for _, _package := range packages {
+		if ns.IsPackageComplete(_package, interrupt, config) {
+			ret = append(ret, _package.GetUniqueName())
 		}
 	}
 
@@ -560,24 +711,39 @@ func (ns *NodeState) GetComplete(packages Packages, interrupt map[string][]*Inte
 	return ret
 }
 
-// IsPackageComplete checks if a package is complete
+// IsPackageComplete reports whether a package has reached a terminal lifecycle
+// state on this node. Two terminal cases:
+//
+//   - StagePostInterrupt: unconditionally terminal. Reaching it required the
+//     operator to once decide HasInterrupt was true; gating the terminal check
+//     on the still-true-now signal is redundant and would trap packages whose
+//     Status.ConfigUpdates decayed (clearing or never persisting due to a 409
+//     on the spec patch) between entering the interrupt cycle and reaching
+//     post-interrupt.
+//   - StageConfig with no interrupt currently in scope: terminal because the
+//     package has no interrupt cycle to enter from here.
 func (ns *NodeState) IsPackageComplete(_package Package, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 
 	packageStatus, found := (*ns)[_package.GetUniqueName()]
-	if found && _package.Version == packageStatus.Version && packageStatus.State == StateComplete {
-		hasInterrupt := (*ns).HasInterrupt(_package, interrupt, config)
-
-		if hasInterrupt && packageStatus.Stage == StagePostInterrupt {
-			return true
-		} else if !hasInterrupt && packageStatus.Stage == StageConfig {
-			return true
-		}
+	if !found || _package.Version != packageStatus.Version || packageStatus.State != StateComplete {
+		return false
 	}
 
+	if packageStatus.Stage == StagePostInterrupt {
+		return true
+	}
+	if packageStatus.Stage == StageConfig && !(*ns).HasInterrupt(_package, interrupt, config) {
+		return true
+	}
 	return false
 }
 
-// ProgressSkipped checks if a package is skipped and should be progressed to complete
+// ProgressSkipped checks if a package is skipped and should be progressed to complete.
+// Promotion is gated on Stage alone: being at StageInterrupt with StateSkipped means
+// the operator already decided this package had an interrupt to schedule (see
+// ProcessInterrupt). The dynamic HasInterrupt(config) signal can decay before this
+// runs — Status.ConfigUpdates can be cleared or never persisted due to a 409 on the
+// spec patch — so gating promotion on it can trap the package permanently.
 func (ns *NodeState) ProgressSkipped(packages Packages, interrupt map[string][]*Interrupt, config map[string][]string) bool {
 	ret := false
 	for _, s := range *ns {
@@ -586,7 +752,7 @@ func (ns *NodeState) ProgressSkipped(packages Packages, interrupt map[string][]*
 			continue
 		}
 
-		if (*ns).HasInterrupt(f, interrupt, config) && s.Stage == StageInterrupt && s.State == StateSkipped {
+		if s.Stage == StageInterrupt && s.State == StateSkipped {
 			s.State = StateComplete
 			(*ns)[f.GetUniqueName()] = s
 			ret = true
@@ -616,7 +782,7 @@ type PackageStatus struct {
 	// these stages encapsulate checks. Both Apply and PostInterrupt also run checks,
 	// these are all or nothing, meaning both need to be successful in order to transition
 	//+kubebuilder:validation:Required
-	//+kubebuilder:validation:Enum=apply;interrupt;post-interrupt;config;uninstall;upgrade
+	//+kubebuilder:validation:Enum=apply;interrupt;post-interrupt;config;uninstall;uninstall-interrupt;upgrade
 	Stage Stage `json:"stage"`
 
 	// State is the current state of this package
@@ -632,26 +798,57 @@ type PackageStatus struct {
 func (left *PackageStatus) Equal(right *PackageStatus) bool {
 	return left.Name == right.Name &&
 		left.Version == right.Version &&
+		left.Image == right.Image &&
 		left.ContainerSHA == right.ContainerSHA &&
 		left.Stage == right.Stage &&
 		left.State == right.State &&
 		left.Restarts == right.Restarts
 }
 
+// IsInterruptStage reports whether the package is in one of the two interrupt-phase
+// Stages (interrupt or uninstall-interrupt). Nil-safe so it preserves the existing
+// `status != nil &&` guards at call sites: a nil/absent status is in no Stage.
+func (s *PackageStatus) IsInterruptStage() bool {
+	if s == nil {
+		return false
+	}
+	return s.Stage == StageInterrupt || s.Stage == StageUninstallInterrupt
+}
+
+// IsActive reports whether the package's execution State is still live (in-progress or
+// erroring), i.e. started but not yet terminal. Nil-safe.
+func (s *PackageStatus) IsActive() bool {
+	if s == nil {
+		return false
+	}
+	return s.State == StateInProgress || s.State == StateErroring
+}
+
+// IsSkipped reports whether the package's execution State is skipped (a higher-priority
+// interrupt won the node's single interrupt slot). Nil-safe.
+func (s *PackageStatus) IsSkipped() bool {
+	if s == nil {
+		return false
+	}
+	return s.State == StateSkipped
+}
+
 type Stage string
 
 const (
-	StageUninstall     Stage = "uninstall"
-	StageUpgrade       Stage = "upgrade"
-	StageApply         Stage = "apply"
-	StageInterrupt     Stage = "interrupt"
-	StagePostInterrupt Stage = "post-interrupt"
-	StageConfig        Stage = "config"
+	StageUninstall          Stage = "uninstall"
+	StageUninstallInterrupt Stage = "uninstall-interrupt"
+	StageUpgrade            Stage = "upgrade"
+	StageApply              Stage = "apply"
+	StageInterrupt          Stage = "interrupt"
+	StagePostInterrupt      Stage = "post-interrupt"
+	StageConfig             Stage = "config"
 )
 
 var (
 	Stages = []Stage{
 		StageUninstall,
+		StageUninstallInterrupt,
 		StageUpgrade,
 		StageApply,
 		StageInterrupt,
@@ -785,7 +982,7 @@ func (s *Skyhook) IsPaused() bool {
 		return false
 	}
 	if val, ok := s.Annotations[fmt.Sprintf("%s/pause", METADATA_PREFIX)]; ok {
-		return val == "true"
+		return val == "true" //nolint:goconst
 	}
 	return false
 }

@@ -1,6 +1,6 @@
 # Deployment Policy Tests
 
-This directory contains end-to-end tests for the Skyhook deployment policy feature. These tests validate rollout strategies, compartment management, and budget enforcement for controlled node deployments.
+This directory contains end-to-end tests for the NodeWright deployment policy feature. These tests validate rollout strategies, compartment management, and budget enforcement for controlled node deployments.
 
 ## Test Cluster Requirements
 
@@ -24,12 +24,15 @@ make create-deployment-policy-cluster
 ## Key Concepts
 
 ### Deployment Policy
+
 A custom resource that defines how nodes should be grouped into compartments and how packages should be rolled out to them.
 
 ### Compartments
+
 Logical groups of nodes with their own rollout strategy and budget. Nodes are assigned to compartments based on label selectors.
 
 ### Rollout Strategies
+
 - **Fixed**: Process a fixed number of nodes per batch
 - **Exponential**: Double the batch size with each iteration (1, 2, 4, 8...)
 - **Linear**: Increase batch size linearly (delta-based growth)
@@ -41,9 +44,20 @@ Logical groups of nodes with their own rollout strategy and budget. Nodes are as
 make deployment-policy-tests
 
 # Run a specific test
-cd k8s-tests/chainsaw/deployment-policy
-chainsaw test --test-dir linear-strategy
+cd operator
+make run
+make prepare-metrics-test-access
+
+cd ../k8s-tests/chainsaw/deployment-policy
+SKYHOOK_NAMESPACE=nodewright \
+METRICS_TEST_SERVICE_ACCOUNT=metrics-reader \
+../../../operator/bin/chainsaw test --test-dir linear-strategy
 ```
+
+The direct Chainsaw command requires the same authenticated metrics setup as
+the Makefile target. `make prepare-metrics-test-access` creates the
+`metrics-reader` ServiceAccount and grants it `GET /metrics`; the two
+environment variables tell `metrics_test.py` which identity to use.
 
 ## Helper Scripts
 

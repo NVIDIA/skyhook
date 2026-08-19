@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -26,6 +25,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-nodewright-nvidia-com-v1alpha1-deploymentpolicy
+  failurePolicy: Fail
+  name: mdeploymentpolicy-nodewright.kb.io
+  rules:
+  - apiGroups:
+    - nodewright.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - deploymentpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-skyhook-nvidia-com-v1alpha1-deploymentpolicy
   failurePolicy: Fail
   name: mdeploymentpolicy.kb.io
@@ -39,6 +58,26 @@ webhooks:
     - UPDATE
     resources:
     - deploymentpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-nodewright-nvidia-com-v1alpha1-nodewright
+  failurePolicy: Fail
+  name: mnodewright.kb.io
+  rules:
+  - apiGroups:
+    - nodewright.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nodewrights
   sideEffects: None
 - admissionReviewVersions:
   - v1
@@ -72,6 +111,27 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-nodewright-nvidia-com-v1alpha1-deploymentpolicy
+  failurePolicy: Fail
+  name: vdeploymentpolicy-nodewright.kb.io
+  rules:
+  - apiGroups:
+    - nodewright.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    - DELETE
+    resources:
+    - deploymentpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy
   failurePolicy: Fail
   name: vdeploymentpolicy.kb.io
@@ -86,6 +146,26 @@ webhooks:
     - DELETE
     resources:
     - deploymentpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-nodewright-nvidia-com-v1alpha1-nodewright
+  failurePolicy: Fail
+  name: vnodewright.kb.io
+  rules:
+  - apiGroups:
+    - nodewright.nvidia.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nodewrights
   sideEffects: None
 - admissionReviewVersions:
   - v1

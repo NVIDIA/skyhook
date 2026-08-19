@@ -19,13 +19,20 @@
 package utils
 
 import (
+	"bytes"
+	"context"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/spf13/cobra"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 )
 
 func TestUtils(t *testing.T) {
@@ -63,8 +70,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		It("should convert an unstructured object to a Skyhook", func() {
 			u := &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "skyhook.nvidia.com/v1alpha1",
-					"kind":       "Skyhook",
+					"apiVersion": "nodewright.nvidia.com/v1alpha1",
+					"kind":       "NodeWright",
 					"metadata": map[string]interface{}{
 						"name":      "test-skyhook",
 						"namespace": "default",
@@ -80,8 +87,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		It("should handle unstructured with packages", func() {
 			u := &unstructured.Unstructured{
 				Object: map[string]interface{}{
-					"apiVersion": "skyhook.nvidia.com/v1alpha1",
-					"kind":       "Skyhook",
+					"apiVersion": "nodewright.nvidia.com/v1alpha1",
+					"kind":       "NodeWright",
 					"metadata": map[string]interface{}{
 						"name": "test-skyhook",
 					},
@@ -178,8 +185,8 @@ var _ = Describe("CLI Utility Functions", func() {
 
 	Describe("ResetCompartmentBatchStates (API method)", func() {
 		It("should handle skyhook with nil CompartmentStatuses", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: nil,
 				},
 			}
@@ -189,8 +196,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should handle skyhook with empty CompartmentStatuses", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{},
 				},
 			}
@@ -200,8 +207,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should reset batch state for a single compartment", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"default": {
 							Matched:         10,
@@ -248,8 +255,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should reset batch state for multiple compartments", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"compartment-a": {
 							BatchState: &v1alpha1.BatchProcessingState{
@@ -297,8 +304,8 @@ var _ = Describe("CLI Utility Functions", func() {
 		})
 
 		It("should handle compartment without existing batch state", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			skyhook := &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"default": {
 							Matched:    10,
@@ -314,6 +321,270 @@ var _ = Describe("CLI Utility Functions", func() {
 			compartment := skyhook.Status.CompartmentStatuses["default"]
 			Expect(compartment.BatchState).NotTo(BeNil())
 			Expect(compartment.BatchState.CurrentBatch).To(Equal(1))
+		})
+	})
+
+	Describe("SetNodeAnnotation", func() {
+		It("preserves arbitrary JSON characters in the value", func() {
+			kube := fake.NewClientset()
+			_, err := kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1"}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			value := `{"a":"b\"c","x":"yz","unicode":"café"}`
+			Expect(SetNodeAnnotation(context.Background(), kube, "n1", "nodewright.nvidia.com/nodeState_demo", value)).To(Succeed())
+
+			got, err := kube.CoreV1().Nodes().Get(context.Background(), "n1", metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Annotations["nodewright.nvidia.com/nodeState_demo"]).To(Equal(value))
+		})
+	})
+
+	Describe("ConfirmYN", func() {
+		DescribeTable("recognises y/n responses",
+			func(input string, expected bool) {
+				cmd := &cobra.Command{}
+				out := &bytes.Buffer{}
+				cmd.SetOut(out)
+				cmd.SetIn(bytes.NewBufferString(input))
+				ok, err := ConfirmYN(cmd, "Continue?")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ok).To(Equal(expected))
+				Expect(out.String()).To(ContainSubstring("Continue?"))
+			},
+			Entry("yes lowercase", "y\n", true),
+			Entry("yes word", "yes\n", true),
+			Entry("YES uppercase", "YES\n", true),
+			Entry("no lowercase", "n\n", false),
+			Entry("empty defaults to no", "\n", false),
+			Entry("garbage defaults to no", "potato\n", false),
+		)
+	})
+
+	Describe("ListNodesWithSkyhookState", func() {
+		var kube *fake.Clientset
+		BeforeEach(func() {
+			kube = fake.NewClientset()
+		})
+
+		addNode := func(name, skyhook, annotationJSON string) {
+			ann := map[string]string{}
+			if skyhook != "" {
+				ann["nodewright.nvidia.com/nodeState_"+skyhook] = annotationJSON
+			}
+			_, err := kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Annotations: ann}},
+				metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		It("returns a map keyed by node name with parsed NodeState", func() {
+			addNode("n1", "demo", `{"pkg1|1.0":{"name":"pkg1","version":"1.0","stage":"apply","state":"complete"}}`)
+			addNode("n2", "demo", `{}`)
+			addNode("n3", "", "")
+			addNode("n4", "other", `{"x|1":{"name":"x","version":"1"}}`)
+
+			got, err := ListNodesWithSkyhookState(context.Background(), kube, "demo", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(HaveLen(2))
+			Expect(got).To(HaveKey("n1"))
+			Expect(got).To(HaveKey("n2"))
+			Expect(got["n1"]).To(HaveKey("pkg1|1.0"))
+			Expect(got["n2"]).To(BeEmpty())
+		})
+
+		It("skips nodes with malformed annotations and surfaces an error", func() {
+			addNode("n1", "demo", `not json`)
+			addNode("n2", "demo", `{"pkg1|1.0":{"name":"pkg1","version":"1.0"}}`)
+
+			got, err := ListNodesWithSkyhookState(context.Background(), kube, "demo", "")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("n1"))
+			Expect(got).To(HaveKey("n2"))
+			Expect(got).NotTo(HaveKey("n1"))
+		})
+
+		It("honours a label selector", func() {
+			_, err := kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name:        "n1",
+					Labels:      map[string]string{"role": "gpu"},
+					Annotations: map[string]string{"nodewright.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
+				}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = kube.CoreV1().Nodes().Create(context.Background(),
+				&corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name:        "n2",
+					Annotations: map[string]string{"nodewright.nvidia.com/nodeState_demo": `{"p|1":{"name":"p","version":"1"}}`},
+				}}, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			got, err := ListNodesWithSkyhookState(context.Background(), kube, "demo", "role=gpu")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(HaveLen(1))
+			Expect(got).To(HaveKey("n1"))
+		})
+	})
+
+	Describe("RegisterNodeWrightNameFlag", func() {
+		build := func(required bool) (*cobra.Command, *string) {
+			var v string
+			c := &cobra.Command{
+				Use: "x", SilenceUsage: true, SilenceErrors: true,
+				RunE: func(*cobra.Command, []string) error { return nil },
+			}
+			RegisterNodeWrightNameFlag(c, &v, "Name of the NodeWright CR", required)
+			return c, &v
+		}
+
+		It("binds the --nodewright flag", func() {
+			c, v := build(true)
+			c.SetArgs([]string{"--nodewright", "a"})
+			Expect(c.Execute()).To(Succeed())
+			Expect(*v).To(Equal("a"))
+		})
+
+		It("accepts the deprecated --skyhook alias", func() {
+			c, v := build(true)
+			c.SetArgs([]string{"--skyhook", "b"})
+			Expect(c.Execute()).To(Succeed())
+			Expect(*v).To(Equal("b"))
+		})
+
+		It("requires one of the two when required", func() {
+			c, _ := build(true)
+			c.SetArgs([]string{})
+			Expect(c.Execute()).To(HaveOccurred())
+		})
+
+		It("does not require the flag when optional", func() {
+			c, v := build(false)
+			c.SetArgs([]string{})
+			Expect(c.Execute()).To(Succeed())
+			Expect(*v).To(BeEmpty())
+		})
+
+		It("rejects setting both at once", func() {
+			c, _ := build(true)
+			c.SetArgs([]string{"--nodewright", "a", "--skyhook", "b"})
+			Expect(c.Execute()).To(HaveOccurred())
+		})
+
+		It("hides the deprecated --skyhook alias from help", func() {
+			c, _ := build(true)
+			f := c.Flags().Lookup("skyhook")
+			Expect(f).NotTo(BeNil())
+			Expect(f.Hidden).To(BeTrue())
+		})
+	})
+
+	Describe("isSkyhookOperatorDeployment", func() {
+		dep := func(image string, labels map[string]string) *appsv1.Deployment {
+			return &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: image}}},
+					},
+				},
+			}
+		}
+
+		It("matches the current nodewright operator image", func() {
+			Expect(isSkyhookOperatorDeployment(dep("ghcr.io/nvidia/nodewright/operator:v1", nil))).To(BeTrue())
+		})
+
+		It("matches the legacy skyhook operator image (transition)", func() {
+			Expect(isSkyhookOperatorDeployment(dep("ghcr.io/nvidia/skyhook/operator:v1", nil))).To(BeTrue())
+		})
+
+		It("matches via labels when the image is unrelated", func() {
+			Expect(isSkyhookOperatorDeployment(dep("busybox:latest", map[string]string{"app.kubernetes.io/name": "nodewright"}))).To(BeTrue())
+		})
+
+		It("does not match an unrelated deployment", func() {
+			Expect(isSkyhookOperatorDeployment(dep("busybox:latest", map[string]string{"app": "other"}))).To(BeFalse())
+		})
+	})
+
+	Describe("ResolveOperatorNamespace", func() {
+		operatorIn := func(namespace string) *appsv1.Deployment {
+			return &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "controller-manager",
+					Namespace: namespace,
+					Labels:    map[string]string{"control-plane": "controller-manager"},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: "ghcr.io/nvidia/nodewright/operator:v1"}}},
+					},
+				},
+			}
+		}
+
+		// Same substring the loose image/label heuristic keys on, but not a
+		// controller-manager: it must not decide the namespace.
+		lookalikeIn := func(namespace string) *appsv1.Deployment {
+			return &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "billing-nodewright-exporter", Namespace: namespace},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Image: "registry.example/billing-nodewright-exporter:v1"}}},
+					},
+				},
+			}
+		}
+
+		It("prefers the nodewright namespace", func() {
+			kube := fake.NewClientset(operatorIn(DefaultNamespace), operatorIn(LegacyDefaultNamespace))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(DefaultNamespace))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeFalse())
+		})
+
+		It("falls back to the legacy skyhook namespace and flags it", func() {
+			kube := fake.NewClientset(operatorIn(LegacyDefaultNamespace))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(LegacyDefaultNamespace))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeTrue())
+		})
+
+		It("finds an install in an arbitrary namespace via the cluster-wide sweep", func() {
+			kube := fake.NewClientset(operatorIn("platform-tools"))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal("platform-tools"))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeFalse())
+		})
+
+		It("ignores a non-controller-manager lookalike and picks the real namespace", func() {
+			kube := fake.NewClientset(lookalikeIn(DefaultNamespace), operatorIn(LegacyDefaultNamespace))
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(LegacyDefaultNamespace))
+			Expect(found).To(BeTrue())
+			Expect(legacy).To(BeTrue())
+		})
+
+		It("reports the default when no operator is installed", func() {
+			kube := fake.NewClientset()
+
+			namespace, found, legacy := ResolveOperatorNamespace(context.Background(), kube)
+			Expect(namespace).To(Equal(DefaultNamespace))
+			Expect(found).To(BeFalse())
+			Expect(legacy).To(BeFalse())
+		})
+
+		It("reports the default when there is no client", func() {
+			namespace, found, _ := ResolveOperatorNamespace(context.Background(), nil)
+			Expect(namespace).To(Equal(DefaultNamespace))
+			Expect(found).To(BeFalse())
 		})
 	})
 })

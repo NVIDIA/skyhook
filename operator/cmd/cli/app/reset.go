@@ -19,34 +19,68 @@
 package app
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
 const (
-	nodeStateAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/nodeState_"
-	statusAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/status_"
-	cordonAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/cordon_"
-	versionAnnotationPrefix   = v1alpha1.METADATA_PREFIX + "/version_"
-	autoTaintAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/autoTaint_"
-	statusLabelPrefix         = v1alpha1.METADATA_PREFIX + "/status_"
+	nodeStateAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/nodeState_"
+	statusAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/status_"
+	cordonAnnotationPrefix     = v1alpha1.METADATA_PREFIX + "/cordon_"
+	drainStartAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/drainStart_"
+	versionAnnotationPrefix    = v1alpha1.METADATA_PREFIX + "/version_"
+	autoTaintAnnotationPrefix  = v1alpha1.METADATA_PREFIX + "/autoTaint_"
+	statusLabelPrefix          = v1alpha1.METADATA_PREFIX + "/status_"
 )
 
 // resetOptions holds the options for the reset command
 type resetOptions struct {
 	confirm        bool
 	skipBatchReset bool
+	pkg            string // --package <name>[:<version>]
+}
+
+func resetAnnotationKeys(skyhookName string) []string {
+	return []string{
+		nodeStateAnnotationPrefix + skyhookName,
+		statusAnnotationPrefix + skyhookName,
+		cordonAnnotationPrefix + skyhookName,
+		drainStartAnnotationPrefix + skyhookName,
+		versionAnnotationPrefix + skyhookName,
+		autoTaintAnnotationPrefix + skyhookName,
+	}
+}
+
+func resetLabelKeys(skyhookName string) []string {
+	return []string{
+		statusLabelPrefix + skyhookName,
+	}
+}
+
+func hasResettableMetadata(annotations, labels map[string]string, annotationKeys, labelKeys []string) bool {
+	for _, annotationKey := range annotationKeys {
+		if _, ok := annotations[annotationKey]; ok {
+			return true
+		}
+	}
+	for _, labelKey := range labelKeys {
+		if _, ok := labels[labelKey]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // NewResetCmd creates the reset command
@@ -54,27 +88,27 @@ func NewResetCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &resetOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "reset <skyhook-name>",
-		Short: "Reset all nodes for a Skyhook",
-		Long: `Reset all package state on all nodes for a specific Skyhook, forcing a complete re-run.
+		Use:   "reset <nodewright-name>",
+		Short: "Reset all nodes for a NodeWright",
+		Long: `Reset all package state on all nodes for a specific NodeWright, forcing a complete re-run.
 
-This command removes all Skyhook state from all nodes that have state for the
-specified Skyhook, causing the operator to re-execute all packages from the beginning.
+This command removes all NodeWright state from all nodes that have state for the
+specified NodeWright, causing the operator to re-execute all packages from the beginning.
 
-Unlike 'node reset' which resets specific nodes, 'skyhook reset' resets ALL nodes
-that have state for the specified Skyhook.
+Unlike 'node reset' which resets specific nodes, 'nodewright reset' resets ALL nodes
+that have state for the specified NodeWright.
 
 By default, this command also resets the deployment policy batch state, allowing
 the rollout to start fresh from batch 1. Use --skip-batch-reset to preserve the
 existing batch state.`,
-		Example: `  # Reset all nodes for gpu-init Skyhook
-  kubectl skyhook reset gpu-init --confirm
+		Example: `  # Reset all nodes for gpu-init NodeWright
+  kubectl nodewright reset gpu-init --confirm
 
   # Preview changes without applying (dry-run)
-  kubectl skyhook reset gpu-init --dry-run
+  kubectl nodewright reset gpu-init --dry-run
 
   # Reset nodes only, preserve batch state
-  kubectl skyhook reset gpu-init --skip-batch-reset --confirm`,
+  kubectl nodewright reset gpu-init --skip-batch-reset --confirm`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			skyhookName := args[0]
@@ -85,53 +119,76 @@ existing batch state.`,
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
+			}
+
 			return runReset(cmd.Context(), cmd, kubeClient, skyhookName, opts, ctx)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&opts.confirm, "confirm", "y", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&opts.skipBatchReset, "skip-batch-reset", false, "Skip resetting deployment policy batch state")
+	cmd.Flags().StringVar(&opts.pkg, "package", "", "Reset only this package (format: <name> or <name>:<version>)")
 
 	return cmd
 }
 
 func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string, opts *resetOptions, cliCtx *cliContext.CLIContext) error {
-	// Get all nodes
+	// why: branch on --package BEFORE the empty-nodes early-return so the
+	// per-package path can version-gate on the operator. Otherwise a `reset
+	// --package` against an unsupported old operator that happens to have
+	// zero stateful nodes would silently succeed instead of erroring.
+	if opts.pkg != "" {
+		nodeStates, err := utils.ListNodesWithSkyhookState(ctx, kubeClient.Kubernetes(), skyhookName, "")
+		if err != nil {
+			if nodeStates == nil {
+				return fmt.Errorf("listing nodes: %w", err)
+			}
+			if cliCtx.GlobalFlags.Verbose {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %v\n", err)
+			}
+		}
+		return runPackageReset(ctx, cmd, kubeClient, skyhookName, nodeStates, opts, cliCtx)
+	}
+
 	nodeList, err := kubeClient.Kubernetes().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("listing nodes: %w", err)
 	}
 
-	// Find nodes that have the specified Skyhook annotation
 	annotationKey := nodeStateAnnotationPrefix + skyhookName
+	annotationKeys := resetAnnotationKeys(skyhookName)
+	labelKeys := resetLabelKeys(skyhookName)
 	nodesToReset := make([]string, 0)
 	nodeStates := make(map[string]v1alpha1.NodeState)
 
 	for _, node := range nodeList.Items {
-		annotation, ok := node.Annotations[annotationKey]
-		if !ok {
+		if !hasResettableMetadata(node.Annotations, node.Labels, annotationKeys, labelKeys) {
 			continue
 		}
 
-		var nodeState v1alpha1.NodeState
-		if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
-			if cliCtx.GlobalFlags.Verbose {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: skipping node %q - invalid annotation: %v\n", node.Name, err)
+		nodeState := v1alpha1.NodeState{}
+		if annotation, ok := node.Annotations[annotationKey]; ok {
+			if err := json.Unmarshal([]byte(annotation), &nodeState); err != nil {
+				if cliCtx.GlobalFlags.Verbose {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: node %q has invalid node state annotation; resetting metadata with empty package state: %v\n", node.Name, err)
+				}
 			}
-			continue
 		}
 
 		nodesToReset = append(nodesToReset, node.Name)
 		nodeStates[node.Name] = nodeState
 	}
+	sort.Strings(nodesToReset)
 
 	if len(nodesToReset) == 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for Skyhook %q\n", skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No nodes have state for NodeWright %q\n", skyhookName)
 		return nil
 	}
 
 	// Print summary
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", skyhookName)
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes to reset (%d):\n", len(nodesToReset))
 	for _, nodeName := range nodesToReset {
 		nodeState := nodeStates[nodeName]
@@ -149,23 +206,17 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 		return nil
 	}
 
-	// Confirmation
 	if !opts.confirm {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for Skyhook %q on %d node(s).\n", skyhookName, len(nodesToReset))
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will remove ALL package state for NodeWright %q on %d node(s).\n", skyhookName, len(nodesToReset))
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "All packages will re-run from the beginning.\n")
 		if !opts.skipBatchReset {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state will be reset to start from batch 1.\n")
 		}
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Continue? [y/N]: ")
-
-		reader := bufio.NewReader(cmd.InOrStdin())
-		response, err := reader.ReadString('\n')
+		ok, err := utils.ConfirmYN(cmd, "Continue? [y/N]: ")
 		if err != nil {
-			return fmt.Errorf("reading confirmation: %w", err)
+			return err
 		}
-
-		response = strings.ToLower(strings.TrimSpace(response))
-		if response != "y" && response != "yes" {
+		if !ok {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Aborted\n")
 			return nil
 		}
@@ -183,7 +234,7 @@ func runReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client
 	}
 
 	if successCount > 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for Skyhook %q\n", successCount, skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset %d node(s) for NodeWright %q\n", successCount, skyhookName)
 	}
 
 	// Reset batch state unless --skip-batch-reset is set
@@ -200,16 +251,8 @@ func resetNodeAnnotations(ctx context.Context, cmd *cobra.Command, kubeClient *c
 	successCount := 0
 
 	for _, nodeName := range nodesToReset {
-		annotationsToRemove := []string{
-			nodeStateAnnotationPrefix + skyhookName,
-			statusAnnotationPrefix + skyhookName,
-			cordonAnnotationPrefix + skyhookName,
-			versionAnnotationPrefix + skyhookName,
-			autoTaintAnnotationPrefix + skyhookName,
-		}
-		labelsToRemove := []string{
-			statusLabelPrefix + skyhookName,
-		}
+		annotationsToRemove := resetAnnotationKeys(skyhookName)
+		labelsToRemove := resetLabelKeys(skyhookName)
 
 		// Try to remove the main nodeState annotation first - this is the critical one
 		mainAnnotationKey := nodeStateAnnotationPrefix + skyhookName
@@ -245,7 +288,7 @@ func resetNodeAnnotations(ctx context.Context, cmd *cobra.Command, kubeClient *c
 	return successCount, updateErrors
 }
 
-// resetBatchStateForReset resets the batch state for a Skyhook if dynamic client is available
+// resetBatchStateForReset resets the batch state for a NodeWright if dynamic client is available
 func resetBatchStateForReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string) {
 	if kubeClient.Dynamic() == nil {
 		return
@@ -282,5 +325,148 @@ func resetBatchStateForReset(ctx context.Context, cmd *cobra.Command, kubeClient
 		[]byte(`{"status":{"nodeOrderOffset":0,"nodePriority":null}}`)); err != nil {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to reset node ordering: %v\n", err)
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state reset for Skyhook %q\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Batch state reset for NodeWright %q\n", skyhookName)
+}
+
+func splitPackageRef(s string) (name, version string, hasVersion bool, err error) {
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		name, version = s[:i], s[i+1:]
+		hasVersion = true
+	} else {
+		name = s
+	}
+	if name == "" {
+		return "", "", false, fmt.Errorf("--package: name must not be empty")
+	}
+	if hasVersion && version == "" {
+		return "", "", false, fmt.Errorf("--package: version must not be empty after %q", ":")
+	}
+	return name, version, hasVersion, nil
+}
+
+// why: --package reset removes a single package's state. Resetting batch
+// state (which restarts the entire rollout from batch 1) would be wildly
+// disproportionate to a one-package recovery, so this path deliberately
+// skips it regardless of --skip-batch-reset.
+func runPackageReset(
+	ctx context.Context,
+	cmd *cobra.Command,
+	kubeClient *client.Client,
+	skyhookName string,
+	nodeStates map[string]v1alpha1.NodeState,
+	opts *resetOptions,
+	cliCtx *cliContext.CLIContext,
+) error {
+	name, version, hasVersion, err := splitPackageRef(opts.pkg)
+	if err != nil {
+		return err
+	}
+
+	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
+	if err != nil {
+		return fmt.Errorf("fetching NodeWright %q: %w", skyhookName, err)
+	}
+	if err := utils.CheckNodeStateOperatorVersion(ctx, cmd, kubeClient.Kubernetes(), cliCtx.ResolveNamespace(ctx, cmd, kubeClient.Kubernetes()), skyhook); err != nil {
+		return err
+	}
+
+	annotationKey := nodeStateAnnotationPrefix + skyhookName
+
+	type target struct {
+		nodeName  string
+		remaining v1alpha1.NodeState
+		emptied   bool
+	}
+	var targets []target
+	nodeNames := make([]string, 0, len(nodeStates))
+	for n := range nodeStates {
+		nodeNames = append(nodeNames, n)
+	}
+	sort.Strings(nodeNames)
+
+	for _, nodeName := range nodeNames {
+		ns := nodeStates[nodeName]
+		next := v1alpha1.NodeState{}
+		matched := false
+		for key, status := range ns {
+			if status.Name != name {
+				next[key] = status
+				continue
+			}
+			if hasVersion && status.Version != version {
+				next[key] = status
+				continue
+			}
+			matched = true
+		}
+		if !matched {
+			continue
+		}
+		targets = append(targets, target{
+			nodeName:  nodeName,
+			remaining: next,
+			emptied:   len(next) == 0,
+		})
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Package filter: %s\n", opts.pkg)
+
+	if len(targets) == 0 {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "no matching package on any node\n")
+		return nil
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Nodes with a matching package (%d):\n", len(targets))
+	for _, t := range targets {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", t.nodeName)
+	}
+
+	if cliCtx.GlobalFlags.DryRun {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n[dry-run] No changes applied\n")
+		return nil
+	}
+
+	if !opts.confirm {
+		ok, err := utils.ConfirmYN(cmd, fmt.Sprintf("\nThis will remove the %q entry from %d node(s).\nContinue? [y/N]: ", opts.pkg, len(targets)))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Aborted\n")
+			return nil
+		}
+	}
+
+	var firstErr error
+	success := 0
+	for _, t := range targets {
+		if t.emptied {
+			if err := utils.RemoveNodeAnnotation(ctx, kubeClient.Kubernetes(), t.nodeName, annotationKey); err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			success++
+			continue
+		}
+		payload, err := json.Marshal(t.remaining)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("marshaling node state for %q: %w", t.nodeName, err)
+			}
+			continue
+		}
+		if err := utils.SetNodeAnnotation(ctx, kubeClient.Kubernetes(), t.nodeName, annotationKey, string(payload)); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		success++
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully updated %d node(s)\n", success)
+	return firstErr
 }

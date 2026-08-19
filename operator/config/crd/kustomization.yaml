@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -20,6 +20,8 @@
 resources:
 - bases/skyhook.nvidia.com_skyhooks.yaml
 - bases/skyhook.nvidia.com_deploymentpolicies.yaml
+- bases/nodewright.nvidia.com_nodewrights.yaml
+- bases/nodewright.nvidia.com_deploymentpolicies.yaml
 
 patches:
 - path: patches/webhook_in_skyhooks.yaml

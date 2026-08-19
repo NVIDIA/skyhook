@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -19,11 +19,13 @@
 
 import argparse
 import os
+import re
+import ssl
+import subprocess
 import sys
 import time
-import re
-import urllib.request
 import urllib.error
+import urllib.request
 
 # Helper to parse Prometheus metrics lines
 # Example: metric_name{key1="val1",key2="val2"} 123
@@ -58,7 +60,19 @@ def main():
     parser.add_argument('metric_name', help='Name of the metric to search for')
     parser.add_argument('metric_value', help='Value the metric should have (exact match)')
     parser.add_argument('-t', '--tag', action='append', default=[], help='Tag filter in key=value format (can be used multiple times)')
-    parser.add_argument('--url', default='http://127.0.0.1:8080/metrics', help='Metrics endpoint URL')
+    parser.add_argument('--url', default='https://127.0.0.1:8443/metrics', help='Metrics endpoint URL')
+    parser.add_argument(
+        '--token-from-serviceaccount',
+        default=os.environ.get('METRICS_TEST_SERVICE_ACCOUNT'),
+        metavar='NAME',
+        help='Request a bearer token for this Kubernetes ServiceAccount',
+    )
+    parser.add_argument(
+        '--token-namespace',
+        default=os.environ.get('SKYHOOK_NAMESPACE', 'default'),
+        metavar='NAMESPACE',
+        help='Namespace of --token-from-serviceaccount (default: $SKYHOOK_NAMESPACE or default)',
+    )
     parser.add_argument('--not-found', action='store_true', help='Succeed if the metric is NOT found (invert match logic)')
     args = parser.parse_args()
 
@@ -81,16 +95,45 @@ def main():
     if args.url == '-':
         mode = 'stdin'
 
+    request = args.url
+    ssl_context = None
+    minted_token = None
+    if mode == 'url' and args.url.startswith('https://'):
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        token = os.environ.get('METRICS_TOKEN')
+        if not token and args.token_from_serviceaccount:
+            token = subprocess.check_output(
+                [
+                    'kubectl',
+                    '-n',
+                    args.token_namespace,
+                    'create',
+                    'token',
+                    args.token_from_serviceaccount,
+                ],
+                text=True,
+            ).strip()
+            minted_token = token
+        if token:
+            request = urllib.request.Request(
+                args.url,
+                headers={'Authorization': f'Bearer {token}'},
+            )
+
+    last_fetch_error = None
     while True:
         if mode == 'stdin':
             lines = sys.stdin.readlines()
         else:
             try:
-                with urllib.request.urlopen(args.url) as resp:
+                with urllib.request.urlopen(request, context=ssl_context) as resp:
                     content = resp.read().decode('utf-8')
                     lines = content.splitlines()
+                    last_fetch_error = None
             except Exception as e:
-                print(f"Error fetching metrics: {e}", file=sys.stderr)
+                last_fetch_error = e
                 lines = []
         found = False
         for line in lines:
@@ -102,6 +145,8 @@ def main():
 
         success = (found and not args.not_found) or (not found and args.not_found)
         if success:
+            if minted_token:
+                sys.stderr.write(minted_token)
             sys.exit(0)
 
         msg = f"Metric {args.metric_name} with tags {tags} and value {args.metric_value}"
@@ -115,6 +160,8 @@ def main():
        
         if time.time() >= end_time:
             msg += f" after {TIMEOUT} seconds"
+            if last_fetch_error:
+                msg += f"; last fetch error: {last_fetch_error}"
             print(msg, file=sys.stderr)
             sys.exit(1)
         time.sleep(PERIOD)

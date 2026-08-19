@@ -1,0 +1,167 @@
+{{- if .Values.selectorMigration.enabled }}
+{{/*
+Deployment.spec.selector is immutable. When an existing release was first
+installed from a chart whose name produced a different selector (e.g. the
+skyhook-operator -> nodewright rename changed app.kubernetes.io/name), helm
+upgrade fails because it cannot patch the selector. This pre-upgrade hook
+inspects the live Deployment and deletes it ONLY when its selector does not
+match the desired chart.managerSelectorLabels, so helm can recreate it. It is a
+no-op (no downtime) on normal upgrades. The hook gets its own ServiceAccount and
+Role (selector-migration-{serviceaccount,role,rolebinding}.yaml) because, during
+pre-upgrade, the release's manager RBAC has not been applied yet, so it cannot be
+relied upon here.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "chart.fullname" . }}-selector-migration"
+  namespace: "{{ .Release.Namespace }}"
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-5"
+spec:
+  activeDeadlineSeconds: {{ .Values.selectorMigration.jobTimeoutSeconds }}
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      serviceAccountName: "{{ include "chart.fullname" . }}-selector-migration"
+      # This is a cluster-maintenance job that only talks to the API server, so it
+      # must be schedulable anywhere and must NOT inherit the controller-manager's
+      # nodeSelector/nodeAffinity: pinning it to the operator's placement makes the
+      # pre-upgrade hook unschedulable (and time out) whenever that placement is
+      # restrictive or in flux (e.g. the node-affinity e2e test). Only a bare os=linux
+      # selector is kept (the job image is Linux-only) so it cannot land on a Windows
+      # node in a mixed-OS cluster. Tolerations are kept so it can still land on tainted nodes.
+      nodeSelector:
+        kubernetes.io/os: linux
+      {{- with .Values.controllerManager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: kube-api-access
+        projected:
+          defaultMode: 420
+          sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3607
+          - configMap:
+              items:
+              - key: ca.crt
+                path: ca.crt
+              name: kube-root-ca.crt
+          - downwardAPI:
+              items:
+              - fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+                path: namespace
+      # kubectl writes its discovery/http cache under KUBECACHEDIR; with a
+      # read-only root filesystem it needs a writable mount, else it re-discovers
+      # the API on every call.
+      - name: kube-cache
+        emptyDir: {}
+      containers:
+      - name: selector-migration
+        image: {{ .Values.webhook.removalImage | default "docker.io/alpine/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "latest" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "latest" }}{{- end }}
+        imagePullPolicy: Always
+        env:
+        - name: KUBECACHEDIR
+          value: /tmp/kubecache
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: kube-api-access
+          readOnly: true
+        - mountPath: /tmp/kubecache
+          name: kube-cache
+        # Guard against limitRange being disabled (set to null/false) with fallback defaults
+        resources:
+        {{- if .Values.limitRange }}
+          limits:
+            cpu: {{ .Values.limitRange.default.cpu }}
+            memory: {{ .Values.limitRange.default.memory }}
+          requests:
+            cpu: {{ .Values.limitRange.defaultRequest.cpu }}
+            memory: {{ .Values.limitRange.defaultRequest.memory }}
+        {{- else }}
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        {{- end }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          NS="{{ .Release.Namespace }}"
+          DEPLOY="{{ include "chart.fullname" . }}-controller-manager"
+
+          if ! kubectl get deployment "$DEPLOY" -n "$NS" >/dev/null 2>&1; then
+            echo "Deployment $DEPLOY not found; nothing to migrate"
+            exit 0
+          fi
+
+          echo "live selector: $(kubectl get deployment "$DEPLOY" -n "$NS" -o jsonpath='{.spec.selector.matchLabels}')"
+
+          mismatch=0
+          {{/* Compares each DESIRED label value against the live selector. This
+               catches a changed value (the skyhook-operator -> nodewright rename)
+               or a missing label, which covers every selector change in this
+               chart's history (the key set has always been control-plane + name
+               + instance). It does NOT detect a live selector with EXTRA keys
+               beyond the desired set; if a future change ever narrows the
+               selector, that case needs its own handling here. */}}
+          {{- range $k, $v := (include "chart.managerSelectorLabels" . | fromYaml) }}
+          live="$(kubectl get deployment "$DEPLOY" -n "$NS" -o jsonpath='{.spec.selector.matchLabels.{{ $k | replace "." "\\." }}}' 2>/dev/null || true)"
+          if [ "$live" != "{{ $v }}" ]; then
+            echo "selector label {{ $k }} differs: live='$live' want='{{ $v }}'"
+            mismatch=1
+          fi
+          {{- end }}
+
+          {{/* MIGRATION-SHIM (skyhook-operator -> nodewright resource rename, #440).
+               An operator from before that change looks its webhook configurations up by
+               NAME. This upgrade renames them, so that running operator hard-errors on
+               "skyhook-operator-validating-webhook not found", never goes Ready, never
+               releases the webhook bootstrap lease (docs/designs/webhook-bootstrap-lease.md),
+               and therefore never gets terminated by the rolling update: helm upgrade wedges
+               on "Pending termination". The new operator finds them by label instead, so this
+               is a one-time rollover, not a recurring cost.
+
+               WEBHOOK_SERVICE_NAME is the marker: no chart before #440 set it, so its absence
+               on the live Deployment means the running operator predates label discovery.
+               Deleting the Deployment here costs a short operator gap and lets helm recreate
+               it; the alternative is a stuck release that needs a manual kubectl delete pod.
+               Drop this block once the rename window closes. */}}
+          if ! kubectl get deployment "$DEPLOY" -n "$NS" \
+               -o jsonpath='{.spec.template.spec.containers[?(@.name=="manager")].env[*].name}' \
+               2>/dev/null | tr ' ' '\n' | grep -qx 'WEBHOOK_SERVICE_NAME'; then
+            echo "live operator predates label-based webhook discovery (no WEBHOOK_SERVICE_NAME); it cannot survive the webhook rename"
+            mismatch=1
+          fi
+
+          if [ "$mismatch" -eq 1 ]; then
+            echo "deleting Deployment $DEPLOY so helm upgrade can recreate it"
+            kubectl delete deployment "$DEPLOY" -n "$NS" --ignore-not-found
+          else
+            echo "Deployment selector matches desired and the live operator understands label-based webhook discovery; nothing to do"
+          fi
+{{- end }}

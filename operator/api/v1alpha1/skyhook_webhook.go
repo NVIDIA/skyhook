@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -29,7 +29,6 @@ import (
 	semver "github.com/NVIDIA/nodewright/operator/internal/version"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,10 +36,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// log is for logging in this package.
 var (
-	skyhooklog       = logf.Log.WithName("skyhook-resource")
-	validPackageName = regexp.MustCompile(`(?m)^[a-z][-a-z0-9]{0,41}[a-z]$`)
+	validPackageName = regexp.MustCompile(`^[a-z][-a-z0-9]{0,41}[a-z]$`)
 )
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
@@ -48,8 +45,7 @@ func (r *Skyhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	skyhookWebhook := &SkyhookWebhook{
 		Client: mgr.GetClient(),
 	}
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+	return ctrl.NewWebhookManagedBy(mgr, r).
 		WithDefaulter(skyhookWebhook).
 		WithValidator(skyhookWebhook).
 		Complete()
@@ -66,17 +62,12 @@ type SkyhookWebhook struct {
 	Client client.Client
 }
 
-var _ admission.CustomDefaulter = &SkyhookWebhook{}
+var _ admission.Defaulter[*Skyhook] = &SkyhookWebhook{}
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
-func (r *SkyhookWebhook) Default(ctx context.Context, obj runtime.Object) error {
+func (r *SkyhookWebhook) Default(ctx context.Context, skyhook *Skyhook) error {
 
-	skyhook, ok := obj.(*Skyhook)
-	if !ok {
-		return fmt.Errorf("object is not a Skyhook")
-	}
-
-	skyhooklog.Info("default", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("default", "name", skyhook.Name)
 
 	// TODO(user): fill in your defaulting logic.
 	// Things we might want to default:
@@ -87,50 +78,62 @@ func (r *SkyhookWebhook) Default(ctx context.Context, obj runtime.Object) error 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 //+kubebuilder:webhook:path=/validate-skyhook-nvidia-com-v1alpha1-skyhook,mutating=false,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=skyhooks,verbs=create;update,versions=v1alpha1,name=vskyhook.kb.io,admissionReviewVersions=v1
 
-var _ admission.CustomValidator = &SkyhookWebhook{}
+var _ admission.Validator[*Skyhook] = &SkyhookWebhook{}
+
+// skyhookDeprecationWarning is surfaced on every create/update of a legacy Skyhook so
+// operators are nudged toward the new group during the migration bridge. It deliberately
+// does not name a specific removal release; the bridge is kept for a multi-release window.
+const skyhookDeprecationWarning = "skyhook.nvidia.com/v1alpha1 Skyhook is deprecated; migrate to " +
+	"nodewright.nvidia.com/v1alpha1 NodeWright (change apiVersion to nodewright.nvidia.com/v1alpha1 and " +
+	"kind to NodeWright). The Skyhook kind will be removed in a future release."
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (r *SkyhookWebhook) ValidateCreate(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhook, ok := obj.(*Skyhook)
-	if !ok {
-		return nil, fmt.Errorf("object is not a Skyhook")
-	}
+	logf.FromContext(ctx).Info("validate create", "name", skyhook.Name)
 
-	skyhooklog.Info("validate create", "name", skyhook.Name)
+	warnings := admission.Warnings{skyhookDeprecationWarning}
 
 	if err := skyhook.Validate(); err != nil {
-		return nil, err
+		return warnings, fmt.Errorf("validating skyhook %q: %w", skyhook.Name, err)
 	}
 
-	return nil, r.validateDeploymentPolicyExists(ctx, skyhook)
+	return warnings, r.validateDeploymentPolicyExists(ctx, skyhook)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (r *SkyhookWebhook) ValidateUpdate(ctx context.Context, oldSkyhook, newSkyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhook, ok := newObj.(*Skyhook)
-	if !ok {
-		return nil, fmt.Errorf("object is not a Skyhook")
+	logf.FromContext(ctx).Info("validate update", "name", newSkyhook.Name)
+
+	warnings := admission.Warnings{skyhookDeprecationWarning}
+
+	// MIGRATION-SHIM: a migrated legacy Skyhook is frozen read-only; real edits go to the
+	// NodeWright (see legacy_readonly_webhook.go, not mirrored into the nodewright group).
+	// legacyReadOnlyError rejects every user-meaningful edit and allows only no-ops,
+	// finalizer edits, and deletions. Those allow-listed updates must NOT be re-validated:
+	// re-running Validate()/validateDeploymentPolicyExists on a frozen object would wrongly
+	// reject a GitOps no-op re-apply or a finalizer strip (e.g. once a stricter rule ships,
+	// or after the referenced legacy DeploymentPolicy is gone), stranding the object in
+	// Terminating. All substantive validation — including the uninstall/downgrade rules —
+	// now runs on the writable NodeWright (see nodewright_webhook.go).
+	if oldSkyhook != nil {
+		return warnings, legacyReadOnlyError(oldSkyhook, newSkyhook)
 	}
 
-	skyhooklog.Info("validate update", "name", skyhook.Name)
-
-	if err := skyhook.Validate(); err != nil {
-		return nil, err
+	// oldSkyhook == nil is never a real update (the apiserver always supplies the prior
+	// object); it is only reached by unit tests exercising create-style spec validation
+	// through this entrypoint, so validate the spec and its policy reference as on create.
+	if err := newSkyhook.Validate(); err != nil {
+		return warnings, fmt.Errorf("validating skyhook %q: %w", newSkyhook.Name, err)
 	}
-
-	return nil, r.validateDeploymentPolicyExists(ctx, skyhook)
+	return warnings, r.validateDeploymentPolicyExists(ctx, newSkyhook)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *SkyhookWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	skyhook, ok := obj.(*Skyhook)
-	if !ok {
-		return nil, fmt.Errorf("object is not a Skyhook")
-	}
+func (r *SkyhookWebhook) ValidateDelete(ctx context.Context, skyhook *Skyhook) (admission.Warnings, error) {
 
-	skyhooklog.Info("validate delete", "name", skyhook.Name)
+	logf.FromContext(ctx).Info("validate delete", "name", skyhook.Name)
 
 	// I do yet know if we need to do any valuations on delete,
 	// if so guessing they would be different than update and create anyways
@@ -163,12 +166,20 @@ func validateResourceOverrides(name string, res *ResourceRequirements) error {
 func (r *Skyhook) Validate() error {
 
 	if err := r.Spec.InterruptionBudget.Validate(); err != nil {
-		return err
+		return fmt.Errorf("interruption budget: %w", err)
+	}
+
+	if err := r.Spec.DrainConfig.Validate(); err != nil {
+		return fmt.Errorf("drain config: %w", err)
 	}
 
 	// DeploymentPolicy and InterruptionBudget are mutually exclusive
 	if r.Spec.DeploymentPolicy != "" && (r.Spec.InterruptionBudget.Percent != nil || r.Spec.InterruptionBudget.Count != nil) {
 		return fmt.Errorf("deploymentPolicy and interruptionBudget are mutually exclusive")
+	}
+
+	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.PodNonInterruptLabels); err != nil {
+		return fmt.Errorf("pod non-interrupt labels are not valid: %w", err)
 	}
 
 	if _, err := metav1.LabelSelectorAsSelector(&r.Spec.NodeSelector); err != nil {
@@ -220,14 +231,29 @@ func (r *Skyhook) Validate() error {
 			return fmt.Errorf("error config interrupt for key that doesn't exist: %s doesn't exist as a configmap", pattern)
 		}
 
-		image, version, found := strings.Cut(v.Image, ":")
-		if found && version != v.Version {
+		// image must be a bare registry/repository reference. version is the operator's
+		// ordering key (it drives upgrade/downgrade detection) and containerSHA pins the
+		// exact bytes the kubelet pulls, so neither a tag nor a digest may be embedded in
+		// image. Both are rejected rather than silently stripped: an inline tag was once
+		// absorbed as a migration off the pre-semver scheme, but that migration is done,
+		// so tags and digests now behave identically. tag/digest are non-nil whenever
+		// their separator is present, so an empty separator ("repo@", "repo:") is
+		// rejected too rather than slipping through to an invalid pull reference.
+		// (Emptiness and whitespace are enforced declaratively by the CRD's Pattern.)
+		_, tag, digest := splitImageReference(v.Image)
+		if digest != nil {
 			return fmt.Errorf(
-				"error package %s's image tag was set to '%s' for '%s' and doesn't match the pacakge's version '%s'. Do not explicitly set the image's tag in the package's definition (The package version will be set as the tag)",
+				"error package %s's image '%s' contains an inline digest. Do not embed a digest in the image; pin the image bytes using the package's containerSHA field instead",
 				name,
-				version,
-				image,
-				v.Version,
+				v.Image,
+			)
+		}
+		if tag != nil {
+			return fmt.Errorf(
+				"error package %s's image '%s' contains an inline tag '%s'. Do not embed a tag in the image; the package version supplies the tag",
+				name,
+				v.Image,
+				*tag,
 			)
 		}
 
@@ -238,6 +264,11 @@ func (r *Skyhook) Validate() error {
 		if err := validateResourceOverrides(name, v.Resources); err != nil {
 			return err
 		}
+
+		// Validate uninstall configuration
+		if v.Uninstall != nil && v.Uninstall.Apply && !v.Uninstall.Enabled {
+			return fmt.Errorf("package %q: uninstall.apply requires uninstall.enabled to be true", name)
+		}
 	}
 
 	var graph graph.DependencyGraph[*Package]
@@ -245,12 +276,12 @@ func (r *Skyhook) Validate() error {
 	var err error
 	graph, err = r.Spec.BuildGraph()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec building graph: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec building graph: %w", err)
 	}
 
 	err = graph.Valid()
 	if err != nil {
-		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %s", err)
+		return fmt.Errorf("error trying to validate skyhook spec graph is invalid: %w", err)
 	}
 
 	return nil

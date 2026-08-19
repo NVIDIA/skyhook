@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -27,7 +27,15 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
+)
+
+type lifecycleAction string
+
+const (
+	lifecycleActionSet    lifecycleAction = "set"
+	lifecycleActionRemove lifecycleAction = "remove"
 )
 
 // lifecycleConfig defines the configuration for a lifecycle command
@@ -37,7 +45,7 @@ type lifecycleConfig struct {
 	long         string
 	example      string
 	annotation   string
-	action       string // "set" or "remove"
+	action       lifecycleAction
 	verb         string // past tense for output message (e.g., "paused", "resumed")
 	confirmVerb  string // verb for confirmation prompt (e.g., "pause", "disable")
 	needsConfirm bool
@@ -62,7 +70,7 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 			skyhookName := args[0]
 
 			if cfg.needsConfirm && !opts.confirm {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "This will %s Skyhook %q. Continue? [y/N]: ",
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "This will %s NodeWright %q. Continue? [y/N]: ",
 					cfg.confirmVerb, skyhookName)
 				reader := bufio.NewReader(cmd.InOrStdin())
 				response, err := reader.ReadString('\n')
@@ -77,30 +85,37 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 				}
 			}
 
-			// Check dry-run before making changes
-			if ctx.GlobalFlags.DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] Would %s Skyhook %q\n", cfg.confirmVerb, skyhookName)
-				return nil
-			}
-
 			clientFactory := client.NewFactory(ctx.GlobalFlags.ConfigFlags)
 			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
 			}
 
-			// Fetch the Skyhook to check operator version from its annotation
+			// Preflight before the dry-run short-circuit (matching node/package/reset): a
+			// dry-run against a legacy-only operator would otherwise print "Would ..." for a
+			// NodeWright that the cluster cannot serve.
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
+			}
+
+			// Check dry-run before making changes
+			if ctx.GlobalFlags.DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] Would %s NodeWright %q\n", cfg.confirmVerb, skyhookName)
+				return nil
+			}
+
+			// Fetch the NodeWright to check operator version from its annotation
 			skyhook, err := utils.GetSkyhook(cmd.Context(), kubeClient.Dynamic(), skyhookName)
 			if err != nil {
 				return err
 			}
 
-			// Check operator version compatibility using Skyhook's version annotation
+			// Check operator version compatibility using NodeWright's version annotation
 			// If annotation is missing or invalid (e.g., "dev"), fall back to deployment version
 			opVersion := utils.GetSkyhookVersion(skyhook)
 			if opVersion == "" || !utils.IsValidVersion(opVersion) {
 				// Try to get version from deployment instead
-				deployVersion, err := utils.DiscoverOperatorVersion(cmd.Context(), kubeClient.Kubernetes(), ctx.GlobalFlags.Namespace())
+				deployVersion, err := utils.DiscoverOperatorVersion(cmd.Context(), kubeClient.Kubernetes(), ctx.ResolveNamespace(cmd.Context(), cmd, kubeClient.Kubernetes()))
 				if err == nil && utils.IsValidVersion(deployVersion) {
 					opVersion = deployVersion
 				} else {
@@ -114,7 +129,7 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 				if cfg.annotation == utils.PauseAnnotation {
 					// pause/resume - feature exists but uses spec field instead of annotation
 					specValue := "true"
-					if cfg.action == "remove" {
+					if cfg.action == lifecycleActionRemove {
 						specValue = "false"
 					}
 					return fmt.Errorf("operator version %s uses spec.pause instead of annotations; "+
@@ -125,7 +140,7 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 					opVersion, cfg.confirmVerb, utils.MinAnnotationSupportVersion)
 			}
 
-			if cfg.action == "set" {
+			if cfg.action == lifecycleActionSet {
 				err = utils.SetSkyhookAnnotation(cmd.Context(), kubeClient.Dynamic(), skyhookName, cfg.annotation, "true")
 			} else {
 				err = utils.RemoveSkyhookAnnotation(cmd.Context(), kubeClient.Dynamic(), skyhookName, cfg.annotation)
@@ -134,7 +149,7 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 				return err
 			}
 
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook %q %s\n", skyhookName, cfg.verb)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright %q %s\n", skyhookName, cfg.verb)
 			return nil
 		},
 	}
@@ -149,19 +164,22 @@ func newLifecycleCmd(ctx *cliContext.CLIContext, cfg lifecycleConfig) *cobra.Com
 // NewPauseCmd creates the pause command
 func NewPauseCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	return newLifecycleCmd(ctx, lifecycleConfig{
-		use:   "pause <skyhook-name>",
-		short: "Pause a Skyhook from processing",
-		long: `Pause a Skyhook by setting the pause annotation.
+		use:   "pause <nodewright-name>",
+		short: "Pause a NodeWright from processing",
+		long: `Pause a NodeWright by setting the pause annotation.
 
-When a Skyhook is paused, the operator will stop processing new nodes
-but will not interrupt any currently running operations.`,
-		example: `  # Pause a Skyhook
-  kubectl skyhook pause gpu-init
+No new stages are scheduled while paused. On operators that run package stages
+as Jobs, the stage currently executing is suspended too: its pod is signalled to
+stop, and on resume the stage re-runs from the start of its current phase (the
+agent skips steps it already completed). On older operators a stage already in
+flight finishes its current run first, and pause only blocks what comes after.`,
+		example: `  # Pause a NodeWright
+  kubectl nodewright pause gpu-init
 
   # Pause without confirmation
-  kubectl skyhook pause gpu-init --confirm`,
+  kubectl nodewright pause gpu-init --confirm`,
 		annotation:   utils.PauseAnnotation,
-		action:       "set",
+		action:       lifecycleActionSet,
 		verb:         "paused",
 		confirmVerb:  "pause",
 		needsConfirm: true,
@@ -171,18 +189,18 @@ but will not interrupt any currently running operations.`,
 // NewResumeCmd creates the resume command
 func NewResumeCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	return newLifecycleCmd(ctx, lifecycleConfig{
-		use:   "resume <skyhook-name>",
-		short: "Resume a paused Skyhook",
-		long: `Resume a paused Skyhook by removing the pause annotation.
+		use:   "resume <nodewright-name>",
+		short: "Resume a paused NodeWright",
+		long: `Resume a paused NodeWright by removing the pause annotation.
 
 The operator will resume processing nodes after this command.`,
-		example: `  # Resume a paused Skyhook
-  kubectl skyhook resume gpu-init
+		example: `  # Resume a paused NodeWright
+  kubectl nodewright resume gpu-init
 
   # Resume without confirmation
-  kubectl skyhook resume gpu-init --confirm`,
+  kubectl nodewright resume gpu-init --confirm`,
 		annotation:   utils.PauseAnnotation,
-		action:       "remove",
+		action:       lifecycleActionRemove,
 		verb:         "resumed",
 		confirmVerb:  "resume",
 		needsConfirm: true,
@@ -192,19 +210,23 @@ The operator will resume processing nodes after this command.`,
 // NewDisableCmd creates the disable command
 func NewDisableCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	return newLifecycleCmd(ctx, lifecycleConfig{
-		use:   "disable <skyhook-name>",
-		short: "Disable a Skyhook completely",
-		long: `Disable a Skyhook by setting the disable annotation.
+		use:   "disable <nodewright-name>",
+		short: "Disable a NodeWright so no new work is scheduled",
+		long: `Disable a NodeWright by setting the disable annotation.
 
-When a Skyhook is disabled, the operator will completely stop processing
-and the Skyhook will be effectively inactive.`,
-		example: `  # Disable a Skyhook
-  kubectl skyhook disable gpu-init
+The operator schedules no new work for a disabled NodeWright. A stage already
+under way is NOT stopped and runs to completion — use pause for that.
+
+Disable never restarts work that pause stopped: a paused NodeWright's suspended
+stages stay suspended. They resume only once BOTH the disable and the pause
+annotations are cleared.`,
+		example: `  # Disable a NodeWright
+  kubectl nodewright disable gpu-init
 
   # Disable without confirmation
-  kubectl skyhook disable gpu-init --confirm`,
+  kubectl nodewright disable gpu-init --confirm`,
 		annotation:   utils.DisableAnnotation,
-		action:       "set",
+		action:       lifecycleActionSet,
 		verb:         "disabled",
 		confirmVerb:  "disable",
 		needsConfirm: true,
@@ -214,18 +236,20 @@ and the Skyhook will be effectively inactive.`,
 // NewEnableCmd creates the enable command
 func NewEnableCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	return newLifecycleCmd(ctx, lifecycleConfig{
-		use:   "enable <skyhook-name>",
-		short: "Enable a disabled Skyhook",
-		long: `Enable a disabled Skyhook by removing the disable annotation.
+		use:   "enable <nodewright-name>",
+		short: "Enable a disabled NodeWright",
+		long: `Enable a disabled NodeWright by removing the disable annotation.
 
-The operator will resume normal processing after this command.`,
-		example: `  # Enable a disabled Skyhook
-  kubectl skyhook enable gpu-init
+The operator schedules work for it again — unless it is also paused. Stages
+suspended by pause resume only once BOTH the disable and the pause annotations
+are cleared, so enabling a NodeWright that is still paused changes nothing on its own.`,
+		example: `  # Enable a disabled NodeWright
+  kubectl nodewright enable gpu-init
 
   # Enable without confirmation
-  kubectl skyhook enable gpu-init --confirm`,
+  kubectl nodewright enable gpu-init --confirm`,
 		annotation:   utils.DisableAnnotation,
-		action:       "remove",
+		action:       lifecycleActionRemove,
 		verb:         "enabled",
 		confirmVerb:  "enable",
 		needsConfirm: true,

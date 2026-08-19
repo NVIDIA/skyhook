@@ -30,7 +30,7 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset helm-test-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset helm-test-skyhook --confirm 2>/dev/null || true
           echo "✓ State reset complete"
   
   - try:
@@ -59,9 +59,9 @@ spec:
     - apply:
         file: deployment-policy.yaml
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
-        file: assert-skyhook-complete.yaml
+        file: assert-nodewright-complete.yaml
     - script:
         content: |
           ## Remove helm chart (pre-delete hook should clean up Skyhooks/DeploymentPolicies)
@@ -71,7 +71,7 @@ spec:
     - script:
         content: |
           ## Cleanup any remaining resources
-          ../skyhook-cli reset helm-test-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset helm-test-skyhook --confirm 2>/dev/null || true
     - script:
         content: |
           ## Remove taint from nodes

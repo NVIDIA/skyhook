@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -19,17 +19,23 @@
 package context
 
 import (
+	gocontext "context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/kubernetes"
+
+	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
-// DefaultNamespace is the default namespace for Skyhook resources
-const DefaultNamespace = "skyhook"
+// namespaceFlagName is the flag whose explicit use suppresses namespace discovery.
+const namespaceFlagName = "namespace"
 
 // GlobalFlags holds persistent CLI flags that every command uses (kubeconfig, namespace, output, etc.).
 type GlobalFlags struct {
@@ -46,12 +52,12 @@ func NewGlobalFlags() *GlobalFlags {
 		flags.Namespace = new(string)
 	}
 	if *flags.Namespace == "" {
-		*flags.Namespace = DefaultNamespace
+		*flags.Namespace = utils.DefaultNamespace
 	}
 
 	return &GlobalFlags{
 		ConfigFlags:  flags,
-		OutputFormat: "table",
+		OutputFormat: "table", //nolint:goconst
 	}
 }
 
@@ -79,14 +85,16 @@ func (f *GlobalFlags) Validate() error {
 	return nil
 }
 
-// Namespace returns the namespace selected via kubeconfig or flag (default "skyhook").
+// Namespace returns the namespace selected via the --namespace flag, falling back to
+// utils.DefaultNamespace. It does not consult the cluster; prefer
+// CLIContext.ResolveNamespace, which also finds installs in the legacy namespace.
 func (f *GlobalFlags) Namespace() string {
 	if f.ConfigFlags == nil || f.ConfigFlags.Namespace == nil {
-		return DefaultNamespace
+		return utils.DefaultNamespace
 	}
 	ns := strings.TrimSpace(*f.ConfigFlags.Namespace)
 	if ns == "" {
-		return DefaultNamespace
+		return utils.DefaultNamespace
 	}
 	return ns
 }
@@ -96,6 +104,12 @@ func (f *GlobalFlags) Namespace() string {
 type CLIContext struct {
 	GlobalFlags *GlobalFlags
 	config      *CLIConfig
+
+	// Namespace discovery is one cluster round trip per invocation at most, shared by
+	// every command that needs it. Guarded because a single command may ask more than
+	// once (version check, then pod lookup).
+	namespaceOnce sync.Once
+	namespace     string
 }
 
 // CLIConfig holds the configuration for the CLI execution.
@@ -151,4 +165,32 @@ func NewCLIContext(config *CLIConfig) *CLIContext {
 // Config returns the CLI configuration.
 func (c *CLIContext) Config() *CLIConfig {
 	return c.config
+}
+
+// ResolveNamespace returns the namespace the command should operate in.
+//
+// An explicit --namespace always wins and is never second-guessed. Otherwise the
+// namespace is discovered from the cluster, because the install namespace moved
+// from "skyhook" to "nodewright" with the rename and a namespace cannot be renamed
+// in place: an install that predates the rename is still in "skyhook" and must keep
+// working. When the answer comes from the legacy namespace a one-line deprecation
+// notice is written to the command's stderr.
+//
+// The result is cached for the lifetime of the CLIContext.
+func (c *CLIContext) ResolveNamespace(ctx gocontext.Context, cmd *cobra.Command, kube kubernetes.Interface) string {
+	if cmd != nil && cmd.Flags().Changed(namespaceFlagName) {
+		return c.GlobalFlags.Namespace()
+	}
+
+	c.namespaceOnce.Do(func() {
+		namespace, found, legacy := utils.ResolveOperatorNamespace(ctx, kube)
+		c.namespace = namespace
+		if found && legacy && cmd != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(),
+				"Note: using the legacy %q namespace; new installs default to %q. Pass --namespace to silence this.\n",
+				utils.LegacyDefaultNamespace, utils.DefaultNamespace)
+		}
+	})
+
+	return c.namespace
 }

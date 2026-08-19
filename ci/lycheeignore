@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# lychee — patterns for URLs to skip during link-check.
+# One regex per line. See https://lychee.cli.rs/
+
+# Localhost/example URLs commonly used in docs as placeholders
+^https?://localhost(:[0-9]+)?
+^https?://127\.0\.0\.1
+^https?://0\.0\.0\.0
+^https?://example\.(com|org|net)
+^https?://your-?(domain|host|server)
+
+# GitHub anchor links — lychee resolves these against rendered HTML which
+# often differs from raw markdown; high false-positive rate.
+^https?://github\.com/.+#
+
+# Internal-only NVIDIA hosts that are unreachable from public CI runners.
+# Narrow to specific internal subdomains — wildcards like *.nvidia.com would
+# also exclude public docs (docs.nvidia.com, developer.nvidia.com) where real
+# broken links should still be caught.
+^https?://.+\.nvda\.ai
+^https?://helm\.ngc\.nvidia\.com
+^https?://nvcr\.io/.+
+^https?://gitlab-master\.nvidia\.com
+
+# GitHub Discussions — disabled on the renamed nodewright repo. The
+# CONTRIBUTING/README/SUPPORT links to skyhook/discussions 404 because
+# Discussions weren't enabled on the new repo. Tracked separately.
+^https?://github\.com/NVIDIA/(skyhook|nodewright)/discussions

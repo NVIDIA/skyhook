@@ -1,0 +1,224 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: runtime-required
+  labels:
+    pool: interrupt
+spec:
+  timeouts:
+    assert: 120s
+  catch: ## if errors, print the most important info
+  - get:
+      apiVersion: v1
+      kind: Node
+      selector: nodewright.nvidia.com/runtime-required-test=true
+      format: yaml
+  - get:
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
+      name: runtime-required
+      format: yaml
+  steps:
+  # Phase 1: Setup with kind-worker2 blocked
+  - name: setup-and-block-node2
+    try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../nodewright-cli reset runtime-required --confirm 2>/dev/null || true
+          ## label both worker nodes for this test (multi-node isolation)
+          kubectl label node kind-worker nodewright.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
+          kubectl label node kind-worker2 nodewright.nvidia.com/runtime-required-test=true --overwrite 2>/dev/null || true
+          ## add runtime-required taints to both nodes
+          ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule nodewright.nvidia.com/runtime-required-test=true
+          ## add blocking taint to kind-worker2 only (skyhook doesn't tolerate this)
+          kubectl taint node kind-worker2 test-block=true:NoSchedule --overwrite 2>/dev/null || true
+  
+  # Phase 2: Apply skyhook (only kind-worker can run)
+  - name: apply-skyhook
+    try:
+    - create:
+        resource:
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: skyhook-operator
+              app.kubernetes.io/created-by: skyhook-operator
+            name: runtime-required
+          spec:
+            runtimeRequired: true
+            nodeSelectors:
+              matchLabels:
+                nodewright.nvidia.com/runtime-required-test: "true"
+            packages:
+              spencer:
+                version: "3.2.3"
+                image: ghcr.io/nvidia/skyhook/agentless
+                env: 
+                  - name: SLEEP_LEN
+                    value: "2"
+
+  
+  # Phase 3: Assert node1 complete sequence (apply pod -> config pod -> node complete -> node2 blocked)
+  - name: assert-node1-complete-node2-blocked
+    try:
+    ## sequential: pods get cleaned up between stages on kind-worker
+    - assert:
+        ## spencer apply pod on kind-worker
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
+            annotations:
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'apply'): true
+          spec:
+            nodeName: kind-worker
+    - assert:
+        ## spencer config pod on kind-worker
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
+            annotations:
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'config'): true
+          spec:
+            nodeName: kind-worker
+    - assert:
+        ## kind-worker complete, runtime-required taint removed
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: kind-worker
+            labels:
+              nodewright.nvidia.com/status_runtime-required: complete
+            annotations:
+              nodewright.nvidia.com/status_runtime-required: complete
+          spec:
+            (!taints || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true
+    - assert:
+        ## kind-worker2 still blocked with taint (proves per-node isolation)
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: kind-worker2
+            labels:
+              nodewright.nvidia.com/status_runtime-required: blocked
+            annotations:
+              nodewright.nvidia.com/status_runtime-required: blocked
+          spec:
+            taints:
+            - key: test-block
+              value: "true"
+              effect: NoSchedule
+            - key: skyhook.nvidia.com
+              value: runtime-required
+              effect: NoSchedule
+  
+  # Phase 4: Unblock kind-worker2
+  - name: unblock-node2
+    try:
+    - script:
+        content: |
+          ## remove blocking taint from kind-worker2
+          kubectl taint node kind-worker2 test-block- 2>/dev/null || true
+  
+  # Phase 5: Assert node2 complete sequence (apply pod -> config pod -> node complete)
+  - name: assert-node2-complete
+    try:
+    ## sequential: pods get cleaned up between stages on kind-worker2
+    - assert:
+        ## spencer apply pod on kind-worker2
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
+            annotations:
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'apply'): true
+          spec:
+            nodeName: kind-worker2
+    - assert:
+        ## spencer config pod on kind-worker2
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: runtime-required
+              nodewright.nvidia.com/package: spencer-3.2.3
+            annotations:
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package").stage == 'config'): true
+          spec:
+            nodeName: kind-worker2
+    - assert:
+        ## kind-worker2 complete, runtime-required taint removed
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: kind-worker2
+            labels:
+              nodewright.nvidia.com/status_runtime-required: complete
+            annotations:
+              nodewright.nvidia.com/status_runtime-required: complete
+          spec:
+            (!taints || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true
+  
+  # Phase 6: Assert final state (both nodes complete)
+  - name: assert-final-state
+    try:
+    - assert:
+        resource:
+          # This assertion validates per-node runtime-required behavior:
+          # - Each node with the test label should have status=complete
+          # - Each node's runtime-required taint should be removed independently
+          # - Both kind-worker and kind-worker2 are tested (multi-node isolation)
+          apiVersion: v1
+          kind: Node
+          metadata:
+            labels:
+              nodewright.nvidia.com/runtime-required-test: "true"
+              nodewright.nvidia.com/status_runtime-required: complete
+            annotations:
+              nodewright.nvidia.com/status_runtime-required: complete
+          spec:
+            # Verify the runtime-required taint has been removed from this node
+            (!taints || length(taints)==`0` || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule'  && value == 'runtime-required'])==`0`): true
+
+    finally:
+    - script:
+        content: |
+          ## remove taints from nodes
+          ../nodes_remove_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule nodewright.nvidia.com/runtime-required-test=true

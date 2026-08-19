@@ -1,0 +1,120 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cli-reset-package
+spec:
+  concurrent: false ## two-package lifecycle is sensitive to interleaved cluster mutation from other CLI tests
+  timeouts:
+    assert: 180s
+    exec: 90s
+  catch:
+    - get:
+        apiVersion: v1
+        kind: Node
+        selector: nodewright.nvidia.com/test-node=skyhooke2e
+        format: yaml
+    - get:
+        apiVersion: nodewright.nvidia.com/v1alpha1
+        kind: NodeWright
+        name: cli-reset-package-test
+        format: yaml
+    - get:
+        apiVersion: v1
+        kind: Pod
+        namespace: nodewright
+        format: yaml
+  steps:
+  # Step 0: Reset state from previous runs
+  - name: reset-state
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../nodewright-cli reset cli-reset-package-test --confirm 2>/dev/null || true
+          echo "State reset complete"
+
+  # Step 1: Create a two-package Skyhook and wait for both packages to complete
+  - name: setup-skyhook
+    try:
+    - apply:
+        file: nodewright.yaml
+    - assert:
+        file: assert-nodewright-complete.yaml
+
+  # Step 2: Disable the Skyhook so the operator won't immediately re-apply pkg-one
+  # after we remove its state.
+  - name: disable-skyhook
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../nodewright-cli disable cli-reset-package-test --confirm
+    - assert:
+        file: assert-nodewright-disabled.yaml
+
+  # Step 3: Selectively reset only pkg-one. --skip-batch-reset matches the
+  # implementation contract for --package (batch state is not reset for a
+  # one-package recovery).
+  - name: test-reset-package
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          ../nodewright-cli reset cli-reset-package-test --package pkg-one --confirm --skip-batch-reset
+
+  # Step 4: Assert the per-node annotation no longer contains pkg-one|1.2.3 but
+  # still contains pkg-two|2.1.4. The nodeState annotation is JSON-as-string, so
+  # we use jq rather than a native chainsaw assert.
+  - name: assert-only-pkg-one-removed
+    try:
+    - script:
+        timeout: 30s
+        content: |
+          set -eu
+          nodes=$(kubectl get nodes -l nodewright.nvidia.com/test-node=skyhooke2e -o jsonpath='{.items[*].metadata.name}')
+          if [ -z "$nodes" ]; then
+            echo "no test nodes found"
+            exit 1
+          fi
+          fail=0
+          for node in $nodes; do
+            raw=$(kubectl get node "$node" -o jsonpath='{.metadata.annotations.nodewright\.nvidia\.com/nodeState_cli-reset-package-test}')
+            if [ -z "$raw" ]; then
+              echo "node $node: nodeState annotation missing (expected pkg-two to remain)"
+              fail=1
+              continue
+            fi
+            has_one=$(printf '%s' "$raw" | jq 'has("pkg-one|1.2.3")')
+            has_two=$(printf '%s' "$raw" | jq 'has("pkg-two|2.1.4")')
+            if [ "$has_one" != "false" ]; then
+              echo "node $node: expected pkg-one|1.2.3 to be removed, but it is still present"
+              echo "annotation: $raw"
+              fail=1
+              continue
+            fi
+            if [ "$has_two" != "true" ]; then
+              echo "node $node: expected pkg-two|2.1.4 to remain, but it is missing"
+              echo "annotation: $raw"
+              fail=1
+              continue
+            fi
+            echo "node $node: pkg-one removed, pkg-two retained OK"
+          done
+          exit $fail

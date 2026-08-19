@@ -8,7 +8,7 @@ Validates deployment policy with overlapping compartment selectors, verifying th
 
 1. Reset state and label nodes with overlapping labels
 2. Create a DeploymentPolicy with compartments that have overlapping selectors
-3. Apply a skyhook using the policy
+3. Apply a nodewright using the policy
 4. Verify:
    - Nodes matching multiple compartments are assigned correctly
    - Assignment is based on most specific match (most labels matched)
@@ -26,7 +26,7 @@ Validates deployment policy with overlapping compartment selectors, verifying th
 
 - `chainsaw-test.yaml` - Main test configuration
 - `deployment-policy.yaml` - Policy with overlapping selectors
-- `skyhook.yaml` - Skyhook using the policy
+- `nodewright.yaml` - NodeWright using the policy
 - `assert-compartments.yaml` - Compartment assignment assertions
 - `assert-batch-*.yaml` - Batch progression assertions
 - `assert-complete.yaml` - Final completion assertions

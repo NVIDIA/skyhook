@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -14,18 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 apiVersion: v1
 kind: Pod
 metadata:
   annotations:
     kubectl.kubernetes.io/default-container: manager
   labels:
-    app: node-affinity-test-skyhook-operator-controller-manager
+    app: nodewright-controller-manager
     app.kubernetes.io/instance: node-affinity-test
-    app.kubernetes.io/name: skyhook-operator
+    app.kubernetes.io/name: nodewright
     control-plane: controller-manager
-  namespace: skyhook
+  namespace: nodewright
   ownerReferences:
   - apiVersion: apps/v1
     blockOwnerDeletion: true
@@ -48,7 +47,7 @@ spec:
             - linux
           - key: node-role.kubernetes.io/control-plane
             operator: DoesNotExist
-          - key: skyhook.nvidia.com/test-node
+          - key: nodewright.nvidia.com/test-node
             operator: In
             values:
             - skyhooke2e

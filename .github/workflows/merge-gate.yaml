@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Merge Gate
+
+# Checks that block merges: license verification on Go dependency changes.
+# Modeled on NVIDIA/aicr's merge-gate.yaml.
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Path filtering — only run downstream jobs when relevant files change.
+  # ---------------------------------------------------------------------------
+  check-paths:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      deps: ${{ steps.filter.outputs.deps }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            deps:
+              - 'operator/go.mod'
+              - 'operator/go.sum'
+              - 'operator/vendor/**'
+
+  # ---------------------------------------------------------------------------
+  # License verification — runs only when dependency files change.
+  # ---------------------------------------------------------------------------
+  verify-licenses:
+    needs: [check-paths]
+    if: needs.check-paths.outputs.deps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: operator/go.mod
+          cache: false
+      - name: Install go-licenses
+        run: make -C operator go-licenses
+      - name: Report licenses
+        env:
+          GOFLAGS: -mod=vendor
+        working-directory: operator
+        run: |
+          echo "=== Dependency Licenses ==="
+          ./bin/go-licenses report ./... 2>/dev/null | sort -t',' -k3 | column -t -s','
+          echo ""
+          echo "=== License Summary ==="
+          ./bin/go-licenses report ./... 2>/dev/null | cut -d',' -f3 | sort | uniq -c | sort -rn
+      - name: Check licenses
+        env:
+          GOFLAGS: -mod=vendor
+        run: make -C operator license-check
+
+  # Paired skip job so the required-check name 'verify-licenses' is always
+  # satisfied even when deps haven't changed. The job name MUST match
+  # 'verify-licenses' if you wire this into branch protection — otherwise GH
+  # waits forever on the real job that never ran.
+  verify-licenses-skip:
+    needs: [check-paths]
+    if: needs.check-paths.outputs.deps != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - run: echo "No dependency changes — license check not required"

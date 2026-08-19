@@ -1,0 +1,167 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Lets contributors self-serve issue assignment by commenting on an issue:
+#   /assign          -> claims the issue (commenter), only if unassigned
+#   /assign @user    -> assigns the mentioned user, only if unassigned
+#   /unassign        -> releases the issue, only if assigned to the commenter
+#
+# Single-owner model: /assign is refused when the issue already has an
+# assignee (comment /unassign to release it first), and assigns exactly one
+# user at a time. /unassign only ever removes the commenter and is refused
+# when they are not currently assigned, so nobody can drop another's claim.
+#
+# issue_comment always runs in the base-repo context with the base-repo
+# token, so there is no fork/pwn-request exposure here: the job only needs
+# `issues: write` and never checks out untrusted code. GitHub's addAssignees
+# silently ignores users who are not assignable (only the commenter/self,
+# prior commenters on the issue, users with write access, or org members
+# with read access can be assigned); we detect and report those.
+
+name: Self-Assign Issues
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+
+  assign:
+    name: Handle /assign and /unassign
+    # Issues only (not PRs); comment starts with /assign or /unassign.
+    if: >-
+      !github.event.issue.pull_request &&
+      (startsWith(github.event.comment.body, '/assign') ||
+       startsWith(github.event.comment.body, '/unassign'))
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed to update issue assignees and post status comments back.
+      issues: write
+    timeout-minutes: 5
+    steps:
+
+      - name: Apply assignment change
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const body = context.payload.comment.body.trim();
+            const commenter = context.payload.comment.user.login;
+
+            // Match the command exactly: the first whitespace-delimited token
+            // must be /assign or /unassign. A plain startsWith would also fire
+            // on /assign-anything and silently self-assign the commenter.
+            const tokens = body.split(/\s+/);
+            const command = tokens[0];
+            if (command !== '/assign' && command !== '/unassign') {
+              core.info(`Ignoring comment; not an assignment command: ${command}`);
+              return;
+            }
+            const unassign = command === '/unassign';
+
+            const common = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            };
+
+            // Read assignees fresh rather than trusting context.payload: jobs
+            // are serialized (cancel-in-progress: false), so a queued job may
+            // run well after the webhook snapshot has gone stale.
+            const { data: freshIssue } = await github.rest.issues.get(common);
+            const current = (freshIssue.assignees || []).map(a => a.login);
+
+            if (unassign) {
+              // Self-only: a commenter may only release their own claim.
+              if (!current.includes(commenter)) {
+                core.info(`${commenter} is not assigned; nothing to unassign`);
+                await github.rest.issues.createComment({
+                  ...common,
+                  body: `@${commenter} you are not currently assigned to this issue, so there is nothing to release.`,
+                });
+                return;
+              }
+              await github.rest.issues.removeAssignees({
+                ...common,
+                assignees: [commenter],
+              });
+              core.info(`Unassigned ${commenter}`);
+              return;
+            }
+
+            // Assign only on an unassigned issue (single-owner model).
+            if (current.length) {
+              core.info(`Issue already assigned to ${current.join(', ')}; refusing`);
+              await github.rest.issues.createComment({
+                ...common,
+                body: [
+                  `This issue is already assigned to ${current.map(u => '@' + u).join(', ')}.`,
+                  'The assignee can comment `/unassign` to release it first.',
+                ].join('\n'),
+              });
+              return;
+            }
+
+            // Single-owner model: /assign takes an optional single @user as its
+            // only argument. Parse the command's own tokens, not the whole body:
+            // scanning for mentions would let "/assign\ncc @maintainer" assign
+            // the wrong person. No argument self-claims the commenter; anything
+            // other than one bare @user (extra text, multiple mentions) is
+            // refused so a claim can never land on an unintended user.
+            const args = tokens.slice(1);
+            const userArg = /^@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?)$/;
+            let target;
+            if (args.length === 0) {
+              target = commenter;
+            } else if (args.length === 1 && userArg.test(args[0])) {
+              target = args[0].slice(1);
+            } else {
+              core.info(`Unrecognized /assign arguments; refusing: ${args.join(' ')}`);
+              await github.rest.issues.createComment({
+                ...common,
+                body: 'This issue uses a single-owner model. Comment `/assign` to claim it yourself, or `/assign @user` to assign one other person.',
+              });
+              return;
+            }
+            const targets = [target];
+
+            const { data: issue } = await github.rest.issues.addAssignees({
+              ...common,
+              assignees: targets,
+            });
+
+            // GitHub drops non-assignable users without erroring, so surface them.
+            const got = new Set(issue.assignees.map(a => a.login));
+            const skipped = targets.filter(u => !got.has(u));
+            if (skipped.length) {
+              core.warning(`Could not assign: ${skipped.join(', ')}`);
+              await github.rest.issues.createComment({
+                ...common,
+                body: [
+                  `Could not assign ${skipped.map(u => '@' + u).join(', ')}.`,
+                  '',
+                  'GitHub only lets you assign the commenter/self, someone who has',
+                  'commented on this issue, a user with write access, or an org',
+                  'member with read access.',
+                ].join('\n'),
+              });
+            }

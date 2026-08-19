@@ -1,0 +1,263 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cleanup-pods
+  labels:
+    pool: lifecycle
+spec:
+  timeouts:
+    assert: 120s
+  steps:
+  - name: setup
+    description: Create skyhook with dependencies, complete it, then trigger a config cycle
+    try:
+    - script:
+        content: |
+          ## remove annotation from last run
+          ../nodewright-cli reset cleanup-pods --confirm 2>/dev/null || true
+          
+    - create:
+        file: setup.yaml
+    - assert:
+        file: assert-setup-complete.yaml
+    - sleep:
+        ## there is a race between pods marking the node complete, i think it will trigger eventually, but the event is missed
+        duration: 2s 
+    - update:
+        file: force-config.yaml ## trigger config cycle
+    - assert:
+        file: assert-config-complete.yaml
+    - sleep:
+        ## there is a race between pods marking the node complete, i think it will trigger eventually, but the event is missed
+        duration: 2s 
+  - name: cleanup
+    description: Make package error, reset node annotation, verify orphan pods are cleaned up
+    try:
+    - update:
+        file: muck_up.yaml
+          ## wack node annotation to rest node
+    - assert:
+        ## wait for muck_up to be processed before resetting the node
+        resource:
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
+          metadata:
+            name: cleanup-pods
+          status:
+            status: erroring
+    ## Pin the precondition before resetting: bb's config Job must actually exist on kind-worker.
+    ## Without this the negative assertion below passes vacuously whenever the Job was never
+    ## created, and the test would prove nothing about reset or reaping. Existence is the whole
+    ## precondition — the step above already waits for the Skyhook to report erroring, so this Job
+    ## cannot have completed. Do not add a status.conditions clause here: an active Job has no
+    ## conditions field at all, so any filter over it evaluates to null rather than an empty list.
+    - assert:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: bb-1.2
+              nodewright.nvidia.com/node: kind-worker
+              nodewright.nvidia.com/stage: config
+    - script:
+        content: |
+          ## delete the node annotation on one node to trigger cleanup
+          kubectl annotate node/kind-worker nodewright.nvidia.com/nodeState_cleanup-pods-
+    ## Assert the mechanism, not just its effect: bb's erroring config Job from before the reset
+    ## must not survive on the reset node. It is unfinished (restartPolicy Never with an unbounded
+    ## backoffLimit never goes terminal on a failing step), so it is only cleared if the reset is
+    ## actually observed: the sweep must see the node-state entry gone, invalidate the Job and
+    ## reap it. If anything writes that entry back, the Job stays, JobExists keeps gating the
+    ## package, and bb never reaches apply again. Scoped to bb on kind-worker: aa legitimately
+    ## re-runs config here after the reset, and kind-worker2 keeps its state and its Jobs.
+    - error:
+        resource:
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: bb-1.2
+              nodewright.nvidia.com/node: kind-worker
+              nodewright.nvidia.com/stage: config
+    ## assert pods are recreated on kind-worker after reset (sequential: pods get cleaned up between stages)
+    - assert:
+        ## aa apply pod on kind-worker
+        resource:
+          kind: Pod
+          apiVersion: v1
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: aa-1.2.3
+            annotations:
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
+                {
+                  "name": "aa",
+                  "version": "1.2.3",
+                  "skyhook": "cleanup-pods",
+                  "stage": "apply",
+                  "image": "ghcr.io/nvidia/skyhook/agentless"
+                }
+            ownerReferences:
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
+          spec:
+            nodeName: kind-worker
+            initContainers:
+              - name: aa-init
+              - name: aa-apply
+                args:
+                  ([0]): apply
+                  ([1]): /root
+                  (length(@)): 3
+              - name: aa-applycheck
+                args:
+                  ([0]): apply-check
+                  ([1]): /root
+                  (length(@)): 3
+    - assert:
+        ## aa config pod on kind-worker
+        resource:
+          kind: Pod
+          apiVersion: v1
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: aa-1.2.3
+            annotations:
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
+                {
+                  "name": "aa",
+                  "version": "1.2.3",
+                  "skyhook": "cleanup-pods",
+                  "stage": "config",
+                  "image": "ghcr.io/nvidia/skyhook/agentless"
+                }
+            ownerReferences:
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
+          spec:
+            nodeName: kind-worker
+            initContainers:
+              - name: aa-init
+              - name: aa-config
+                args:
+                  ([0]): config
+                  ([1]): /root
+                  (length(@)): 3
+              - name: aa-configcheck
+                args:
+                  ([0]): config-check
+                  ([1]): /root
+                  (length(@)): 3
+    - assert:
+        ## bb apply pod on kind-worker (errors due to EXIT_CODE=2)
+        resource:
+          kind: Pod
+          apiVersion: v1
+          metadata:
+            namespace: nodewright
+            labels:
+              nodewright.nvidia.com/name: cleanup-pods
+              nodewright.nvidia.com/package: bb-1.2
+            annotations:
+              ("nodewright.nvidia.com/package" && parse_json("nodewright.nvidia.com/package")):
+                {
+                  "name": "bb",
+                  "version": "1.2",
+                  "skyhook": "cleanup-pods",
+                  "stage": "apply",
+                  "image": "ghcr.io/nvidia/skyhook/agentless"
+                }
+            ownerReferences:
+              ## controller: true proves the pod is the Job's child, not merely referencing
+              ## one. The Job name carries a config hash and is deliberately not asserted.
+              - apiVersion: batch/v1
+                kind: Job
+                controller: true
+          spec:
+            nodeName: kind-worker
+            initContainers:
+              - name: bb-init
+              - name: bb-apply
+                args:
+                  ([0]): apply
+                  ([1]): /root
+                  (length(@)): 3
+              - name: bb-applycheck
+                args:
+                  ([0]): apply-check
+                  ([1]): /root
+                  (length(@)): 3
+    ## assert final skyhook status
+    - assert:
+        ## skyhook shows erroring on both nodes
+        resource:
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
+          metadata:
+            name: cleanup-pods
+          status:
+            status: erroring
+            observedGeneration: 4
+            nodeState:
+              kind-worker:
+                aa|1.2.3:
+                  name: aa
+                  state: complete
+                  version: '1.2.3'
+                  image: ghcr.io/nvidia/skyhook/agentless
+                  stage: config
+                bb|1.2:
+                  name: bb
+                  state: erroring
+                  version: '1.2'
+                  image: ghcr.io/nvidia/skyhook/agentless
+                  stage: apply
+              kind-worker2:
+                aa|1.2.3:
+                  name: aa
+                  state: complete
+                  version: '1.2.3'
+                  image: ghcr.io/nvidia/skyhook/agentless
+                  stage: config
+                bb|1.2:
+                  name: bb
+                  state: erroring
+                  version: '1.2'
+                  image: ghcr.io/nvidia/skyhook/agentless
+                  stage: config
+            nodeStatus:
+              (values(@)):
+                - erroring
+                - erroring

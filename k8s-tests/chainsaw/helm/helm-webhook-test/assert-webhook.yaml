@@ -19,14 +19,21 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: webhook-cert
-  namespace: skyhook
+  namespace: nodewright
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  name: skyhook-operator-validating-webhook
+  name: nodewright-validating-webhook
+## Wait until the operator has injected the CA into every webhook's caBundle.
+## The chart ships no caBundle; the operator self-manages certs and patches it
+## in. Asserting presence here (chainsaw polls) closes the race where the test
+## would otherwise fire a CR before the CA is synced and get a TLS error
+## instead of the expected admission rejection.
+(length(webhooks[?clientConfig.caBundle == null]) == `0`): true
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: skyhook-operator-mutating-webhook
+  name: nodewright-mutating-webhook
+(length(webhooks[?clientConfig.caBundle == null]) == `0`): true

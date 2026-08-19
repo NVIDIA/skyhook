@@ -29,12 +29,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/context"
 )
 
-const testSkyhookNameLogs = "my-skyhook"
+const (
+	testSkyhookNameLogs = "my-skyhook"
+	testNamespace       = "nodewright"
+)
 
 var _ = Describe("Package Logs Command", func() {
 	Describe("getContainerStatus", func() {
@@ -243,7 +246,7 @@ var _ = Describe("Package Logs Command", func() {
 			pod := &corev1.Pod{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
-						{Name: "pause"}, // Skyhook always has a pause container but no init containers is invalid
+						{Name: "pause"}, // NodeWright always has a pause container but no init containers is invalid
 					},
 				},
 			}
@@ -282,7 +285,7 @@ var _ = Describe("Package Logs Command", func() {
 				packageName: "pkg1",
 			}
 
-			err := runLogs(gocontext.Background(), output, kubeClient, opts, "skyhook")
+			err := runLogs(gocontext.Background(), output, kubeClient, opts, testNamespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("No pods found"))
 		})
@@ -292,7 +295,7 @@ var _ = Describe("Package Logs Command", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "other-pod",
-					Namespace: context.DefaultNamespace,
+					Namespace: testNamespace,
 					Labels: map[string]string{
 						v1alpha1.METADATA_PREFIX + "/name":    "other-skyhook",
 						v1alpha1.METADATA_PREFIX + "/package": "other-pkg",
@@ -302,14 +305,14 @@ var _ = Describe("Package Logs Command", func() {
 					NodeName: "node1",
 				},
 			}
-			_, _ = fakeKube.CoreV1().Pods(context.DefaultNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+			_, _ = fakeKube.CoreV1().Pods(testNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",
 			}
 
-			err := runLogs(gocontext.Background(), output, kubeClient, opts, "skyhook")
+			err := runLogs(gocontext.Background(), output, kubeClient, opts, testNamespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("No pods found"))
 		})
@@ -320,7 +323,7 @@ var _ = Describe("Package Logs Command", func() {
 				pod := &corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "pod-" + nodeName,
-						Namespace: context.DefaultNamespace,
+						Namespace: testNamespace,
 						Labels: map[string]string{
 							v1alpha1.METADATA_PREFIX + "/name":    testSkyhookNameLogs,
 							v1alpha1.METADATA_PREFIX + "/package": "pkg1-1.0.0",
@@ -344,7 +347,7 @@ var _ = Describe("Package Logs Command", func() {
 						},
 					},
 				}
-				_, _ = fakeKube.CoreV1().Pods(context.DefaultNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+				_, _ = fakeKube.CoreV1().Pods(testNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 			}
 
 			opts := &logsOptions{
@@ -353,7 +356,7 @@ var _ = Describe("Package Logs Command", func() {
 				node:        "node1",
 			}
 
-			err := runLogs(gocontext.Background(), output, kubeClient, opts, "skyhook")
+			err := runLogs(gocontext.Background(), output, kubeClient, opts, testNamespace)
 			Expect(err).NotTo(HaveOccurred())
 			// Should only show pod on node1
 			Expect(output.String()).To(ContainSubstring("pod-node1"))
@@ -364,7 +367,7 @@ var _ = Describe("Package Logs Command", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
-					Namespace: context.DefaultNamespace,
+					Namespace: testNamespace,
 					Labels: map[string]string{
 						v1alpha1.METADATA_PREFIX + "/name":    testSkyhookNameLogs,
 						v1alpha1.METADATA_PREFIX + "/package": "pkg1-1.0.0",
@@ -388,14 +391,14 @@ var _ = Describe("Package Logs Command", func() {
 					},
 				},
 			}
-			_, _ = fakeKube.CoreV1().Pods(context.DefaultNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+			_, _ = fakeKube.CoreV1().Pods(testNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",
 			}
 
-			err := runLogs(gocontext.Background(), output, kubeClient, opts, "skyhook")
+			err := runLogs(gocontext.Background(), output, kubeClient, opts, testNamespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("test-pod"))
 		})
@@ -404,7 +407,7 @@ var _ = Describe("Package Logs Command", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
-					Namespace: context.DefaultNamespace,
+					Namespace: testNamespace,
 					Labels: map[string]string{
 						v1alpha1.METADATA_PREFIX + "/name":    testSkyhookNameLogs,
 						v1alpha1.METADATA_PREFIX + "/package": "other-pkg-1.0.0",
@@ -414,14 +417,14 @@ var _ = Describe("Package Logs Command", func() {
 					NodeName: "node1",
 				},
 			}
-			_, _ = fakeKube.CoreV1().Pods(context.DefaultNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
+			_, _ = fakeKube.CoreV1().Pods(testNamespace).Create(gocontext.Background(), pod, metav1.CreateOptions{})
 
 			opts := &logsOptions{
 				skyhookName: testSkyhookNameLogs,
 				packageName: "pkg1",
 			}
 
-			err := runLogs(gocontext.Background(), output, kubeClient, opts, "skyhook")
+			err := runLogs(gocontext.Background(), output, kubeClient, opts, testNamespace)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output.String()).To(ContainSubstring("No pods matched"))
 		})
@@ -498,11 +501,11 @@ var _ = Describe("Package Logs Command", func() {
 		It("should have correct command metadata", func() {
 			Expect(logsCmd.Use).To(Equal("logs <package-name>"))
 			Expect(logsCmd.Short).To(ContainSubstring("Retrieve logs"))
-			Expect(logsCmd.Long).To(ContainSubstring("Skyhook labels"))
+			Expect(logsCmd.Long).To(ContainSubstring("NodeWright labels"))
 		})
 
 		It("should have example usage", func() {
-			Expect(logsCmd.Example).To(ContainSubstring("kubectl skyhook"))
+			Expect(logsCmd.Example).To(ContainSubstring("kubectl nodewright"))
 			Expect(logsCmd.Example).To(ContainSubstring("-f"))
 			Expect(logsCmd.Example).To(ContainSubstring("--tail"))
 		})
@@ -532,9 +535,9 @@ var _ = Describe("Package Logs Command", func() {
 		})
 	})
 
-	Describe("skyhookNamespace constant", func() {
-		It("should be set to skyhook", func() {
-			Expect(context.DefaultNamespace).To(Equal("skyhook"))
+	Describe("default namespace", func() {
+		It("should be nodewright", func() {
+			Expect(context.NewGlobalFlags().Namespace()).To(Equal("nodewright"))
 		})
 	})
 })

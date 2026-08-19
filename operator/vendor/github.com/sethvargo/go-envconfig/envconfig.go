@@ -58,6 +58,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -96,6 +97,8 @@ const (
 	ErrNotStruct          = internalError("input must be a struct")
 	ErrPrefixNotStruct    = internalError("prefix is only valid on struct types")
 	ErrPrivateField       = internalError("cannot parse private fields")
+	ErrRecursivePointer   = internalError("pointer type is recursive")
+	ErrRecursiveStruct    = internalError("struct type is recursive")
 	ErrRequiredAndDefault = internalError("field cannot be required and have a default value")
 	ErrUnknownOption      = internalError("unknown option")
 )
@@ -106,6 +109,17 @@ type Lookuper interface {
 	// value. If a value is found, it returns the value and true. If a value is
 	// not found, it returns the empty string and false.
 	Lookup(key string) (string, bool)
+}
+
+var _ Lookuper = (LookuperFunc)(nil)
+
+// LookuperFunc implements the [Lookuper] interface and provides a quick way to
+// create an anonymous function that performs a lookup for a string-based key.
+type LookuperFunc func(key string) (string, bool)
+
+// Lookup implements [Lookuper].
+func (l LookuperFunc) Lookup(key string) (string, bool) {
+	return l(key)
 }
 
 // osLookuper looks up environment configuration from the local environment.
@@ -171,16 +185,28 @@ type prefixLookuper struct {
 }
 
 func (p *prefixLookuper) Lookup(key string) (string, bool) {
-	return p.l.Lookup(p.Key(key))
+	return p.l.Lookup(p.prefix + key)
 }
 
+// Key returns the given key with this lookuper's prefix prepended, resolved
+// through the wrapped lookuper's own Key when it implements the keyed
+// extension. This mirrors Lookup, which hands the prefixed key to the wrapped
+// lookuper: the name returned is the name the underlying chain resolves.
 func (p *prefixLookuper) Key(key string) string {
-	return p.prefix + key
+	key = p.prefix + key
+	if keyer, ok := p.l.(keyedLookuper); ok {
+		key = keyer.Key(key)
+	}
+	return key
 }
 
 func (p *prefixLookuper) Unwrap() Lookuper {
 	l := p.l
-	for v, ok := l.(unwrappableLookuper); ok; {
+	for {
+		v, ok := l.(unwrappableLookuper)
+		if !ok {
+			break
+		}
 		l = v.Unwrap()
 	}
 	return l
@@ -203,16 +229,23 @@ type keyedLookuper interface {
 	Key(key string) string
 }
 
-// Decoder is an interface that custom types/fields can implement to control how
-// decoding takes place. For example:
+// Decoder is the legacy implementation of [DecoderCtx], but it does not accept
+// a context as the first parameter to `EnvDecode`. Please use [DecoderCtx]
+// instead, as this will be removed in a future release.
+type Decoder interface {
+	EnvDecode(val string) error
+}
+
+// DecoderCtx is an interface that custom types/fields can implement to control
+// how decoding takes place. For example:
 //
 //	type MyType string
 //
-//	func (mt MyType) EnvDecode(val string) error {
+//	func (mt MyType) EnvDecode(ctx context.Context, val string) error {
 //	    return "CUSTOM-"+val
 //	}
-type Decoder interface {
-	EnvDecode(val string) error
+type DecoderCtx interface {
+	EnvDecode(ctx context.Context, val string) error
 }
 
 // options are internal options for decoding.
@@ -264,17 +297,43 @@ type Config struct {
 	// default value is false.
 	DefaultRequired bool
 
-	// Mutators is an optiona list of mutators to apply to lookups.
+	// Mutators is an optional list of mutators to apply to lookups.
 	Mutators []Mutator
 }
 
 // Process decodes the struct using values from environment variables. See
 // [ProcessWith] for a more customizable version.
+//
+// As a special case, if the input for the target is a [*Config], then this
+// function will call [ProcessWith] using the provided config, with any mutation
+// appended.
 func Process(ctx context.Context, i any, mus ...Mutator) error {
+	if v, ok := i.(*Config); ok {
+		v.Mutators = append(v.Mutators, mus...)
+		return ProcessWith(ctx, v)
+	}
 	return ProcessWith(ctx, &Config{
 		Target:   i,
 		Mutators: mus,
 	})
+}
+
+// MustProcess is a helper that calls [Process] and panics if an error is
+// encountered. Unlike [Process], the input value is returned, making it ideal
+// for anonymous initializations:
+//
+//	var env = envconfig.MustProcess(context.Background(), &struct{
+//	  Field string `env:"FIELD,required"`
+//	})
+//
+// This is not recommend for production services, but it can be useful for quick
+// CLIs and scripts that want to take advantage of envconfig's environment
+// parsing at the expense of testability and graceful error handling.
+func MustProcess[T any](ctx context.Context, i T, mus ...Mutator) T {
+	if err := Process(ctx, i, mus...); err != nil {
+		panic(err)
+	}
+	return i
 }
 
 // ProcessWith executes the decoding process using the provided [Config].
@@ -287,20 +346,21 @@ func ProcessWith(ctx context.Context, c *Config) error {
 		c.Lookuper = OsLookuper()
 	}
 
-	// Deep copy the slice and remove any nil mutators.
-	var mus []Mutator
-	for _, m := range c.Mutators {
-		if m != nil {
-			mus = append(mus, m)
-		}
-	}
-	c.Mutators = mus
+	// Clone the slice (so we don't mutate the caller's) and drop any nil
+	// mutators.
+	c.Mutators = slices.DeleteFunc(slices.Clone(c.Mutators), func(m Mutator) bool {
+		return m == nil
+	})
 
-	return processWith(ctx, c)
+	return processWith(ctx, c, make(map[reflect.Type]bool))
 }
 
 // processWith is a helper that retains configuration from the parent structs.
-func processWith(ctx context.Context, c *Config) error {
+// path tracks the struct types on the current descent path: the descent
+// materializes nil struct pointers as it goes, so a type cycle can never
+// terminate on its own and is reported as [ErrRecursiveStruct] instead of
+// recursing without bound.
+func processWith(ctx context.Context, c *Config, path map[reflect.Type]bool) error {
 	i := c.Target
 
 	l := c.Lookuper
@@ -309,7 +369,7 @@ func processWith(ctx context.Context, c *Config) error {
 	}
 
 	v := reflect.ValueOf(i)
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		return ErrNotPtr
 	}
 
@@ -319,6 +379,11 @@ func processWith(ctx context.Context, c *Config) error {
 	}
 
 	t := e.Type()
+	if path[t] {
+		return fmt.Errorf("%s: %w", t, ErrRecursiveStruct)
+	}
+	path[t] = true
+	defer delete(path, t)
 
 	structDelimiter := c.DefaultDelimiter
 	if structDelimiter == "" {
@@ -338,7 +403,7 @@ func processWith(ctx context.Context, c *Config) error {
 
 	mutators := c.Mutators
 
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		ef := e.Field(i)
 		tf := t.Field(i)
 		tag := tf.Tag.Get(envTag)
@@ -362,7 +427,7 @@ func processWith(ctx context.Context, c *Config) error {
 
 		// NoInit is only permitted on pointers.
 		if opts.NoInit &&
-			ef.Kind() != reflect.Ptr &&
+			ef.Kind() != reflect.Pointer &&
 			ef.Kind() != reflect.Slice &&
 			ef.Kind() != reflect.Map &&
 			ef.Kind() != reflect.UnsafePointer {
@@ -385,33 +450,55 @@ func processWith(ctx context.Context, c *Config) error {
 		required := structRequired || opts.Required
 
 		isNilStructPtr := false
+		var nilPtrOrigin, nilPtrChain reflect.Value
 		setNilStruct := func(v reflect.Value) {
-			origin := e.Field(i)
 			if isNilStructPtr {
-				empty := reflect.New(origin.Type().Elem()).Interface()
+				empty := reflect.New(v.Type().Elem()).Interface()
 
 				// If a struct (after traversal) equals to the empty value, it means
 				// nothing was changed in any sub-fields. With the noinit opt, we skip
 				// setting the empty value to the original struct pointer (keep it nil).
 				if !reflect.DeepEqual(v.Interface(), empty) || !noInit {
-					origin.Set(v)
+					nilPtrOrigin.Set(nilPtrChain)
 				}
 			}
 		}
 
 		// Initialize pointer structs.
 		pointerWasSet := false
-		for ef.Kind() == reflect.Ptr {
+		if ef.Kind() == reflect.Pointer && ef.Type().Elem().Kind() == reflect.Pointer {
+			// A named pointer type can dereference to itself (type P *P), directly
+			// or through other named pointer types. No chain of such a type ever
+			// reaches a value to decode into, so dereferencing one below (or
+			// materializing one in processField) would never terminate.
+			if _, ok := nonPointerType(ef.Type()); !ok {
+				return fmt.Errorf("%s: %s: %w", tf.Name, ef.Type(), ErrRecursivePointer)
+			}
+		}
+		for ef.Kind() == reflect.Pointer {
 			if ef.IsNil() {
-				if ef.Type().Elem().Kind() != reflect.Struct {
-					// This is a nil pointer to something that isn't a struct, like
-					// *string. Move along.
+				base, _ := nonPointerType(ef.Type()) // cannot cycle, checked above
+				if base.Kind() != reflect.Struct {
+					// This is a nil pointer chain to something that isn't a struct,
+					// like *string or **string. Move along; processField
+					// materializes those through the field itself.
 					break
 				}
 
 				isNilStructPtr = true
-				// Use an empty struct of the type so we can traverse.
-				ef = reflect.New(ef.Type().Elem()).Elem()
+				nilPtrOrigin = ef
+				// Materialize a detached pointer chain that keeps the field's
+				// declared type at every level, initializing each cell from its
+				// own element type the way processField's pointer loop does, and
+				// traverse the empty struct at its end. setNilStruct attaches
+				// the whole chain to the origin with a single Set.
+				nilPtrChain = reflect.New(ef.Type().Elem())
+				cell := nilPtrChain.Elem()
+				for cell.Kind() == reflect.Pointer {
+					cell.Set(reflect.New(cell.Type().Elem()))
+					cell = cell.Elem()
+				}
+				ef = cell
 			} else {
 				pointerWasSet = true
 				ef = ef.Elem()
@@ -434,7 +521,7 @@ func processWith(ctx context.Context, c *Config) error {
 			}
 
 			if found || usedDefault || decodeUnset {
-				if ok, err := processAsDecoder(val, ef); ok {
+				if ok, err := processAsDecoder(ctx, val, ef); ok {
 					if err != nil {
 						return err
 					}
@@ -458,7 +545,7 @@ func processWith(ctx context.Context, c *Config) error {
 				DefaultOverwrite: overwrite,
 				DefaultRequired:  required,
 				Mutators:         mutators,
-			}); err != nil {
+			}, path); err != nil {
 				return fmt.Errorf("%s: %w", tf.Name, err)
 			}
 
@@ -498,7 +585,7 @@ func processWith(ctx context.Context, c *Config) error {
 		// Apply any mutators. Mutators are applied after the lookup, but before any
 		// type conversions. They always resolve to a string (or error), so we don't
 		// call mutators when the environment variable was not set.
-		if found || usedDefault {
+		if len(mutators) > 0 && (found || usedDefault) {
 			originalKey := key
 			resolvedKey := originalKey
 			if keyer, ok := l.(keyedLookuper); ok {
@@ -519,8 +606,8 @@ func processWith(ctx context.Context, c *Config) error {
 		}
 
 		// Set value.
-		if err := processField(val, ef, delimiter, separator, noInit); err != nil {
-			return fmt.Errorf("%s(%q): %w", tf.Name, val, err)
+		if err := processField(ctx, val, ef, delimiter, separator, noInit); err != nil {
+			return fmt.Errorf("%s: %w", tf.Name, err)
 		}
 	}
 
@@ -529,62 +616,132 @@ func processWith(ctx context.Context, c *Config) error {
 
 // SplitString splits the given string on the provided rune, unless the rune is
 // escaped by the escape character.
-func splitString(s string, on string, esc string) []string {
+func splitString(s, on, esc string) []string {
 	a := strings.Split(s, on)
 
 	for i := len(a) - 2; i >= 0; i-- {
 		if strings.HasSuffix(a[i], esc) {
 			a[i] = a[i][:len(a[i])-len(esc)] + on + a[i+1]
-			a = append(a[:i+1], a[i+2:]...)
+			a = slices.Delete(a, i+1, i+2)
 		}
 	}
 	return a
 }
 
-// keyAndOpts parses the given tag value (e.g. env:"foo,required") and
-// returns the key name and options as a list.
-func keyAndOpts(tag string) (string, *options, error) {
-	parts := splitString(tag, ",", "\\")
-	key, tagOpts := strings.TrimSpace(parts[0]), parts[1:]
-
-	if key != "" && !validateEnvName(key) {
-		return "", nil, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
-	}
-
+// keyAndOpts parses the given tag value (e.g. env:"foo,required") and returns
+// the key name and the parsed options.
+func keyAndOpts(tag string) (string, options, error) {
 	var opts options
 
-LOOP:
-	for i, o := range tagOpts {
-		o = strings.TrimLeftFunc(o, unicode.IsSpace)
-		search := strings.ToLower(o)
-
-		switch {
-		case search == optDecodeUnset:
-			opts.DecodeUnset = true
-		case search == optOverwrite:
-			opts.Overwrite = true
-		case search == optRequired:
-			opts.Required = true
-		case search == optNoInit:
-			opts.NoInit = true
-		case strings.HasPrefix(search, optPrefix):
-			opts.Prefix = strings.TrimPrefix(o, optPrefix)
-		case strings.HasPrefix(search, optDelimiter):
-			opts.Delimiter = strings.TrimPrefix(o, optDelimiter)
-		case strings.HasPrefix(search, optSeparator):
-			opts.Separator = strings.TrimPrefix(o, optSeparator)
-		case strings.HasPrefix(search, optDefault):
-			// If a default value was given, assume everything after is the provided
-			// value, including comma-seprated items.
-			o = strings.TrimLeft(strings.Join(tagOpts[i:], ","), " ")
-			opts.Default = strings.TrimPrefix(o, optDefault)
-			break LOOP
-		default:
-			return "", nil, fmt.Errorf("%q: %w", o, ErrUnknownOption)
+	// Fast path: no comma means the entire tag is the key with no options.
+	if strings.IndexByte(tag, ',') == -1 {
+		key := strings.TrimSpace(tag)
+		if key != "" && !validateEnvName(key) {
+			return "", opts, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
 		}
+		return key, opts, nil
 	}
 
-	return key, &opts, nil
+	// Escape path: a backslash may escape a comma (for example a literal comma
+	// in a delimiter or default value). This is rare, so fall back to the
+	// allocation-heavier split that resolves escapes.
+	if strings.IndexByte(tag, '\\') != -1 {
+		parts := splitString(tag, ",", "\\")
+		key := strings.TrimSpace(parts[0])
+		if key != "" && !validateEnvName(key) {
+			return "", opts, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
+		}
+
+		tagOpts := parts[1:]
+		for i, o := range tagOpts {
+			isDefault, err := applyTagOption(o, &opts)
+			if err != nil {
+				return "", opts, err
+			}
+			if isDefault {
+				o = strings.TrimLeft(strings.Join(tagOpts[i:], ","), " ")
+				opts.Default = strings.TrimPrefix(o, optDefault)
+				break
+			}
+		}
+		return key, opts, nil
+	}
+
+	// Common path: commas are present but there are no escapes, so the segments
+	// can be iterated in place without allocating a slice.
+	comma := strings.IndexByte(tag, ',')
+	key := strings.TrimSpace(tag[:comma])
+	if key != "" && !validateEnvName(key) {
+		return "", opts, fmt.Errorf("%q: %w ", key, ErrInvalidEnvvarName)
+	}
+
+	rest := tag[comma+1:]
+	for {
+		c := strings.IndexByte(rest, ',')
+		seg := rest
+		if c != -1 {
+			seg = rest[:c]
+		}
+
+		// A default option consumes the remainder of the tag verbatim, including
+		// any commas, so extract it directly and stop.
+		if hasPrefixFold(strings.TrimLeftFunc(seg, unicode.IsSpace), optDefault) {
+			o := strings.TrimLeft(rest, " ")
+			opts.Default = strings.TrimPrefix(o, optDefault)
+			break
+		}
+
+		if _, err := applyTagOption(seg, &opts); err != nil {
+			return "", opts, err
+		}
+
+		if c == -1 {
+			break
+		}
+		rest = rest[c+1:]
+	}
+
+	return key, opts, nil
+}
+
+// applyTagOption parses a single option token (the text between two commas) and
+// records it on opts. It returns isDefault=true when the token is a "default="
+// option; in that case the caller is responsible for extracting the value,
+// which may itself contain commas.
+//
+// Boolean keyword options ignore surrounding whitespace. Value options
+// (prefix=, delimiter=, separator=, default=) intentionally preserve any
+// trailing whitespace as part of their value.
+func applyTagOption(o string, opts *options) (isDefault bool, err error) {
+	o = strings.TrimLeftFunc(o, unicode.IsSpace)
+	keyword := strings.TrimRightFunc(o, unicode.IsSpace)
+
+	switch {
+	case strings.EqualFold(keyword, optDecodeUnset):
+		opts.DecodeUnset = true
+	case strings.EqualFold(keyword, optOverwrite):
+		opts.Overwrite = true
+	case strings.EqualFold(keyword, optRequired):
+		opts.Required = true
+	case strings.EqualFold(keyword, optNoInit):
+		opts.NoInit = true
+	case hasPrefixFold(o, optPrefix):
+		opts.Prefix = strings.TrimPrefix(o, optPrefix)
+	case hasPrefixFold(o, optDelimiter):
+		opts.Delimiter = strings.TrimPrefix(o, optDelimiter)
+	case hasPrefixFold(o, optSeparator):
+		opts.Separator = strings.TrimPrefix(o, optSeparator)
+	case hasPrefixFold(o, optDefault):
+		return true, nil
+	default:
+		return false, fmt.Errorf("%q: %w", o, ErrUnknownOption)
+	}
+	return false, nil
+}
+
+// hasPrefixFold reports whether s begins with prefix, ignoring case.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
 
 // lookup looks up the given key using the provided Lookuper and options. The
@@ -616,6 +773,18 @@ func lookup(key string, required bool, defaultValue string, l Lookuper) (string,
 		}
 
 		if defaultValue != "" {
+			// Handle escaped "$" by replacing the value with a character that is
+			// invalid to have in an environment variable. A more perfect solution
+			// would be to re-implement os.Expand to handle this case, but that's been
+			// proposed and rejected in the stdlib. Additionally, the function is
+			// dependent on other private functions in the [os] package, so
+			// duplicating it is toilsome.
+			//
+			// While admittidly a hack, replacing the escaped values with invalid
+			// characters (and then replacing later), is a reasonable solution.
+			defaultValue = strings.ReplaceAll(defaultValue, "\\\\", "\u0000")
+			defaultValue = strings.ReplaceAll(defaultValue, "\\$", "\u0008")
+
 			// Expand the default value. This allows for a default value that maps to
 			// a different environment variable.
 			val = os.Expand(defaultValue, func(i string) string {
@@ -631,6 +800,9 @@ func lookup(key string, required bool, defaultValue string, l Lookuper) (string,
 				return ""
 			})
 
+			val = strings.ReplaceAll(val, "\u0000", "\\")
+			val = strings.ReplaceAll(val, "\u0008", "$")
+
 			return val, false, true, nil
 		}
 	}
@@ -640,7 +812,7 @@ func lookup(key string, required bool, defaultValue string, l Lookuper) (string,
 
 // processAsDecoder processes the given value as a decoder or custom
 // unmarshaller.
-func processAsDecoder(v string, ef reflect.Value) (bool, error) {
+func processAsDecoder(ctx context.Context, v string, ef reflect.Value) (bool, error) {
 	// Keep a running error. It's possible that a property might implement
 	// multiple decoders, and we don't know *which* decoder will succeed. If we
 	// get through all of them, we'll return the most recent error.
@@ -659,6 +831,13 @@ func processAsDecoder(v string, ef reflect.Value) (bool, error) {
 		// never attempt to use other decoders in case of failure. EnvDecode's
 		// decoding logic is "the right one", and the error returned (if any)
 		// is the most specific we can get.
+		if dec, ok := iface.(DecoderCtx); ok {
+			imp = true
+			err = dec.EnvDecode(ctx, v)
+			return imp, err
+		}
+
+		// Check legacy decoder implementation
 		if dec, ok := iface.(Decoder); ok {
 			imp = true
 			err = dec.EnvDecode(v)
@@ -697,14 +876,44 @@ func processAsDecoder(v string, ef reflect.Value) (bool, error) {
 	return imp, err
 }
 
-func processField(v string, ef reflect.Value, delimiter, separator string, noInit bool) error {
+// nonPointerType returns the first non-pointer type reached by successively
+// dereferencing t, and reports whether one exists. Named pointer types can
+// dereference to themselves (type P *P), directly or through other named
+// pointer types; such a chain never reaches a non-pointer type. The two
+// cursors advance at different speeds, so on a cyclic chain they eventually
+// meet, without allocating a set of visited types.
+func nonPointerType(t reflect.Type) (reflect.Type, bool) {
+	slow, fast := t, t
+	for fast.Kind() == reflect.Pointer {
+		fast = fast.Elem()
+		if fast.Kind() != reflect.Pointer {
+			return fast, true
+		}
+		fast = fast.Elem()
+		slow = slow.Elem()
+		if slow == fast {
+			return nil, false
+		}
+	}
+	return fast, true
+}
+
+func processField(ctx context.Context, v string, ef reflect.Value, delimiter, separator string, noInit bool) error {
 	// If the input value is empty and initialization is skipped, do nothing.
 	if v == "" && noInit {
 		return nil
 	}
 
 	// Handle pointers and uninitialized pointers.
-	for ef.Type().Kind() == reflect.Ptr {
+	if ef.Type().Kind() == reflect.Pointer && ef.Type().Elem().Kind() == reflect.Pointer {
+		// Collection elements do not pass through the field-level check in
+		// processWith, so reject recursive pointer types here too, before the
+		// materialization below chases the chain.
+		if _, ok := nonPointerType(ef.Type()); !ok {
+			return fmt.Errorf("%s: %w", ef.Type(), ErrRecursivePointer)
+		}
+	}
+	for ef.Type().Kind() == reflect.Pointer {
 		if ef.IsNil() {
 			ef.Set(reflect.New(ef.Type().Elem()))
 		}
@@ -715,7 +924,7 @@ func processField(v string, ef reflect.Value, delimiter, separator string, noIni
 	tk := tf.Kind()
 
 	// Handle existing decoders.
-	if ok, err := processAsDecoder(v, ef); ok {
+	if ok, err := processAsDecoder(ctx, v, ef); ok {
 		return err
 	}
 
@@ -778,19 +987,19 @@ func processField(v string, ef reflect.Value, delimiter, separator string, noIni
 		vals := strings.Split(v, delimiter)
 		mp := reflect.MakeMapWithSize(tf, len(vals))
 		for _, val := range vals {
-			pair := strings.SplitN(val, separator, 2)
-			if len(pair) < 2 {
+			mKey, mVal, ok := strings.Cut(val, separator)
+			if !ok {
 				return fmt.Errorf("%s: %w", val, ErrInvalidMapItem)
 			}
-			mKey, mVal := strings.TrimSpace(pair[0]), strings.TrimSpace(pair[1])
+			mKey, mVal = strings.TrimSpace(mKey), strings.TrimSpace(mVal)
 
 			k := reflect.New(tf.Key()).Elem()
-			if err := processField(mKey, k, delimiter, separator, noInit); err != nil {
+			if err := processField(ctx, mKey, k, delimiter, separator, noInit); err != nil {
 				return fmt.Errorf("%s: %w", mKey, err)
 			}
 
 			v := reflect.New(tf.Elem()).Elem()
-			if err := processField(mVal, v, delimiter, separator, noInit); err != nil {
+			if err := processField(ctx, mVal, v, delimiter, separator, noInit); err != nil {
 				return fmt.Errorf("%s: %w", mVal, err)
 			}
 
@@ -808,7 +1017,7 @@ func processField(v string, ef reflect.Value, delimiter, separator string, noIni
 			s := reflect.MakeSlice(tf, len(vals), len(vals))
 			for i, val := range vals {
 				val = strings.TrimSpace(val)
-				if err := processField(val, s.Index(i), delimiter, separator, noInit); err != nil {
+				if err := processField(ctx, val, s.Index(i), delimiter, separator, noInit); err != nil {
 					return fmt.Errorf("%s: %w", val, err)
 				}
 			}
@@ -830,7 +1039,7 @@ func validateEnvName(s string) bool {
 	}
 
 	for i, r := range s {
-		if (i == 0 && !isLetter(r)) || (!isLetter(r) && !isNumber(r) && r != '_') {
+		if (i == 0 && !isLetter(r) && r != '_') || (!isLetter(r) && !isNumber(r) && r != '_') {
 			return false
 		}
 	}

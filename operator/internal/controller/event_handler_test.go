@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -19,250 +19,101 @@
 package controller
 
 import (
-	"context"
 	"errors"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 
-	// . "github.com/onsi/gomega"
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
-	"github.com/NVIDIA/nodewright/operator/internal/dal"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	dalmock "github.com/NVIDIA/nodewright/operator/internal/dal/mock"
-	MockClient "github.com/NVIDIA/nodewright/operator/internal/mocks/client"
 	"github.com/NVIDIA/nodewright/operator/internal/mocks/workqueue"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var _ = Describe("Event Handler Tests", func() {
+var _ = Describe("Global delay handler", func() {
 
-	const (
-		nodename = "foonode"
-	)
+	const delay = 50 * time.Millisecond
 
-	It("Pod Event matches a Skyhook", func() {
+	matchingLabels := map[string]string{"foo": "bar"}
 
-		dalMock := dalmock.MockDAL{}
+	skyhookList := &v1alpha1.NodeWrightList{
+		Items: []v1alpha1.NodeWright{{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec:       v1alpha1.NodeWrightSpec{NodeSelector: metav1.LabelSelector{MatchLabels: matchingLabels}},
+		}},
+	}
+
+	It("enqueues the global key for a node matched by a skyhook, on every event type", func() {
+
+		dalMock := &dalmock.MockDAL{}
 		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
-		handler := eventHandler{
-			logger: GinkgoLogr,
-			dal:    &dalMock,
-		}
+		handler := &globalDelayHandler{logger: GinkgoLogr, dal: dalMock, delay: delay}
 
-		labels := map[string]string{
-			"foo": "bar",
-		}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "foonode", Labels: matchingLabels}}
 
-		pod := &corev1.Pod{
-			Spec: corev1.PodSpec{
-				NodeName: nodename,
-			},
-		}
+		dalMock.EXPECT().GetSkyhooks(ctx).Return(skyhookList, nil).Times(4)
+		queue.EXPECT().AddAfter(globalReconcileKey, delay).Times(4)
 
-		node := &corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: labels,
-				Name:   nodename,
-			},
-		}
-
-		skyhooks := v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "foobar_name",
-				},
-				Spec: v1alpha1.SkyhookSpec{
-					NodeSelector: metav1.LabelSelector{MatchLabels: labels},
-				},
-			},
-			},
-		}
-
-		dalMock.EXPECT().GetSkyhooks(ctx).Return(&skyhooks, nil).Once()
-
-		dalMock.EXPECT().GetNode(ctx, nodename).Return(node, nil).Once()
-
-		queue.EXPECT().Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: skyhooks.Items[0].Name}}).Once()
-
-		/// test
-		handler.Create(ctx, event.CreateEvent{Object: pod}, queue)
-
-	})
-
-	It("Pod Event does not match a Skyhook", func() {
-
-		clientMock := MockClient.NewClient(GinkgoT())
-		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
-		handler := eventHandler{
-			logger: GinkgoLogr,
-			dal:    dal.New(clientMock),
-		}
-
-		pod := &corev1.Pod{
-			Spec: corev1.PodSpec{
-				NodeName: nodename,
-			},
-		}
-
-		node := &corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"foobar": "2000",
-				},
-				Name: nodename,
-			},
-		}
-
-		skyhook := v1alpha1.Skyhook{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "foobar_name",
-			},
-			Spec: v1alpha1.SkyhookSpec{
-				NodeSelector: metav1.LabelSelector{MatchLabels: map[string]string{
-					"foo": "Bar",
-				},
-				}},
-		}
-
-		clientMock.EXPECT().List(ctx, &v1alpha1.SkyhookList{}).
-			Return(nil).
-			Run(func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) {
-				l := list.(*v1alpha1.SkyhookList)
-				l.Items = append(l.Items, skyhook)
-			})
-
-		clientMock.EXPECT().Get(ctx, types.NamespacedName{Name: nodename}, &corev1.Node{}).
-			Return(nil).
-			Run(func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) {
-				n := obj.(*corev1.Node)
-				n.ObjectMeta = node.ObjectMeta
-			})
-
-		/// test
-		handler.Create(ctx, event.CreateEvent{Object: pod}, queue)
-	})
-
-	It("All Node Event matches a Skyhook", func() {
-		clientMock := MockClient.NewClient(GinkgoT())
-		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
-		handler := eventHandler{
-			logger: GinkgoLogr,
-			dal:    dal.New(clientMock),
-		}
-
-		node := &corev1.Node{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"foo": "Bar",
-				},
-				Name: nodename,
-			},
-		}
-
-		skyhook := v1alpha1.Skyhook{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "foobar_name",
-			},
-			Spec: v1alpha1.SkyhookSpec{
-				NodeSelector: metav1.LabelSelector{MatchLabels: map[string]string{
-					"foo": "Bar",
-				}},
-			},
-		}
-
-		clientMock.EXPECT().List(ctx, &v1alpha1.SkyhookList{}).
-			Return(nil).
-			Run(func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) {
-				l := list.(*v1alpha1.SkyhookList)
-				l.Items = append(l.Items, skyhook)
-			}).
-			Times(4)
-
-		queue.
-			EXPECT().
-			Add(reconcile.Request{NamespacedName: types.NamespacedName{Name: skyhook.Name}}).
-			Times(4)
-
-		/// test
 		handler.Create(ctx, event.CreateEvent{Object: node}, queue)
+		handler.Update(ctx, event.UpdateEvent{ObjectNew: node, ObjectOld: node}, queue)
 		handler.Delete(ctx, event.DeleteEvent{Object: node}, queue)
 		handler.Generic(ctx, event.GenericEvent{Object: node}, queue)
-
-		oldNode := node.DeepCopy()
-		oldNode.Labels = map[string]string{
-			"foobar": "2000",
-		}
-		handler.Update(ctx, event.UpdateEvent{ObjectNew: node, ObjectOld: oldNode}, queue)
 	})
 
-	It("List Skyhook errors", func() {
-		clientMock := MockClient.NewClient(GinkgoT())
+	It("does not enqueue for a node no skyhook selects", func() {
 
-		handler := eventHandler{
-			logger: GinkgoLogr,
-			dal:    dal.New(clientMock),
-		}
+		dalMock := &dalmock.MockDAL{}
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
+		handler := &globalDelayHandler{logger: GinkgoLogr, dal: dalMock, delay: delay}
 
-		pod := &corev1.Pod{
-			Spec: corev1.PodSpec{
-				NodeName: nodename,
-			},
-		}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "foonode", Labels: map[string]string{"no": "match"}}}
 
-		err := errors.New("this is an error")
+		// no AddAfter expectation: the mock fails the test if AddAfter is called.
+		dalMock.EXPECT().GetSkyhooks(ctx).Return(skyhookList, nil).Once()
 
-		clientMock.EXPECT().List(ctx, &v1alpha1.SkyhookList{}).
-			Return(err).
-			Times(3)
-
-		handler.Create(ctx, event.CreateEvent{Object: pod}, nil)
-		handler.Delete(ctx, event.DeleteEvent{Object: pod}, nil)
-		handler.Generic(ctx, event.GenericEvent{Object: pod}, nil)
-
+		handler.Create(ctx, event.CreateEvent{Object: node}, queue)
 	})
 
-	It("Get Node errors on pod event", func() {
-		clientMock := MockClient.NewClient(GinkgoT())
+	It("always enqueues for a skyhook event without consulting selectors", func() {
 
-		handler := eventHandler{
-			logger: GinkgoLogr,
-			dal:    dal.New(clientMock),
-		}
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
+		// dal is intentionally nil: a skyhook event must not need to list skyhooks.
+		handler := &globalDelayHandler{logger: GinkgoLogr, delay: delay}
 
-		pod := &corev1.Pod{
-			Spec: corev1.PodSpec{
-				NodeName: nodename,
-			},
-		}
+		skyhook := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
 
-		err := errors.New("this is an error")
-		skyhook := v1alpha1.Skyhook{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "foobar_name",
-			},
-			Spec: v1alpha1.SkyhookSpec{
-				NodeSelector: metav1.LabelSelector{MatchLabels: map[string]string{
-					"foo": "Bar",
-				}},
-			},
-		}
+		queue.EXPECT().AddAfter(globalReconcileKey, delay).Once()
 
-		clientMock.EXPECT().List(ctx, &v1alpha1.SkyhookList{}).
-			Return(nil).
-			Run(func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) {
-				l := list.(*v1alpha1.SkyhookList)
-				l.Items = append(l.Items, skyhook)
-			}).Once()
+		handler.Create(ctx, event.CreateEvent{Object: skyhook}, queue)
+	})
 
-		clientMock.EXPECT().Get(ctx, types.NamespacedName{Name: nodename}, &corev1.Node{}).
-			Return(err).
-			Once()
+	It("does not enqueue for a type relevance does not opt in", func() {
 
-		handler.Update(ctx, event.UpdateEvent{ObjectNew: pod, ObjectOld: pod}, nil)
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
+		handler := &globalDelayHandler{logger: GinkgoLogr, delay: delay}
 
+		// relevant() defaults to false, so a watch added without a matching case here
+		// silently drops every event. This pins that default down. Jobs land here now:
+		// JobReconciler owns them, and its node write is itself a Node event.
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "foopod", Namespace: "skyhook"}}
+
+		handler.Create(ctx, event.CreateEvent{Object: pod}, queue)
+	})
+
+	It("does not enqueue when listing skyhooks errors", func() {
+
+		dalMock := &dalmock.MockDAL{}
+		queue := workqueue.NewTypedRateLimitingInterface[reconcile.Request](GinkgoT())
+		handler := &globalDelayHandler{logger: GinkgoLogr, dal: dalMock, delay: delay}
+
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "foonode", Labels: matchingLabels}}
+
+		// no AddAfter expectation: a list error must not enqueue.
+		dalMock.EXPECT().GetSkyhooks(ctx).Return(nil, errors.New("boom")).Once()
+
+		handler.Create(ctx, event.CreateEvent{Object: node}, queue)
 	})
 })

@@ -23,10 +23,11 @@
 package wrapper
 
 import (
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/go-logr/logr"
 	mock "github.com/stretchr/testify/mock"
-	"k8s.io/api/core/v1"
+	v10 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // NewMockSkyhookNodeOnly creates a new instance of MockSkyhookNodeOnly. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -100,6 +101,39 @@ func (_c *MockSkyhookNodeOnly_Changed_Call) RunAndReturn(run func() bool) *MockS
 	return _c
 }
 
+// ClearDrainStart provides a mock function for the type MockSkyhookNodeOnly
+func (_mock *MockSkyhookNodeOnly) ClearDrainStart() {
+	_mock.Called()
+	return
+}
+
+// MockSkyhookNodeOnly_ClearDrainStart_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ClearDrainStart'
+type MockSkyhookNodeOnly_ClearDrainStart_Call struct {
+	*mock.Call
+}
+
+// ClearDrainStart is a helper method to define mock.On call
+func (_e *MockSkyhookNodeOnly_Expecter) ClearDrainStart() *MockSkyhookNodeOnly_ClearDrainStart_Call {
+	return &MockSkyhookNodeOnly_ClearDrainStart_Call{Call: _e.mock.On("ClearDrainStart")}
+}
+
+func (_c *MockSkyhookNodeOnly_ClearDrainStart_Call) Run(run func()) *MockSkyhookNodeOnly_ClearDrainStart_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_ClearDrainStart_Call) Return() *MockSkyhookNodeOnly_ClearDrainStart_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_ClearDrainStart_Call) RunAndReturn(run func()) *MockSkyhookNodeOnly_ClearDrainStart_Call {
+	_c.Run(run)
+	return _c
+}
+
 // Cordon provides a mock function for the type MockSkyhookNodeOnly
 func (_mock *MockSkyhookNodeOnly) Cordon() {
 	_mock.Called()
@@ -133,20 +167,75 @@ func (_c *MockSkyhookNodeOnly_Cordon_Call) RunAndReturn(run func()) *MockSkyhook
 	return _c
 }
 
+// DrainStartedAt provides a mock function for the type MockSkyhookNodeOnly
+func (_mock *MockSkyhookNodeOnly) DrainStartedAt() (*v1.Time, error) {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for DrainStartedAt")
+	}
+
+	var r0 *v1.Time
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func() (*v1.Time, error)); ok {
+		return returnFunc()
+	}
+	if returnFunc, ok := ret.Get(0).(func() *v1.Time); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*v1.Time)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func() error); ok {
+		r1 = returnFunc()
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockSkyhookNodeOnly_DrainStartedAt_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DrainStartedAt'
+type MockSkyhookNodeOnly_DrainStartedAt_Call struct {
+	*mock.Call
+}
+
+// DrainStartedAt is a helper method to define mock.On call
+func (_e *MockSkyhookNodeOnly_Expecter) DrainStartedAt() *MockSkyhookNodeOnly_DrainStartedAt_Call {
+	return &MockSkyhookNodeOnly_DrainStartedAt_Call{Call: _e.mock.On("DrainStartedAt")}
+}
+
+func (_c *MockSkyhookNodeOnly_DrainStartedAt_Call) Run(run func()) *MockSkyhookNodeOnly_DrainStartedAt_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_DrainStartedAt_Call) Return(time *v1.Time, err error) *MockSkyhookNodeOnly_DrainStartedAt_Call {
+	_c.Call.Return(time, err)
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_DrainStartedAt_Call) RunAndReturn(run func() (*v1.Time, error)) *MockSkyhookNodeOnly_DrainStartedAt_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetNode provides a mock function for the type MockSkyhookNodeOnly
-func (_mock *MockSkyhookNodeOnly) GetNode() *v1.Node {
+func (_mock *MockSkyhookNodeOnly) GetNode() *v10.Node {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetNode")
 	}
 
-	var r0 *v1.Node
-	if returnFunc, ok := ret.Get(0).(func() *v1.Node); ok {
+	var r0 *v10.Node
+	if returnFunc, ok := ret.Get(0).(func() *v10.Node); ok {
 		r0 = returnFunc()
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*v1.Node)
+			r0 = ret.Get(0).(*v10.Node)
 		}
 	}
 	return r0
@@ -169,12 +258,12 @@ func (_c *MockSkyhookNodeOnly_GetNode_Call) Run(run func()) *MockSkyhookNodeOnly
 	return _c
 }
 
-func (_c *MockSkyhookNodeOnly_GetNode_Call) Return(node *v1.Node) *MockSkyhookNodeOnly_GetNode_Call {
+func (_c *MockSkyhookNodeOnly_GetNode_Call) Return(node *v10.Node) *MockSkyhookNodeOnly_GetNode_Call {
 	_c.Call.Return(node)
 	return _c
 }
 
-func (_c *MockSkyhookNodeOnly_GetNode_Call) RunAndReturn(run func() *v1.Node) *MockSkyhookNodeOnly_GetNode_Call {
+func (_c *MockSkyhookNodeOnly_GetNode_Call) RunAndReturn(run func() *v10.Node) *MockSkyhookNodeOnly_GetNode_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -332,6 +421,94 @@ func (_c *MockSkyhookNodeOnly_PackageStatus_Call) Return(packageStatus *v1alpha1
 }
 
 func (_c *MockSkyhookNodeOnly_PackageStatus_Call) RunAndReturn(run func(name string) (*v1alpha1.PackageStatus, bool)) *MockSkyhookNodeOnly_PackageStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PruneLegacyMetadata provides a mock function for the type MockSkyhookNodeOnly
+func (_mock *MockSkyhookNodeOnly) PruneLegacyMetadata() bool {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for PruneLegacyMetadata")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func() bool); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockSkyhookNodeOnly_PruneLegacyMetadata_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PruneLegacyMetadata'
+type MockSkyhookNodeOnly_PruneLegacyMetadata_Call struct {
+	*mock.Call
+}
+
+// PruneLegacyMetadata is a helper method to define mock.On call
+func (_e *MockSkyhookNodeOnly_Expecter) PruneLegacyMetadata() *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
+	return &MockSkyhookNodeOnly_PruneLegacyMetadata_Call{Call: _e.mock.On("PruneLegacyMetadata")}
+}
+
+func (_c *MockSkyhookNodeOnly_PruneLegacyMetadata_Call) Run(run func()) *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_PruneLegacyMetadata_Call) Return(b bool) *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_PruneLegacyMetadata_Call) RunAndReturn(run func() bool) *MockSkyhookNodeOnly_PruneLegacyMetadata_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReloadState provides a mock function for the type MockSkyhookNodeOnly
+func (_mock *MockSkyhookNodeOnly) ReloadState() error {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReloadState")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func() error); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockSkyhookNodeOnly_ReloadState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReloadState'
+type MockSkyhookNodeOnly_ReloadState_Call struct {
+	*mock.Call
+}
+
+// ReloadState is a helper method to define mock.On call
+func (_e *MockSkyhookNodeOnly_Expecter) ReloadState() *MockSkyhookNodeOnly_ReloadState_Call {
+	return &MockSkyhookNodeOnly_ReloadState_Call{Call: _e.mock.On("ReloadState")}
+}
+
+func (_c *MockSkyhookNodeOnly_ReloadState_Call) Run(run func()) *MockSkyhookNodeOnly_ReloadState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_ReloadState_Call) Return(err error) *MockSkyhookNodeOnly_ReloadState_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_ReloadState_Call) RunAndReturn(run func() error) *MockSkyhookNodeOnly_ReloadState_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -580,6 +757,46 @@ func (_c *MockSkyhookNodeOnly_SetVersion_Call) Return() *MockSkyhookNodeOnly_Set
 }
 
 func (_c *MockSkyhookNodeOnly_SetVersion_Call) RunAndReturn(run func()) *MockSkyhookNodeOnly_SetVersion_Call {
+	_c.Run(run)
+	return _c
+}
+
+// StartDrain provides a mock function for the type MockSkyhookNodeOnly
+func (_mock *MockSkyhookNodeOnly) StartDrain(startedAt v1.Time) {
+	_mock.Called(startedAt)
+	return
+}
+
+// MockSkyhookNodeOnly_StartDrain_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'StartDrain'
+type MockSkyhookNodeOnly_StartDrain_Call struct {
+	*mock.Call
+}
+
+// StartDrain is a helper method to define mock.On call
+//   - startedAt v1.Time
+func (_e *MockSkyhookNodeOnly_Expecter) StartDrain(startedAt interface{}) *MockSkyhookNodeOnly_StartDrain_Call {
+	return &MockSkyhookNodeOnly_StartDrain_Call{Call: _e.mock.On("StartDrain", startedAt)}
+}
+
+func (_c *MockSkyhookNodeOnly_StartDrain_Call) Run(run func(startedAt v1.Time)) *MockSkyhookNodeOnly_StartDrain_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 v1.Time
+		if args[0] != nil {
+			arg0 = args[0].(v1.Time)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_StartDrain_Call) Return() *MockSkyhookNodeOnly_StartDrain_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockSkyhookNodeOnly_StartDrain_Call) RunAndReturn(run func(startedAt v1.Time)) *MockSkyhookNodeOnly_StartDrain_Call {
 	_c.Run(run)
 	return _c
 }

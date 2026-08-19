@@ -21,7 +21,7 @@ package wrapper
 import (
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,8 +30,8 @@ import (
 var _ = Describe("Skyhook wrapper tests", func() {
 	It("Should get config updates", func() {
 		skyhook := &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					ConfigUpdates: map[string][]string{
 						"foo": {
 							"changed",
@@ -55,8 +55,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 		}))
 
 		skyhook = &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{},
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{},
 			},
 			Updated: false,
 		}
@@ -66,8 +66,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 
 	It("Should add config updates", func() {
 		skyhook := &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{},
-			Updated: false,
+			NodeWright: &v1alpha1.NodeWright{},
+			Updated:    false,
 		}
 
 		skyhook.AddConfigUpdates("foo", "changed")
@@ -105,8 +105,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 
 	It("Should remove config updates on a per-package basis", func() {
 		skyhook := &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{},
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{},
 			},
 			Updated: false,
 		}
@@ -116,8 +116,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 		Expect(skyhook.Status.ConfigUpdates).To(BeNil())
 
 		skyhook = &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					ConfigUpdates: map[string][]string{
 						"foo": {
 							"changed",
@@ -144,15 +144,15 @@ var _ = Describe("Skyhook wrapper tests", func() {
 
 	It("Should get config interrupts", func() {
 		skyhook := &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{},
-			Updated: false,
+			NodeWright: &v1alpha1.NodeWright{},
+			Updated:    false,
 		}
 
 		Expect(skyhook.GetConfigInterrupts()).To(BeEquivalentTo(map[string][]*v1alpha1.Interrupt{}))
 
 		skyhook = &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			NodeWright: &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: v1alpha1.Packages{
 						"foo": v1alpha1.Package{
 							PackageRef: v1alpha1.PackageRef{
@@ -177,7 +177,7 @@ var _ = Describe("Skyhook wrapper tests", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					ConfigUpdates: map[string][]string{
 						"bar": {
 							"run.sh",
@@ -200,8 +200,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 		}))
 
 		skyhook = &Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			NodeWright: &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: v1alpha1.Packages{
 						"foo": v1alpha1.Package{
 							PackageRef: v1alpha1.PackageRef{
@@ -230,7 +230,7 @@ var _ = Describe("Skyhook wrapper tests", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					ConfigUpdates: map[string][]string{
 						"bar": {
 							"run.sh",
@@ -266,8 +266,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 	Context("RemoveNodePriority", func() {
 		It("should delete node and increment offset", func() {
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Status: v1alpha1.SkyhookStatus{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
 						NodePriority: map[string]metav1.Time{
 							"node-1": metav1.Now(),
 							"node-2": metav1.Now(),
@@ -285,8 +285,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 
 		It("should be a no-op for missing node", func() {
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Status: v1alpha1.SkyhookStatus{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
 						NodePriority: map[string]metav1.Time{
 							"node-1": metav1.Now(),
 						},
@@ -302,7 +302,7 @@ var _ = Describe("Skyhook wrapper tests", func() {
 
 		It("should be a no-op for nil map", func() {
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{},
+				NodeWright: &v1alpha1.NodeWright{},
 			}
 
 			skyhook.RemoveNodePriority("node-1")
@@ -315,8 +315,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 		It("should return offset + position for node in priority", func() {
 			now := time.Now()
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Status: v1alpha1.SkyhookStatus{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
 						NodeOrderOffset: 3,
 						NodePriority: map[string]metav1.Time{
 							"node-a": metav1.NewTime(now),
@@ -333,8 +333,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 		It("should use name as tiebreaker for same timestamps", func() {
 			now := time.Now()
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Status: v1alpha1.SkyhookStatus{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
 						NodePriority: map[string]metav1.Time{
 							"node-b": metav1.NewTime(now),
 							"node-a": metav1.NewTime(now),
@@ -349,8 +349,8 @@ var _ = Describe("Skyhook wrapper tests", func() {
 
 		It("should return 0 for node not in priority", func() {
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
-					Status: v1alpha1.SkyhookStatus{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
 						NodeOrderOffset: 5,
 						NodePriority: map[string]metav1.Time{
 							"node-1": metav1.Now(),
@@ -364,10 +364,148 @@ var _ = Describe("Skyhook wrapper tests", func() {
 
 		It("should return 0 for nil map", func() {
 			skyhook := &Skyhook{
-				Skyhook: &v1alpha1.Skyhook{},
+				NodeWright: &v1alpha1.NodeWright{},
 			}
 
 			Expect(skyhook.NodeOrder("node-1")).To(Equal(0))
+		})
+	})
+
+	Context("AddCondition", func() {
+		It("should be a no-op when re-asserting an unchanged condition with a fresh LastTransitionTime", func() {
+			// Regression test: callers pass metav1.Now() for LastTransitionTime on
+			// every refresh. Without preserving the existing time when Status is
+			// unchanged, AddCondition would set Updated=true on every reconcile,
+			// which causes ReportState to short-circuit and prevents the rest of
+			// Reconcile from running (see uninstall-fix-config chainsaw test).
+			existing := metav1.Condition{
+				Type:               "TypeA",
+				Status:             metav1.ConditionTrue,
+				Reason:             "Reason",
+				Message:            "msg",
+				ObservedGeneration: 1,
+				LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
+			}
+			skyhook := &Skyhook{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
+						Conditions: []metav1.Condition{existing},
+					},
+				},
+			}
+
+			skyhook.AddCondition(metav1.Condition{
+				Type:               "TypeA",
+				Status:             metav1.ConditionTrue,
+				Reason:             "Reason",
+				Message:            "msg",
+				ObservedGeneration: 1,
+				LastTransitionTime: metav1.Now(),
+			})
+
+			Expect(skyhook.Updated).To(BeFalse())
+			Expect(skyhook.Status.Conditions).To(HaveLen(1))
+			Expect(skyhook.Status.Conditions[0].LastTransitionTime).To(Equal(existing.LastTransitionTime))
+		})
+
+		It("should set Updated and bump LastTransitionTime when Status changes", func() {
+			old := metav1.NewTime(time.Now().Add(-time.Hour))
+			skyhook := &Skyhook{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
+						Conditions: []metav1.Condition{
+							{Type: "TypeA", Status: metav1.ConditionFalse, Reason: "R", LastTransitionTime: old},
+						},
+					},
+				},
+			}
+
+			fresh := metav1.Now()
+			skyhook.AddCondition(metav1.Condition{
+				Type:               "TypeA",
+				Status:             metav1.ConditionTrue,
+				Reason:             "R",
+				LastTransitionTime: fresh,
+			})
+
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+			Expect(skyhook.Status.Conditions[0].LastTransitionTime).To(Equal(fresh))
+		})
+
+		It("should set Updated when ObservedGeneration changes even if Status matches", func() {
+			old := metav1.NewTime(time.Now().Add(-time.Hour))
+			skyhook := &Skyhook{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
+						Conditions: []metav1.Condition{
+							{Type: "TypeA", Status: metav1.ConditionTrue, Reason: "R", ObservedGeneration: 1, LastTransitionTime: old},
+						},
+					},
+				},
+			}
+
+			skyhook.AddCondition(metav1.Condition{
+				Type:               "TypeA",
+				Status:             metav1.ConditionTrue,
+				Reason:             "R",
+				ObservedGeneration: 2,
+				LastTransitionTime: metav1.Now(),
+			})
+
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.Conditions[0].ObservedGeneration).To(Equal(int64(2)))
+			// Status didn't transition — preserve original LastTransitionTime.
+			Expect(skyhook.Status.Conditions[0].LastTransitionTime).To(Equal(old))
+		})
+
+		It("should append a new condition when not present", func() {
+			skyhook := &Skyhook{NodeWright: &v1alpha1.NodeWright{}}
+
+			skyhook.AddCondition(metav1.Condition{
+				Type:   "TypeA",
+				Status: metav1.ConditionTrue,
+				Reason: "R",
+			})
+
+			Expect(skyhook.Updated).To(BeTrue())
+			Expect(skyhook.Status.Conditions).To(HaveLen(1))
+		})
+	})
+
+	Context("RemoveCondition", func() {
+		It("should remove a condition by type", func() {
+			skyhook := &Skyhook{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
+						Conditions: []metav1.Condition{
+							{Type: "TypeA", Status: metav1.ConditionTrue, Reason: "A"},
+							{Type: "TypeB", Status: metav1.ConditionTrue, Reason: "B"},
+						},
+					},
+				},
+			}
+
+			skyhook.RemoveCondition("TypeA")
+			Expect(skyhook.Status.Conditions).To(HaveLen(1))
+			Expect(skyhook.Status.Conditions[0].Type).To(Equal("TypeB"))
+			Expect(skyhook.Updated).To(BeTrue())
+		})
+
+		It("should be a no-op when condition does not exist", func() {
+			skyhook := &Skyhook{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
+						Conditions: []metav1.Condition{
+							{Type: "TypeA", Status: metav1.ConditionTrue, Reason: "A"},
+						},
+					},
+				},
+			}
+
+			skyhook.RemoveCondition("TypeNonExistent")
+			Expect(skyhook.Status.Conditions).To(HaveLen(1))
+			Expect(skyhook.Updated).To(BeFalse())
 		})
 	})
 })

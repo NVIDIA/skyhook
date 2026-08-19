@@ -15,8 +15,6 @@
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
-.PHONY: all
-all: build ## Build all components.
 
 .PHONY: help
 help: ## Display this help.
@@ -29,6 +27,9 @@ labels: ## Sync GitHub labels from .github/labels.yml (requires gh CLI with repo
 	python3 scripts/sync_labels.py
 
 ##@ Build
+
+.PHONY: all
+all: build ## Build all components.
 
 .PHONY: build
 build: ## Build operator and agent.
@@ -44,6 +45,12 @@ test: ## Run tests for operator and agent.
 
 ##@ Formatting
 
+LICENSE_HOLDER ?= NVIDIA CORPORATION & AFFILIATES
+LICENSE_TEMPLATE ?= scripts/license-header.tmpl
+ADDLICENSE ?= $(CURDIR)/operator/bin/addlicense
+license_files = git ls-files -- '*.go' '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*.Dockerfile' \
+	| grep -vE '^(operator|agent|chart)/'
+
 .PHONY: fmt
 fmt: ## Run formatters for operator and agent.
 	$(MAKE) -C operator fmt
@@ -51,51 +58,55 @@ fmt: ## Run formatters for operator and agent.
 
 .PHONY: license-fmt
 license-fmt: ## Run license header formatting for all code.
-	python3 scripts/format_license.py --root-dir . --license-file LICENSE
+	$(MAKE) -C operator license-fmt
+	$(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	$(MAKE) -C agent license-fmt
+
+.PHONY: license-header-check
+license-header-check: ## Check license headers for all code.
+	$(MAKE) -C operator license-header-check
+	$(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	@wrong=$$($(license_files) | while read -r f; do \
+		grep -qE '^.{1,2} Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
+		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "  $$f"; \
+	done); \
+	if [ -n "$$wrong" ]; then \
+		echo "ERROR: header present but not Apache-2.0:"; echo "$$wrong"; exit 1; \
+	fi
+	$(MAKE) -C agent license-header-check
+
+##@ Licenses
+
+.PHONY: notices
+notices: ## Regenerate operator/, agent/, and root THIRD_PARTY_NOTICES.md files.
+	@python3 scripts/generate-notices.py all
+
+.PHONY: notices-operator
+notices-operator: ## Regenerate only operator/THIRD_PARTY_NOTICES.md.
+	@python3 scripts/generate-notices.py operator
+
+.PHONY: notices-agent
+notices-agent: ## Regenerate only agent/THIRD_PARTY_NOTICES.md.
+	@python3 scripts/generate-notices.py agent
+
+.PHONY: notices-rollup
+notices-rollup: ## Regenerate only the root THIRD_PARTY_NOTICES.md from component files.
+	@python3 scripts/generate-notices.py rollup
 
 ##@ Changelog
 
-# CLI code lives under operator/cmd/cli/, so we map the include path accordingly.
-define changelog_include_path
-$(if $(filter cli,$(1)),operator/cmd/cli,$(1))
-endef
-
-define changelog_output
-$(if $(filter cli,$(1)),operator/cmd/cli/CHANGELOG.md,$(1)/CHANGELOG.md)
-endef
+# Changelogs are generated from git history by scripts/gen-changelog.sh, which
+# takes release boundaries from `git tag` (a single `git-cliff --include-path`
+# call drops most release sections in this monorepo). CHANGELOG.md is machine-
+# owned; hand-authored notes live in the sibling RELEASE_NOTES.md.
 
 .PHONY: changelog
-changelog: ## Generate/update CHANGELOG.md for a component. Usage: make changelog COMPONENT=operator
-	@if [ -z "$(COMPONENT)" ]; then \
-		echo "ERROR: COMPONENT is required. Usage: make changelog COMPONENT=operator|chart|cli"; \
-		exit 1; \
-	fi
-	git-cliff \
-		--include-path "$(call changelog_include_path,$(COMPONENT))/**" \
-		--tag-pattern "$(COMPONENT)/.*" \
-		-o $(call changelog_output,$(COMPONENT))
-	@echo "Updated $(call changelog_output,$(COMPONENT))"
+changelog: ## Regenerate a CHANGELOG.md from git history. Interactive: prompts for component + action (regenerate or cut a release). Machine-owned; do not hand-edit.
+	@bash scripts/gen-changelog.sh
 
-.PHONY: changelog-preview
-changelog-preview: ## Preview unreleased changes for a component. Usage: make changelog-preview COMPONENT=operator
-	@if [ -z "$(COMPONENT)" ]; then \
-		echo "ERROR: COMPONENT is required. Usage: make changelog-preview COMPONENT=operator|chart|cli"; \
-		exit 1; \
-	fi
-	git-cliff \
-		--include-path "$(call changelog_include_path,$(COMPONENT))/**" \
-		--tag-pattern "$(COMPONENT)/.*" \
-		--unreleased \
-		--strip header
-
-COMPONENTS := operator agent chart cli
-
-.PHONY: changelog-all
-changelog-all: $(COMPONENTS:%=changelog-%) ## Generate CHANGELOGs for all components.
-
-.PHONY: $(COMPONENTS:%=changelog-%)
-$(COMPONENTS:%=changelog-%):
-	$(MAKE) changelog COMPONENT=$(@:changelog-%=%)
+.PHONY: release-tag
+release-tag: ## Interactively cut a release tag: prompts for component + bump (+ optional RC), creates the tag, and optionally pushes it (push triggers the CI release).
+	@bash scripts/release-tag.sh
 
 ##@ Clean
 

@@ -8,22 +8,29 @@ metadata:
   labels:
     app: {{ include "chart.fullname" . }}-controller-manager
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: {{ include "chart.name" . }}
+    app.kubernetes.io/part-of: {{ include "chart.name" . }}
     control-plane: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.controllerManager.replicas }}
   selector:
+    # Deployment.spec.selector is immutable. These labels are sourced from the
+    # shared chart.managerSelectorLabels helper so the selector-migration
+    # pre-upgrade hook compares against the exact same set; if the chart name or
+    # release name ever changes the selector, that hook deletes the stale
+    # Deployment so `helm upgrade` can recreate it.
     matchLabels:
-      control-plane: controller-manager
-    {{- include "chart.selectorLabels" . | nindent 6 }}
+      {{- include "chart.managerSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
         app: {{ include "chart.fullname" . }}-controller-manager
-        control-plane: controller-manager
-      {{- include "chart.selectorLabels" . | nindent 8 }}
+      {{- /* Sourced from the same helper as spec.selector above so the pod
+             labels always stay a superset of the immutable selector; if they
+             were built separately they could drift and the Deployment would
+             stop matching its own pods. */}}
+      {{- include "chart.managerSelectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
     spec:
@@ -78,6 +85,14 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.logLevel }}
         - name: ENABLE_WEBHOOKS
           value: {{ quote .Values.webhook.enable }}
+        {{- /* The operator mints its own webhook serving cert, so it has to be told the
+               Service name the chart rendered: that name goes in the cert SAN, and if it
+               does not match the Service the API server dials, admission fails closed.
+               The webhook configurations themselves are found by label, not by name. */}}
+        - name: WEBHOOK_SECRET_NAME
+          value: {{ quote (.Values.webhook.secretName | default "webhook-cert") }}
+        - name: WEBHOOK_SERVICE_NAME
+          value: {{ quote (include "chart.webhookServiceName" .) }}
         - name: NAMESPACE
           value: {{ .Release.Namespace }}
         - name: IMAGE_PULL_SECRET
@@ -86,6 +101,18 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.copyDirRoot }}
         - name: REAPPLY_ON_REBOOT
           value: {{ quote .Values.controllerManager.manager.env.reapplyOnReboot }}
+        - name: LEGACY_CLEANUP_DELAY
+          value: {{ quote .Values.controllerManager.manager.env.legacyCleanupDelay }}
+        - name: JOB_TTL_SUCCEEDED
+          value: {{ quote .Values.controllerManager.manager.env.jobTtlSucceeded }}
+        - name: JOB_TTL_FAILED
+          value: {{ quote .Values.controllerManager.manager.env.jobTtlFailed }}
+        - name: JOB_STAGE_TIMEOUT
+          value: {{ quote .Values.controllerManager.manager.env.jobStageTimeout }}
+        - name: JOB_BACKOFF_LIMIT
+          value: {{ quote .Values.controllerManager.manager.env.jobBackoffLimit }}
+        - name: PUBLISH_LEGACY_METRICS
+          value: {{ quote .Values.controllerManager.manager.env.publishLegacyMetrics }}
         - name: RUNTIME_REQUIRED_TAINT
           value: {{ quote .Values.controllerManager.manager.env.runtimeRequiredTaint }}
         - name: PAUSE_IMAGE
@@ -104,6 +131,9 @@ spec:
           periodSeconds: 20
         name: manager
         ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
         - containerPort: 9443
           name: webhook-server
           protocol: TCP
@@ -133,37 +163,6 @@ spec:
             memory: {{ maxf 256 (mulf 0.4 .Values.estimatedNodeCount) | int }}Mi
           {{- end }}
         securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
-          | nindent 10 }}
-      - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
-        env:
-        - name: KUBERNETES_CLUSTER_DOMAIN
-          value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}{{- if .Values.controllerManager.kubeRbacProxy.image.digest }}{{- if .Values.controllerManager.kubeRbacProxy.image.tag }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- else }}@{{ .Values.controllerManager.kubeRbacProxy.image.digest }}{{- end }}{{- else }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag | default .Chart.AppVersion }}{{- end }}
-        imagePullPolicy: Always
-        livenessProbe:
-          tcpSocket:
-            port: 8443
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        readinessProbe:
-          tcpSocket:
-            port: 8443
-          initialDelaySeconds: 5
-          periodSeconds: 20
-          successThreshold: 1
-          failureThreshold: 2
-          timeoutSeconds: 3
-        name: kube-rbac-proxy
-        ports:
-        - containerPort: 8443
-          name: https
-          protocol: TCP
-        volumeMounts:
-        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          name: kube-api-access
-          readOnly: true
-        resources: {{- toYaml .Values.controllerManager.kubeRbacProxy.resources | nindent 10 }}
-        securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
           | nindent 10 }}
       imagePullSecrets:
       {{- if .Values.imagePullSecret }}

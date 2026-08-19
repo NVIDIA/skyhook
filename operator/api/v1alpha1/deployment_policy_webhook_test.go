@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -92,6 +92,26 @@ var _ = Describe("DeploymentPolicy", func() {
 	})
 
 	Context("When creating DeploymentPolicy under Validation Webhook", func() {
+		It("should return a migration deprecation warning on create and update", func() {
+			deploymentPolicy := &DeploymentPolicy{
+				ObjectMeta: metav1.ObjectMeta{Name: "foobar"},
+				Spec: DeploymentPolicySpec{
+					Default: PolicyDefault{
+						Budget:   DeploymentBudget{Percent: ptr.To(25)},
+						Strategy: &DeploymentStrategy{Fixed: &FixedStrategy{}},
+					},
+				},
+			}
+
+			warnings, err := deploymentPolicyWebhook.ValidateCreate(ctx, deploymentPolicy)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
+
+			warnings, err = deploymentPolicyWebhook.ValidateUpdate(ctx, deploymentPolicy, deploymentPolicy)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(ContainElement(ContainSubstring("nodewright.nvidia.com")))
+		})
+
 		It("should require exactly one of fixed, linear, or exponential", func() {
 			// No strategy set: should fail
 			deploymentPolicy := &DeploymentPolicy{
@@ -302,6 +322,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a Skyhook that references the policy
 			skyhook := &Skyhook{
@@ -316,6 +337,7 @@ var _ = Describe("DeploymentPolicy", func() {
 								Name:    "test-pkg",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 					},
 				},
@@ -329,8 +351,12 @@ var _ = Describe("DeploymentPolicy", func() {
 			Expect(err.Error()).To(ContainSubstring("policy-in-use"))
 			Expect(err.Error()).To(ContainSubstring("test-skyhook-using-policy"))
 
-			// Cleanup
+			// Cleanup. The validating webhook on policy deletion queries Skyhook
+			// references via the client; envtest deletes are async, so the Skyhook
+			// can still be visible to the webhook for a brief window after Delete
+			// returns. Wait for it to actually be gone before deleting the policy.
 			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+			waitForSkyhookGoneFromWebhookCache(skyhook.Name)
 			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 		})
 
@@ -352,6 +378,7 @@ var _ = Describe("DeploymentPolicy", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+			waitForPolicyInWebhookCache(policy.Name)
 
 			// Create a Skyhook that references the policy
 			skyhook := &Skyhook{
@@ -366,14 +393,18 @@ var _ = Describe("DeploymentPolicy", func() {
 								Name:    "test-pkg",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-			// Delete the Skyhook
+			// Delete the Skyhook and wait for it to actually be gone before
+			// validating the policy delete — envtest deletes are async, see
+			// the cleanup race in the previous It block.
 			Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
+			waitForSkyhookGoneFromWebhookCache(skyhook.Name)
 
 			// Now deletion should succeed
 			_, err := deploymentPolicyWebhook.ValidateDelete(ctx, policy)

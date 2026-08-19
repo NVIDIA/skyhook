@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+## The claim under test. #469: the rollback leaves the release failed with zero Ready
+## operator pods, because the post-rename pod holds the webhook bootstrap lease and
+## cannot see the restored pre-rename webhook configurations, while the pre-rename pod
+## cannot go Ready until someone injects the caBundle into them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodewright-controller-manager
+  namespace: nodewright
+## Not just "something is Ready": replicas == 1 says the post-rename pod is gone, rather
+## than lingering as an unevictable surge pod, which is what the wedge looks like.
+status:
+  replicas: 1
+  readyReplicas: 1
+  updatedReplicas: 1
+## And the survivor has to actually be the baseline operator, not the one we upgraded to.
+## RENAME-SHIM: the version. It is the baseline chart's appVersion, so it moves whenever
+## the pinned baseline moves. The image is pinned by digest there, hence the substring.
+(length(spec.template.spec.containers[?contains(image, 'operator:v0.17.0')]) == `1`): true
+---
+## RENAME-SHIM: the three objects below, which exist under these names only on the
+## pre-rename side. The claim itself is permanent: whatever webhook configurations the
+## baseline defines have to come back with a caBundle in them. Here that has to come from
+## an operator finding them by name, because the baseline chart never applied the
+## nodewright.nvidia.com/webhook-config label the current one discovers by. An empty
+## bundle is the #469 deadlock.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: skyhook-operator-validating-webhook
+(length(webhooks[?clientConfig.caBundle == null]) == `0`): true
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: skyhook-operator-mutating-webhook
+(length(webhooks[?clientConfig.caBundle == null]) == `0`): true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skyhook-operator-webhook-service
+  namespace: nodewright
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: skyhook-operator-manager-role

@@ -1,9 +1,10 @@
+{{/* MIGRATION-SHIM: legacy skyhook.nvidia.com CRD, shipped only for the transition; remove this template with the legacy group in the removal release. */}}
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: deploymentpolicies.skyhook.nvidia.com
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 spec:
@@ -12,7 +13,7 @@ spec:
     webhook:
       clientConfig:
         service:
-          name: skyhook-operator-webhook-service
+          name: {{ include "chart.webhookServiceName" . }}
           namespace: '{{ .Release.Namespace }}'
           path: /convert
       conversionReviewVersions:

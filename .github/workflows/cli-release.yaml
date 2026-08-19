@@ -23,7 +23,8 @@ on:
       - cli/*
 
 env:
-  GO_VERSION: 1.26.2
+  # Opt all JS actions into Node 24 ahead of GitHub's Node 20 phase-out.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   release:
@@ -32,7 +33,7 @@ jobs:
       contents: write  # Required to create releases
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -43,10 +44,10 @@ jobs:
             | tar xz --wildcards "*/git-cliff" --strip-components=1
           sudo mv git-cliff /usr/local/bin/
 
-      - name: Setup Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: operator/go.mod
           cache-dependency-path: operator/go.sum
 
       - name: Extract version from tag
@@ -56,6 +57,16 @@ jobs:
           VERSION="${GITHUB_REF_NAME#cli/}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Building CLI version: ${VERSION}"
+          # Release candidate tags (e.g. cli/v0.2.0-rc.1) → mark the GitHub
+          # release as a prerelease so they don't become "Latest" on the
+          # Releases page, matching release.yml. The strict tag-format check
+          # lives in the release-notes step below; here we only need the
+          # rc/stable split to set the prerelease flag.
+          if [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build CLI binaries
         working-directory: operator
@@ -64,20 +75,63 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          NOTES=$(git cliff \
-            --include-path "operator/cmd/cli/**" \
-            --tag-pattern "cli/.*" \
-            --latest \
-            --strip all)
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "${NOTES}" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          TAG="${GITHUB_REF_NAME}"          # e.g. cli/v0.2.0 or cli/v0.2.0-rc.1
+          VERSION="${TAG#cli/}"
+          # Asymmetric scoping (see #246): an RC shows the delta since the prior
+          # tag; a stable release covers everything since the previous STABLE so
+          # its notes are not truncated to the last-rc delta.
+          if [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            BODY=$(git cliff --offline --include-path "operator/cmd/cli/**" \
+              --tag-pattern "cli/.*" --latest --strip all)
+          elif [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            PREV=$(git tag -l 'cli/v*' --sort=-v:refname \
+              | grep -E '^cli/v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | grep -v "^${TAG}$" | head -1)
+            # When PREV is empty (first stable tag) fall back to ROOT..TAG.
+            # A bare single ref emits nothing when the tag's own commit is
+            # path-filtered out (same issue documented in gen-changelog.sh).
+            if [[ -n "${PREV}" ]]; then
+              RANGE="${PREV}..${TAG}"
+            else
+              ROOT=$(git rev-list --max-parents=0 HEAD | tail -1)
+              RANGE="${ROOT}..${TAG}"
+            fi
+            BODY=$(git cliff --offline --include-path "operator/cmd/cli/**" \
+              --tag-pattern 'cli/v[0-9]+\.[0-9]+\.[0-9]+$' \
+              --tag "${TAG}" "${RANGE}" --strip all)
+          else
+            echo "ERROR: tag '${TAG}' must match cli/v<MAJOR>.<MINOR>.<PATCH> or cli/v<MAJOR>.<MINOR>.<PATCH>-rc.<N>" >&2
+            exit 1
+          fi
+          # Prepend the human-authored RELEASE_NOTES.md entry for this version, if any.
+          # Match a heading that is exactly "## <tag>" or "## <tag> <suffix>".
+          NOTES_FILE="operator/cmd/cli/RELEASE_NOTES.md"
+          HUMAN=""
+          if [[ -f "${NOTES_FILE}" ]]; then
+            HUMAN=$(awk -v tag="${TAG}" '
+              { h = "## " tag
+                if (index($0, h) == 1) {
+                  nc = substr($0, length(h) + 1, 1)
+                  if (nc == "" || nc == " ") { f = 1; next }
+                } }
+              /^## / { if (f) f = 0 }
+              f' "${NOTES_FILE}")
+          fi
+          {
+            [ -n "${HUMAN}" ] && printf '%s\n\n' "${HUMAN}"
+            printf '%s\n' "${BODY}"
+          } > "${RUNNER_TEMP:-/tmp}/notes.md"
+          # Use a random delimiter so a literal "EOF" line in release notes can't
+          # truncate the multi-line output variable (GitHub Actions requirement).
+          GH_DELIM="NOTES_EOF_$(openssl rand -hex 8)"
+          { echo "notes<<${GH_DELIM}"; cat "${RUNNER_TEMP:-/tmp}/notes.md"; echo "${GH_DELIM}"; } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: "Skyhook CLI ${{ steps.version.outputs.version }}"
+          prerelease: ${{ steps.version.outputs.prerelease }}
           files: |
             operator/dist/*.tar.gz
             operator/dist/*.zip

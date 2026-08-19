@@ -1,3 +1,4 @@
+{{/* MIGRATION-SHIM: RBAC for the legacy skyhook.nvidia.com CRD; remove this template with the legacy group in the removal release. */}}
 {{ if ((.Values.rbac).createSkyhookEditorRole) }}
 # permissions for end users to edit skyhooks.
 ## NOTE: not managed by helmify, needs to be manually updated, however, should not change much
@@ -6,8 +7,8 @@ kind: ClusterRole
 metadata:
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: skyhook-operator
-    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: {{ include "chart.name" . }}
+    app.kubernetes.io/part-of: {{ include "chart.name" . }}
   {{- include "chart.labels" . | nindent 4 }}
   name: skyhook-editor-role
 rules:

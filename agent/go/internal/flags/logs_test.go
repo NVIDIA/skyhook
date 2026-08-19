@@ -1,0 +1,76 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package flags
+
+import (
+	"os"
+	"path/filepath"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/NVIDIA/nodewright/agent/internal/config"
+)
+
+var _ = Describe("CleanupOldLogs", func() {
+	It("keeps the newest filename timestamps for a literal step path", func() {
+		root := GinkgoT().TempDir()
+		layout := DefaultLayout(root)
+		cfg := config.Config{PackageName: "driver", PackageVersion: "1.2.3"}
+		stepPath := "scripts/apply[*?].sh"
+		logFiles, err := layout.LogFilePattern(cfg, stepPath)
+		Expect(err).NotTo(HaveOccurred())
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		creationOrder := []int{5, 6, 7, 8, 9, 0, 1, 2, 3, 4}
+		paths := make([]string, len(creationOrder))
+		for _, second := range creationOrder {
+			path, err := layout.LogFilePath(cfg, stepPath, base.Add(time.Duration(second)*time.Second))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(Succeed())
+			Expect(os.WriteFile(path, []byte("log"), 0o600)).To(Succeed())
+			paths[second] = path
+		}
+		unrelated := filepath.Join(logFiles.directory, "applyX.sh-2026-01-01-000000.log")
+		malformed := filepath.Join(logFiles.directory, logFiles.prefix+"not-a-timestamp"+logFiles.suffix)
+		Expect(os.WriteFile(unrelated, nil, 0o600)).To(Succeed())
+		Expect(os.WriteFile(malformed, nil, 0o600)).To(Succeed())
+
+		Expect(CleanupOldLogs(logFiles, DefaultLogRetention)).To(Succeed())
+		for _, path := range paths[:5] {
+			Expect(path).NotTo(BeAnExistingFile())
+		}
+		for _, path := range paths[5:] {
+			Expect(path).To(BeAnExistingFile())
+		}
+		Expect(unrelated).To(BeAnExistingFile())
+		Expect(malformed).To(BeAnExistingFile())
+	})
+
+	It("does nothing when no files match", func() {
+		layout := DefaultLayout(GinkgoT().TempDir())
+		logFiles, err := layout.LogFilePattern(config.Config{PackageName: "driver", PackageVersion: "1.2.3"}, "apply.sh")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(CleanupOldLogs(logFiles, DefaultLogRetention)).To(Succeed())
+	})
+
+	It("rejects negative retention", func() {
+		Expect(CleanupOldLogs(LogFiles{}, -1)).To(MatchError("log retention must not be negative: -1"))
+	})
+})

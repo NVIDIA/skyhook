@@ -16,20 +16,23 @@ include deps.mk
 
 ## Version of the operator
 VERSION ?= $(GIT_TAG_LAST)
-GO_VERSION ?= 1.26.2
+# Go toolchain version read from go.mod (the single source; also used by CI's
+# setup-go go-version-file and the image build-arg). Prefer a toolchain
+# directive over the go directive, matching how setup-go resolves the version.
+GO_VERSION ?= $(shell awk '/^go /{go=$$2} /^toolchain /{tc=$$2; sub(/^go/,"",tc)} END{print (tc!=""?tc:go)}' $(CURDIR)/go.mod)
 DEBIAN_VERSION ?= trixie
-DISTROLESS_VERSION ?= 4.0.2
+DISTROLESS_VERSION ?= 4.0.0
 
 # Image URL to use all building/pushing image 
 ## TODO: update this to the correct image location
 IMG_REPO ?= ghcr.io/nvidia/skyhook
 IMG ?= $(IMG_REPO)/operator
-
-## default version of kind to use
-KIND_VERSION?=1.35.0
+LOCAL_REGISTRY ?= localhost:5005
+LOCAL_OPERATOR_IMG ?= $(LOCAL_REGISTRY)/skyhook-operator:testing
 
 PLATFORM := $(shell uname -s 2>/dev/null || echo unknown)
-SKYHOOK_NAMESPACE ?= skyhook
+SKYHOOK_NAMESPACE ?= nodewright
+METRICS_TEST_SERVICE_ACCOUNT ?= metrics-reader
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -51,7 +54,7 @@ GOFLAGS 	:= -mod=vendor
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
-DOCKER_CMD ?= podman
+DOCKER_CMD ?= docker
 
 ifdef CI
 	DOCKER_CMD = docker
@@ -112,7 +115,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 	$(CONTROLLER_GEN) object paths="./..."
 	$(MAKE) license-fmt ## fix up license headers
 
-.PHONY: generate-mocks 
+.PHONY: generate-mocks
 generate-mocks: mockery ## Generate code for interface mocking
 	$(MOCKERY) --config .mockery.yaml
 	$(MAKE) fmt ## fix up license headers
@@ -123,11 +126,40 @@ license-report: go-licenses ## Run run license report
 
 .PHONY: license-check
 license-check: go-licenses ## Run go-licenses check against code.
-	$(LOCALBIN)/go-licenses check --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib ./... 
+	$(LOCALBIN)/go-licenses check --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib ./...
+
+.PHONY: vulncheck
+vulncheck: govulncheck ## Run govulncheck against code; fails on any reachable vulnerability.
+	GOFLAGS="$(GOFLAGS)" $(GOVULNCHECK) -mode source ./...
+
+.PHONY: vulncheck-all
+vulncheck-all: govulncheck ## Run govulncheck in verbose mode, including module-level vulns not reachable from this code.
+	GOFLAGS="$(GOFLAGS)" $(GOVULNCHECK) -mode source -show verbose ./...
+
+## addlicense takes explicit paths, so enumerate only tracked operator sources and
+## leave repository-wide formatting to the root Makefile. vendor/ carries upstream headers.
+LICENSE_HOLDER ?= NVIDIA CORPORATION & AFFILIATES
+LICENSE_TEMPLATE ?= ../scripts/license-header.tmpl
+license_files = git ls-files -- '*.go' '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*.Dockerfile' \
+	| grep -vE '^vendor/'
 
 .PHONY: license-fmt
-license-fmt: ## Run add license header to code.
-	python3 ../scripts/format_license.py --root-dir ../ --license-file ../LICENSE
+license-fmt: addlicense ## Add the Apache-2.0 header to any source file missing one.
+	$(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+
+## addlicense -check only asserts that *some* license marker is present, so an MIT or
+## malformed header would pass. The old format_license.py replaced a wrong header
+## outright; assert the SPDX identifier explicitly to keep that guarantee.
+.PHONY: license-header-check
+license-header-check: addlicense ## Fail if any tracked source file is missing an Apache-2.0 header.
+	$(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
+	@wrong=$$($(license_files) | while read -r f; do \
+		grep -qE '^.{1,2} Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
+		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "  $$f"; \
+	done); \
+	if [ -n "$$wrong" ]; then \
+		echo "ERROR: header present but not Apache-2.0:"; echo "$$wrong"; exit 1; \
+	fi
 
 .PHONY: fmt
 fmt: license-fmt ## Run go fmt against code.
@@ -143,6 +175,40 @@ REPORTING ?= $(shell pwd)/reporting
 reporting: $(REPORTING)
 $(REPORTING):
 	mkdir -p $@
+
+CTLPTL_CONFIG_TEMPLATE ?= config/local-dev/ctlptl-config.yaml
+CTLPTL_CONFIG_RENDERED ?= $(REPORTING)/ctlptl-config.yaml
+
+.PHONY: print-k8s-test-versions-github-output
+print-k8s-test-versions-github-output: ## Print Kubernetes test versions in GitHub Actions output format.
+	@$(MAKE) --no-print-directory yq >/dev/null
+	@YQ="$(YQ)" $(VERSIONS) --print
+
+.PHONY: validate-kind-node-image
+validate-kind-node-image: yq ## Check that the configured kindest/node image tag exists before creating a cluster.
+	@echo "Validating kindest/node:v$(KIND_NODE_IMAGE_VERSION)"
+	@if command -v $(DOCKER_CMD) >/dev/null 2>&1; then \
+		if [ "$(DOCKER_CMD)" = "podman" ]; then \
+			$(DOCKER_CMD) manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+		else \
+			$(DOCKER_CMD) manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+		fi; \
+	elif command -v docker >/dev/null 2>&1; then \
+		docker manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+	elif command -v podman >/dev/null 2>&1; then \
+		podman manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+	else \
+		curl -fsSL https://hub.docker.com/v2/repositories/kindest/node/tags/v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+	fi || { \
+		echo "kindest/node:v$(KIND_NODE_IMAGE_VERSION) is not published or cannot be inspected."; \
+		echo "Update kind.nodeImage in versions.yaml, or override KIND_NODE_IMAGE_VERSION with a published kindest/node tag."; \
+		exit 1; \
+	}
+
+.PHONY: render-ctlptl-config
+render-ctlptl-config: reporting yq ## Render local ctlptl config using KIND_NODE_IMAGE_VERSION.
+	sed 's|@@KIND_NODE_IMAGE_VERSION@@|$(KIND_NODE_IMAGE_VERSION)|g' $(CTLPTL_CONFIG_TEMPLATE) > $(CTLPTL_CONFIG_RENDERED)
+	@echo "$(CTLPTL_CONFIG_RENDERED)"
 
 .PHONY: test
 test:: reporting manifests generate fmt vet lint build-cli unit-tests e2e-tests cli-e2e-tests helm-tests operator-agent-tests ## Run all tests.
@@ -171,45 +237,61 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
 CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 
-e2e-tests: chainsaw install run ensure-test-symlinks ## Run end to end tests.
+# POOL_NON_DEFAULT lists every pool except the default (core). Adding a new
+# pool: append it here AND to the matrix in .github/workflows/operator-ci.yaml.
+POOL_NON_DEFAULT := interrupt uninstall lifecycle
+POOL_NOTIN_SELECTOR := pool notin ($(shell echo $(POOL_NON_DEFAULT) | tr ' ' ','))
+
+e2e-tests: chainsaw install run build-cli ensure-test-symlinks prepare-metrics-test-access ## Run end to end tests. Set POOL=<name> to run a single pool; unset runs all.
 	## requires a cluster to be running with access
 	## locally use kind to create clusters
 	## in ci, the plan current is to have a real cluster, and create a node pool for testing
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/skyhook $(CHAINSAW_ARGS)
-	$(MAKE) kill 
+ifeq ($(POOL),core)
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector '$(POOL_NOTIN_SELECTOR)' $(CHAINSAW_ARGS)
+else ifneq ($(POOL),)
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright --selector 'pool=$(POOL)' $(CHAINSAW_ARGS)
+else
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/nodewright $(CHAINSAW_ARGS)
+endif
+	$(MAKE) kill
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
 cli-e2e-tests: chainsaw install run build-cli-with-coverage ensure-test-symlinks ## Run CLI end to end tests with coverage.
-	## Tests the kubectl-skyhook CLI commands against a real cluster
+	## Tests the kubectl-nodewright CLI commands against a real cluster
 	## Requires nodes labeled with skyhook.nvidia.com/test-node=skyhooke2e
 	@mkdir -p $(REPORTING)/cli-cover
-	@# Ensure bin/skyhook exists (build-cli-with-coverage only creates bin/skyhook-cover)
-	@if [ ! -f bin/skyhook ]; then \
-		if [ -f bin/skyhook-cover ]; then \
-			cp bin/skyhook-cover bin/skyhook; \
+	@# Ensure bin/nodewright exists (build-cli-with-coverage only creates bin/nodewright-cover)
+	@if [ ! -f bin/nodewright ]; then \
+		if [ -f bin/nodewright-cover ]; then \
+			cp bin/nodewright-cover bin/nodewright; \
 		else \
-			echo "Error: bin/skyhook-cover not found. Run build-cli-with-coverage first."; \
+			echo "Error: bin/nodewright-cover not found. Run build-cli-with-coverage first."; \
 			exit 1; \
 		fi; \
 	fi
 	@# Replace CLI binary with a wrapper that sets GOCOVERDIR for coverage collection
-	@mv bin/skyhook bin/skyhook.orig 2>/dev/null || true
-	@echo '#!/bin/bash' > bin/skyhook
-	@echo '# Resolve actual script location (handles symlinks)' >> bin/skyhook
-	@echo 'if [ -L "$${BASH_SOURCE[0]}" ]; then' >> bin/skyhook
-	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$$(readlink -f "$${BASH_SOURCE[0]}")")" && pwd)"' >> bin/skyhook
-	@echo 'else' >> bin/skyhook
-	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> bin/skyhook
-	@echo 'fi' >> bin/skyhook
-	@echo 'export GOCOVERDIR="$$SCRIPT_DIR/../reporting/cli-cover"' >> bin/skyhook
-	@echo 'exec "$$SCRIPT_DIR/skyhook-cover" "$$@"' >> bin/skyhook
-	@chmod +x bin/skyhook
+	@mv bin/nodewright bin/nodewright.orig 2>/dev/null || true
+	@echo '#!/bin/bash' > bin/nodewright
+	@echo '# Resolve actual script location (handles symlinks)' >> bin/nodewright
+	@echo 'if [ -L "$${BASH_SOURCE[0]}" ]; then' >> bin/nodewright
+	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$$(readlink -f "$${BASH_SOURCE[0]}")")" && pwd)"' >> bin/nodewright
+	@echo 'else' >> bin/nodewright
+	@echo '  SCRIPT_DIR="$$(cd "$$(dirname "$${BASH_SOURCE[0]}")" && pwd)"' >> bin/nodewright
+	@echo 'fi' >> bin/nodewright
+	@echo 'export GOCOVERDIR="$$SCRIPT_DIR/../reporting/cli-cover"' >> bin/nodewright
+	@echo 'exec "$$SCRIPT_DIR/nodewright-cover" "$$@"' >> bin/nodewright
+	@chmod +x bin/nodewright
 	@# Update symlinks to point to the new wrapper script
 	@$(MAKE) ensure-test-symlinks
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS)
-	$(MAKE) kill
-	@# Restore original CLI binary
-	@mv bin/skyhook.orig bin/skyhook 2>/dev/null || true
+	@# Run the CLI e2e tests, then ALWAYS stop the operator and restore the real CLI
+	@# binary even when chainsaw fails: otherwise a failed run leaves bin/nodewright as
+	@# the coverage wrapper and the operator still running. The chainsaw exit status is
+	@# preserved so the target still fails.
+	@status=0; \
+		$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/cli $(CHAINSAW_ARGS) || status=$$?; \
+		$(MAKE) kill; \
+		mv bin/nodewright.orig bin/nodewright 2>/dev/null || true; \
+		exit $$status
 	@# Extract coverage from operator running in cluster
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/cli-int.coverprofile
 	@# Extract coverage from CLI binary if any was generated
@@ -220,19 +302,42 @@ cli-e2e-tests: chainsaw install run build-cli-with-coverage ensure-test-symlinks
 		echo "ℹ️  No CLI coverage data (this is OK - CLI is covered by unit tests)"; \
 	fi
 
-helm-tests: helm chainsaw ensure-test-symlinks
+
+helm-tests: helm chainsaw ctlptl ensure-test-symlinks push-local-image
 	## Here we need to run the operator so that the old CRD can deleted along with
 	## any leftover SCRs. Without this the SCRs may have finalizers which rely on
 	## the operator and will cause the deletion and tests to hang.
 	$(MAKE) run
 	$(MAKE) uninstall ignore-not-found=true
 	$(MAKE) kill
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/helm $(CHAINSAW_ARGS)
+	LOCAL_OPERATOR_IMG=$(LOCAL_OPERATOR_IMG) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/helm $(CHAINSAW_ARGS)
+
+
+
+.PHONY: push-local-image
+push-local-image: docker-build ## Tag and push the locally-built operator image to the local ctlptl registry
+	$(DOCKER_CMD) tag $(IMG):testing $(LOCAL_OPERATOR_IMG)
+	$(DOCKER_CMD) push $(LOCAL_OPERATOR_IMG)
+
+
+
+.PHONY: rollout-local
+rollout-local: push-local-image ## push locally-built operator and restart the deployment
+	@# control-plane=controller-manager is the only label both install paths agree on:
+	@# the chart renders app.kubernetes.io/name=nodewright while the kustomize overlay
+	@# renders app.kubernetes.io/name=deployment (namePrefix renames resources, not labels).
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout restart deployment -l control-plane=controller-manager
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) rollout status deployment -l control-plane=controller-manager --timeout=60s
+
+
+.PHONY: delete-kind-cluster
+delete-kind-cluster: ctlptl render-ctlptl-config ## delete the local ctlptl kind cluster and registry
+	$(CTLPTL) delete -f $(CTLPTL_CONFIG_RENDERED)
 
 operator-agent-tests: chainsaw install ## Run operator agent tests.
 	@if [ -z "$(AGENT_IMAGE)" ]; then \
 		echo "Error: AGENT_IMAGE is not set. Please set it to the agent image to test against."; \
-		echo "Example: AGENT_IMAGE=ghcr.io/nvidia/skyhook/agent:v6.4.0 make operator-agent-tests"; \
+		echo "Example: AGENT_IMAGE=ghcr.io/nvidia/nodewright/agent:v6.4.2 make operator-agent-tests"; \
 		exit 1; \
 	fi
 	@echo "Running operator-agent tests with AGENT_IMAGE=$(AGENT_IMAGE)"
@@ -243,15 +348,24 @@ operator-agent-tests: chainsaw install ## Run operator agent tests.
 	## ../k8s-tests/operator-agent/setup.sh kind-worker teardown
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
-deployment-policy-tests: chainsaw install run ensure-test-symlinks ## Run all deployment policy E2E tests (requires 15-node cluster).
+.PHONY: migration-test
+migration-test: helm push-local-image ## Run the Skyhook->NodeWright upgrade migration test (needs a fresh kind cluster).
+	## Requires a CLEAN cluster: the test refuses to run if nodewright CRDs already
+	## exist, since a pre-rename baseline is the whole point. Run
+	## `make create-kind-cluster` first, and note push-local-image must come AFTER
+	## cluster creation because ctlptl recreates the local registry with the cluster.
+	LOCAL_OPERATOR_IMG=$(LOCAL_OPERATOR_IMG) HELM=$(HELM) KUBECTL=$(KUBECTL) \
+		../k8s-tests/migration/run.sh
+
+deployment-policy-tests: chainsaw install run ensure-test-symlinks prepare-metrics-test-access ## Run all deployment policy E2E tests (requires 15-node cluster).
 	## requires a 15-node cluster to be running with access
 	## use 'make create-deployment-policy-cluster' to create the cluster
-	$(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
+	SKYHOOK_NAMESPACE=$(SKYHOOK_NAMESPACE) METRICS_TEST_SERVICE_ACCOUNT=$(METRICS_TEST_SERVICE_ACCOUNT) $(CHAINSAW) test --test-dir ../k8s-tests/chainsaw/deployment-policy $(CHAINSAW_ARGS)
 	$(MAKE) kill
 	go tool covdata textfmt -i=$(REPORTING)/int -o reporting/int.coverprofile
 
 .PHONY: create-deployment-policy-cluster
-create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deployment policy tests.
+create-deployment-policy-cluster: validate-kind-node-image ## Create a 15-node Kind cluster for deployment policy tests.
 	@echo "🔧 Creating 15-node Kind cluster for deployment policy tests..."
 	@# Fix for Podman: increase kernel keyring quota
 	@if command -v podman >/dev/null 2>&1; then \
@@ -265,7 +379,7 @@ create-deployment-policy-cluster: ## Create a 15-node Kind cluster for deploymen
 		fi; \
 	fi
 	kind delete cluster --name skyhook-dp-test 2>/dev/null || true
-	kind create cluster --name skyhook-dp-test --config ../k8s-tests/chainsaw/deployment-policy/kind-config.yaml --image=kindest/node:v$(KIND_VERSION)
+	kind create cluster --name skyhook-dp-test --config ../k8s-tests/chainsaw/deployment-policy/kind-config.yaml --image=kindest/node:v$(KIND_NODE_IMAGE_VERSION)
 
 .PHONY: delete-deployment-policy-cluster
 delete-deployment-policy-cluster: ## Delete the 15-node Kind cluster for deployment policy tests.
@@ -278,15 +392,33 @@ else
 DOCKER_AUTH_FILE=${HOME}/.config/containers/auth.json
 endif
 
-setup-kind-cluster: ## setup kind cluster with local docker creds and skyhook namespace
-	## sets you local $(DOCKER_CMD) creds into a secret in kind in the skyhook namespace
+setup-kind-cluster: ## setup kind cluster with local docker creds and nodewright namespace
+	## sets you local $(DOCKER_CMD) creds into a secret in kind in the nodewright namespace
+	## Dual-labelled during the NodeWright rename: the skyhook and deployment-policy
+	## pools select nodewright.nvidia.com/test-node; the not-yet-migrated cli pool still
+	## selects skyhook.nvidia.com/test-node. Drop the skyhook label once the cli pool moves.
 	$(KUBECTL) label node/kind-worker skyhook.nvidia.com/test-node=skyhooke2e --overwrite
+	$(KUBECTL) label node/kind-worker nodewright.nvidia.com/test-node=skyhooke2e --overwrite
 	$(KUBECTL) create namespace $(SKYHOOK_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
-	$(KUBECTL) create secret generic node-init-secret --type=kubernetes.io/dockerconfigjson -n $(SKYHOOK_NAMESPACE) \
-		--from-file=.dockerconfigjson=$(DOCKER_AUTH_FILE)
+	@if [ -f "$(DOCKER_AUTH_FILE)" ]; then \
+		$(KUBECTL) create secret generic node-init-secret --type=kubernetes.io/dockerconfigjson -n $(SKYHOOK_NAMESPACE) \
+			--from-file=.dockerconfigjson=$(DOCKER_AUTH_FILE) --dry-run=client -o yaml | $(KUBECTL) apply -f -; \
+	else \
+		echo "Skipping node-init-secret creation; docker auth file $(DOCKER_AUTH_FILE) not found"; \
+	fi
 
-create-kind-cluster: ## deletes and creates a new kind cluster. versions is set via KIND_VERSION
-	kind delete cluster && kind create cluster --image=kindest/node:v$(KIND_VERSION) --config config/local-dev/kind-config.yaml
+.PHONY: prepare-metrics-test-access
+prepare-metrics-test-access:
+	$(KUBECTL) -n $(SKYHOOK_NAMESPACE) create serviceaccount $(METRICS_TEST_SERVICE_ACCOUNT) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) create clusterrole metrics-test-reader --verb=get --non-resource-url=/metrics \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	$(KUBECTL) create clusterrolebinding metrics-test-reader-access --clusterrole=metrics-test-reader \
+		--serviceaccount=$(SKYHOOK_NAMESPACE):$(METRICS_TEST_SERVICE_ACCOUNT) --dry-run=client -o yaml | $(KUBECTL) apply -f -
+
+
+create-kind-cluster: ctlptl validate-kind-node-image render-ctlptl-config ## creates or updates a kind cluster.
+	$(CTLPTL) delete -f $(CTLPTL_CONFIG_RENDERED) || true
+	$(CTLPTL) apply -f $(CTLPTL_CONFIG_RENDERED)
 	$(MAKE) setup-kind-cluster
 
 podman-create-machine: ## creates a podman machine
@@ -297,6 +429,15 @@ podman-create-machine: ## creates a podman machine
 
 podman-restart:
 	podman machine stop && podman machine start
+
+colima-create-machine:
+	colima delete -f
+	colima start --runtime docker --vm-type vz --cpu 6 --memory 12 --disk 100
+
+	colima ssh -- sudo sysctl -w kernel.keys.maxkeys=20000
+	colima ssh -- sudo sysctl -w kernel.keys.maxbytes=400000                 
+	colima ssh -- sudo sysctl -w fs.inotify.max_user_watches=524288
+	colima ssh -- sudo sysctl -w fs.inotify.max_user_instances=512
 
 sedrp := sed -r -i
 ifeq ($(PLATFORM),Darwin)
@@ -316,7 +457,7 @@ merge-coverage:
 	fi
 
 .PHONY: lint
-lint: golangci-lint license-check ## Run golangci-lint linter & yamllint
+lint: golangci-lint license-header-check ## Run golangci-lint linter & yamllint
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix
@@ -336,16 +477,16 @@ build-manager: manifests generate fmt vet lint ## Build manager binary.
 ensure-test-symlinks:  ## Ensure symlinks exist in test directories (idempotent).
 	@# Create symlinks in test directories for easy access
 	@# This target is idempotent and can be called even if binaries are cached
-	@# Note: symlinks will be created even if bin/skyhook doesn't exist yet (it will be created by build targets)
-	@for dir in cli deployment-policy skyhook helm; do \
-		ln -sf ../../../operator/bin/skyhook ../k8s-tests/chainsaw/$$dir/skyhook-cli 2>/dev/null || true; \
+	@# Note: symlinks will be created even if bin/nodewright doesn't exist yet (it will be created by build targets)
+	@for dir in cli deployment-policy nodewright helm; do \
+		ln -sf ../../../operator/bin/nodewright ../k8s-tests/chainsaw/$$dir/nodewright-cli 2>/dev/null || true; \
 	done
 
 .PHONY: build-cli
 CLI_VERSION ?= $(CLI_TAG_LAST)
 CLI_LDFLAGS := -ldflags "-X github.com/NVIDIA/nodewright/operator/internal/version.VERSION=$(CLI_VERSION) -X github.com/NVIDIA/nodewright/operator/internal/version.GIT_SHA=$(GIT_SHA)"
 build-cli: ensure-test-symlinks ## Build CLI binary.
-	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/skyhook cmd/cli/main.go
+	go build $(GOFLAGS) $(CLI_LDFLAGS) -o bin/nodewright cmd/cli/main.go
 CLI_DIST_DIR ?= dist
 cli-release-build: ## Build CLI binaries for all platforms (used by CI release workflow).
 	@echo "Building CLI $(CLI_VERSION) for all platforms..."
@@ -357,22 +498,22 @@ cli-release-build: ## Build CLI binaries for all platforms (used by CI release w
 			ext=""; if [ "$$os" = "windows" ]; then ext=".exe"; fi; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GOFLAGS) \
 				-ldflags "-X github.com/NVIDIA/nodewright/operator/internal/version.VERSION=$(CLI_VERSION) -X github.com/NVIDIA/nodewright/operator/internal/version.GIT_SHA=$(GIT_SHA)" \
-				-o $(CLI_DIST_DIR)/skyhook_$(CLI_VERSION)_$${os}_$${arch}$${ext} cmd/cli/main.go; \
+				-o $(CLI_DIST_DIR)/nodewright_$(CLI_VERSION)_$${os}_$${arch}$${ext} cmd/cli/main.go; \
 		done; \
 	done
-	@# Create archives (rename binary to just "skyhook" inside archive)
+	@# Create archives (rename binary to just "nodewright" inside archive)
 	@echo "Creating archives..."
 	@cd $(CLI_DIST_DIR) && for os in linux darwin; do \
 		for arch in amd64 arm64; do \
-			cp skyhook_$(CLI_VERSION)_$${os}_$${arch} skyhook && \
-			tar -czf skyhook_$(CLI_VERSION)_$${os}_$${arch}.tar.gz skyhook && \
-			rm skyhook; \
+			cp nodewright_$(CLI_VERSION)_$${os}_$${arch} nodewright && \
+			tar -czf nodewright_$(CLI_VERSION)_$${os}_$${arch}.tar.gz nodewright && \
+			rm nodewright; \
 		done; \
 	done
 	@cd $(CLI_DIST_DIR) && for arch in amd64 arm64; do \
-		cp skyhook_$(CLI_VERSION)_windows_$${arch}.exe skyhook.exe && \
-		zip -q skyhook_$(CLI_VERSION)_windows_$${arch}.zip skyhook.exe && \
-		rm skyhook.exe; \
+		cp nodewright_$(CLI_VERSION)_windows_$${arch}.exe nodewright.exe && \
+		zip -q nodewright_$(CLI_VERSION)_windows_$${arch}.zip nodewright.exe && \
+		rm nodewright.exe; \
 	done
 	@# Generate checksums
 	@echo "Generating checksums..."
@@ -380,10 +521,10 @@ cli-release-build: ## Build CLI binaries for all platforms (used by CI release w
 	@echo "Done! Artifacts in $(CLI_DIST_DIR)/"
 
 build-cli-with-coverage: ensure-test-symlinks ## Build CLI binary with coverage instrumentation.
-	go build $(GOFLAGS) -cover $(CLI_LDFLAGS) -o bin/skyhook-cover cmd/cli/main.go
-	@# Ensure bin/skyhook exists (copy from cover binary if not cached) so symlinks work
-	@if [ ! -f bin/skyhook ]; then \
-		cp bin/skyhook-cover bin/skyhook; \
+	go build $(GOFLAGS) -cover $(CLI_LDFLAGS) -o bin/nodewright-cover cmd/cli/main.go
+	@# Ensure bin/nodewright exists (copy from cover binary if not cached) so symlinks work
+	@if [ ! -f bin/nodewright ]; then \
+		cp bin/nodewright-cover bin/nodewright; \
 	fi
 
 .PHONY: run
@@ -468,11 +609,11 @@ metrics:
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 	helm repo update
 
-	../docs/metrics/generate-dashboards.sh
-	$(KUBECTL) apply -f ../docs/metrics/grafana-dashboards-configmap.yaml
+	../docs/observability/generate-dashboards.sh
+	$(KUBECTL) apply -f ../docs/observability/grafana-dashboards-configmap.yaml
 
-	helm upgrade --install prometheus prometheus-community/prometheus -f ../docs/metrics/prometheus_values.yaml
-	helm upgrade --install grafana grafana/grafana -f ../docs/metrics/grafana_values.yaml
+	helm upgrade --install prometheus prometheus-community/prometheus -f ../docs/observability/prometheus_values.yaml
+	helm upgrade --install grafana grafana/grafana -f ../docs/observability/grafana_values.yaml
 	echo "kubectl port-forward svc/prometheus-server 9090:80"
 
 .PHONY: metrics-undeploy
@@ -481,7 +622,7 @@ metrics-undeploy:
 	helm uninstall grafana
 
 	$(KUBECTL) delete configmap grafana-dashboards
-	rm -rf ../docs/metrics/grafana-dashboards-configmap.yaml
+	rm -rf ../docs/observability/grafana-dashboards-configmap.yaml
 
 .PHONY: grafana-password
 grafana-password:

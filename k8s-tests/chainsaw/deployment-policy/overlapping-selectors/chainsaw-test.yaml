@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
@@ -33,12 +30,12 @@ spec:
     - script:
         content: |
           # Clear node annotations from previous runs using skyhook CLI
-          ../skyhook-cli reset overlapping-selectors-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset overlapping-selectors-test --confirm 2>/dev/null || true
           # Clean up any leftover labels
           chmod +x ../label-nodes.sh
           ../label-nodes.sh clean-all region 2>/dev/null || true
           ../label-nodes.sh clean-all env 2>/dev/null || true
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node 2>/dev/null || true
           echo "✓ State reset complete"
   
   - name: setup-nodes
@@ -48,23 +45,23 @@ spec:
           chmod +x ../label-nodes.sh
           # Label nodes for overlapping selectors test
           # Nodes 0-1: Only region=us-west
-          ../label-nodes.sh add 0-1 region=us-west skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 0-1 region=us-west nodewright.nvidia.com/test-node=skyhooke2e
           # Nodes 2-3: Only env=production
-          ../label-nodes.sh add 2-3 env=production skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 2-3 env=production nodewright.nvidia.com/test-node=skyhooke2e
           # Nodes 4-5: BOTH region=us-west AND env=production (overlapping)
-          ../label-nodes.sh add 4-5 region=us-west env=production skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 4-5 region=us-west env=production nodewright.nvidia.com/test-node=skyhooke2e
           echo "✓ Node labeling complete"
           echo "  Nodes 0-1: region=us-west only"
           echo "  Nodes 2-3: env=production only"
           echo "  Nodes 4-5: region=us-west + env=production (overlapping)"
-          kubectl get nodes -L region,env,skyhook.nvidia.com/test-node --no-headers | grep skyhooke2e | sort
+          kubectl get nodes -L region,env,nodewright.nvidia.com/test-node --no-headers | grep skyhooke2e | sort
   
   - name: apply-resources
     try:
     - apply:
         file: deployment-policy.yaml
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - sleep:
         duration: 10s
   
@@ -78,21 +75,31 @@ spec:
           echo "✓ Compartment assignment correct!"
           echo "✓ Overlapping nodes correctly assigned using safety-first strategy (Fixed > Linear > Exponential)"
     - script:
+        skipLogOutput: true
         content: |
+          ../../metrics_test.py nodewright_rollout_matched_nodes 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
+          set -e
           echo "=== Verifying compartment metrics ==="
-          
+
           # Verify matched nodes for each compartment
-          ../../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_matched_nodes 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_matched_nodes 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_matched_nodes 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
 
           # Verify ceiling (budget) for each compartment
           # us-west: count=2
           # production: count=2
           # prod-us-west: count=1
-          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_ceiling 1 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_ceiling 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_ceiling 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_ceiling 1 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
           
           echo "✓ Compartment metrics verified"
   
@@ -112,26 +119,36 @@ spec:
   - name: verify-final-metrics
     try:
     - script:
+        skipLogOutput: true
         content: |
+          ../../metrics_test.py nodewright_rollout_completed 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
+          set -e
           echo "=== Verifying final metrics ==="
-          
+
           # All compartments should be 100% complete
-          ../../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
 
-          ../../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_completed 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
 
-          ../../metrics_test.py skyhook_rollout_completed 2 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_completed 2 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
 
           # Verify no consecutive failures
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=us-west -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=production -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=overlapping-selectors-test -t policy_name=overlapping-selector-policy -t compartment_name=prod-us-west -t strategy=fixed
           
           echo "✓ All final metrics verified!"
   
@@ -140,18 +157,18 @@ spec:
     - script:
         content: |
           # Clean up node annotations
-          ../skyhook-cli reset overlapping-selectors-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset overlapping-selectors-test --confirm 2>/dev/null || true
           # Clean up labels
           ../label-nodes.sh clean-all region
           ../label-nodes.sh clean-all env
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           name: overlapping-selectors-test
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
+          apiVersion: nodewright.nvidia.com/v1alpha1
           kind: DeploymentPolicy
           name: overlapping-selector-policy

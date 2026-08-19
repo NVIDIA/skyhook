@@ -7,12 +7,15 @@ Capability discovery from container images or registries (OCI labels, layer insp
 ## Problems
 
 ### Uninstall configuration loss
+
 The way uninstall is triggered is by deleting a package definition. This has a major problem in that all the environment variables and configmaps will not be available to the package when it runs uninstall which breaks many assumptions on different packages and makes uninstall not usable.
 
 ### Label removal
+
 Once uninstalled the labels and annotations need to be removed. However, not all packages actually support uninstall. So a package needs a way to let the operator know that it is okay to remove labels/annotations related to a package.
 
 ### Finalizer and uninstall
+
 When a Skyhook Custom Resource is deleted the packages are not cleaned up. Finalizer should trigger an uninstall if the packages mark themselves as supporting uninstall.
 
 ## Goals
@@ -125,7 +128,7 @@ Implement **validating admission** in [`SkyhookWebhook.ValidateUpdate`](../../op
 ## Label and annotation cleanup
 
 - **Per package**: After successful uninstall, if **`uninstall.enabled` was true**:
-  - remove operator-managed keys **scoped to that package** where they exist. Today much of node metadata is **per Skyhook** (`skyhook.nvidia.com/status_<skyhook>`, `nodeState_<skyhook>`, etc. in [`wrapper/node.go`](../../operator/internal/wrapper/node.go)); the implementation should enumerate which keys are truly per-package (e.g. pod labels `skyhook.nvidia.com/package`) vs per-SCR and only remove what is correct.
+  - remove operator-managed keys **scoped to that package** where they exist. Today much of node metadata is **per Skyhook** (`nodewright.nvidia.com/status_<name>`, `nodeState_<name>`, etc. in [`wrapper/node.go`](../../operator/internal/wrapper/node.go)); the implementation should enumerate which keys are truly per-package (e.g. pod labels `nodewright.nvidia.com/package`) vs per-SCR and only remove what is correct.
   - zero out metrics related to that package and remove them from being reported.
 - **Skyhook (SCR)**: When **all** packages are uninstalled / absent from node state per policy, either **remove** SCR labels/annotations the operator owns for rollout.
 
@@ -159,7 +162,7 @@ sequenceDiagram
 ## Migration and testing
 
 - **Breaking change**: Clusters that rely on “remove package from spec → uninstall” must move to **`uninstall.apply: true`** (with **`uninstall.enabled: true`**) before removing keys, subject to admission rules.
-- **Chainsaw**: [`k8s-tests/chainsaw/skyhook/uninstall-upgrade-skyhook`](../../k8s-tests/chainsaw/skyhook/uninstall-upgrade-skyhook) currently documents removal-driven uninstall; update scenarios for `uninstall.apply`, explicit `uninstall.enabled`, and admission.
+- **Chainsaw**: [`k8s-tests/chainsaw/nodewright/`](../../k8s-tests/chainsaw/nodewright/) currently documents removal-driven uninstall scenarios; update them for `uninstall.apply`, explicit `uninstall.enabled`, and admission.
 - **Docs**: User-facing README / operator docs should describe uninstall and the requirement to set **`uninstall.enabled: true`** for packages that support uninstall.
 
 ---
@@ -168,8 +171,8 @@ sequenceDiagram
 
 | Type | Purpose |
 |------|---------|
-| `nodewright.nvidia.com/UninstallInProgress` | Set when finalizer is triggered |
-| `nodewright.nvidia.com/UninstallFailed` | Set during finalizer for failures |
+| `UninstallInProgress` | Set when finalizer is triggered |
+| `UninstallFailed` | Set during finalizer for failures |
 
 ---
 

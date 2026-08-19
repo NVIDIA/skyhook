@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+## Kubernetes test versions (envtest, local kind clusters, the GitHub Actions
+## test matrix). The Go toolchain version is NOT here - it lives in go.mod, the
+## single source that Make and CI both read.
+##
+## operator/versions.sh is the only reader. It uses yq and derives consumer
+## names from each key's PATH - there is no separate name mapping:
+##   ./versions.sh --get <yq.path>   one value (append yq flags, e.g. -o=json)
+##   ./versions.sh --print           lower-case hyphenated key=value lines for
+##                                   $GITHUB_OUTPUT (kind.binary -> kind-binary)
+##   ./versions.sh --export          UPPER_SNAKE `export NAME=value` lines for
+##                                   eval/source (kind.binary -> KIND_BINARY)
+##
+## Because dots in the path become the name separators, a key is sometimes
+## nested purely to derive the name a consumer already expects - see envtest.
+## Adding a key here surfaces it in --print/--export with no code change.
+
+## this 3 nested value is this way for ENVTEST_K8S_VERSION which the test lib expects
+envtest:
+  k8s:
+    version: "1.36.0"
+
+kind:
+  nodeImage: "1.36.1"
+  binary: "v0.32.0"
+
+ci:
+  kindNodeImages:
+    - "1.33.12"
+    - "1.34.8"
+    - "1.35.5"
+    - "1.36.1"
+  primaryKindNodeImage: "1.36.1"

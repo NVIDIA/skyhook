@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,7 +18,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: skyhooks.skyhook.nvidia.com
 spec:
   group: skyhook.nvidia.com
@@ -138,6 +137,52 @@ spec:
                       setting for this Skyhook
                     type: boolean
                 type: object
+              drainConfig:
+                description: |-
+                  DrainConfig tunes how nodes are drained before running interrupt packages.
+                  If unset, the operator preserves its existing drain behavior.
+                properties:
+                  deleteEmptyDirData:
+                    default: true
+                    description: |-
+                      DeleteEmptyDirData allows draining pods that use emptyDir volumes.
+                      Defaults to true to preserve the operator's existing behavior.
+                    nullable: true
+                    type: boolean
+                  disableEviction:
+                    default: false
+                    description: |-
+                      DisableEviction bypasses the eviction API and deletes pods directly.
+                      This bypasses PodDisruptionBudgets.
+                    nullable: true
+                    type: boolean
+                  force:
+                    default: true
+                    description: |-
+                      Force allows draining pods not managed by a controller.
+                      Defaults to true to preserve the operator's existing behavior.
+                    nullable: true
+                    type: boolean
+                  gracePeriod:
+                    description: |-
+                      GracePeriod overrides the grace period used on pod eviction/delete.
+                      Unset uses each pod's own terminationGracePeriodSeconds.
+                    nullable: true
+                    type: string
+                  ignoreDaemonSets:
+                    default: true
+                    description: |-
+                      IgnoreDaemonSets skips DaemonSet-managed pods during drain.
+                      Defaults to true to preserve the operator's existing behavior.
+                    nullable: true
+                    type: boolean
+                  timeout:
+                    description: |-
+                      Timeout bounds how long the operator waits for a node to drain.
+                      Zero or unset means no timeout.
+                    nullable: true
+                    type: string
+                type: object
               interruptionBudget:
                 description: InterruptionBudget configures how many nodes that match
                   node selectors that allowed to be interrupted at once.
@@ -253,8 +298,9 @@ spec:
                       description: |-
                         ContainerSHA is the SHA256 digest of the container image for verification purposes.
                         When specified, this will be used instead of the version tag to pull the exact image.
-                        Format: sha256:1234567890abcdef...
+                        Format: sha256:<64 lowercase hex chars>
                       example: sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+                      pattern: ^sha256:[0-9a-f]{64}$
                       type: string
                     dependsOn:
                       additionalProperties:
@@ -426,9 +472,15 @@ spec:
                         for the package, if not set, uses k8s default
                       type: string
                     image:
-                      description: Image is the container image to run. Do not included
-                        the tag, that is set in the version.
-                      example: alpine
+                      description: |-
+                        Image is the container image to run, given as a registry/repository reference with
+                        no tag or digest (e.g. "ghcr.io/nvidia/skyhook-packages/shellscript" or a ported
+                        registry like "localhost:5000/org/pkg"). The version field supplies the tag, and
+                        containerSHA pins an exact digest. The webhook rejects any inline tag or
+                        "@sha256:..." digest embedded in image, and image must be non-empty with no
+                        whitespace.
+                      example: ghcr.io/nvidia/skyhook-packages/shellscript
+                      pattern: ^\S+$
                       type: string
                     interrupt:
                       description: Interrupt if supplied is the type of interrupt
@@ -485,6 +537,28 @@ spec:
                           - type: string
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
+                      type: object
+                    uninstall:
+                      description: Uninstall configures explicit uninstall support
+                        for this package.
+                      properties:
+                        apply:
+                          default: false
+                          description: |-
+                            Apply triggers the uninstall workflow on all target nodes.
+                            Only valid when Enabled is true (webhook rejects apply=true with enabled=false).
+                            Set to false (or remove) to cancel a pending uninstall.
+                          type: boolean
+                        enabled:
+                          default: false
+                          description: |-
+                            Enabled declares this package supports uninstall (has uninstall.sh/uninstall_check.sh).
+                            When true, the operator will run uninstall pods before allowing package removal
+                            and during CR deletion cleanup.
+                          type: boolean
+                      required:
+                      - apply
+                      - enabled
                       type: object
                     version:
                       description: Version is the version of the package
@@ -760,6 +834,7 @@ spec:
                         - post-interrupt
                         - config
                         - uninstall
+                        - uninstall-interrupt
                         - upgrade
                         type: string
                       state:

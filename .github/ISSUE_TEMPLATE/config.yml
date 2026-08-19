@@ -18,7 +18,7 @@ blank_issues_enabled: true
 
 contact_links:
   - name: Ask a Question
-    url: https://github.com/NVIDIA/skyhook/discussions
+    url: https://github.com/NVIDIA/nodewright/discussions
     about: Please ask any questions here.
   - name: Report a Security Vulnerability
     url: https://www.nvidia.com/object/submit-security-vulnerability.html

@@ -20,9 +20,9 @@ set -e
 
 # Usage: label-nodes.sh <operation> <node_range> <label1=value1> [label2=value2] ...
 # Examples:
-#   label-nodes.sh add 0-4 priority=critical skyhook.nvidia.com/test-node=skyhooke2e
+#   label-nodes.sh add 0-4 priority=critical nodewright.nvidia.com/test-node=skyhooke2e
 #   label-nodes.sh remove 0-14 priority env region
-#   label-nodes.sh clean-all skyhook.nvidia.com/test-node
+#   label-nodes.sh clean-all nodewright.nvidia.com/test-node
 
 OPERATION=$1
 shift

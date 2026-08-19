@@ -9,35 +9,41 @@ When a deployment policy uses exponential or linear strategies, the batch size g
 ## What This Test Validates
 
 ### 1. Auto-Reset on Completion
-When a Skyhook rollout completes (Status→Complete), batch state is automatically reset if `resetBatchStateOnCompletion` is enabled.
+
+When a NodeWright rollout completes (Status→Complete), batch state is automatically reset if `resetBatchStateOnCompletion` is enabled.
 
 **Expected behavior:**
+
 - Batch state resets to initial values (CurrentBatch=1, CompletedNodes=0)
 - All compartments are reset
 - Configuration can enable/disable this behavior
 
 ### 2. Configuration Precedence
-Tests that Skyhook-level configuration overrides DeploymentPolicy-level configuration.
+
+Tests that NodeWright-level configuration overrides DeploymentPolicy-level configuration.
 
 **Precedence order:**
-1. `Skyhook.spec.deploymentPolicyOptions.resetBatchStateOnCompletion` (highest)
+
+1. `NodeWright.spec.deploymentPolicyOptions.resetBatchStateOnCompletion` (highest)
 2. `DeploymentPolicy.spec.resetBatchStateOnCompletion`
 3. Default: `true` (safe by default)
 
 **Test scenario:**
+
 - DeploymentPolicy has `resetBatchStateOnCompletion: true`
-- Skyhook overrides with `resetBatchStateOnCompletion: false`
-- Result: Batch state is NOT reset (Skyhook override takes precedence)
+- NodeWright overrides with `resetBatchStateOnCompletion: false`
+- Result: Batch state is NOT reset (NodeWright override takes precedence)
 
 ## Test Architecture
 
-The test uses a single deployment policy with multiple Skyhooks to validate different scenarios:
+The test uses a single deployment policy with multiple NodeWrights to validate different scenarios:
 
 - **test-batch-reset-policy**: DeploymentPolicy with auto-reset enabled
-- **test-auto-reset-enabled**: Skyhook that inherits policy config (tests auto-reset)
-- **test-override-disabled**: Skyhook that overrides to disable reset (tests precedence)
+- **test-auto-reset-enabled**: NodeWright that inherits policy config (tests auto-reset)
+- **test-override-disabled**: NodeWright that overrides to disable reset (tests precedence)
 
 Each scenario validates:
+
 1. Rollout completes successfully
 2. Batch state is in the expected state (reset or preserved)
 3. Configuration is respected
@@ -47,19 +53,21 @@ Each scenario validates:
 ## Node Setup
 
 The test requires 8 nodes labeled with:
+
 - `tier: "1"` - Compartment selector
-- `skyhook.nvidia.com/test-node: batch-reset-test` - Test isolation
+- `nodewright.nvidia.com/test-node: batch-reset-test` - Test isolation
 
 ## Test Flow
 
 1. **Setup**: Label nodes and apply deployment policy
-2. **Test Auto-Reset**: Deploy skyhook with reset enabled, verify batch state resets on completion
-3. **Test Precedence**: Deploy skyhook with reset disabled (override), verify batch state preserved
+2. **Test Auto-Reset**: Deploy nodewright with reset enabled, verify batch state resets on completion
+3. **Test Precedence**: Deploy nodewright with reset disabled (override), verify batch state preserved
 4. **Cleanup**: Remove resources and node labels
 
 ## Expected Results
 
 ### Auto-Reset Enabled (Inherits Policy)
+
 After rollout completes:
 ```yaml
 compartmentStatuses:
@@ -75,6 +83,7 @@ compartmentStatuses:
 ```
 
 ### Override Disabled (Precedence Test)
+
 After rollout completes:
 ```yaml
 compartmentStatuses:
@@ -98,11 +107,13 @@ chainsaw test --test-dir batch-state-reset
 ## Why This Matters
 
 Without batch state reset:
+
 - Subsequent rollouts would start with large batch sizes from the previous rollout
 - A rollout that reached batch size 32 would start the next rollout at batch 32
 - This defeats the purpose of cautious initial batches (1→2→4...)
 
 With batch state reset:
+
 - Every rollout starts conservatively from the initial batch size
 - Provides consistent, predictable rollout behavior
 - Reduces risk when deploying new package versions

@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Example of scraping each authenticated HTTPS pod endpoint. The Prometheus
+# ServiceAccount must be bound to nodewright-metrics-reader (named
+# skyhook-operator-metrics-reader before the resource-name rename, so re-point an
+# existing binding). See docs/observability/metrics.md.
+extraScrapeConfigs: |
+  - job_name: 'nodewright'
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      # controller-runtime generates an in-memory self-signed certificate for
+      # each operator pod, so there is no stable CA for Prometheus to trust.
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+            # New installs default to `nodewright`; installs predating that change
+            # stay in `skyhook` forever, since a namespace cannot be renamed in place.
+            - nodewright
+            - skyhook
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        # The metrics Service is named off the chart fullname. The alternation below
+        # covers the default (`nodewright-`) and the pre-rename name, so this example
+        # works against an operator that has not been upgraded yet.
+        # IF YOU SET fullnameOverride OR nameOverride, EDIT THIS REGEX: the Service is
+        # then `<your-override>-controller-manager-metrics-service` and this job will
+        # silently match zero targets. Confirm with:
+        #   kubectl -n <namespace> get svc -l control-plane=controller-manager
+        # e.g. for `fullnameOverride: skyhook-operator` the regex is already covered;
+        # for `fullnameOverride: acme` use `acme-controller-manager-metrics-service`.
+        regex: (nodewright|skyhook-operator)-controller-manager-metrics-service
+      - source_labels: [__meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: metrics
+
+serviceAccounts:
+  server:
+    create: true
+    name: prometheus
+
+global:
+  scrape_interval: 5s
+  scrape_timeout: 5s

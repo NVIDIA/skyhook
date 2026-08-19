@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
 # yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
@@ -33,11 +30,11 @@ spec:
     - script:
         content: |
           # Clear node annotations from previous runs using skyhook CLI
-          ../skyhook-cli reset multi-compartment-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset multi-compartment-test --confirm 2>/dev/null || true
           # Clean up any leftover labels
           chmod +x ../label-nodes.sh
           ../label-nodes.sh clean-all priority 2>/dev/null || true
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node 2>/dev/null || true
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node 2>/dev/null || true
           echo "✓ State reset complete"
   
   - name: setup-nodes
@@ -46,18 +43,18 @@ spec:
         content: |
           chmod +x ../label-nodes.sh
           # Label nodes for multi-compartment test
-          ../label-nodes.sh add 0-4 priority=critical skyhook.nvidia.com/test-node=skyhooke2e
-          ../label-nodes.sh add 5-10 priority=standard skyhook.nvidia.com/test-node=skyhooke2e
-          ../label-nodes.sh add 11-14 priority=test skyhook.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 0-4 priority=critical nodewright.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 5-10 priority=standard nodewright.nvidia.com/test-node=skyhooke2e
+          ../label-nodes.sh add 11-14 priority=test nodewright.nvidia.com/test-node=skyhooke2e
           echo "✓ Node labeling complete"
-          kubectl get nodes -L priority,skyhook.nvidia.com/test-node --no-headers | grep -E "critical|standard|test" | sort -k6
+          kubectl get nodes -L priority,nodewright.nvidia.com/test-node --no-headers | grep -E "critical|standard|test" | sort -k6
   
   - name: apply-resources
     try:
     - apply:
         file: deployment-policy.yaml
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - sleep:
         duration: 10s
   
@@ -66,26 +63,40 @@ spec:
     - assert:
         file: assert-compartments.yaml
     - script:
+        skipLogOutput: true
         content: |
+          ../../metrics_test.py nodewright_rollout_matched_nodes 5 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
+          set -e
           echo "=== Verifying compartment metrics ==="
-          
+
           # Verify matched nodes metrics for each compartment
-          ../../metrics_test.py skyhook_rollout_matched_nodes 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_matched_nodes 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_matched_nodes 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
-          
+          ../../metrics_test.py nodewright_rollout_matched_nodes 6 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_matched_nodes 4 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+
           echo "✓ Compartment matched nodes metrics verified"
     - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
         content: |
+          set -e
           echo "=== Verifying ceiling metrics ==="
           
           # Verify ceiling (budget) for each compartment
           # Critical: count=2 (explicit)
           # Standard: 33% of 6 = 1.98 → floor = 1
           # Test: 50% of 4 = 2
-          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_ceiling 1 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_ceiling 2 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_ceiling 2 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_ceiling 1 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_ceiling 2 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
           echo "✓ Ceiling metrics verified"
   
@@ -105,26 +116,36 @@ spec:
   - name: verify-final-metrics
     try:
     - script:
+        skipLogOutput: true
         content: |
+          ../../metrics_test.py nodewright_rollout_completed 5 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+        outputs:
+        - name: metricsToken
+          value: ($stderr)
+    - script:
+        env:
+        - name: METRICS_TOKEN
+          value: ($metricsToken)
+        content: |
+          set -e
           echo "=== Verifying final metrics ==="
-          
+
           # All compartments should have 100% completion and 0 in progress
-          ../../metrics_test.py skyhook_rollout_completed 5 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
           
-          ../../metrics_test.py skyhook_rollout_completed 6 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_completed 6 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
           
-          ../../metrics_test.py skyhook_rollout_completed 4 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_in_progress 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_progress_percent 100 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_completed 4 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_in_progress 0 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_progress_percent 100 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
           # Verify batch state metrics exist (current_batch and consecutive_failures should be present)
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
-          ../../metrics_test.py skyhook_rollout_consecutive_failures 0 -t skyhook_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=critical -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=standard -t strategy=exponential
+          ../../metrics_test.py nodewright_rollout_consecutive_failures 0 -t nodewright_name=multi-compartment-test -t policy_name=multi-tier-policy -t compartment_name=test -t strategy=exponential
           
           echo "✓ All final metrics verified!"
   
@@ -133,17 +154,17 @@ spec:
     - script:
         content: |
           # Clean up node annotations
-          ../skyhook-cli reset multi-compartment-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset multi-compartment-test --confirm 2>/dev/null || true
           # Clean up labels
           ../label-nodes.sh clean-all priority
-          ../label-nodes.sh clean-all skyhook.nvidia.com/test-node
+          ../label-nodes.sh clean-all nodewright.nvidia.com/test-node
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
-          kind: Skyhook
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
           name: multi-compartment-test
     - delete:
         ref:
-          apiVersion: skyhook.nvidia.com/v1alpha1
+          apiVersion: nodewright.nvidia.com/v1alpha1
           kind: DeploymentPolicy
           name: multi-tier-policy

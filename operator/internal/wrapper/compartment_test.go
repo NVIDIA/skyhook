@@ -19,7 +19,7 @@
 package wrapper_test
 
 import (
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	mockwrapper "github.com/NVIDIA/nodewright/operator/internal/wrapper/mock"
 	. "github.com/onsi/ginkgo/v2"
@@ -263,7 +263,7 @@ var _ = Describe("Compartment", func() {
 
 		BeforeEach(func() {
 			skyhook = &wrapper.Skyhook{
-				Skyhook: &v1alpha1.Skyhook{},
+				NodeWright: &v1alpha1.NodeWright{},
 			}
 		})
 

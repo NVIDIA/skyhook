@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -33,7 +32,9 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	//+kubebuilder:scaffold:imports
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimachineryruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,6 +50,7 @@ import (
 
 var cfg *rest.Config
 var k8sClient client.Client
+var cachedClient client.Client
 var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
@@ -65,24 +67,16 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
+	var err error
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: false,
-
-		// The BinaryAssetsDirectory is only required if you want to run the tests directly
-		// without call the makefile target test. If not informed it will look for the
-		// default path defined in controller-runtime which is /usr/local/kubebuilder/.
-		// Note that you must have the required binaries setup under the bin directory to perform
-		// the tests directly. When we run make test it will be setup and used automatically.
-		BinaryAssetsDirectory: filepath.Join("..", "..", "bin", "k8s",
-			fmt.Sprintf("1.35.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
 
 		WebhookInstallOptions: envtest.WebhookInstallOptions{
 			Paths: []string{filepath.Join("..", "..", "config", "webhook")},
 		},
 	}
 
-	var err error
 	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
@@ -114,6 +108,8 @@ var _ = BeforeSuite(func() {
 		Metrics:        metricsserver.Options{BindAddress: "0"},
 	})
 	Expect(err).NotTo(HaveOccurred())
+
+	cachedClient = mgr.GetClient()
 
 	err = (&Skyhook{}).SetupWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
@@ -148,3 +144,28 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
+
+// waitForPolicyInWebhookCache blocks until the manager's cache has observed the named
+// DeploymentPolicy. The Skyhook validating webhook reads through that cache, while
+// k8sClient reads straight from the apiserver, so a Skyhook created immediately after
+// its policy races the informer and is denied with "deploymentPolicy ... not found".
+// Waiting on the same client the webhook uses closes that window.
+func waitForPolicyInWebhookCache(name string) {
+	GinkgoHelper()
+	Eventually(func() error {
+		return cachedClient.Get(ctx, types.NamespacedName{Name: name}, &DeploymentPolicy{})
+	}, "10s", "100ms").Should(Succeed())
+}
+
+// waitForSkyhookGoneFromWebhookCache blocks until the manager's cache has observed that the
+// named Skyhook is deleted. Deleting a DeploymentPolicy through the apiserver runs the
+// REGISTERED validating webhook, which lists Skyhooks through the manager's cached client —
+// unlike the webhook the specs construct directly, which is handed k8sClient. So a delete
+// that k8sClient already reports as gone can still be visible to that informer, and the
+// policy delete is rejected with "still referenced by 1 Skyhook(s)".
+func waitForSkyhookGoneFromWebhookCache(name string) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		return apierrors.IsNotFound(cachedClient.Get(ctx, types.NamespacedName{Name: name}, &Skyhook{}))
+	}, "10s", "100ms").Should(BeTrue())
+}

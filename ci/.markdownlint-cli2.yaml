@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# markdownlint-cli2 config — see https://github.com/DavidAnson/markdownlint-cli2
+#
+# This config doubles as documentation. Each rule we've evaluated is
+# listed explicitly (true or false) with a one-line reason. Rules not
+# listed here inherit `default: true` from the top — markdownlint's full
+# rule reference: https://github.com/DavidAnson/markdownlint/tree/main/doc
+#
+# Note: markdownlint-cli2 nests rule overrides under `config:`. Putting
+# them at the top level (as plain-markdownlint expects) silently does nothing.
+config:
+  # Catch-all: every rule on by default, then opt out below.
+  default: true
+
+  # ─── Enforced (catch real markdown bugs) ──────────────────────────────
+  MD001: true   # heading-increment — no skipping h1 → h3
+  MD011: true   # reversed-link-syntax — catches (text)[url] typos
+  MD012: true   # no-multiple-blanks — catches accidental double-blank
+  MD018: true   # no-missing-space-atx — "#Heading" → "# Heading"
+  MD019: true   # no-multiple-space-atx — "#  Heading" → "# Heading"
+  MD022: true   # blanks-around-headings
+  MD025: true   # single-h1 per document (structural)
+  MD030: true   # list-marker-space — "-text" → "- text"
+  MD032: true   # blanks-around-lists
+  MD036: true   # no-emphasis-as-heading — emphasis isn't a heading
+  MD037: true   # no-space-in-emphasis — "* text *" typo
+  MD038: true   # no-space-in-code — "` text `" typo
+  MD039: true   # no-space-in-links — "[ text ]" typo
+  MD042: true   # no-empty-links — "[text]()" typo
+  MD047: true   # single-trailing-newline
+
+  # ─── Disabled (with reasoning) ────────────────────────────────────────
+  MD007: false  # ul-indent — several docs (docs/observability/metrics.md,
+                # docs/user-guide/taints.md, etc.) use a non-canonical ` * ` /
+                # `    * ` style; re-enabling = multi-doc rewrite.
+  MD009: false  # trailing-spaces — git-cliff emits these in changelogs
+                # on every regen.
+  MD013: false  # line-length — wrapping prose lines is annoying;
+                # editors handle reflow.
+  MD024: false  # duplicate-headings — repeated section names (e.g.,
+                # "### Bug Fixes") are normal in changelogs.
+  MD026: false  # trailing-punctuation-in-heading — "Note:" / "Warning:"
+                # headings are common.
+  MD031: false  # blanks-around-fences — fights code-fence-inside-list
+                # pattern in CLAUDE.md and similar docs.
+  MD033: false  # inline-html — pervasive (tables, badges, details/summary).
+  MD034: false  # bare-urls — common in changelogs and reference docs.
+  MD041: false  # first-line-h1 — snippets, chainsaw tests, templates
+                # often start with non-heading content.
+  MD040: false  # fenced-code-language — many existing fences omit the
+                # language tag; tracking as separate cleanup.
+  MD055: false  # table-pipe-style — leading vs trailing pipe consistency
+                # across tables; cosmetic, table-by-table call.
+  MD060: false  # table-column-style — pipe-spacing/alignment style;
+                # widespread across docs, cosmetic, separate cleanup.

@@ -23,8 +23,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/graph"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"github.com/go-logr/logr"
@@ -48,8 +49,8 @@ type SkyhookNode interface {
 	SetStatus(status v1alpha1.Status)
 	// IsComplete reports whether all packages for this Skyhook are complete on this node.
 	IsComplete() bool
-	// ProgressSkipped marks progress as skipped for sequencing (e.g. when dependencies are not run).
-	ProgressSkipped()
+	// ProgressSkipped promotes any package skipped during interrupt sequencing to complete and persists it.
+	ProgressSkipped() error
 	// IsPackageComplete reports whether the given package is complete on this node (considering interrupts and updates).
 	IsPackageComplete(_package v1alpha1.Package) bool
 	// RunNext returns the next package(s) that should run according to the dependency graph and current completion.
@@ -62,6 +63,8 @@ type SkyhookNode interface {
 	UpdateCondition()
 	// HasSkyhookAnnotations reports whether the node has any Skyhook operator annotations.
 	HasSkyhookAnnotations() bool
+	// CleanupSCRMetadata removes all operator-managed annotations, labels, and node conditions for this Skyhook.
+	CleanupSCRMetadata()
 }
 
 // SkyhookNodeOnly wraps a Node with only a Skyhook name. Use it when you need
@@ -80,8 +83,14 @@ type SkyhookNodeOnly interface {
 	GetVersion() string
 	// Migrate updates stored node state/annotations to the current schema when the operator version changes.
 	Migrate(logger logr.Logger) error
+	// PruneLegacyMetadata removes any remaining legacy skyhook.nvidia.com-prefixed node
+	// metadata (annotations, labels, conditions) after the rollback window elapses, and
+	// marks the node changed if it removed anything. MIGRATION-SHIM: remove with the
+	// legacy skyhook.nvidia.com group.
+	PruneLegacyMetadata() bool
 	// State returns the persisted NodeState for this node (from memory or annotations).
 	State() (v1alpha1.NodeState, error)
+	ReloadState() error
 	// SetState persists the given NodeState to the node's annotations and in-memory state.
 	SetState(state v1alpha1.NodeState) error
 	// RemoveState removes persisted state for the given package ref and updates annotations.
@@ -96,6 +105,12 @@ type SkyhookNodeOnly interface {
 	RemoveTaint(key string)
 	// Cordon marks the node unschedulable and records the cordon in annotations for this Skyhook.
 	Cordon()
+	// StartDrain records when draining started for this Skyhook on this node.
+	StartDrain(startedAt metav1.Time)
+	// DrainStartedAt returns when draining started for this Skyhook on this node.
+	DrainStartedAt() (*metav1.Time, error)
+	// ClearDrainStart removes the drain start marker for this Skyhook on this node.
+	ClearDrainStart()
 	// Uncordon marks the node schedulable and removes this Skyhook's cordon annotation if present.
 	Uncordon()
 	// Reset clears Skyhook-related state and annotations so the node can be reconfigured from scratch.
@@ -106,8 +121,29 @@ type SkyhookNodeOnly interface {
 
 var _ SkyhookNode = &skyhookNode{}
 
+const (
+	cordonAnnotationPrefix = v1alpha1.METADATA_PREFIX + "/cordon_"
+
+	// The node-condition types UpdateCondition writes, as the trailing segment of
+	// "<prefix>/<skyhookName>/<type>". Named because the 0.18.0 migration shim has to
+	// recognise exactly this set when deciding which conditions are the operator's to
+	// migrate; a new type added here without updating that shim would silently stop
+	// being carried across the rename.
+	conditionTypeNotReady = "NotReady"
+	conditionTypeErroring = "Erroring"
+	cordonAnnotationValue = "true"
+)
+
 // NewSkyhookNodeOnly most of use cases for the wrapper just needs name, so this stub is for making helpers for those use cases,
-// should help reduce calls to api, and not leak stubbed skyhooks with just name set
+// should help reduce calls to api, and not leak stubbed skyhooks with just name set.
+//
+// A parse failure on the nodeState annotation (malformed JSON) does NOT abort
+// construction: the wrapper is returned with nodeState left uncached so
+// subsequent State() calls re-encounter the error. Aborting here would dead-
+// lock the reconciler (BuildState → main Reconcile return with error → requeue,
+// forever) and prevent the controller from ever reaching
+// UpdateUninstallConditions, which is where the failure is supposed to
+// surface as a user-visible UninstallFailed/NodeStateUnreadable condition.
 func NewSkyhookNodeOnly(node *corev1.Node, skyhookName string) (SkyhookNodeOnly, error) {
 	ret := &skyhookNode{
 		Node:        node,
@@ -115,16 +151,16 @@ func NewSkyhookNodeOnly(node *corev1.Node, skyhookName string) (SkyhookNodeOnly,
 	}
 	state, err := ret.State()
 	if err != nil {
-		return nil, fmt.Errorf("error creating skyhookNode: %w", err)
+		return ret, nil
 	}
 	ret.nodeState = state
 	return ret, nil
 }
 
 // Convert upgrades a SkyhookNodeOnly to a full SkyhookNode when a Skyhook object is available.
-func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.Skyhook) (SkyhookNode, error) {
+func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.NodeWright) (SkyhookNode, error) {
 	ret := node.(*skyhookNode)
-	ret.skyhook = &Skyhook{Skyhook: skyhook}
+	ret.skyhook = &Skyhook{NodeWright: skyhook}
 
 	graph, err := skyhook.Spec.BuildGraph()
 	if err != nil {
@@ -137,7 +173,7 @@ func Convert(node SkyhookNodeOnly, skyhook *v1alpha1.Skyhook) (SkyhookNode, erro
 }
 
 // NewSkyhookNode creates a full SkyhookNode from a Node and a Skyhook (node + graph + name).
-func NewSkyhookNode(node *corev1.Node, skyhook *v1alpha1.Skyhook) (SkyhookNode, error) {
+func NewSkyhookNode(node *corev1.Node, skyhook *v1alpha1.NodeWright) (SkyhookNode, error) {
 
 	t, err := NewSkyhookNodeOnly(node, skyhook.Name)
 	if err != nil {
@@ -154,6 +190,10 @@ type skyhookNode struct {
 	nodeState   v1alpha1.NodeState
 	graph       graph.DependencyGraph[*v1alpha1.Package]
 	updated     bool
+}
+
+func (node *skyhookNode) drainStartAnnotationKey() string {
+	return fmt.Sprintf("%s/drainStart_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)
 }
 
 // GetSkyhook returns the Skyhook associated with this node, or nil if only a name was set.
@@ -199,6 +239,26 @@ func (node *skyhookNode) Status() v1alpha1.Status {
 		return v1alpha1.StatusUnknown
 	}
 	return v1alpha1.GetStatus(status)
+}
+
+// ReloadState re-parses the node-state annotation into the cache. Callers use it after replacing
+// the underlying Node with one the apiserver returned, so the wrapper answers from what actually
+// landed rather than from the value the caller computed.
+//
+// It re-seeds rather than nils the cache, which is load-bearing and was got wrong once: IsComplete,
+// NextStage, GetComplete and PackageStatus read node.nodeState DIRECTLY rather than through
+// State(), so a nil cache reads as "no package has any state". A node that just completed then
+// reports incomplete, its MarkComplete event never fires, and the rollout stalls. Upsert is worse
+// still — NodeState.Upsert allocates a fresh map over a nil one, so the next write would drop every
+// other package's entry.
+func (node *skyhookNode) ReloadState() error {
+	node.nodeState = nil // force State() past its cache check
+	state, err := node.State()
+	if err != nil {
+		return fmt.Errorf("reloading node state for %s: %w", node.Name, err)
+	}
+	node.nodeState = state
+	return nil
 }
 
 // State returns the persisted NodeState for this node (from memory or annotations).
@@ -268,6 +328,18 @@ func (node *skyhookNode) GetVersion() string {
 func (node *skyhookNode) Migrate(logger logr.Logger) error {
 
 	from := node.GetVersion()
+	if from == "" {
+		// A node with no new-prefix version annotation is either brand new or was
+		// last written by the pre-rename operator (skyhook.nvidia.com/* keys). Re-key
+		// any legacy node metadata to the nodewright prefix BEFORE we trust
+		// GetVersion()/State() (both read the new prefix), otherwise a renamed node
+		// looks fresh and every package re-runs. No-op on a genuinely fresh node.
+		// MIGRATION-SHIM: remove this block with the legacy skyhook.nvidia.com group.
+		if err := migrateNodePrefixToNodeWright(node, logger); err != nil {
+			return err
+		}
+		from = node.GetVersion()
+	}
 	to := version.VERSION
 
 	if from == to { // already migrated
@@ -288,6 +360,11 @@ func (node *skyhookNode) Migrate(logger logr.Logger) error {
 	}
 
 	return nil
+}
+
+// MIGRATION-SHIM: remove with the legacy skyhook.nvidia.com group.
+func (node *skyhookNode) PruneLegacyMetadata() bool {
+	return pruneLegacyNodePrefix(node)
 }
 
 // SetState persists the given NodeState to the node's annotations and in-memory state.
@@ -353,12 +430,18 @@ func (node *skyhookNode) GetComplete() []string {
 	return node.nodeState.GetComplete(node.skyhook.Spec.Packages, node.skyhook.GetConfigInterrupts(), node.skyhook.GetConfigUpdates())
 }
 
-// ProgressSkipped marks progress as skipped for sequencing (e.g. when dependencies are not run).
-func (node *skyhookNode) ProgressSkipped() {
+// ProgressSkipped promotes any package that was skipped during interrupt sequencing
+// to complete and persists the result.
+func (node *skyhookNode) ProgressSkipped() error {
 	if node.nodeState.ProgressSkipped(node.skyhook.Spec.Packages, node.skyhook.GetConfigInterrupts(), node.skyhook.GetConfigUpdates()) {
 		node.skyhook.Updated = true
-		node.updated = true
+		// Persist the promotion to the nodeState annotation, exactly as Upsert/RemoveState do.
+		// Without SetState the promoted state lives only in node.nodeState; it never reaches
+		// the annotation the Node patch diffs against, so the promotion is silently dropped
+		// unless another package's Upsert happens to re-serialize the whole map.
+		return node.SetState(node.nodeState)
 	}
+	return nil
 }
 
 // RunNext returns the next package(s) that should run according to the dependency graph and current completion.
@@ -439,7 +522,7 @@ func (node *skyhookNode) RemoveTaint(key string) {
 }
 
 // HasSkyhookAnnotations returns true if the node has any annotation with the
-// skyhook.nvidia.com/ prefix, indicating it has been previously touched by the Skyhook operator.
+// nodewright.nvidia.com/ prefix, indicating it has been previously touched by the NodeWright operator.
 func (node *skyhookNode) HasSkyhookAnnotations() bool {
 	for key := range node.Annotations {
 		if strings.HasPrefix(key, v1alpha1.METADATA_PREFIX+"/") {
@@ -451,24 +534,95 @@ func (node *skyhookNode) HasSkyhookAnnotations() bool {
 
 // Cordon marks the node unschedulable and records the cordon in annotations for this Skyhook.
 func (node *skyhookNode) Cordon() {
-	_, ok := node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)]
+	if node.Annotations == nil {
+		node.Annotations = make(map[string]string)
+	}
+
+	_, ok := node.Annotations[cordonAnnotationKey(node.skyhookName)]
 	if !node.Spec.Unschedulable || !ok {
 		node.Spec.Unschedulable = true
-		node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)] = "true"
+		node.Annotations[cordonAnnotationKey(node.skyhookName)] = cordonAnnotationValue
 		node.updated = true
 	}
+}
+
+// StartDrain records when draining started for this Skyhook on this node.
+func (node *skyhookNode) StartDrain(startedAt metav1.Time) {
+	if node.Annotations == nil {
+		node.Annotations = make(map[string]string)
+	}
+
+	key := node.drainStartAnnotationKey()
+	if _, ok := node.Annotations[key]; ok {
+		return
+	}
+
+	node.Annotations[key] = startedAt.Time.Format(time.RFC3339Nano)
+	node.updated = true
+}
+
+// DrainStartedAt returns when draining started for this Skyhook on this node.
+func (node *skyhookNode) DrainStartedAt() (*metav1.Time, error) {
+	if node.Annotations == nil {
+		return nil, nil
+	}
+
+	value, ok := node.Annotations[node.drainStartAnnotationKey()]
+	if !ok {
+		return nil, nil
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing drain start annotation: %w", err)
+	}
+
+	startedAt := metav1.NewTime(parsed)
+	return &startedAt, nil
+}
+
+// ClearDrainStart removes the drain start marker for this Skyhook on this node.
+func (node *skyhookNode) ClearDrainStart() {
+	if node.Annotations == nil {
+		return
+	}
+
+	key := node.drainStartAnnotationKey()
+	if _, ok := node.Annotations[key]; !ok {
+		return
+	}
+
+	delete(node.Annotations, key)
+	node.updated = true
 }
 
 // Uncordon marks the node schedulable and removes this Skyhook's cordon annotation if present.
 func (node *skyhookNode) Uncordon() {
 
 	// if we hold a cordon remove it, also we dont want to remove a cordon if we dont have one...
-	_, ok := node.Annotations[fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)]
+	_, ok := node.Annotations[cordonAnnotationKey(node.skyhookName)]
 	if ok {
-		node.Spec.Unschedulable = false
-		delete(node.Annotations, fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+		delete(node.Annotations, cordonAnnotationKey(node.skyhookName))
+		// Multiple Skyhooks can cordon the same node; only mark it schedulable
+		// after every Skyhook-owned cordon has been released.
+		if !hasSkyhookCordon(node.Annotations) {
+			node.Spec.Unschedulable = false
+		}
 		node.updated = true
 	}
+}
+
+func cordonAnnotationKey(skyhookName string) string {
+	return cordonAnnotationPrefix + skyhookName
+}
+
+func hasSkyhookCordon(annotations map[string]string) bool {
+	for key := range annotations {
+		if strings.HasPrefix(key, cordonAnnotationPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Reset clears Skyhook-related state and annotations so the node can be reconfigured from scratch.
@@ -479,11 +633,17 @@ func (node *skyhookNode) Reset() {
 	node.skyhook.Status.Status = v1alpha1.StatusUnknown
 	node.skyhook.Updated = true
 
-	delete(node.Annotations, fmt.Sprintf("%s/cordon_", v1alpha1.METADATA_PREFIX))
-	delete(node.Annotations, fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
-	delete(node.Annotations, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
+	delete(node.Annotations, cordonAnnotationKey(node.skyhookName))
+	delete(node.Annotations, node.drainStartAnnotationKey())
+	delete(node.Annotations, fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	delete(node.Annotations, fmt.Sprintf("%s/version_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
 
-	delete(node.Labels, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhook.Name))
+	delete(node.Labels, fmt.Sprintf("%s/status_%s", v1alpha1.METADATA_PREFIX, node.skyhookName))
+
+	// We just wiped the nodeState annotation; invalidate the in-memory cache so a later
+	// State() read in this reconcile doesn't serve the stale (pre-reset) map.
+	node.nodeState = nil
 	node.updated = true
 }
 
@@ -511,16 +671,16 @@ func (node *skyhookNode) UpdateCondition() {
 	}
 
 	cond := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/NotReady", v1alpha1.METADATA_PREFIX, node.skyhookName)),
+		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/%s", v1alpha1.METADATA_PREFIX, node.skyhookName, conditionTypeNotReady)),
 		Status:             condStatus,
 		LastHeartbeatTime:  metav1.Now(),
 		LastTransitionTime: metav1.Now(),
 		Reason:             readyReason,
-		Message:            fmt.Sprintf("Skyhook %s Ready", node.skyhookName),
+		Message:            fmt.Sprintf("NodeWright %s Ready", node.skyhookName),
 	}
 
 	errorCond := corev1.NodeCondition{
-		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/Erroring", v1alpha1.METADATA_PREFIX, node.skyhookName)),
+		Type:               corev1.NodeConditionType(fmt.Sprintf("%s/%s/%s", v1alpha1.METADATA_PREFIX, node.skyhookName, conditionTypeErroring)),
 		Status:             errorStatus,
 		LastHeartbeatTime:  metav1.Now(),
 		LastTransitionTime: metav1.Now(),
@@ -538,7 +698,7 @@ func (node *skyhookNode) UpdateCondition() {
 			}
 		case cond.Type:
 			condFound = true
-			if condition.Reason != cond.Reason && condition.Message == cond.Message {
+			if condition.Reason != cond.Reason || condition.Message != cond.Message {
 				node.Node.Status.Conditions[i] = cond // update it with the new condition
 				node.updated = true
 			}
@@ -553,4 +713,58 @@ func (node *skyhookNode) UpdateCondition() {
 		node.Node.Status.Conditions = append([]corev1.NodeCondition{cond}, node.Node.Status.Conditions...)
 		node.updated = true
 	}
+}
+
+// CleanupSCRMetadata removes all operator-managed annotations and labels for this
+// Skyhook from the node, plus any node conditions set by this Skyhook.
+//
+// The nodeState annotation is preserved if it still records packages that were
+// not uninstalled (D2 semantics: non-absent entry = files remain on host). The
+// version annotation is preserved alongside it so a future operator can still
+// interpret the retained state schema via Migrate.
+func (node *skyhookNode) CleanupSCRMetadata() {
+	prefix := fmt.Sprintf("%s/", v1alpha1.METADATA_PREFIX)
+	suffix := fmt.Sprintf("_%s", node.skyhookName)
+	nodeStateKey := fmt.Sprintf("%s/nodeState_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)
+	versionKey := fmt.Sprintf("%s/version_%s", v1alpha1.METADATA_PREFIX, node.skyhookName)
+
+	// Preserve only when we actually parsed a non-empty state. A decode error
+	// or an empty map both mean there's nothing meaningful to keep, so the
+	// annotation (and its companion version annotation) should be wiped.
+	state, err := node.State()
+	preserveNodeState := err == nil && len(state) > 0
+
+	for key := range node.Annotations {
+		if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, suffix) {
+			if preserveNodeState && (key == nodeStateKey || key == versionKey) {
+				continue
+			}
+			delete(node.Annotations, key)
+			node.updated = true
+		}
+	}
+	// If we wiped the nodeState annotation, invalidate the in-memory cache so
+	// any subsequent State() read in this reconcile doesn't serve the stale
+	// map that was populated before the wipe.
+	if !preserveNodeState {
+		node.nodeState = nil
+	}
+	for key := range node.Labels {
+		if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, suffix) {
+			delete(node.Labels, key)
+			node.updated = true
+		}
+	}
+
+	// Remove node conditions set by this Skyhook
+	condPrefix := corev1.NodeConditionType(fmt.Sprintf("%s/%s/", v1alpha1.METADATA_PREFIX, node.skyhookName))
+	filtered := make([]corev1.NodeCondition, 0, len(node.Node.Status.Conditions))
+	for _, c := range node.Node.Status.Conditions {
+		if !strings.HasPrefix(string(c.Type), string(condPrefix)) {
+			filtered = append(filtered, c)
+		} else {
+			node.updated = true
+		}
+	}
+	node.Node.Status.Conditions = filtered
 }

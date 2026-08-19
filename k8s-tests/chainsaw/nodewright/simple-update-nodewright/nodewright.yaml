@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
+metadata:
+  labels:
+    app.kubernetes.io/part-of: skyhook-operator
+    app.kubernetes.io/created-by: skyhook-operator
+  name: simple-update-skyhook
+spec:
+  nodeSelectors:
+    matchLabels:
+      nodewright.nvidia.com/test-node: skyhooke2e
+  interruptionBudget: 
+    count: 1
+  packages:
+    spencer:
+      version: "3.2.3"
+      image: ghcr.io/nvidia/skyhook/agentless
+      dependsOn:
+        dexter: "1.2.3"
+      env: 
+        - name: SLEEP_LEN
+          value: "1"
+    foobar:
+      version: "1.2"
+      image: ghcr.io/nvidia/skyhook/agentless
+      env: 
+        - name: SLEEP_LEN
+          value: "1" ## making faster so the test works for asserting node condition
+      dependsOn:
+        dexter: "1.2.3"
+    dexter:
+      version: "1.2.3"
+      image: ghcr.io/nvidia/skyhook/agentless
+      configMap:
+        game.properties: |
+          enemies=aliens
+          lives=3
+          enemies.cheat=true
+          enemies.cheat.level=noGoodRotten
+        ui.properties: |
+          color.good=purple
+          color.bad=yellow
+          allow.textmode=true
+          how.nice.to.look=fairlyNice
+      env: 
+        - name: SLEEP_LEN
+          value: "1"

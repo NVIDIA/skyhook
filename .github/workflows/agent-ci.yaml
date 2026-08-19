@@ -21,7 +21,13 @@ on:
       - main
     paths:
       - agent/**
+      - '!agent/go/**'
+      - k8s-tests/operator-agent/**
       - containers/agent.Dockerfile
+      - .github/actions/**
+      - operator/versions.yaml
+      - operator/versions.sh
+      - scripts/latest-distroless.sh
       - .github/workflows/agent-ci.yaml
   push:
     branches:
@@ -30,32 +36,43 @@ on:
       - agent/*
     paths:
       - agent/**
+      - '!agent/go/**'
+      - k8s-tests/operator-agent/**
       - containers/agent.Dockerfile
+      - .github/actions/**
+      - operator/versions.yaml
+      - operator/versions.sh
+      - scripts/latest-distroless.sh
       - .github/workflows/agent-ci.yaml
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: 1.26.2
   PYTHON_VERSION: 3.13
   DEBIAN_VERSION: trixie
+  PUSH_TO_REGISTRY: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+  # Opt all JS actions into Node 24 ahead of GitHub's Node 20 phase-out.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   fetch-distroless-versions:
-    name: Fetch Latest Distroless Versions
+    name: Resolve Distroless Base Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       distroless-version: ${{ steps.fetch.outputs.distroless-version }}
+      distroless-digest: ${{ steps.fetch.outputs.distroless-digest }}
     steps:
-      - name: Fetch versions from NVIDIA CDN
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-oras
+      - name: Resolve newest published distroless/python
         id: fetch
         run: |
-          # Fetch the versions.json file
-          VERSIONS_JSON=$(curl -fsSL https://developer.download.nvidia.com/distroless-oss/versions.json)
-          
-          # Extract latest Python v4 version (format: "v4.0.1" -> "4.0.1")
-          DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r ".v4.python.\"${PYTHON_VERSION}\"" | sed 's/^v//')
-          
-          echo "distroless-version=${DISTROLESS_VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Python ${PYTHON_VERSION} v4 Distroless Version: ${DISTROLESS_VERSION}"
+          # distroless/python tags carry the interpreter version, e.g. 3.13-v4.0.8.
+          ./scripts/latest-distroless.sh \
+            --repo nvcr.io/nvidia/distroless/python \
+            --major 4 \
+            --tag-prefix "${PYTHON_VERSION}-" \
+            --print | tee -a "$GITHUB_OUTPUT"
   
   compute-metadata:
     name: Compute Image Metadata
@@ -67,7 +84,7 @@ jobs:
       tags: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Compute metadata
@@ -112,9 +129,9 @@ jobs:
       checks: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Run unittests
@@ -122,7 +139,7 @@ jobs:
           cd agent
           make test
       - name: Generate Summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@v2.6
         if: always()
         with:
           paths: "agent/skyhook-agent/test-results.xml"
@@ -149,18 +166,18 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build and tag container image for single platform on native hardware
       - name: Build the agent container image (${{ matrix.platform }})
@@ -168,9 +185,10 @@ jobs:
         env:
           GIT_SHA: ${{ needs.compute-metadata.outputs.git-sha }}
           AGENT_VERSION: ${{ needs.compute-metadata.outputs.agent-version }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           cd agent
-          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          PLATFORM_TAG=$(echo "$PLATFORM" | tr '/' '-')
           
           # Lowercase for Docker compliance
           IMAGE_NAME=$(echo "${{env.IMAGE_NAME}}" | tr '[:upper:]' '[:lower:]')
@@ -181,6 +199,13 @@ jobs:
           for TAG in ${{ needs.compute-metadata.outputs.tags }}; do
             TAGS="$TAGS -t ${REGISTRY}/${IMAGE_NAME}/agent:${TAG}-${PLATFORM_TAG}"
           done
+
+          if [ "${PUSH_TO_REGISTRY}" = "true" ]; then
+            PUSH_OR_LOAD="--push"
+          else
+            PUSH_OR_LOAD="--load"
+            echo "Fork PR build: building image without pushing to registry"
+          fi
           
           set -x
           docker buildx build \
@@ -189,8 +214,9 @@ jobs:
             --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} \
             --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
             --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }} \
-            --push \
-            --platform ${{ matrix.platform }} \
+            --build-arg DISTROLESS_DIGEST_SUFFIX="@${{ needs.fetch-distroless-versions.outputs.distroless-digest }}" \
+            ${PUSH_OR_LOAD} \
+            --platform "$PLATFORM" \
             --provenance=false \
             ${TAGS@L} \
             --metadata-file=metadata.json \
@@ -200,20 +226,30 @@ jobs:
 
   # Create multi-platform manifest from individual architecture builds
   create-manifest:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     needs: [compute-metadata, build-agent]
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+      subject-name: ${{ steps.manifest.outputs.subject-name }}
     permissions:
       contents: read
       packages: write
       attestations: write
       id-token: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       
       # Create and push multi-platform manifests, then delete platform-specific tags
       - name: Create manifests and cleanup
@@ -233,27 +269,46 @@ jobs:
             docker manifest push $FULL_TAG
             echo "✅ Pushed $FULL_TAG"
           done
-          
-          # Get digest of the main tag (git sha) for attestation
-          MAIN_TAG="${REGISTRY}/${IMAGE_NAME}/agent:${{ needs.compute-metadata.outputs.git-sha }}"
-          DIGEST=$(docker manifest inspect $MAIN_TAG | jq -r '.manifests[0].digest')
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
           echo "subject-name=${REGISTRY}/${IMAGE_NAME}/agent" >> $GITHUB_OUTPUT
           
           # Note: Platform-specific tags (e.g., v1.0.0-linux-amd64) are left in registry
           # as intermediate artifacts. Users should pull the multi-platform manifest tags.
           # GitHub Container Registry doesn't easily support programmatic tag deletion.
           echo "✅ Multi-platform manifests created successfully"
+
+      - name: Resolve multi-platform manifest digest
+        id: digest
+        uses: ./.github/actions/resolve-oci-digest
+        with:
+          image: ${{ steps.manifest.outputs.subject-name }}
+          tag: ${{ needs.compute-metadata.outputs.git-sha }}
       
-      # Generate supply chain security attestation for the multi-platform manifest
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
+      - name: Sign GHCR agent image and attach SBOM
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/agent/')
+        uses: ./.github/actions/cosign-sign-sbom
         with:
           subject-name: ${{ steps.manifest.outputs.subject-name }}
-          subject-digest: ${{ steps.manifest.outputs.digest }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+
+      - name: Attest GHCR agent provenance
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/agent/')
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject-name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
-  
+
+      - name: Verify GHCR agent signature and attestations
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/agent/')
+        uses: ./.github/actions/cosign-verify-release
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject-name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/\.github/workflows/agent-ci\.yaml@refs/tags/agent/.*$
+
   operator-agent-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: Operator Agent Integration Tests
     runs-on: ubuntu-latest
     needs: [compute-metadata, create-manifest]
@@ -262,38 +317,52 @@ jobs:
       packages: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-tags: true
           fetch-depth: 0
       
-      - name: Set up Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: operator/go.mod
           cache-dependency-path: operator/go.sum
       
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load Kubernetes test versions
+        id: k8s-versions
+        run: |
+          cd operator
+          make yq
+          YQ="$PWD/bin/yq" ./versions.sh --print >> "$GITHUB_OUTPUT"
+
+      - name: Validate KinD node image
+        env:
+          K8S_VERSION: ${{ steps.k8s-versions.outputs.kind-nodeimage }}
+        run: |
+          cd operator
+          make validate-kind-node-image KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
       
       - name: Create Kubernetes KinD Cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@v1.14.0
         with:
-          version: v0.31.0
-          node_image: kindest/node:v1.35.0
+          version: ${{ steps.k8s-versions.outputs.kind-binary }}
+          node_image: kindest/node:v${{ steps.k8s-versions.outputs.kind-nodeimage }}
           config: operator/config/local-dev/kind-config.yaml
           cluster_name: kind
       
       - name: Restore cached Binaries
         id: cached-binaries
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
-          restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
+          key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-bin-
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
@@ -306,9 +375,9 @@ jobs:
       
       - name: Save cached Binaries
         if: steps.cached-binaries.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
@@ -322,3 +391,22 @@ jobs:
           echo "Testing with agent image: ${AGENT_IMAGE}"
           make build-cli
           make setup-kind-cluster operator-agent-tests
+
+  # See operator-ci.yaml's ci-gate for rationale. operator-ci, agent-ci,
+  # and lint-ci all publish a check named `ci-gate` — GitHub composes
+  # same-named required checks, so every ci-gate that posts must pass.
+  # lint-ci has no path filter so a ci-gate always appears on every PR.
+  # needs: only includes jobs that ALWAYS run. create-manifest and
+  # operator-agent-tests skip on fork PRs (need GHCR write secrets) —
+  # including either would make the gate fail red on legitimate skips.
+  ci-gate:
+    name: ci-gate
+    needs: [test, build-agent]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          echo "$results" | jq -e 'to_entries | all(.value.result == "success")'

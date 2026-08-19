@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Agent Go CI
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - agent/go/**
+      - .github/workflows/agent-go-ci.yaml
+  push:
+    branches:
+      - main
+    paths:
+      - agent/go/**
+      - .github/workflows/agent-go-ci.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Agent Go Unit Tests
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:latest
+    steps:
+      - name: Install test dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends ca-certificates make
+      - uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go/go.mod
+          cache-dependency-path: agent/go/go.sum
+      - name: Run tests with coverage
+        working-directory: agent/go
+        run: CGO_ENABLED=0 make test
+      - name: Upload coverage artifact
+        if: hashFiles('agent/go/reporting/cover.out') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-agent-go-unit-tests
+          path: agent/go/reporting/cover.out
+          retention-days: 1
+          if-no-files-found: ignore
+
+  lint:
+    name: Agent Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go/go.mod
+          cache-dependency-path: agent/go/go.sum
+      - name: Check license headers
+        working-directory: agent/go
+        run: make license-header-check
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: agent/go

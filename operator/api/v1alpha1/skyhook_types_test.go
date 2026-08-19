@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("Skyhook Types", func() {
@@ -575,6 +576,181 @@ var _ = Describe("Skyhook Types", func() {
 		Expect(s.IsPaused()).To(BeFalse())
 	})
 
+	It("Should return false for UninstallEnabled on nil package", func() {
+		var pkg *Package
+		Expect(pkg.UninstallEnabled()).To(BeFalse())
+	})
+
+	It("Should return false for UninstallEnabled when Uninstall is nil", func() {
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "test", Version: "1.0"},
+		}
+		Expect(pkg.UninstallEnabled()).To(BeFalse())
+	})
+
+	It("Should return false for UninstallEnabled when Enabled is false", func() {
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "test", Version: "1.0"},
+			Uninstall:  &Uninstall{Enabled: false, Apply: false},
+		}
+		Expect(pkg.UninstallEnabled()).To(BeFalse())
+	})
+
+	It("Should return true for UninstallEnabled when Enabled is true", func() {
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "test", Version: "1.0"},
+			Uninstall:  &Uninstall{Enabled: true, Apply: false},
+		}
+		Expect(pkg.UninstallEnabled()).To(BeTrue())
+	})
+
+	It("Should return true for IsUninstalling only when both Enabled and Apply are true", func() {
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "test", Version: "1.0"},
+			Uninstall:  &Uninstall{Enabled: true, Apply: true},
+		}
+		Expect(pkg.IsUninstalling()).To(BeTrue())
+	})
+
+	It("Should return false for IsUninstalling when Enabled is false and Apply is true", func() {
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "test", Version: "1.0"},
+			Uninstall:  &Uninstall{Enabled: false, Apply: true},
+		}
+		Expect(pkg.IsUninstalling()).To(BeFalse())
+	})
+
+	It("Should preserve Uninstall field through DeepCopy", func() {
+		original := &Package{
+			PackageRef: PackageRef{Name: "test", Version: "1.0"},
+			Image:      "test-image",
+			Uninstall:  &Uninstall{Enabled: true, Apply: true},
+		}
+		copied := original.DeepCopy()
+		Expect(copied.Uninstall).ToNot(BeNil())
+		Expect(copied.Uninstall.Enabled).To(BeTrue())
+		Expect(copied.Uninstall.Apply).To(BeTrue())
+
+		// Verify it's a deep copy (mutating copy doesn't affect original)
+		copied.Uninstall.Apply = false
+		Expect(original.Uninstall.Apply).To(BeTrue())
+	})
+
+	It("Should detect IsUninstallCycleInProgress from node state", func() {
+		ns := NodeState{
+			"pkg|1.0.0": PackageStatus{
+				Name: "pkg", Version: "1.0.0", Stage: StageUninstall, State: StateInProgress,
+			},
+			"other|2.0.0": PackageStatus{
+				Name: "other", Version: "2.0.0", Stage: StageConfig, State: StateComplete,
+			},
+			"interrupting|1.5.0": PackageStatus{
+				Name: "interrupting", Version: "1.5.0", Stage: StageUninstallInterrupt, State: StateInProgress,
+			},
+		}
+		Expect(ns.IsUninstallCycleInProgress("pkg|1.0.0")).To(BeTrue())
+		Expect(ns.IsUninstallCycleInProgress("other|2.0.0")).To(BeFalse())
+		Expect(ns.IsUninstallCycleInProgress("interrupting|1.5.0")).To(BeTrue())
+		Expect(ns.IsUninstallCycleInProgress("missing|3.0.0")).To(BeFalse())
+
+		var nilState NodeState
+		Expect(nilState.IsUninstallCycleInProgress("pkg|1.0.0")).To(BeFalse())
+	})
+
+	It("Should detect IsInterruptStage from the package's stage", func() {
+		Expect((&PackageStatus{Stage: StageInterrupt}).IsInterruptStage()).To(BeTrue())
+		Expect((&PackageStatus{Stage: StageUninstallInterrupt}).IsInterruptStage()).To(BeTrue())
+		Expect((&PackageStatus{Stage: StageConfig}).IsInterruptStage()).To(BeFalse())
+		Expect((&PackageStatus{Stage: StagePostInterrupt}).IsInterruptStage()).To(BeFalse())
+
+		var nilStatus *PackageStatus
+		Expect(nilStatus.IsInterruptStage()).To(BeFalse())
+	})
+
+	It("Should detect IsActive when the package state is in-progress or erroring", func() {
+		Expect((&PackageStatus{State: StateInProgress}).IsActive()).To(BeTrue())
+		Expect((&PackageStatus{State: StateErroring}).IsActive()).To(BeTrue())
+		Expect((&PackageStatus{State: StateComplete}).IsActive()).To(BeFalse())
+		Expect((&PackageStatus{State: StateSkipped}).IsActive()).To(BeFalse())
+		Expect((&PackageStatus{State: StateUnknown}).IsActive()).To(BeFalse())
+
+		var nilStatus *PackageStatus
+		Expect(nilStatus.IsActive()).To(BeFalse())
+	})
+
+	It("Should detect IsSkipped when the package state is skipped", func() {
+		Expect((&PackageStatus{State: StateSkipped}).IsSkipped()).To(BeTrue())
+		Expect((&PackageStatus{State: StateComplete}).IsSkipped()).To(BeFalse())
+		Expect((&PackageStatus{State: StateInProgress}).IsSkipped()).To(BeFalse())
+
+		var nilStatus *PackageStatus
+		Expect(nilStatus.IsSkipped()).To(BeFalse())
+	})
+
+	It("Should detect IsUninstalled from node state", func() {
+		ns := NodeState{
+			"pkg|1.0.0": PackageStatus{
+				Name: "pkg", Version: "1.0.0", Stage: StageConfig, State: StateComplete,
+			},
+		}
+		Expect(ns.IsUninstalled("pkg|1.0.0")).To(BeFalse())
+		Expect(ns.IsUninstalled("missing|2.0.0")).To(BeTrue())
+
+		var nilState NodeState
+		Expect(nilState.IsUninstalled("pkg|1.0.0")).To(BeTrue())
+	})
+
+	It("Should reject uninstall.apply=true with enabled=false via Validate", func() {
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: SkyhookSpec{
+				Packages: Packages{
+					"my-pkg": Package{
+						PackageRef: PackageRef{Name: "my-pkg", Version: "1.0.0"},
+						Image:      "my-image",
+						Uninstall:  &Uninstall{Enabled: false, Apply: true},
+					},
+				},
+			},
+		}
+		err := skyhook.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("uninstall.apply requires uninstall.enabled"))
+	})
+
+	It("Should allow uninstall.apply=true with enabled=true via Validate", func() {
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: SkyhookSpec{
+				Packages: Packages{
+					"my-pkg": Package{
+						PackageRef: PackageRef{Name: "my-pkg", Version: "1.0.0"},
+						Image:      "my-image",
+						Uninstall:  &Uninstall{Enabled: true, Apply: true},
+					},
+				},
+			},
+		}
+		err := skyhook.Validate()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("Should pass validation with nil Uninstall field", func() {
+		skyhook := &Skyhook{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec: SkyhookSpec{
+				Packages: Packages{
+					"my-pkg": Package{
+						PackageRef: PackageRef{Name: "my-pkg", Version: "1.0.0"},
+						Image:      "my-image",
+					},
+				},
+			},
+		}
+		err := skyhook.Validate()
+		Expect(err).ToNot(HaveOccurred())
+	})
+
 	It("Should detect IsDisabled correctly", func() {
 		s := &Skyhook{
 			ObjectMeta: metav1.ObjectMeta{},
@@ -598,5 +774,121 @@ var _ = Describe("Skyhook Types", func() {
 		s.Annotations = map[string]string{METADATA_PREFIX + "/disable": "false"}
 		Expect(s.IsDisabled()).To(BeFalse())
 	})
+
+	It("NextStage returns nil for StageUninstall when package has interrupt", func() {
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "my-pkg", Version: "1.0.0"},
+			Interrupt:  &Interrupt{Type: REBOOT},
+		}
+		ns := NodeState{
+			"my-pkg|1.0.0": PackageStatus{
+				Name: "my-pkg", Version: "1.0.0", Stage: StageUninstall, State: StateComplete,
+			},
+		}
+		interruptMap := map[string][]*Interrupt{}
+		configMap := map[string][]string{}
+
+		next := ns.NextStage(pkg, interruptMap, configMap)
+		Expect(next).To(BeNil())
+	})
+
+	It("NextStage returns nil for StageUninstallInterrupt", func() {
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "my-pkg", Version: "1.0.0"},
+			Interrupt:  &Interrupt{Type: REBOOT},
+		}
+		ns := NodeState{
+			"my-pkg|1.0.0": PackageStatus{
+				Name: "my-pkg", Version: "1.0.0", Stage: StageUninstallInterrupt, State: StateComplete,
+			},
+		}
+		interruptMap := map[string][]*Interrupt{}
+		configMap := map[string][]string{}
+
+		next := ns.NextStage(pkg, interruptMap, configMap)
+		Expect(next).To(BeNil())
+	})
+
+	// Regression: a package using only configInterrupts can get stuck at
+	// StageInterrupt/StateSkipped if Status.ConfigUpdates is cleared (or never
+	// persisted due to a 409 conflict on the spec patch) before ProgressSkipped
+	// promotes it. The state machine relied on the dynamic HasInterrupt(config)
+	// signal in four places — ProgressSkipped, NextStage, GetComplete,
+	// IsPackageComplete — so once the signal decayed, the package could neither
+	// be promoted out of Skipped, nor advance past StageInterrupt, nor be
+	// reported complete. Fix: once a package has reached StageInterrupt or
+	// StagePostInterrupt, progression is determined by Stage alone.
+	Context("StageInterrupt trap when configUpdates signal decays", func() {
+		// baxter has no top-level interrupt — only a configInterrupt that
+		// matched a now-cleared configUpdates entry. HasInterrupt() returns
+		// false in this state.
+		pkg := &Package{
+			PackageRef: PackageRef{Name: "baxter", Version: "3.2.1"},
+			Image:      "ghcr.io/nvidia/skyhook/agentless",
+			ConfigInterrupts: map[string]Interrupt{
+				"game.properties": {Type: SERVICE, Services: []string{"rsyslog"}},
+			},
+		}
+		emptyInterrupt := map[string][]*Interrupt{}
+		emptyConfig := map[string][]string{}
+
+		It("ProgressSkipped promotes Skipped at StageInterrupt regardless of HasInterrupt", func() {
+			ns := NodeState{
+				"baxter|3.2.1": PackageStatus{
+					Name: "baxter", Version: "3.2.1", Image: pkg.Image,
+					Stage: StageInterrupt, State: StateSkipped,
+				},
+			}
+			packages := Packages{"baxter": *pkg}
+			changed := ns.ProgressSkipped(packages, emptyInterrupt, emptyConfig)
+			Expect(changed).To(BeTrue())
+			Expect(ns["baxter|3.2.1"].State).To(Equal(StateComplete))
+		})
+
+		It("NextStage advances from StageInterrupt to StagePostInterrupt regardless of HasInterrupt", func() {
+			ns := NodeState{
+				"baxter|3.2.1": PackageStatus{
+					Name: "baxter", Version: "3.2.1", Image: pkg.Image,
+					Stage: StageInterrupt, State: StateComplete,
+				},
+			}
+			next := ns.NextStage(pkg, emptyInterrupt, emptyConfig)
+			Expect(next).ToNot(BeNil())
+			Expect(*next).To(Equal(StagePostInterrupt))
+		})
+
+		It("IsPackageComplete and GetComplete treat StagePostInterrupt as terminal regardless of HasInterrupt", func() {
+			ns := NodeState{
+				"baxter|3.2.1": PackageStatus{
+					Name: "baxter", Version: "3.2.1", Image: pkg.Image,
+					Stage: StagePostInterrupt, State: StateComplete,
+				},
+			}
+			packages := Packages{"baxter": *pkg}
+			Expect(ns.IsPackageComplete(*pkg, emptyInterrupt, emptyConfig)).To(BeTrue())
+			Expect(ns.GetComplete(packages, emptyInterrupt, emptyConfig)).To(ContainElement("baxter|3.2.1"))
+		})
+	})
+
+	DescribeTable("splitImageReference parses repository, tag, and digest",
+		func(image, wantRepo string, wantTag, wantDigest *string) {
+			repo, tag, digest := splitImageReference(image)
+			Expect(repo).To(Equal(wantRepo))
+			Expect(tag).To(Equal(wantTag))
+			Expect(digest).To(Equal(wantDigest))
+		},
+		Entry("bare name", "alpine", "alpine", nil, nil),
+		Entry("name with tag", "alpine:3.20", "alpine", ptr.To("3.20"), nil),
+		Entry("registry repository, no tag", "ghcr.io/org/pkg", "ghcr.io/org/pkg", nil, nil),
+		Entry("registry repository with tag", "ghcr.io/org/pkg:1.2.3", "ghcr.io/org/pkg", ptr.To("1.2.3"), nil),
+		Entry("registry port is not a tag", "localhost:5000/org/pkg", "localhost:5000/org/pkg", nil, nil),
+		Entry("registry port with tag", "localhost:5000/org/pkg:1.2.3", "localhost:5000/org/pkg", ptr.To("1.2.3"), nil),
+		Entry("digest only", "ghcr.io/org/pkg@sha256:abc123", "ghcr.io/org/pkg", nil, ptr.To("sha256:abc123")),
+		Entry("registry port with digest, no tag", "localhost:5000/org/pkg@sha256:abc123", "localhost:5000/org/pkg", nil, ptr.To("sha256:abc123")),
+		Entry("tag and digest", "ghcr.io/org/pkg:1.2.3@sha256:abc123", "ghcr.io/org/pkg", ptr.To("1.2.3"), ptr.To("sha256:abc123")),
+		Entry("registry port with tag and digest", "localhost:5000/org/pkg:1.2.3@sha256:abc123", "localhost:5000/org/pkg", ptr.To("1.2.3"), ptr.To("sha256:abc123")),
+		Entry("empty tag separator", "ghcr.io/org/pkg:", "ghcr.io/org/pkg", ptr.To(""), nil),
+		Entry("empty digest separator", "ghcr.io/org/pkg@", "ghcr.io/org/pkg", nil, ptr.To("")),
+	)
 
 })

@@ -30,9 +30,10 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset skyhook-valid-policy --confirm 2>/dev/null || true
-          ../skyhook-cli reset skyhook-missing-policy --confirm 2>/dev/null || true
-          ../skyhook-cli reset invalid-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset skyhook-valid-policy --confirm 2>/dev/null || true
+          ../nodewright-cli reset skyhook-missing-policy --confirm 2>/dev/null || true
+          ../nodewright-cli reset invalid-skyhook --confirm 2>/dev/null || true
+          ../nodewright-cli reset uninstall-webhook-reject --confirm 2>/dev/null || true
           echo "✓ State reset complete"
   
   - try:
@@ -49,14 +50,14 @@ spec:
     - script:
         content: |
           ## Create invalid skyhook
-          kubectl apply -f invalid-skyhook.yaml 2>err.txt
+          kubectl apply -f invalid-nodewright.yaml 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
             echo "ERROR: invalid CR was accepted"
             exit 1
           fi
-          if ! grep -q "admission webhook \"validate-skyhook.nvidia.com\" denied the request" err.txt; then
+          if ! grep -q "admission webhook \"validate-nodewright.nvidia.com\" denied the request" err.txt; then
             echo "ERROR: Did not get expected webhook validation error"
             cat err.txt
             exit 1
@@ -71,7 +72,7 @@ spec:
             echo "ERROR: invalid DeploymentPolicy was accepted"
             exit 1
           fi
-          if ! grep -q "admission webhook \"validate-deploymentpolicy.nvidia.com\" denied the request" err.txt; then
+          if ! grep -q "admission webhook \"validate-deploymentpolicy-nodewright.nvidia.com\" denied the request" err.txt; then
             echo "ERROR: Did not get expected DeploymentPolicy webhook validation error"
             cat err.txt
             exit 1
@@ -81,7 +82,7 @@ spec:
     - script:
         content: |
           echo "Testing: Create Skyhook with non-existent DeploymentPolicy..."
-          kubectl apply -f skyhook-missing-policy.yaml 2>err.txt
+          kubectl apply -f nodewright-missing-policy.yaml 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -101,13 +102,13 @@ spec:
     
     # Test: Create Skyhook with existing DeploymentPolicy (should succeed)
     - apply:
-        file: skyhook-valid-policy.yaml
+        file: nodewright-valid-policy.yaml
     
     # Test: Update Skyhook to reference non-existent policy (should fail)
     - script:
         content: |
           echo "Testing: Update Skyhook to reference non-existent policy..."
-          kubectl patch skyhook skyhook-valid-policy --type=merge -p '{"spec":{"deploymentPolicy":"does-not-exist"}}' 2>err.txt
+          kubectl patch nodewright skyhook-valid-policy --type=merge -p '{"spec":{"deploymentPolicy":"does-not-exist"}}' 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -125,7 +126,7 @@ spec:
     - script:
         content: |
           echo "Testing: Delete DeploymentPolicy while in use..."
-          kubectl delete deploymentpolicy test-policy 2>err.txt
+          kubectl delete deploymentpolicy.nodewright.nvidia.com test-policy 2>err.txt
           ec=$?
           cat err.txt
           if [ $ec -eq 0 ]; then
@@ -143,11 +144,79 @@ spec:
     - script:
         content: |
           echo "Testing: Delete Skyhook then policy..."
-          kubectl delete skyhook skyhook-valid-policy
+          kubectl delete nodewright skyhook-valid-policy
           echo "✅ Skyhook deleted"
-          kubectl delete deploymentpolicy test-policy
+          kubectl delete deploymentpolicy.nodewright.nvidia.com test-policy
           echo "✅ Policy deleted after Skyhook removed"
     
+    # Test: Reject uninstall.apply=true with enabled=false
+    - script:
+        content: |
+          echo "Testing: Reject uninstall.apply=true with enabled=false..."
+          kubectl apply -f nodewright-apply-without-enabled.yaml 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: invalid CR with apply=true enabled=false was accepted"
+            exit 1
+          fi
+          if ! grep -q "uninstall.apply requires uninstall.enabled" err.txt; then
+            echo "ERROR: Did not get expected validation error"
+            cat err.txt
+            exit 1
+          fi
+          echo "✅ Correctly rejected: apply=true with enabled=false"
+
+    # Test: Create valid uninstall-enabled Skyhook, then reject removal before uninstall
+    - apply:
+        file: nodewright-uninstall-valid.yaml
+    - assert:
+        resource:
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
+          metadata:
+            name: uninstall-webhook-reject
+          status:
+            status: complete
+    - script:
+        content: |
+          echo "Testing: Reject removal of enabled package before uninstall..."
+          kubectl apply -f update-remove-enabled-pkg.yaml 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: removal of enabled package without uninstall was accepted"
+            exit 1
+          fi
+          if ! grep -q "uninstall.enabled=true" err.txt; then
+            echo "ERROR: Did not get expected removal rejection error"
+            cat err.txt
+            exit 1
+          fi
+          echo "✅ Correctly rejected: removal of enabled package before uninstall"
+
+    # Test: Reject downgrade of enabled package without apply=true
+    - script:
+        content: |
+          echo "Testing: Reject downgrade of enabled package without apply=true..."
+          kubectl apply -f update-downgrade-enabled-pkg.yaml 2>err.txt
+          ec=$?
+          cat err.txt
+          if [ $ec -eq 0 ]; then
+            echo "ERROR: downgrade of enabled package without apply=true was accepted"
+            exit 1
+          fi
+          if ! grep -q "set uninstall.apply=true first" err.txt; then
+            echo "ERROR: Did not get expected downgrade rejection error"
+            cat err.txt
+            exit 1
+          fi
+          echo "✅ Correctly rejected: downgrade of enabled package without apply=true"
+
+    - script:
+        content: |
+          kubectl delete nodewright uninstall-webhook-reject --timeout=120s || true
+
     - assert:
         file: assert-webhook.yaml
     - script:
@@ -163,12 +232,12 @@ spec:
         resource:
           apiVersion: admissionregistration.k8s.io/v1
           kind: ValidatingWebhookConfiguration
-          name: skyhook-operator-validating-webhook
+          name: nodewright-validating-webhook
     - error:
         resource:
           apiVersion: admissionregistration.k8s.io/v1
           kind: MutatingWebhookConfiguration
-          name: skyhook-operator-mutating-webhook
+          name: nodewright-mutating-webhook
     finally:
     - script:
         content: |

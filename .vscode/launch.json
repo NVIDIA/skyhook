@@ -16,7 +16,7 @@
                 "ENABLE_WEBHOOKS": "false",
                 "LOG_ENCODER": "console",
                 "REAPPLY_ON_REBOOT": "false",
-                // "AGENT_IMAGE": "ghcr.io/nvidia/skyhook/agent:latest", // the real agent image, for testing actual packages
+                // "AGENT_IMAGE": "ghcr.io/nvidia/nodewright/agent:latest", // the real agent image, for testing actual packages
                 "AGENT_IMAGE": "ghcr.io/nvidia/skyhook/agentless:6.2.0", // this is the mock image, if you need to test for real, use the real image.    
             },
             "args": [],

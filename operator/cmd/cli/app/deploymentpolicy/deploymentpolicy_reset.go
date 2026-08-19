@@ -28,6 +28,7 @@ import (
 
 	"github.com/NVIDIA/nodewright/operator/internal/cli/client"
 	cliContext "github.com/NVIDIA/nodewright/operator/internal/cli/context"
+	"github.com/NVIDIA/nodewright/operator/internal/cli/preflight"
 	"github.com/NVIDIA/nodewright/operator/internal/cli/utils"
 )
 
@@ -41,11 +42,11 @@ func NewResetCmd(ctx *cliContext.CLIContext) *cobra.Command {
 	opts := &resetOptions{}
 
 	cmd := &cobra.Command{
-		Use:   "reset <skyhook-name>",
-		Short: "Reset batch state for a Skyhook",
-		Long: `Reset the deployment policy batch processing state for a Skyhook.
+		Use:   "reset <nodewright-name>",
+		Short: "Reset batch state for a NodeWright",
+		Long: `Reset the deployment policy batch processing state for a NodeWright.
 
-This command resets the batch state for all compartments in the specified Skyhook,
+This command resets the batch state for all compartments in the specified NodeWright,
 allowing the rollout to start fresh from batch 1. This is useful when:
   - A rollout has completed and you want to start fresh
   - Batch processing is stuck and needs to be reset
@@ -58,14 +59,14 @@ The batch state tracks:
   - Whether processing should stop
 
 After reset, the next reconciliation will start from batch 1.`,
-		Example: `  # Reset batch state for gpu-init Skyhook
-  kubectl skyhook deployment-policy reset gpu-init --confirm
+		Example: `  # Reset batch state for gpu-init NodeWright
+  kubectl nodewright deployment-policy reset gpu-init --confirm
 
   # Preview changes without applying (dry-run)
-  kubectl skyhook deployment-policy reset gpu-init --dry-run
+  kubectl nodewright deployment-policy reset gpu-init --dry-run
 
   # Using the short alias
-  kubectl skyhook dp reset gpu-init --confirm`,
+  kubectl nodewright dp reset gpu-init --confirm`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			skyhookName := args[0]
@@ -74,6 +75,10 @@ After reset, the next reconciliation will start from batch 1.`,
 			kubeClient, err := clientFactory.Client()
 			if err != nil {
 				return fmt.Errorf("initializing kubernetes client: %w", err)
+			}
+
+			if err := preflight.EnsureNodeWrightServed(kubeClient.Kubernetes().Discovery()); err != nil {
+				return err
 			}
 
 			return runDeploymentPolicyReset(cmd.Context(), cmd, kubeClient, skyhookName, opts, ctx)
@@ -86,16 +91,16 @@ After reset, the next reconciliation will start from batch 1.`,
 }
 
 func runDeploymentPolicyReset(ctx context.Context, cmd *cobra.Command, kubeClient *client.Client, skyhookName string, opts *resetOptions, cliCtx *cliContext.CLIContext) error {
-	// Get the Skyhook
+	// Get the NodeWright
 	skyhook, err := utils.GetSkyhook(ctx, kubeClient.Dynamic(), skyhookName)
 	if err != nil {
-		return fmt.Errorf("getting skyhook %q: %w", skyhookName, err)
+		return fmt.Errorf("getting NodeWright %q: %w", skyhookName, err)
 	}
 
 	// Check if there's any batch state to reset
 	compartmentCount := len(skyhook.Status.CompartmentStatuses)
 	if compartmentCount == 0 {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook %q has no compartment statuses to reset\n", skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright %q has no compartment statuses to reset\n", skyhookName)
 		return nil
 	}
 
@@ -108,7 +113,7 @@ func runDeploymentPolicyReset(ctx context.Context, cmd *cobra.Command, kubeClien
 	}
 
 	// Print summary
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Skyhook: %s\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "NodeWright: %s\n", skyhookName)
 	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Compartments: %d total, %d with batch state\n", compartmentCount, compartmentsWithBatchState)
 
 	if compartmentsWithBatchState > 0 {
@@ -135,7 +140,7 @@ func runDeploymentPolicyReset(ctx context.Context, cmd *cobra.Command, kubeClien
 
 	// Confirmation
 	if !opts.confirm {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will reset the batch state for Skyhook %q.\n", skyhookName)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nThis will reset the batch state for NodeWright %q.\n", skyhookName)
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "The next reconciliation will start from batch 1.\n")
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Continue? [y/N]: ")
 
@@ -157,19 +162,19 @@ func runDeploymentPolicyReset(ctx context.Context, cmd *cobra.Command, kubeClien
 
 	// Patch the status
 	if err := utils.PatchSkyhookStatus(ctx, kubeClient.Dynamic(), skyhookName, skyhook.Status); err != nil {
-		return fmt.Errorf("patching skyhook status: %w", err)
+		return fmt.Errorf("patching NodeWright status: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset batch state for Skyhook %q\n", skyhookName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSuccessfully reset batch state for NodeWright %q\n", skyhookName)
 	return nil
 }
 
-// ResetBatchStateForSkyhook resets the batch state for a Skyhook and patches the status.
+// ResetBatchStateForSkyhook resets the batch state for a NodeWright and patches the status.
 // This is exported for use by the main reset command.
 func ResetBatchStateForSkyhook(ctx context.Context, dynamicClient client.Client, skyhookName string) error {
 	skyhook, err := utils.GetSkyhook(ctx, dynamicClient.Dynamic(), skyhookName)
 	if err != nil {
-		return fmt.Errorf("getting skyhook %q: %w", skyhookName, err)
+		return fmt.Errorf("getting NodeWright %q: %w", skyhookName, err)
 	}
 
 	// Reset batch state
@@ -177,7 +182,7 @@ func ResetBatchStateForSkyhook(ctx context.Context, dynamicClient client.Client,
 
 	// Patch the status
 	if err := utils.PatchSkyhookStatus(ctx, dynamicClient.Dynamic(), skyhookName, skyhook.Status); err != nil {
-		return fmt.Errorf("patching skyhook status: %w", err)
+		return fmt.Errorf("patching NodeWright status: %w", err)
 	}
 
 	return nil

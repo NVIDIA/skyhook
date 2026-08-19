@@ -19,20 +19,17 @@ Full changelogs are maintained per component and published as [GitHub Releases](
 
 ## Generating
 
-Regenerate a component changelog from git history:
+Regenerate a component changelog from git history (interactive):
 
 ```bash
-make changelog COMPONENT=operator
+make changelog
 ```
 
-Preview unreleased changes before tagging:
+Non-interactive form (e.g. for scripting or bulk refresh):
 
 ```bash
-make changelog-preview COMPONENT=operator
+scripts/gen-changelog.sh operator
+for c in operator agent chart cli; do scripts/gen-changelog.sh "$c"; done
 ```
 
-Regenerate all component changelogs:
-
-```bash
-make changelog-all
-```
+See `docs/contributing/release-process.md` for the full changelog and release-tagging workflow.

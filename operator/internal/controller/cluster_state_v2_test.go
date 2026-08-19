@@ -20,12 +20,14 @@ package controller
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	skyhookNodesMock "github.com/NVIDIA/nodewright/operator/internal/controller/mock"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	wrapperMock "github.com/NVIDIA/nodewright/operator/internal/wrapper/mock"
@@ -34,9 +36,16 @@ import (
 	kptr "k8s.io/utils/ptr"
 )
 
-const (
-	annotationTrueValue = "true"
-)
+var testLogger = logr.Discard()
+
+func findSkyhookStatusCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
+		}
+	}
+	return nil
+}
 
 var _ = Describe("cluster state v2 tests", func() {
 
@@ -123,7 +132,7 @@ var _ = Describe("cluster state v2 tests", func() {
 		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{Name: "node1", Labels: map[string]string{v1alpha1.METADATA_PREFIX + "/ignore": "true"}},
 		}
-		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.Skyhook{})
+		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.NodeWright{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(CheckNodeIgnoreLabel(skyhookNode)).To(BeTrue())
 	})
@@ -132,7 +141,7 @@ var _ = Describe("cluster state v2 tests", func() {
 		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{Name: "node1", Labels: map[string]string{}},
 		}
-		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.Skyhook{})
+		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.NodeWright{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(CheckNodeIgnoreLabel(skyhookNode)).To(BeFalse())
 	})
@@ -141,7 +150,7 @@ var _ = Describe("cluster state v2 tests", func() {
 		node := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{Name: "node1", Labels: map[string]string{v1alpha1.METADATA_PREFIX + "/ignore": "false"}},
 		}
-		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.Skyhook{})
+		skyhookNode, err := wrapper.NewSkyhookNode(node, &v1alpha1.NodeWright{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(CheckNodeIgnoreLabel(skyhookNode)).To(BeFalse())
 	})
@@ -188,9 +197,9 @@ var _ = Describe("IsNodeReadyForSkyhook", func() {
 	makeSkyhookNodesMock := func(name string, priority int, nodeCompletions map[string]bool, disabled bool) *skyhookNodesMock.MockSkyhookNodes {
 		mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
 
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec:       v1alpha1.SkyhookSpec{Priority: priority},
+			Spec:       v1alpha1.NodeWrightSpec{Priority: priority},
 		}
 		mock.EXPECT().GetSkyhook().Return(wrapper.NewSkyhookWrapper(skyhook)).Maybe()
 		mock.EXPECT().IsDisabled().Return(disabled).Maybe()
@@ -281,9 +290,9 @@ var _ = Describe("IsNodeReadyForSkyhook", func() {
 	makeSkyhookNodesMockWithSequencing := func(name string, priority int, sequencing v1alpha1.SequencingMode, nodeCompletions map[string]bool, complete bool) *skyhookNodesMock.MockSkyhookNodes {
 		mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
 
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec:       v1alpha1.SkyhookSpec{Priority: priority, Sequencing: sequencing},
+			Spec:       v1alpha1.NodeWrightSpec{Priority: priority, Sequencing: sequencing},
 		}
 		mock.EXPECT().GetSkyhook().Return(wrapper.NewSkyhookWrapper(skyhook)).Maybe()
 		mock.EXPECT().IsDisabled().Return(false).Maybe()
@@ -340,9 +349,9 @@ var _ = Describe("IsNodeReadyForSkyhook", func() {
 var _ = Describe("isBlockedByGlobalPredecessor", func() {
 	makeSkyhookNodesMockForBlocked := func(name string, priority int, sequencing v1alpha1.SequencingMode, complete bool, disabled bool) *skyhookNodesMock.MockSkyhookNodes {
 		mock := skyhookNodesMock.NewMockSkyhookNodes(GinkgoT())
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec:       v1alpha1.SkyhookSpec{Priority: priority, Sequencing: sequencing},
+			Spec:       v1alpha1.NodeWrightSpec{Priority: priority, Sequencing: sequencing},
 		}
 		mock.EXPECT().GetSkyhook().Return(wrapper.NewSkyhookWrapper(skyhook)).Maybe()
 		mock.EXPECT().IsDisabled().Return(disabled).Maybe()
@@ -386,8 +395,8 @@ var _ = Describe("isBlockedByGlobalPredecessor", func() {
 var _ = Describe("BuildState ordering", func() {
 	It("orders skyhooks by priority and name", func() {
 		priorityKey := v1alpha1.METADATA_PREFIX + "/priority"
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "b", Annotations: map[string]string{priorityKey: "2"}},
 				},
@@ -413,11 +422,11 @@ var _ = Describe("BuildState ordering", func() {
 
 var _ = Describe("Safe rollouts backwards compatibility", func() {
 	It("creates synthetic FixedStrategy compartment when InterruptionBudget is set but no DeploymentPolicy", func() {
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						InterruptionBudget: v1alpha1.InterruptionBudget{
 							Count: kptr.To(5),
 						},
@@ -458,11 +467,11 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 	})
 
 	It("Creates default 100% compartment when no InterruptionBudget and no DeploymentPolicy", func() {
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-					Spec:       v1alpha1.SkyhookSpec{},
+					Spec:       v1alpha1.NodeWrightSpec{},
 				},
 			},
 		}
@@ -499,17 +508,17 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 	})
 
 	It("should add condition and set status when deployment policy is referenced but not found", func() {
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       "test-skyhook",
 						Generation: 1,
 					},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						DeploymentPolicy: "missing-policy",
 					},
-					Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.NodeWrightStatus{
 						CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 							"old-compartment": {
 								Matched: 5,
@@ -537,39 +546,36 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 		// Verify condition was added
 		conditions := skyhookNodes.GetSkyhook().Status.Conditions
 		Expect(conditions).NotTo(BeNil())
-		found := false
-		for _, cond := range conditions {
-			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
-				Expect(cond.Status).To(Equal(metav1.ConditionTrue))
-				Expect(cond.Reason).To(Equal("DeploymentPolicyNotFound"))
-				Expect(cond.Message).To(ContainSubstring("missing-policy"))
-				found = true
-				break
-			}
-		}
-		Expect(found).To(BeTrue(), "DeploymentPolicyNotFound condition should be present")
+		condition := findSkyhookStatusCondition(conditions, wrapper.SkyhookConditionDeploymentPolicyNotFound)
+		Expect(condition).NotTo(BeNil(), "DeploymentPolicyNotFound condition should be present")
+		Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+		Expect(condition.Reason).To(Equal("DeploymentPolicyNotFound"))
+		Expect(condition.Message).To(ContainSubstring("missing-policy"))
+
+		legacyCondition := findSkyhookStatusCondition(conditions, wrapper.LegacySkyhookConditionType(wrapper.SkyhookConditionDeploymentPolicyNotFound))
+		Expect(legacyCondition).NotTo(BeNil(), "legacy DeploymentPolicyNotFound condition should be retained")
 
 		// Verify Updated flag was set
 		Expect(skyhookNodes.GetSkyhook().Updated).To(BeTrue())
 
 		// Test IntrospectSkyhook sets status to blocked
-		changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+		changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 		Expect(changed).To(BeTrue())
 		Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusBlocked))
 	})
 
 	It("should clear condition when deployment policy is found after being missing", func() {
-		skyhooks := &v1alpha1.SkyhookList{
-			Items: []v1alpha1.Skyhook{
+		skyhooks := &v1alpha1.NodeWrightList{
+			Items: []v1alpha1.NodeWright{
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       "test-skyhook",
 						Generation: 2,
 					},
-					Spec: v1alpha1.SkyhookSpec{
+					Spec: v1alpha1.NodeWrightSpec{
 						DeploymentPolicy: "found-policy",
 					},
-					Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.NodeWrightStatus{
 						Conditions: []metav1.Condition{
 							{
 								Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
@@ -614,14 +620,8 @@ var _ = Describe("Safe rollouts backwards compatibility", func() {
 
 		// Verify condition was removed
 		conditions := skyhookNodes.GetSkyhook().Status.Conditions
-		found := false
-		for _, cond := range conditions {
-			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
-				found = true
-				break
-			}
-		}
-		Expect(found).To(BeFalse(), "DeploymentPolicyNotFound condition should be removed")
+		Expect(findSkyhookStatusCondition(conditions, wrapper.SkyhookConditionDeploymentPolicyNotFound)).To(BeNil(), "DeploymentPolicyNotFound condition should be removed")
+		Expect(findSkyhookStatusCondition(conditions, wrapper.LegacySkyhookConditionType(wrapper.SkyhookConditionDeploymentPolicyNotFound))).To(BeNil(), "legacy DeploymentPolicyNotFound condition should be removed")
 	})
 })
 
@@ -633,7 +633,7 @@ var _ = Describe("AddCompartmentNode", func() {
 			},
 		}
 
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-skyhook",
 			},
@@ -666,7 +666,7 @@ var _ = Describe("AddCompartmentNode", func() {
 			},
 		}
 
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-skyhook",
 			},
@@ -691,9 +691,9 @@ var _ = Describe("AddCompartmentNode", func() {
 
 var _ = Describe("partitionNodesIntoCompartments", func() {
 	It("should skip skyhooks with no deployment policy", func() {
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec:       v1alpha1.SkyhookSpec{
+			Spec:       v1alpha1.NodeWrightSpec{
 				// No deployment policy
 			},
 		}
@@ -719,9 +719,9 @@ var _ = Describe("partitionNodesIntoCompartments", func() {
 	})
 
 	It("should skip skyhooks with empty compartments (missing policy)", func() {
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				DeploymentPolicy: "missing-policy", // Policy doesn't exist
 			},
 		}
@@ -758,9 +758,9 @@ var _ = Describe("partitionNodesIntoCompartments", func() {
 			Name: v1alpha1.DefaultCompartmentName,
 		}, nil)
 
-		skyhook := &v1alpha1.Skyhook{
+		skyhook := &v1alpha1.NodeWright{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-			Spec: v1alpha1.SkyhookSpec{
+			Spec: v1alpha1.NodeWrightSpec{
 				DeploymentPolicy: "test-policy",
 			},
 		}
@@ -822,14 +822,14 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		// Create actual wrapper nodes using NewSkyhookNodeOnly
 		node1, err := wrapper.NewSkyhookNode(
 			mockNode1,
-			&v1alpha1.Skyhook{
+			&v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
 			},
 		)
 		Expect(err).NotTo(HaveOccurred())
 		node2, err := wrapper.NewSkyhookNode(
 			mockNode2,
-			&v1alpha1.Skyhook{
+			&v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
 			},
 		)
@@ -837,8 +837,8 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		// Create mock skyhook wrapper with status maps containing both existing and removed nodes
 		mockSkyhook := &wrapper.Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					NodeState: map[string]v1alpha1.NodeState{
 						"node1":        {},
 						"node2":        {},
@@ -919,7 +919,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 		// Create actual wrapper nodes using NewSkyhookNodeOnly
 		node1, err := wrapper.NewSkyhookNode(
 			mockNode1,
-			&v1alpha1.Skyhook{
+			&v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
 			},
 		)
@@ -927,8 +927,8 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		// Create mock skyhook wrapper with status maps containing both existing and removed nodes
 		mockSkyhook := &wrapper.Skyhook{
-			Skyhook: &v1alpha1.Skyhook{
-				Status: v1alpha1.SkyhookStatus{
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
 					NodeState: map[string]v1alpha1.NodeState{
 						"node1": {},
 					},
@@ -1026,12 +1026,12 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 			// Create a real skyhook for testing
 			mockSkyhook = &wrapper.Skyhook{
-				Skyhook: &v1alpha1.Skyhook{
+				NodeWright: &v1alpha1.NodeWright{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "test-skyhook",
 						Annotations: map[string]string{},
 					},
-					Status: v1alpha1.SkyhookStatus{
+					Status: v1alpha1.NodeWrightStatus{
 						Status: v1alpha1.StatusInProgress,
 					},
 				},
@@ -1042,10 +1042,10 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node2"}}
 
 			var err error
-			mockNode1, err = wrapper.NewSkyhookNode(node1, mockSkyhook.Skyhook)
+			mockNode1, err = wrapper.NewSkyhookNode(node1, mockSkyhook.NodeWright)
 			Expect(err).NotTo(HaveOccurred())
 
-			mockNode2, err = wrapper.NewSkyhookNode(node2, mockSkyhook.Skyhook)
+			mockNode2, err = wrapper.NewSkyhookNode(node2, mockSkyhook.NodeWright)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -1058,27 +1058,49 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			mockSkyhookNodes.EXPECT().Status().Return(v1alpha1.StatusInProgress)
 			mockSkyhookNodes.EXPECT().SetStatus(v1alpha1.StatusPaused).Once()
 			mockSkyhookNodes.EXPECT().GetNodes().Return([]wrapper.SkyhookNode{mockNode1, mockNode2})
+			mockSkyhookNodes.EXPECT().UpdateCondition(testLogger).Return(false)
 
 			// Call the function
-			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes, testLogger)
 
 			// Verify the result
 			Expect(result).To(BeTrue())
 		})
 
-		It("should not change status when skyhook is paused but status is already paused", func() {
+		It("should not change status when skyhook and all nodes are already paused", func() {
 			// Set up the skyhook as paused with paused status
 			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = annotationTrueValue
+			mockNode1.SetStatus(v1alpha1.StatusPaused)
+			mockNode2.SetStatus(v1alpha1.StatusPaused)
 
 			// Set up mock expectations
 			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
 			mockSkyhookNodes.EXPECT().Status().Return(v1alpha1.StatusPaused)
+			mockSkyhookNodes.EXPECT().GetNodes().Return([]wrapper.SkyhookNode{mockNode1, mockNode2})
+			mockSkyhookNodes.EXPECT().UpdateCondition(testLogger).Return(false)
 
 			// Call the function
-			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes, testLogger)
 
 			// Verify the result
 			Expect(result).To(BeFalse())
+		})
+
+		It("should reconcile node statuses when skyhook is already paused", func() {
+			mockSkyhook.Annotations[v1alpha1.METADATA_PREFIX+"/pause"] = annotationTrueValue
+			mockNode1.SetStatus(v1alpha1.StatusInProgress)
+			mockNode2.SetStatus(v1alpha1.StatusPaused)
+
+			mockSkyhookNodes.EXPECT().IsPaused().Return(true)
+			mockSkyhookNodes.EXPECT().Status().Return(v1alpha1.StatusPaused)
+			mockSkyhookNodes.EXPECT().GetNodes().Return([]wrapper.SkyhookNode{mockNode1, mockNode2})
+			mockSkyhookNodes.EXPECT().UpdateCondition(testLogger).Return(false)
+
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes, testLogger)
+
+			Expect(result).To(BeTrue())
+			Expect(mockNode1.Status()).To(Equal(v1alpha1.StatusPaused))
+			Expect(mockNode2.Status()).To(Equal(v1alpha1.StatusPaused))
 		})
 
 		It("should not change status when skyhook is not paused", func() {
@@ -1089,7 +1111,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			mockSkyhookNodes.EXPECT().IsPaused().Return(false)
 
 			// Call the function
-			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes, testLogger)
 
 			// Verify the result
 			Expect(result).To(BeFalse())
@@ -1100,7 +1122,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			mockSkyhookNodes.EXPECT().IsPaused().Return(false)
 
 			// Call the function
-			result := UpdateSkyhookPauseStatus(mockSkyhookNodes)
+			result := UpdateSkyhookPauseStatus(mockSkyhookNodes, testLogger)
 
 			// Verify the result
 			Expect(result).To(BeFalse())
@@ -1108,16 +1130,16 @@ var _ = Describe("CleanupRemovedNodes", func() {
 	})
 
 	Describe("IntrospectSkyhook", func() {
-		var testSkyhook *v1alpha1.Skyhook
+		var testSkyhook *v1alpha1.NodeWright
 		var testNode *corev1.Node
 
 		BeforeEach(func() {
-			testSkyhook = &v1alpha1.Skyhook{
+			testSkyhook = &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-skyhook",
 					Annotations: map[string]string{},
 				},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"test-package": {
 							PackageRef: v1alpha1.PackageRef{Name: "test-package", Version: "1.0.0"},
@@ -1125,7 +1147,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					Status: v1alpha1.StatusInProgress,
 				},
 			}
@@ -1139,7 +1161,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should set status to disabled when skyhook is disabled", func() {
 			// Set up the skyhook as disabled
-			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = annotationTrueValue
+			testSkyhook.Annotations["nodewright.nvidia.com/disable"] = annotationTrueValue
 
 			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
 			Expect(err).NotTo(HaveOccurred())
@@ -1150,7 +1172,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			}
 
 			// Call the function
-			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 
 			// Verify the result
 			Expect(changed).To(BeTrue())
@@ -1159,7 +1181,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should set status to paused when skyhook is paused", func() {
 			// Set up the skyhook as paused
-			testSkyhook.Annotations["skyhook.nvidia.com/pause"] = annotationTrueValue
+			testSkyhook.Annotations["nodewright.nvidia.com/pause"] = annotationTrueValue
 
 			skyhookNode, err := wrapper.NewSkyhookNode(testNode, testSkyhook)
 			Expect(err).NotTo(HaveOccurred())
@@ -1170,7 +1192,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			}
 
 			// Call the function
-			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 
 			// Verify the result
 			Expect(changed).To(BeTrue())
@@ -1181,9 +1203,9 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			// Test per-node priority: A node should be waiting if it hasn't completed
 			// higher-priority skyhooks that target that same node.
 			// Create higher priority skyhook (priority 1)
-			higherPrioritySkyhook := &v1alpha1.Skyhook{
+			higherPrioritySkyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-1"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Priority: 1,
 					Packages: map[string]v1alpha1.Package{
 						"test-package-1": {
@@ -1192,13 +1214,13 @@ var _ = Describe("CleanupRemovedNodes", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+				Status: v1alpha1.NodeWrightStatus{Status: v1alpha1.StatusInProgress},
 			}
 
 			// Create lower priority skyhook (priority 2)
-			lowerPrioritySkyhook := &v1alpha1.Skyhook{
+			lowerPrioritySkyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-2"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Priority: 2,
 					Packages: map[string]v1alpha1.Package{
 						"test-package-2": {
@@ -1207,7 +1229,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+				Status: v1alpha1.NodeWrightStatus{Status: v1alpha1.StatusInProgress},
 			}
 
 			// Use the same node for both skyhooks to test per-node waiting
@@ -1233,7 +1255,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 			// Call the function - node-1 in skyhook2 should be waiting because
 			// it hasn't completed skyhook1 yet (per-node priority)
-			changed := IntrospectSkyhook(skyhookNodes2, allSkyhooks)
+			changed := IntrospectSkyhook(skyhookNodes2, allSkyhooks, testLogger)
 
 			// Verify the result - node should be waiting
 			Expect(changed).To(BeTrue())
@@ -1243,9 +1265,9 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should not set waiting status when node is not in higher priority skyhook", func() {
 			// Test that a node doesn't wait if it's not targeted by higher-priority skyhooks
-			higherPrioritySkyhook := &v1alpha1.Skyhook{
+			higherPrioritySkyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-1"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Priority: 1,
 					Packages: map[string]v1alpha1.Package{
 						"test-package-1": {
@@ -1254,12 +1276,12 @@ var _ = Describe("CleanupRemovedNodes", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+				Status: v1alpha1.NodeWrightStatus{Status: v1alpha1.StatusInProgress},
 			}
 
-			lowerPrioritySkyhook := &v1alpha1.Skyhook{
+			lowerPrioritySkyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "skyhook-2"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Priority: 2,
 					Packages: map[string]v1alpha1.Package{
 						"test-package-2": {
@@ -1268,7 +1290,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{Status: v1alpha1.StatusInProgress},
+				Status: v1alpha1.NodeWrightStatus{Status: v1alpha1.StatusInProgress},
 			}
 
 			// Different nodes for each skyhook
@@ -1295,7 +1317,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 			// Call the function - node-2 should NOT be waiting because
 			// skyhook1 doesn't target node-2
-			IntrospectSkyhook(skyhookNodes2, allSkyhooks)
+			IntrospectSkyhook(skyhookNodes2, allSkyhooks, testLogger)
 
 			// Node-2 should not be waiting (it's not in skyhook1)
 			Expect(skyhookNode2.Status()).NotTo(Equal(v1alpha1.StatusWaiting))
@@ -1303,9 +1325,9 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should not change status when skyhook is complete", func() {
 			// Create a complete skyhook with no packages
-			completeSkyhook := &v1alpha1.Skyhook{
+			completeSkyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-				Status:     v1alpha1.SkyhookStatus{Status: v1alpha1.StatusComplete},
+				Status:     v1alpha1.NodeWrightStatus{Status: v1alpha1.StatusComplete},
 			}
 
 			node := &corev1.Node{
@@ -1327,10 +1349,43 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			}
 
 			// Call the function
-			_ = IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+			_ = IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 
 			// Verify the result - status should stay complete
 			Expect(skyhookNodes.Status()).To(Equal(v1alpha1.StatusComplete))
+		})
+
+		It("should prune completed nodes from node priority when skyhook is complete", func() {
+			completeSkyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
+				Status: v1alpha1.NodeWrightStatus{
+					Status: v1alpha1.StatusComplete,
+					NodePriority: map[string]metav1.Time{
+						"test-node": metav1.NewTime(time.Unix(123, 0)),
+					},
+					NodeOrderOffset: 1,
+				},
+			}
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+			}
+
+			skyhookNode, err := wrapper.NewSkyhookNode(node, completeSkyhook)
+			Expect(err).NotTo(HaveOccurred())
+			skyhookNode.SetStatus(v1alpha1.StatusComplete)
+
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(completeSkyhook),
+				nodes:   []wrapper.SkyhookNode{skyhookNode},
+			}
+
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
+
+			Expect(changed).To(BeTrue())
+			Expect(skyhookNodes.GetSkyhook().Status.NodePriority).NotTo(HaveKey("test-node"))
+			Expect(skyhookNodes.GetSkyhook().Status.NodeOrderOffset).To(Equal(2))
+			Expect(skyhookNodes.GetSkyhook().Updated).To(BeTrue())
 		})
 
 		It("should return true when node status changes", func() {
@@ -1344,7 +1399,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			}
 
 			// Call the function
-			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 
 			// Verify the result
 			Expect(changed).To(BeTrue())
@@ -1372,7 +1427,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			skyhookNodes.AddCompartment(v1alpha1.DefaultCompartmentName, compartment)
 
 			// Call IntrospectSkyhook which calls IntrospectNode
-			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 
 			// Verify the node status changed from Unknown to Waiting
 			Expect(changed).To(BeTrue())
@@ -1391,7 +1446,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			}
 
 			// Call IntrospectSkyhook which calls IntrospectNode
-			_ = IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+			_ = IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 
 			// Verify the node status stays Unknown (error state - no compartments)
 			// Note: IntrospectSkyhook might return true due to UpdateCondition, but the important
@@ -1401,7 +1456,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 
 		It("should handle multiple nodes correctly when disabled", func() {
 			// Set up the skyhook as disabled
-			testSkyhook.Annotations["skyhook.nvidia.com/disable"] = annotationTrueValue
+			testSkyhook.Annotations["nodewright.nvidia.com/disable"] = annotationTrueValue
 
 			node1 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}
 			node2 := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}}
@@ -1418,7 +1473,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 			}
 
 			// Call the function
-			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes})
+			changed := IntrospectSkyhook(skyhookNodes, []SkyhookNodes{skyhookNodes}, testLogger)
 
 			// Verify the result
 			Expect(changed).To(BeTrue())
@@ -1444,7 +1499,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				},
 			}
 
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
@@ -1484,7 +1539,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				},
 			}
 
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
@@ -1564,7 +1619,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				},
 			}
 
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook",
 				},
@@ -1625,7 +1680,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				},
 			}
 
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook-1",
 				},
@@ -1675,7 +1730,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				},
 			}
 
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-skyhook-1",
 				},
@@ -1750,7 +1805,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 				{ObjectMeta: metav1.ObjectMeta{Name: "node-b1", Labels: map[string]string{"test-label-2": "test-value-2"}}},
 			}
 
-			skyhook := &v1alpha1.Skyhook{ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"}}
+			skyhook := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"}}
 			var allNodes []wrapper.SkyhookNode
 			for _, n := range allNodesList {
 				sn, err := wrapper.NewSkyhookNode(n, skyhook)
@@ -1822,7 +1877,7 @@ var _ = Describe("CleanupRemovedNodes", func() {
 					},
 				}
 
-				skyhook := &v1alpha1.Skyhook{ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"}}
+				skyhook := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"}}
 				skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
 				Expect(err).NotTo(HaveOccurred())
 
@@ -2072,9 +2127,9 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should build status for compartment with strategy and batch state", func() {
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"test-package": {
 							PackageRef: v1alpha1.PackageRef{Name: "test-package", Version: "1.0.0"},
@@ -2123,7 +2178,7 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should calculate 100% progress when all nodes are complete", func() {
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
 			}
 
@@ -2158,9 +2213,9 @@ var _ = Describe("Compartment Status Tests", func() {
 
 	Describe("should persist compartment status to skyhook status", func() {
 		It("should persist compartment status to skyhook status in ReportState", func() {
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-				Spec: v1alpha1.SkyhookSpec{
+				Spec: v1alpha1.NodeWrightSpec{
 					Packages: map[string]v1alpha1.Package{
 						"test-package": {
 							PackageRef: v1alpha1.PackageRef{Name: "test-package", Version: "1.0.0"},
@@ -2168,7 +2223,7 @@ var _ = Describe("Compartment Status Tests", func() {
 						},
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: nil,
 				},
 			}
@@ -2246,9 +2301,9 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should not update status when compartment status hasn't changed", func() {
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: make(map[string]v1alpha1.CompartmentStatus),
 				},
 			}
@@ -2301,9 +2356,9 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should persist batch state in compartment status", func() {
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: nil,
 				},
 			}
@@ -2354,9 +2409,9 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should remove stale compartment statuses when compartments are deleted from policy", func() {
-			skyhook := &v1alpha1.Skyhook{
+			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					CompartmentStatuses: make(map[string]v1alpha1.CompartmentStatus),
 				},
 			}
@@ -2530,16 +2585,269 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 	})
 
+	Describe("UpdateCondition", func() {
+		It("sets the standard Ready condition reason for each Skyhook status", func() {
+			tests := []struct {
+				status          v1alpha1.Status
+				nodeComplete    bool
+				conditionStatus metav1.ConditionStatus
+				reason          string
+				message         string
+			}{
+				{v1alpha1.StatusComplete, true, metav1.ConditionTrue, "NodesConverged", "1/1 nodes complete (node-a)"},
+				{v1alpha1.StatusInProgress, false, metav1.ConditionFalse, "Progressing", "0/1 nodes complete, 1 in progress (node-a)"},
+				{v1alpha1.StatusBlocked, false, metav1.ConditionFalse, "Blocked", "0/1 nodes complete, 1 blocked (node-a)"},
+				{v1alpha1.StatusErroring, false, metav1.ConditionFalse, "Erroring", "0/1 nodes complete, 1 erroring (node-a)"},
+				{v1alpha1.StatusPaused, false, metav1.ConditionFalse, "Paused", "0/1 nodes complete, 1 paused (node-a)"},
+				{v1alpha1.StatusWaiting, false, metav1.ConditionFalse, "Waiting", "0/1 nodes complete, 1 waiting (node-a)"},
+				{v1alpha1.StatusDisabled, false, metav1.ConditionFalse, "Disabled", "0/1 nodes complete, 1 disabled (node-a)"},
+				{v1alpha1.StatusUnknown, false, metav1.ConditionFalse, "Unknown", "0/1 nodes complete, 1 unknown (node-a)"},
+			}
+
+			for _, tt := range tests {
+				By(fmt.Sprintf("checking status %s", tt.status))
+
+				node := wrapperMock.NewMockSkyhookNode(GinkgoT())
+				node.EXPECT().IsComplete().Return(tt.nodeComplete).Maybe()
+				node.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}).Maybe()
+
+				skyhook := &v1alpha1.NodeWright{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "test-skyhook",
+						Generation: 7,
+					},
+					Status: v1alpha1.NodeWrightStatus{
+						Status: tt.status,
+						NodeStatus: map[string]v1alpha1.Status{
+							"node-a": tt.status,
+						},
+					},
+				}
+				skyhookNodes := &skyhookNodes{
+					skyhook:     wrapper.NewSkyhookWrapper(skyhook),
+					nodes:       []wrapper.SkyhookNode{node},
+					priorStatus: v1alpha1.StatusUnknown,
+				}
+
+				Expect(skyhookNodes.UpdateCondition(testLogger)).To(BeTrue())
+
+				ready := findSkyhookStatusCondition(skyhook.Status.Conditions, wrapper.SkyhookConditionReady)
+				Expect(ready).NotTo(BeNil())
+				Expect(ready.Status).To(Equal(tt.conditionStatus))
+				Expect(ready.Reason).To(Equal(tt.reason))
+				Expect(ready.Message).To(Equal(tt.message))
+				Expect(ready.ObservedGeneration).To(Equal(int64(7)))
+
+				legacyReady := findSkyhookStatusCondition(
+					skyhook.Status.Conditions,
+					wrapper.LegacySkyhookConditionType(wrapper.SkyhookConditionReady),
+				)
+				Expect(legacyReady).NotTo(BeNil(), "legacy Ready condition should be retained")
+				Expect(legacyReady.Status).To(Equal(ready.Status))
+				Expect(legacyReady.Reason).To(Equal(ready.Reason))
+				Expect(legacyReady.Message).To(Equal(ready.Message))
+				Expect(legacyReady.ObservedGeneration).To(Equal(ready.ObservedGeneration))
+
+				legacy := findSkyhookStatusCondition(skyhook.Status.Conditions, wrapper.LegacySkyhookConditionTransition)
+				Expect(legacy).NotTo(BeNil(), "legacy Transition condition should be retained")
+				Expect(legacy.Status).To(Equal(tt.conditionStatus))
+				Expect(legacy.Reason).To(Equal(string(tt.status)))
+			}
+		})
+
+		It("summarizes per-node progress in the Ready condition message", func() {
+			node1 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node1.EXPECT().IsComplete().Return(true).Maybe()
+			node1.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-01"}}).Maybe()
+			node2 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node2.EXPECT().IsComplete().Return(true).Maybe()
+			node2.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-02"}}).Maybe()
+			node3 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node3.EXPECT().IsComplete().Return(true).Maybe()
+			node3.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-03"}}).Maybe()
+			node4 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node4.EXPECT().IsComplete().Return(false).Maybe()
+			node4.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-04"}}).Maybe()
+			node5 := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node5.EXPECT().IsComplete().Return(false).Maybe()
+			node5.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-05"}}).Maybe()
+
+			skyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-skyhook",
+					Generation: 7,
+				},
+				Status: v1alpha1.NodeWrightStatus{
+					Status: v1alpha1.StatusInProgress,
+					NodeStatus: map[string]v1alpha1.Status{
+						"node-01": v1alpha1.StatusComplete,
+						"node-02": v1alpha1.StatusComplete,
+						"node-03": v1alpha1.StatusComplete,
+						"node-04": v1alpha1.StatusInProgress,
+						"node-05": v1alpha1.StatusInProgress,
+					},
+				},
+			}
+			skyhookNodes := &skyhookNodes{
+				skyhook:     wrapper.NewSkyhookWrapper(skyhook),
+				nodes:       []wrapper.SkyhookNode{node1, node2, node3, node4, node5},
+				priorStatus: v1alpha1.StatusUnknown,
+			}
+
+			Expect(skyhookNodes.UpdateCondition(testLogger)).To(BeTrue())
+
+			ready := findSkyhookStatusCondition(skyhook.Status.Conditions, wrapper.SkyhookConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			Expect(ready.Reason).To(Equal("Progressing"))
+			Expect(ready.Message).To(Equal("3/5 nodes complete (node-01, node-02, node-03), 2 in progress (node-04, node-05)"))
+		})
+
+		It("summarizes current node membership only in the Ready condition message", func() {
+			node := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node.EXPECT().IsComplete().Return(false).Maybe()
+			node.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-current"}}).Maybe()
+
+			skyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-skyhook",
+					Generation: 7,
+				},
+				Status: v1alpha1.NodeWrightStatus{
+					Status: v1alpha1.StatusUnknown,
+					NodeStatus: map[string]v1alpha1.Status{
+						"node-stale": v1alpha1.StatusErroring,
+					},
+				},
+			}
+			skyhookNodes := &skyhookNodes{
+				skyhook:     wrapper.NewSkyhookWrapper(skyhook),
+				nodes:       []wrapper.SkyhookNode{node},
+				priorStatus: v1alpha1.StatusUnknown,
+			}
+
+			Expect(skyhookNodes.UpdateCondition(testLogger)).To(BeTrue())
+
+			ready := findSkyhookStatusCondition(skyhook.Status.Conditions, wrapper.SkyhookConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Message).To(Equal("0/1 nodes complete, 1 unknown (node-current)"))
+		})
+
+		It("does not refresh unchanged Ready conditions", func() {
+			transitionTime := metav1.Now()
+			message := "0/1 nodes complete, 1 in progress (node-a)"
+
+			node := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node.EXPECT().IsComplete().Return(false).Maybe()
+			node.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}).Maybe()
+
+			skyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-skyhook",
+					Generation: 7,
+				},
+				Status: v1alpha1.NodeWrightStatus{
+					Status: v1alpha1.StatusInProgress,
+					NodeStatus: map[string]v1alpha1.Status{
+						"node-a": v1alpha1.StatusInProgress,
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:               wrapper.SkyhookConditionReady,
+							Status:             metav1.ConditionFalse,
+							ObservedGeneration: 7,
+							LastTransitionTime: transitionTime,
+							Reason:             "Progressing",
+							Message:            message,
+						},
+						{
+							Type:               wrapper.LegacySkyhookConditionType(wrapper.SkyhookConditionReady),
+							Status:             metav1.ConditionFalse,
+							ObservedGeneration: 7,
+							LastTransitionTime: transitionTime,
+							Reason:             "Progressing",
+							Message:            message,
+						},
+						{
+							Type:               wrapper.LegacySkyhookConditionTransition,
+							Status:             metav1.ConditionFalse,
+							ObservedGeneration: 7,
+							LastTransitionTime: transitionTime,
+							Reason:             string(v1alpha1.StatusInProgress),
+							Message:            message,
+						},
+					},
+				},
+			}
+			skyhookNodes := &skyhookNodes{
+				skyhook: wrapper.NewSkyhookWrapper(skyhook),
+				nodes:   []wrapper.SkyhookNode{node},
+			}
+
+			Expect(skyhookNodes.UpdateCondition(testLogger)).To(BeFalse())
+			Expect(skyhookNodes.skyhook.Updated).To(BeFalse())
+
+			ready := findSkyhookStatusCondition(skyhook.Status.Conditions, wrapper.SkyhookConditionReady)
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.LastTransitionTime).To(Equal(transitionTime))
+		})
+
+		It("refreshes the legacy Transition condition when reason changes but condition status does not", func() {
+			transitionTime := metav1.NewTime(time.Unix(123, 0))
+
+			node := wrapperMock.NewMockSkyhookNode(GinkgoT())
+			node.EXPECT().IsComplete().Return(false).Maybe()
+			node.EXPECT().GetNode().Return(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}).Maybe()
+
+			skyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-skyhook",
+					Generation: 7,
+				},
+				Status: v1alpha1.NodeWrightStatus{
+					Status: v1alpha1.StatusBlocked,
+					NodeStatus: map[string]v1alpha1.Status{
+						"node-a": v1alpha1.StatusBlocked,
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:               wrapper.LegacySkyhookConditionTransition,
+							Status:             metav1.ConditionFalse,
+							ObservedGeneration: 7,
+							LastTransitionTime: transitionTime,
+							Reason:             string(v1alpha1.StatusWaiting),
+							Message:            "Transitioned [unknown] -> [waiting]",
+						},
+					},
+				},
+			}
+			skyhookNodes := &skyhookNodes{
+				skyhook:     wrapper.NewSkyhookWrapper(skyhook),
+				nodes:       []wrapper.SkyhookNode{node},
+				priorStatus: v1alpha1.StatusUnknown,
+			}
+
+			Expect(skyhookNodes.UpdateCondition(testLogger)).To(BeTrue())
+
+			legacy := findSkyhookStatusCondition(skyhook.Status.Conditions, wrapper.LegacySkyhookConditionTransition)
+			Expect(legacy).NotTo(BeNil())
+			Expect(legacy.Status).To(Equal(metav1.ConditionFalse))
+			Expect(legacy.Reason).To(Equal(string(v1alpha1.StatusBlocked)))
+			Expect(legacy.Message).To(Equal("Transitioned [unknown] -> [blocked]"))
+			Expect(legacy.LastTransitionTime.After(transitionTime.Time)).To(BeTrue())
+		})
+	})
+
 	Describe("SetStatus with auto-reset on completion", func() {
 		It("should reset batch state when transitioning to Complete with config enabled", func() {
 			// Create a skyhook with batch state in compartments
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
 						ResetBatchStateOnCompletion: kptr.To(true),
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					Status: v1alpha1.StatusInProgress,
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"compartment-1": {
@@ -2599,13 +2907,13 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should not reset batch state when config is disabled", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
 						ResetBatchStateOnCompletion: kptr.To(false),
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					Status: v1alpha1.StatusInProgress,
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"compartment-1": {
@@ -2643,11 +2951,11 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should respect policy-level config when skyhook config is not set", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					// No DeploymentPolicyOptions set
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					Status: v1alpha1.StatusInProgress,
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"compartment-1": {
@@ -2681,13 +2989,13 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should not reset when not transitioning to Complete", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
 						ResetBatchStateOnCompletion: kptr.To(true),
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					Status: v1alpha1.StatusWaiting,
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"compartment-1": {
@@ -2720,13 +3028,13 @@ var _ = Describe("Compartment Status Tests", func() {
 		})
 
 		It("should not reset when already Complete", func() {
-			skyhook := &v1alpha1.Skyhook{
-				Spec: v1alpha1.SkyhookSpec{
+			skyhook := &v1alpha1.NodeWright{
+				Spec: v1alpha1.NodeWrightSpec{
 					DeploymentPolicyOptions: &v1alpha1.DeploymentPolicyOptions{
 						ResetBatchStateOnCompletion: kptr.To(true),
 					},
 				},
-				Status: v1alpha1.SkyhookStatus{
+				Status: v1alpha1.NodeWrightStatus{
 					Status: v1alpha1.StatusComplete, // Already complete
 					CompartmentStatuses: map[string]v1alpha1.CompartmentStatus{
 						"compartment-1": {
@@ -2761,10 +3069,16 @@ var _ = Describe("Compartment Status Tests", func() {
 
 	Context("getAutoTaintNodes", func() {
 		runtimeRequiredTaint := corev1.Taint{
+			Key:    "nodewright.nvidia.com",
+			Value:  "runtime-required",
+			Effect: corev1.TaintEffectNoSchedule,
+		}
+		legacyRuntimeRequiredTaint := corev1.Taint{
 			Key:    "skyhook.nvidia.com",
 			Value:  "runtime-required",
 			Effect: corev1.TaintEffectNoSchedule,
 		}
+		recognisedTaints := []corev1.Taint{runtimeRequiredTaint, legacyRuntimeRequiredTaint}
 
 		It("should taint new node with no annotations and no taint", func() {
 			nodeList := &corev1.NodeList{
@@ -2772,14 +3086,14 @@ var _ = Describe("Compartment Status Tests", func() {
 					{ObjectMeta: metav1.ObjectMeta{Name: "new-node", UID: "new-node-uid"}},
 				},
 			}
-			skyhookList := &v1alpha1.SkyhookList{
-				Items: []v1alpha1.Skyhook{
-					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
+			skyhookList := &v1alpha1.NodeWrightList{
+				Items: []v1alpha1.NodeWright{
+					{Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
 				},
 			}
 
 			cs, _ := BuildState(skyhookList, nodeList, nil)
-			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			result := cs.getAutoTaintNodes(recognisedTaints)
 			Expect(result).To(HaveLen(1))
 			Expect(result[0].Name).To(Equal("new-node"))
 		})
@@ -2795,14 +3109,36 @@ var _ = Describe("Compartment Status Tests", func() {
 					},
 				},
 			}
-			skyhookList := &v1alpha1.SkyhookList{
-				Items: []v1alpha1.Skyhook{
-					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
+			skyhookList := &v1alpha1.NodeWrightList{
+				Items: []v1alpha1.NodeWright{
+					{Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
 				},
 			}
 
 			cs, _ := BuildState(skyhookList, nodeList, nil)
-			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			result := cs.getAutoTaintNodes(recognisedTaints)
+			Expect(result).To(HaveLen(0))
+		})
+
+		It("should not taint node that already carries the legacy taint", func() {
+			nodeList := &corev1.NodeList{
+				Items: []corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{Name: "legacy-tainted-node", UID: "legacy-tainted-node-uid"},
+						Spec: corev1.NodeSpec{
+							Taints: []corev1.Taint{legacyRuntimeRequiredTaint},
+						},
+					},
+				},
+			}
+			skyhookList := &v1alpha1.NodeWrightList{
+				Items: []v1alpha1.NodeWright{
+					{Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
+				},
+			}
+
+			cs, _ := BuildState(skyhookList, nodeList, nil)
+			result := cs.getAutoTaintNodes(recognisedTaints)
 			Expect(result).To(HaveLen(0))
 		})
 
@@ -2814,20 +3150,20 @@ var _ = Describe("Compartment Status Tests", func() {
 							Name: "processed-node",
 							UID:  "processed-node-uid",
 							Annotations: map[string]string{
-								"skyhook.nvidia.com/nodeState_myskyhook": `{}`,
+								"nodewright.nvidia.com/nodeState_myskyhook": `{}`,
 							},
 						},
 					},
 				},
 			}
-			skyhookList := &v1alpha1.SkyhookList{
-				Items: []v1alpha1.Skyhook{
-					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
+			skyhookList := &v1alpha1.NodeWrightList{
+				Items: []v1alpha1.NodeWright{
+					{Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, AutoTaintNewNodes: true}},
 				},
 			}
 
 			cs, _ := BuildState(skyhookList, nodeList, nil)
-			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			result := cs.getAutoTaintNodes(recognisedTaints)
 			Expect(result).To(HaveLen(0))
 		})
 
@@ -2837,14 +3173,14 @@ var _ = Describe("Compartment Status Tests", func() {
 					{ObjectMeta: metav1.ObjectMeta{Name: "new-node", UID: "new-node-uid"}},
 				},
 			}
-			skyhookList := &v1alpha1.SkyhookList{
-				Items: []v1alpha1.Skyhook{
-					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: true, AutoTaintNewNodes: false}},
+			skyhookList := &v1alpha1.NodeWrightList{
+				Items: []v1alpha1.NodeWright{
+					{Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, AutoTaintNewNodes: false}},
 				},
 			}
 
 			cs, _ := BuildState(skyhookList, nodeList, nil)
-			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			result := cs.getAutoTaintNodes(recognisedTaints)
 			Expect(result).To(HaveLen(0))
 		})
 
@@ -2854,14 +3190,14 @@ var _ = Describe("Compartment Status Tests", func() {
 					{ObjectMeta: metav1.ObjectMeta{Name: "new-node", UID: "new-node-uid"}},
 				},
 			}
-			skyhookList := &v1alpha1.SkyhookList{
-				Items: []v1alpha1.Skyhook{
-					{Spec: v1alpha1.SkyhookSpec{RuntimeRequired: false, AutoTaintNewNodes: true}},
+			skyhookList := &v1alpha1.NodeWrightList{
+				Items: []v1alpha1.NodeWright{
+					{Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: false, AutoTaintNewNodes: true}},
 				},
 			}
 
 			cs, _ := BuildState(skyhookList, nodeList, nil)
-			result := cs.getAutoTaintNodes(runtimeRequiredTaint)
+			result := cs.getAutoTaintNodes(recognisedTaints)
 			Expect(result).To(HaveLen(0))
 		})
 	})

@@ -35,7 +35,7 @@ func TestCLISmoke(t *testing.T) {
 	RunSpecs(t, "CLI Test Suite")
 }
 
-var _ = Describe("Skyhook CLI Tests", func() {
+var _ = Describe("NodeWright CLI Tests", func() {
 	var rootCmd *cobra.Command
 	var testCtx *context.CLIContext
 	var output *bytes.Buffer
@@ -93,7 +93,7 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			err := rootCmd.Execute()
 			Expect(err).NotTo(HaveOccurred())
 			helpText := output.String()
-			Expect(helpText).To(ContainSubstring("kubectl-compatible helper for managing Skyhook deployments."))
+			Expect(helpText).To(ContainSubstring("kubectl-compatible helper for managing NodeWright deployments."))
 			Expect(helpText).To(ContainSubstring("Available Commands:"))
 		})
 
@@ -101,7 +101,7 @@ var _ = Describe("Skyhook CLI Tests", func() {
 			rootCmd.SetArgs([]string{"--version"})
 			err := rootCmd.Execute()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output.String()).To(ContainSubstring("Skyhook plugin: "))
+			Expect(output.String()).To(ContainSubstring("NodeWright plugin: "))
 		})
 	})
 
@@ -242,13 +242,18 @@ var _ = Describe("Skyhook CLI Tests", func() {
 
 			err := versionCmd.Execute()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(output.String()).To(ContainSubstring("Skyhook plugin:"))
+			Expect(output.String()).To(ContainSubstring("NodeWright plugin:"))
 		})
 	})
 
-	Describe("defaultNamespace constant", func() {
-		It("should be set to skyhook", func() {
-			Expect(context.DefaultNamespace).To(Equal("skyhook"))
+	Describe("default namespace", func() {
+		It("should be nodewright, with skyhook kept as the legacy fallback", func() {
+			Expect(utils.DefaultNamespace).To(Equal("nodewright"))
+			Expect(utils.LegacyDefaultNamespace).To(Equal("skyhook"))
+		})
+
+		It("should seed the --namespace flag default", func() {
+			Expect(context.NewGlobalFlags().Namespace()).To(Equal(utils.DefaultNamespace))
 		})
 	})
 })

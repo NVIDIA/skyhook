@@ -14,30 +14,17 @@ spec:
       restartPolicy: Never
       automountServiceAccountToken: false
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
+      # Maintenance job: only talks to the API server, so it must be schedulable
+      # anywhere and must NOT inherit the controller-manager's nodeSelector/nodeAffinity
+      # (that would make this hook unschedulable, and stall, whenever the operator's
+      # placement is restrictive). Only a bare os=linux selector is kept (the job image
+      # is Linux-only) so it cannot land on a Windows node in a mixed-OS cluster.
+      # Tolerations are kept so it can land on tainted nodes.
+      nodeSelector:
+        kubernetes.io/os: linux
       {{- with .Values.controllerManager.tolerations }}
       tolerations:
         {{- toYaml . | nindent 6 }}
-      {{- end }}
-      {{- with .Values.controllerManager.selectors }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- if .Values.controllerManager.nodeAffinity.matchExpressions }}
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              {{- range .Values.controllerManager.nodeAffinity.matchExpressions }}
-              - key: {{ .key }}
-                operator: {{ .operator }}
-                {{- if .values }}
-                values:
-                {{- range .values }}
-                - {{ . }}
-                {{- end }}
-                {{- end }}
-              {{- end }}
       {{- end }}
       securityContext:
         runAsNonRoot: true
@@ -63,10 +50,17 @@ spec:
                   apiVersion: v1
                   fieldPath: metadata.namespace
                 path: namespace
+      # kubectl writes its discovery/http cache under KUBECACHEDIR; with a
+      # read-only root filesystem it needs a writable mount.
+      - name: kube-cache
+        emptyDir: {}
       containers:
       - name: cleanup
-        image: {{ .Values.webhook.removalImage | default "bitnami/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "latest" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "latest" }}{{- end }}
+        image: {{ .Values.webhook.removalImage | default "docker.io/alpine/kubectl" }}{{- if .Values.webhook.removalDigest }}{{- if .Values.webhook.removalTag }}:{{ .Values.webhook.removalTag | default "latest" }}@{{ .Values.webhook.removalDigest }}{{- else }}@{{ .Values.webhook.removalDigest }}{{- end }}{{- else }}:{{ .Values.webhook.removalTag | default "latest" }}{{- end }}
         imagePullPolicy: Always
+        env:
+        - name: KUBECACHEDIR
+          value: /tmp/kubecache
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -79,6 +73,8 @@ spec:
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: kube-api-access
           readOnly: true
+        - mountPath: /tmp/kubecache
+          name: kube-cache
         # Guard against limitRange being disabled (set to null/false) with fallback defaults
         resources:
         {{- if .Values.limitRange }}
@@ -101,9 +97,16 @@ spec:
         - -c
         - |
           NAMESPACE="{{ .Release.Namespace }}"
-          VALIDATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-validating-webhook"
-          MUTATING_WEBHOOK_CONFIGURATION_NAME="skyhook-operator-mutating-webhook"
           kubectl delete secret -n $NAMESPACE "{{ .Values.webhook.secretName | default "webhook-cert" }}" || true
-          kubectl delete validatingwebhookconfiguration $VALIDATING_WEBHOOK_CONFIGURATION_NAME || true
-          kubectl delete mutatingwebhookconfiguration $MUTATING_WEBHOOK_CONFIGURATION_NAME || true
+          {{- /* MIGRATION-SHIM (skyhook-operator -> nodewright resource rename, #440):
+                 the legacy names are swept too. An orphaned webhook configuration has
+                 failurePolicy: Fail with no operator left to serve it, which rejects every
+                 matching API call cluster-wide, so leaving one behind is worse than a
+                 redundant delete. Drop the legacy names once the rename window closes. */}}
+          for name in "{{ include "chart.validatingWebhookName" . }}" "skyhook-operator-validating-webhook"; do
+            kubectl delete validatingwebhookconfiguration "$name" --ignore-not-found || true
+          done
+          for name in "{{ include "chart.mutatingWebhookName" . }}" "skyhook-operator-mutating-webhook"; do
+            kubectl delete mutatingwebhookconfiguration "$name" --ignore-not-found || true
+          done
 {{- end }} 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -20,6 +20,8 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -46,6 +48,28 @@ var _ = Describe("Skyhook Webhook", func() {
 	})
 
 	Context("When creating Skyhook under Validating Webhook", func() {
+		It("Should return a migration deprecation warning on create and update", func() {
+
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+						},
+					},
+				},
+			}
+
+			warnings, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).To(BeNil())
+			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
+
+			warnings, err = skyhookWebhook.ValidateUpdate(ctx, skyhook, skyhook)
+			Expect(err).To(BeNil())
+			Expect(warnings).To(ContainElement(And(ContainSubstring("deprecated"), ContainSubstring("nodewright.nvidia.com"))))
+		})
+
 		It("Should deny if missing a depends on", func() {
 
 			skyhook := &Skyhook{
@@ -57,6 +81,7 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "foobar",
 								Version: "1.0.0",
 							},
+							Image:     "ghcr.io/org/pkg",
 							DependsOn: map[string]string{"CATS": "2.3"}, // missing
 						},
 					},
@@ -78,12 +103,14 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "foobar",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 						"foobar2": {
 							PackageRef: PackageRef{
 								Name:    "foobar", // dup
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 					},
 				},
@@ -104,12 +131,14 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "foo",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 						"bar": {
 							PackageRef: PackageRef{
 								Name:    "bar",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 					},
 				},
@@ -127,12 +156,14 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "changed",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 						"bar": {
 							PackageRef: PackageRef{
 								Name:    "changed",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 					},
 				},
@@ -142,7 +173,7 @@ var _ = Describe("Skyhook Webhook", func() {
 			Expect(err).ToNot(BeNil())
 		})
 
-		It("Should deny if an image tag for a package is explicitly set and changed", func() {
+		It("Should deny an inline image tag even when it matches the version", func() {
 
 			skyhook := &Skyhook{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
@@ -155,21 +186,32 @@ var _ = Describe("Skyhook Webhook", func() {
 							},
 							Image: "testing",
 						},
-						"bar": {
-							PackageRef: PackageRef{
-								Name:    "bar",
-								Version: "1.0.0",
-							},
-							Image: "testing:1.0.0",
-						},
 					},
 				},
 			}
 
+			// A bare image (no tag) is accepted.
 			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).To(BeNil())
 
-			skyhook = &Skyhook{
+			// A tag is rejected even though it matches the version: version owns the tag,
+			// it is not duplicated in image.
+			skyhook.Spec.Packages["foo"] = Package{
+				PackageRef: PackageRef{
+					Name:    "foo",
+					Version: "1.0.0",
+				},
+				Image: "testing:1.0.0",
+			}
+
+			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).ToNot(BeNil())
+			Expect(err.Error()).To(ContainSubstring("tag"))
+			Expect(err.Error()).To(ContainSubstring("testing"))
+		})
+
+		It("Should allow registry ports in package images", func() {
+			skyhook := &Skyhook{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 				Spec: SkyhookSpec{
 					Packages: Packages{
@@ -178,21 +220,137 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "foo",
 								Version: "1.0.0",
 							},
-							Image: "testing:1.2.1",
-						},
-						"bar": {
-							PackageRef: PackageRef{
-								Name:    "bar",
-								Version: "1.0.0",
-							},
-							Image: "testing:1.2.1",
+							Image: "localhost:5000/org/pkg",
 						},
 					},
 				},
 			}
 
-			_, err = skyhookWebhook.ValidateCreate(ctx, skyhook)
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).To(BeNil())
+		})
+
+		It("Should deny an inline tag after a registry port but not the port itself", func() {
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{
+								Name:    "foo",
+								Version: "1.0.0",
+							},
+							Image: "localhost:5000/org/pkg:1.0.0",
+						},
+					},
+				},
+			}
+
+			// The colon in the registry port must not be mistaken for a tag separator:
+			// only the trailing ":1.0.0" is the tag, and it is rejected.
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
 			Expect(err).ToNot(BeNil())
+			Expect(err.Error()).To(ContainSubstring("tag"))
+			Expect(err.Error()).To(ContainSubstring("1.0.0"))
+			Expect(err.Error()).To(ContainSubstring("localhost:5000/org/pkg"))
+		})
+
+		It("Should reject an inline image digest and point at containerSHA", func() {
+			digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					Packages: Packages{
+						"foo": {
+							PackageRef: PackageRef{
+								Name:    "foo",
+								Version: "1.0.0",
+							},
+							Image: "localhost:5000/org/pkg@" + digest,
+						},
+					},
+				},
+			}
+
+			_, err := skyhookWebhook.ValidateCreate(ctx, skyhook)
+			Expect(err).ToNot(BeNil())
+			Expect(err.Error()).To(ContainSubstring("digest"))
+			Expect(err.Error()).To(ContainSubstring("containerSHA"))
+		})
+
+		It("Should reject empty inline tag or digest separators", func() {
+			mk := func(image string) *Skyhook {
+				return &Skyhook{
+					ObjectMeta: metav1.ObjectMeta{Name: "test"},
+					Spec: SkyhookSpec{
+						Packages: Packages{
+							"foo": {
+								PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+								Image:      image,
+							},
+						},
+					},
+				}
+			}
+
+			// A trailing separator with nothing after it is still invalid: it would
+			// otherwise compose into a broken reference like "repo::1.0.0".
+			_, err := skyhookWebhook.ValidateCreate(ctx, mk("ghcr.io/org/pkg:"))
+			Expect(err).ToNot(BeNil())
+			Expect(err.Error()).To(ContainSubstring("tag"))
+
+			_, err = skyhookWebhook.ValidateCreate(ctx, mk("ghcr.io/org/pkg@"))
+			Expect(err).ToNot(BeNil())
+			Expect(err.Error()).To(ContainSubstring("digest"))
+		})
+
+		// Emptiness, whitespace, and digest format are enforced declaratively by the
+		// CRD's OpenAPI Pattern (apiserver-side), so they are exercised through a real
+		// create rather than a direct ValidateCreate call.
+		It("Should reject an empty or whitespace image via the CRD schema", func() {
+			mk := func(name, image string) *Skyhook {
+				return &Skyhook{
+					ObjectMeta: metav1.ObjectMeta{Name: name},
+					Spec: SkyhookSpec{
+						Packages: Packages{
+							"foo": {
+								PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+								Image:      image,
+							},
+						},
+					},
+				}
+			}
+
+			Expect(k8sClient.Create(ctx, mk("empty-image", ""))).ToNot(Succeed())
+			Expect(k8sClient.Create(ctx, mk("ws-image", "   "))).ToNot(Succeed())
+			Expect(k8sClient.Create(ctx, mk("padded-image", " ghcr.io/org/pkg "))).ToNot(Succeed())
+		})
+
+		It("Should validate containerSHA format via the CRD schema", func() {
+			mk := func(name, sha string) *Skyhook {
+				return &Skyhook{
+					ObjectMeta: metav1.ObjectMeta{Name: name},
+					Spec: SkyhookSpec{
+						Packages: Packages{
+							"foo": {
+								PackageRef:   PackageRef{Name: "foo", Version: "1.0.0"},
+								Image:        "ghcr.io/org/pkg",
+								ContainerSHA: sha,
+							},
+						},
+					},
+				}
+			}
+
+			good := "sha256:" + "a" + strings.Repeat("b", 63)
+			sh := mk("good-sha", good)
+			Expect(k8sClient.Create(ctx, sh)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, sh)).To(Succeed())
+
+			Expect(k8sClient.Create(ctx, mk("no-prefix", strings.Repeat("a", 64)))).ToNot(Succeed())
+			Expect(k8sClient.Create(ctx, mk("short-sha", "sha256:abc"))).ToNot(Succeed())
+			Expect(k8sClient.Create(ctx, mk("upper-sha", "sha256:"+strings.Repeat("A", 64)))).ToNot(Succeed())
 		})
 
 		It("should validate that the configInterrupts are for valid configMaps", func() {
@@ -205,6 +363,7 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "foo",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 							ConfigMap: map[string]string{
 								"key": "value",
 								"dog": "value",
@@ -220,6 +379,7 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "bar",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 							ConfigMap: map[string]string{
 								"key": "value",
 								"dog": "value",
@@ -246,6 +406,7 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "foo",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 							ConfigMap: map[string]string{
 								"key": "value",
 								"dog": "value",
@@ -262,6 +423,7 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "bar",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 							ConfigMap: map[string]string{
 								"key": "value",
 								"dog": "value",
@@ -291,6 +453,7 @@ var _ = Describe("Skyhook Webhook", func() {
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+							Image:      "ghcr.io/org/pkg",
 							ConfigMap: map[string]string{
 								"config.sh":  "abc",
 								"upgrade.sh": "def",
@@ -314,6 +477,7 @@ var _ = Describe("Skyhook Webhook", func() {
 					Packages: Packages{
 						"foo": {
 							PackageRef: PackageRef{Name: "foo", Version: "1.0.0"},
+							Image:      "ghcr.io/org/pkg",
 							ConfigMap: map[string]string{
 								"config.txt": "abc",
 							},
@@ -339,18 +503,21 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "cats",
 								Version: "2.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 						"cats2": {
 							PackageRef: PackageRef{
 								Name:    "cats", // dup
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 						"foobar": {
 							PackageRef: PackageRef{
 								Name:    "foobar", // dup
 								Version: "1.0.0",
 							},
+							Image:     "ghcr.io/org/pkg",
 							DependsOn: map[string]string{"cats": "1.0.0"},
 						},
 					},
@@ -371,12 +538,14 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "cats",
 								Version: "2.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 						"foobar": {
 							PackageRef: PackageRef{
 								Name:    "foobar", // dup
 								Version: "2024/07/06",
 							},
+							Image:     "ghcr.io/org/pkg",
 							DependsOn: map[string]string{"cats": "2.0.0"},
 						},
 					},
@@ -395,12 +564,14 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "cats",
 								Version: "2.1.1",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 						"foobar": {
 							PackageRef: PackageRef{
 								Name:    "foobar", // dup
 								Version: "2024.7.6",
 							},
+							Image:     "ghcr.io/org/pkg",
 							DependsOn: map[string]string{"cats": "2.1.1"},
 						},
 					},
@@ -422,6 +593,7 @@ var _ = Describe("Skyhook Webhook", func() {
 								Name:    "foobar",
 								Version: "1.0.0",
 							},
+							Image: "ghcr.io/org/pkg",
 						},
 					},
 				},
@@ -513,16 +685,39 @@ var _ = Describe("Skyhook Webhook", func() {
 			res5.MemoryLimit = resource.MustParse("-1Mi")
 			Expect(mkSkyhook(res5).Validate()).NotTo(Succeed())
 		})
+
+		It("should validate drain config durations", func() {
+			skyhook := &Skyhook{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: SkyhookSpec{
+					DrainConfig: &DrainConfig{
+						Timeout:     &metav1.Duration{Duration: time.Minute},
+						GracePeriod: &metav1.Duration{Duration: 30 * time.Second},
+					},
+				},
+			}
+			Expect(skyhook.Validate()).To(Succeed())
+
+			skyhook.Spec.DrainConfig.Timeout = &metav1.Duration{Duration: -time.Second}
+			Expect(skyhook.Validate()).NotTo(Succeed())
+
+			skyhook.Spec.DrainConfig.Timeout = nil
+			skyhook.Spec.DrainConfig.GracePeriod = &metav1.Duration{Duration: -time.Second}
+			Expect(skyhook.Validate()).NotTo(Succeed())
+		})
 	})
 
-	It("packages should UnmarshalJSON correctly", func() {
+	It("packages should UnmarshalJSON without rewriting the image", func() {
+		// The pre-semver tag-absorb migration was removed: unmarshalling no longer
+		// rewrites image, it only defaults the package name from the map key. An
+		// embedded tag survives here and is rejected later by the webhook.
 		js := `{"foo": {"version":"1.2.2", "image":"bar:1.2.2"}}`
 
 		var ret Packages
 		Expect(json.Unmarshal([]byte(js), &ret)).Should(Succeed())
 
 		Expect(ret["foo"].Name).To(Equal("foo"))
-		Expect(ret["foo"].Image).To(Equal("bar"))
+		Expect(ret["foo"].Image).To(Equal("bar:1.2.2"))
 	})
 
 	It("should validate the package name is a valid RFC 1123 name", func() {
@@ -533,6 +728,7 @@ var _ = Describe("Skyhook Webhook", func() {
 				Packages: Packages{
 					"11": {
 						PackageRef: PackageRef{Version: "1"},
+						Image:      "ghcr.io/org/pkg",
 					},
 				},
 			},
@@ -572,6 +768,7 @@ var _ = Describe("Skyhook Webhook", func() {
 							Name:    "test-pkg",
 							Version: "1.0.0",
 						},
+						Image: "ghcr.io/org/pkg",
 					},
 				},
 			},
@@ -613,6 +810,7 @@ var _ = Describe("Skyhook Webhook", func() {
 							Name:    "test-pkg",
 							Version: "1.0.0",
 						},
+						Image: "ghcr.io/org/pkg",
 					},
 				},
 			},
@@ -625,7 +823,7 @@ var _ = Describe("Skyhook Webhook", func() {
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
 	})
 
-	It("should reject skyhook update to reference non-existent deployment policy", func() {
+	It("rejects a legacy skyhook spec update (read-only once migrated)", func() {
 		// Create a Skyhook without deployment policy
 		skyhook := &Skyhook{
 			ObjectMeta: metav1.ObjectMeta{
@@ -638,25 +836,26 @@ var _ = Describe("Skyhook Webhook", func() {
 							Name:    "test-pkg",
 							Version: "1.0.0",
 						},
+						Image: "ghcr.io/org/pkg",
 					},
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-		// Try to update it to reference a non-existent policy
+		// A legacy Skyhook is read-only after migration: the spec change (here the
+		// deployment policy reference) is rejected before the policy-existence check.
 		updatedSkyhook := skyhook.DeepCopy()
 		updatedSkyhook.Spec.DeploymentPolicy = "does-not-exist"
 
 		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("deploymentPolicy \"does-not-exist\" not found"))
+		Expect(err).To(MatchError(ContainSubstring("read-only")))
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())
 	})
 
-	It("should allow skyhook update to reference valid deployment policy", func() {
+	It("rejects a legacy skyhook spec update even to a valid deployment policy (read-only)", func() {
 		// Create a deployment policy
 		policy := &DeploymentPolicy{
 			ObjectMeta: metav1.ObjectMeta{
@@ -687,18 +886,19 @@ var _ = Describe("Skyhook Webhook", func() {
 							Name:    "test-pkg",
 							Version: "1.0.0",
 						},
+						Image: "ghcr.io/org/pkg",
 					},
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, skyhook)).To(Succeed())
 
-		// Update it to reference the valid policy - should succeed
+		// Read-only rejects the spec change even though the referenced policy is valid.
 		updatedSkyhook := skyhook.DeepCopy()
 		updatedSkyhook.Spec.DeploymentPolicy = "valid-policy-for-update"
 
 		_, err := skyhookWebhook.ValidateUpdate(ctx, skyhook, updatedSkyhook)
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).To(MatchError(ContainSubstring("read-only")))
 
 		// Cleanup
 		Expect(k8sClient.Delete(ctx, skyhook)).To(Succeed())

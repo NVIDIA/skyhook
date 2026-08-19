@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Path-based PR labels for actions/labeler. Kept in sync with the component/*
+# label family in .github/labels.yml and the triage keyword maps in
+# .github/workflows/triage.yaml.
+
+# Operator (controller-manager), excluding the CLI which lives under it.
+# The '!' exclude lives in any-glob-to-any-file (not all-globs-to-all-files) so a
+# PR touching both operator core and CLI still gets this label; an all-globs
+# negation would drop it whenever any CLI file is present.
+component/operator:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'operator/**'
+          - '!operator/cmd/cli/**'
+
+component/cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'operator/cmd/cli/**'
+
+component/agent:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'agent/**'
+
+component/chart:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'chart/**'
+
+component/ci:
+  - changed-files:
+      # The '!' vendor exclude stays in any-glob-to-any-file so a PR mixing a
+      # vendored Makefile with real CI changes still gets the label.
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'scripts/**'
+          - '.gitlab-ci.yml'
+          - '**/Makefile'
+          - '**/*.mk'
+          - '!**/vendor/**'
+
+component/tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'k8s-tests/**'
+
+doc:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'

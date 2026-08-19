@@ -40,28 +40,28 @@ var _ = Describe("Lifecycle Commands", func() {
 		{
 			name:           "Pause",
 			cmdFactory:     NewPauseCmd,
-			expectedUse:    "pause <skyhook-name>",
+			expectedUse:    "pause <nodewright-name>",
 			expectedVerb:   "Pause",
 			hasConfirmFlag: true,
 		},
 		{
 			name:           "Resume",
 			cmdFactory:     NewResumeCmd,
-			expectedUse:    "resume <skyhook-name>",
+			expectedUse:    "resume <nodewright-name>",
 			expectedVerb:   "Resume",
 			hasConfirmFlag: true,
 		},
 		{
 			name:           "Disable",
 			cmdFactory:     NewDisableCmd,
-			expectedUse:    "disable <skyhook-name>",
+			expectedUse:    "disable <nodewright-name>",
 			expectedVerb:   "Disable",
 			hasConfirmFlag: true,
 		},
 		{
 			name:           "Enable",
 			cmdFactory:     NewEnableCmd,
-			expectedUse:    "enable <skyhook-name>",
+			expectedUse:    "enable <nodewright-name>",
 			expectedVerb:   "Enable",
 			hasConfirmFlag: true,
 		},
@@ -106,7 +106,7 @@ var _ = Describe("Lifecycle Commands", func() {
 				ctx := context.NewCLIContext(nil)
 				cmd := tc.cmdFactory(ctx)
 
-				Expect(cmd.Example).To(ContainSubstring("kubectl skyhook"))
+				Expect(cmd.Example).To(ContainSubstring("kubectl nodewright"))
 			})
 		})
 	}

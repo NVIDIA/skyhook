@@ -6,20 +6,21 @@ Expand the name of the chart.
 {{- end }}
 
 {{/*
-Create a default fully qualified app name.
-We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
-If release name contains chart name it will be used as a full name.
+Resource name used by Deployment, ServiceAccount, PDB, etc. (anything that
+includes `chart.fullname`).
+
+The conventional Helm `<release>-<chart>` prefix is intentionally dropped:
+NodeWright is a singleton per namespace (cluster-scoped CRDs, webhook
+configurations, finalizers), so a release-name prefix on resource names
+adds no value and just makes them noisy. Truncated at 63 chars for the DNS
+name limit. `fullnameOverride` is still honored for users who really do
+need a custom name.
 */}}
 {{- define "chart.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
-{{- $name := default .Chart.Name .Values.nameOverride }}
-{{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
-{{- end }}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
 
@@ -48,6 +49,49 @@ Selector labels
 {{- define "chart.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "chart.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Selector for the controller-manager Deployment.
+
+Shared by the Deployment's spec.selector and the selector-migration pre-upgrade
+hook so both reason about the identical label set. spec.selector is immutable,
+so when the chart name or release name changes these labels (e.g. the
+skyhook-operator -> nodewright rename), the hook deletes the stale Deployment
+and lets helm recreate it rather than failing the upgrade.
+*/}}
+{{- define "chart.managerSelectorLabels" -}}
+control-plane: controller-manager
+{{ include "chart.selectorLabels" . }}
+{{- end }}
+
+{{/*
+Name of the webhook Service.
+
+Also handed to the operator as WEBHOOK_SERVICE_NAME: the operator mints the
+webhook serving certificate itself and puts this name in the SAN, so a Service
+named anything other than what the operator was told produces a cert the API
+server rejects. Truncated at 63 because a Service name is a DNS-1035 label.
+*/}}
+{{- define "chart.webhookServiceName" -}}
+{{- default (printf "%s-webhook-service" (include "chart.fullname" .)) .Values.webhook.serviceName | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Names of the webhook configurations.
+
+NOT handed to the operator: it discovers these objects by the
+nodewright.nvidia.com/webhook-config label, so their names are free to change.
+The names are still needed here because the manager ClusterRole scopes `update`
+to them by resourceNames, and the pre-delete cleanup job deletes them by name.
+Both render from these helpers, so they stay in lockstep with the objects.
+*/}}
+{{- define "chart.validatingWebhookName" -}}
+{{- printf "%s-validating-webhook" (include "chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "chart.mutatingWebhookName" -}}
+{{- printf "%s-mutating-webhook" (include "chart.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*

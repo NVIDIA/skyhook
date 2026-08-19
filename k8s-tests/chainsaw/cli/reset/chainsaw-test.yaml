@@ -30,16 +30,16 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-reset-test --confirm 2>/dev/null || true
+          ../nodewright-cli reset cli-reset-test --confirm 2>/dev/null || true
           echo "✓ State reset complete"
   
   # Step 1: Create a Skyhook and wait for it to complete
   - name: setup-skyhook
     try:
     - apply:
-        file: skyhook.yaml
+        file: nodewright.yaml
     - assert:
-        file: assert-skyhook-complete.yaml
+        file: assert-nodewright-complete.yaml
 
   # Step 2: Disable the skyhook so it doesn't restart processing after reset
   - name: disable-skyhook
@@ -47,9 +47,9 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli disable cli-reset-test --confirm
+          ../nodewright-cli disable cli-reset-test --confirm
     - assert:
-        file: assert-skyhook-disabled.yaml
+        file: assert-nodewright-disabled.yaml
 
   # Step 3: Test reset command
   - name: test-reset
@@ -57,6 +57,6 @@ spec:
     - script:
         timeout: 30s
         content: |
-          ../skyhook-cli reset cli-reset-test --confirm
+          ../nodewright-cli reset cli-reset-test --confirm
     - assert:
         file: assert-nodes-reset.yaml

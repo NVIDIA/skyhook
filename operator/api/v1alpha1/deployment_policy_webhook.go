@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
  *
@@ -24,15 +24,10 @@ import (
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-)
-
-var (
-	deploymentPolicylog = logf.Log.WithName("deployment-policy-resource")
 )
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
@@ -40,8 +35,7 @@ func (r *DeploymentPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	deploymentPolicyWebhook := &DeploymentPolicyWebhook{
 		Client: mgr.GetClient(),
 	}
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+	return ctrl.NewWebhookManagedBy(mgr, r).
 		WithDefaulter(deploymentPolicyWebhook).
 		WithValidator(deploymentPolicyWebhook).
 		Complete()
@@ -56,17 +50,12 @@ type DeploymentPolicyWebhook struct {
 	Client client.Client
 }
 
-var _ admission.CustomDefaulter = &DeploymentPolicyWebhook{}
+var _ admission.Defaulter[*DeploymentPolicy] = &DeploymentPolicyWebhook{}
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
-func (r *DeploymentPolicyWebhook) Default(ctx context.Context, obj runtime.Object) error {
+func (r *DeploymentPolicyWebhook) Default(ctx context.Context, deploymentPolicy *DeploymentPolicy) error {
 
-	deploymentPolicy, ok := obj.(*DeploymentPolicy)
-	if !ok {
-		return fmt.Errorf("object is not a DeploymentPolicy")
-	}
-
-	deploymentPolicylog.Info(DefaultCompartmentName, "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info(DefaultCompartmentName, "name", deploymentPolicy.Name)
 
 	// Apply defaults to the default strategy
 	if deploymentPolicy.Spec.Default.Strategy != nil {
@@ -88,43 +77,48 @@ func (r *DeploymentPolicyWebhook) Default(ctx context.Context, obj runtime.Objec
 
 //+kubebuilder:webhook:path=/validate-skyhook-nvidia-com-v1alpha1-deploymentpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=skyhook.nvidia.com,resources=deploymentpolicies,verbs=create;update;delete,versions=v1alpha1,name=vdeploymentpolicy.kb.io,admissionReviewVersions=v1
 
-var _ admission.CustomValidator = &DeploymentPolicyWebhook{}
+var _ admission.Validator[*DeploymentPolicy] = &DeploymentPolicyWebhook{}
+
+// deploymentPolicyDeprecationWarning is surfaced on every create/update of a legacy
+// DeploymentPolicy during the migration bridge. It does not name a specific removal release.
+const deploymentPolicyDeprecationWarning = "skyhook.nvidia.com/v1alpha1 DeploymentPolicy is deprecated; " +
+	"migrate to nodewright.nvidia.com/v1alpha1 DeploymentPolicy (change apiVersion to " +
+	"nodewright.nvidia.com/v1alpha1). The skyhook.nvidia.com group will be removed in a future release."
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *DeploymentPolicyWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (r *DeploymentPolicyWebhook) ValidateCreate(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicy, ok := obj.(*DeploymentPolicy)
-	if !ok {
-		return nil, fmt.Errorf("object is not a DeploymentPolicy")
-	}
+	logf.FromContext(ctx).Info("validate create", "name", deploymentPolicy.Name)
 
-	deploymentPolicylog.Info("validate create", "name", deploymentPolicy.Name)
-
-	return nil, deploymentPolicy.Validate()
+	return admission.Warnings{deploymentPolicyDeprecationWarning}, deploymentPolicy.Validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (r *DeploymentPolicyWebhook) ValidateUpdate(ctx context.Context, oldDeploymentPolicy, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicy, ok := newObj.(*DeploymentPolicy)
-	if !ok {
-		return nil, fmt.Errorf("object is not a DeploymentPolicy")
+	logf.FromContext(ctx).Info("validate update", "name", deploymentPolicy.Name)
+
+	warnings := admission.Warnings{deploymentPolicyDeprecationWarning}
+
+	// MIGRATION-SHIM: a migrated legacy DeploymentPolicy is frozen read-only; real edits go
+	// to the nodewright.nvidia.com DeploymentPolicy (see legacy_readonly_webhook.go).
+	// legacyDeploymentPolicyReadOnlyError rejects every meaningful edit and allows only
+	// no-ops, finalizer edits, and deletions. Those must NOT be re-validated, or a frozen
+	// object that no longer satisfies a newer rule could no longer be re-applied or
+	// finalized. Real validation runs on the writable nodewright.nvidia.com object.
+	if oldDeploymentPolicy != nil {
+		return warnings, legacyDeploymentPolicyReadOnlyError(oldDeploymentPolicy, deploymentPolicy)
 	}
 
-	deploymentPolicylog.Info("validate update", "name", deploymentPolicy.Name)
-
-	return nil, deploymentPolicy.Validate()
+	// oldDeploymentPolicy == nil is only reached by unit tests exercising create-style
+	// validation through this entrypoint; validate the spec as on create.
+	return warnings, deploymentPolicy.Validate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *DeploymentPolicyWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (r *DeploymentPolicyWebhook) ValidateDelete(ctx context.Context, deploymentPolicy *DeploymentPolicy) (admission.Warnings, error) {
 
-	deploymentPolicy, ok := obj.(*DeploymentPolicy)
-	if !ok {
-		return nil, fmt.Errorf("object is not a DeploymentPolicy")
-	}
-
-	deploymentPolicylog.Info("validate delete", "name", deploymentPolicy.Name)
+	logf.FromContext(ctx).Info("validate delete", "name", deploymentPolicy.Name)
 
 	// Check if any Skyhooks are still referencing this policy
 	skyhooks := &SkyhookList{}
@@ -178,7 +172,7 @@ func (r *DeploymentPolicy) Validate() error {
 
 		// Validate the compartment itself
 		if err := compartment.Validate(); err != nil {
-			return err
+			return fmt.Errorf("compartment %q: %w", compartment.Name, err)
 		}
 
 		// Check for identical selectors

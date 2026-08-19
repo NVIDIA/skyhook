@@ -59,13 +59,13 @@ func TestNewVersionCmd_ClientOnly(t *testing.T) {
 	output := buf.String()
 
 	// Should contain plugin version
-	if !strings.Contains(output, "Skyhook plugin:") {
-		t.Error("output should contain 'Skyhook plugin:'")
+	if !strings.Contains(output, "NodeWright plugin:") {
+		t.Error("output should contain 'NodeWright plugin:'")
 	}
 
 	// Should NOT contain operator version (client-only mode)
-	if strings.Contains(output, "Skyhook operator:") {
-		t.Error("output should not contain 'Skyhook operator:' in client-only mode")
+	if strings.Contains(output, "NodeWright operator:") {
+		t.Error("output should not contain 'NodeWright operator:' in client-only mode")
 	}
 }
 

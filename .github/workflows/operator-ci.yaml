@@ -20,13 +20,17 @@ name: Operator CI
 on:
   workflow_dispatch: {}
   pull_request:
-    paths: &operator-paths
+    paths:
       - operator/**/*.go
       - operator/go.mod
       - operator/go.sum
       - operator/deps.mk
+      - operator/versions.yaml
+      - operator/versions.sh
+      - scripts/latest-distroless.sh
       - operator/config/**
       - containers/operator.Dockerfile
+      - .github/actions/**
       - .github/workflows/operator-ci.yaml
       - k8s-tests/**
       - chart/**
@@ -35,92 +39,142 @@ on:
       - main
     tags:
       - operator/*
-    paths: *operator-paths
+    paths:
+      - operator/**/*.go
+      - operator/go.mod
+      - operator/go.sum
+      - operator/deps.mk
+      - operator/versions.yaml
+      - operator/versions.sh
+      - scripts/latest-distroless.sh
+      - operator/config/**
+      - containers/operator.Dockerfile
+      - .github/actions/**
+      - .github/workflows/operator-ci.yaml
+      - k8s-tests/**
+      - chart/**
 
 ## these envs control the build and test process below
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GO_VERSION: 1.26.2
   DEBIAN_VERSION: trixie
+  # Opt all JS actions into Node 24. Node 20 is being phased out by GitHub
+  # Actions starting June 2026; this avoids the deprecation warnings without
+  # waiting for each action (checkout/setup-go/cache/upload-artifact) to
+  # publish a Node 24 release.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PLATFORMS: linux/amd64,linux/arm64
+  PUSH_TO_REGISTRY: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
 jobs:
-  fetch-distroless-versions:
-    name: Fetch Latest Distroless Versions
+  k8s-test-versions:
+    name: Load Kubernetes Test Versions
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
-      go-version: ${{ steps.fetch.outputs.go-version }}
+      envtest-k8s-version: ${{ steps.versions.outputs.envtest-k8s-version }}
+      kind-node-image-version: ${{ steps.versions.outputs.kind-nodeimage }}
+      kind-binary-version: ${{ steps.versions.outputs.kind-binary }}
+      ci-kind-node-image-versions-json: ${{ steps.versions.outputs.ci-kindnodeimages }}
+      ci-primary-kind-node-image-version: ${{ steps.versions.outputs.ci-primarykindnodeimage }}
     steps:
-      - name: Fetch versions from NVIDIA CDN
+      - uses: actions/checkout@v7
+      - name: Load versions
+        id: versions
+        run: |
+          cd operator
+          make yq
+          YQ="$PWD/bin/yq" ./versions.sh --print >> "$GITHUB_OUTPUT"
+
+  fetch-distroless-versions:
+    name: Resolve Distroless Base Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      distroless-version: ${{ steps.fetch.outputs.distroless-version }}
+      distroless-digest: ${{ steps.fetch.outputs.distroless-digest }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-oras
+      - name: Resolve newest published distroless/static
         id: fetch
         run: |
-          # Fetch the versions.json file
-          VERSIONS_JSON=$(curl -fsSL https://developer.download.nvidia.com/distroless-oss/versions.json)
-          
-          # Extract latest Go v4 version (format: "v4.0.1" -> "4.0.1")
-          GO_DISTROLESS_VERSION=$(echo "$VERSIONS_JSON" | jq -r '.v4.go.go' | sed 's/^v//')
-          
-          echo "go-version=${GO_DISTROLESS_VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Go v4 Distroless Version: ${GO_DISTROLESS_VERSION}"
+          # The operator Dockerfile bases on distroless/static, so resolve the
+          # static repository, not go.
+          ./scripts/latest-distroless.sh \
+            --repo nvcr.io/nvidia/distroless/static \
+            --major 4 \
+            --print | tee -a "$GITHUB_OUTPUT"
   
   # Test operator across supported Kubernetes versions and test suites
   tests:
     runs-on: ubuntu-latest
+    needs: [k8s-test-versions]
     strategy:
       matrix:
         # Standard E2E tests on all supported K8s versions
-        k8s-version: ["1.32.11", "1.33.7", "1.34.3", "1.35.0"]
+        k8s-version: ${{ fromJson(needs.k8s-test-versions.outputs.ci-kind-node-image-versions-json) }}
         test-suite: ["e2e"]
+        pool: ["core", "interrupt", "uninstall", "lifecycle"]
         make-targets: ["setup-kind-cluster e2e-tests"]
         include:
-          # Deployment policy tests on 15-node cluster (K8s 1.35 only)
-          - k8s-version: "1.35.0"
+          # Deployment policy tests on 15-node cluster use the primary Kind node image.
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: deployment-policy
             kind-config: k8s-tests/chainsaw/deployment-policy/kind-config.yaml
             make-targets: "setup-kind-cluster deployment-policy-tests"
-          # CLI e2e tests on K8s 1.34 only
-          - k8s-version: "1.35.0"
+          # Focus the heavier suites on the primary Kind node image.
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: cli-e2e
             make-targets: "setup-kind-cluster cli-e2e-tests"
-          - k8s-version: "1.35.0"
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: unit-tests
             make-targets: "vet lint unit-tests"
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
+            test-suite: helm-tests
+            make-targets: "helm-tests"
+          # Skyhook -> NodeWright upgrade migration. Installs the last pre-rename
+          # release (chart/v0.17.1 @ operator v0.17.0) and upgrades to this commit.
+          # Needs the ctlptl cluster for its local registry, like helm-tests, and a
+          # full-depth checkout with tags so `git archive chart/v0.17.1` resolves.
+          # Primary node image only: this exercises the operator's own upgrade path,
+          # which is not K8s-version sensitive, and the run is long enough that a
+          # matrix over every version would not pay for itself.
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
+            test-suite: migration
+            make-targets: "migration-test"
       fail-fast: false  # Continue testing other versions if one fails
-    name: ${{ matrix.test-suite }} (k8s-${{ matrix.k8s-version }})
+    name: ${{ matrix.test-suite }}${{ matrix.pool && format('/{0}', matrix.pool) || '' }} (k8s-${{ matrix.k8s-version }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-tags: true
           fetch-depth: 0
-      - name: Setup Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: operator/go.mod
           cache-dependency-path: operator/go.sum
       - name: Log in to the Container registry
         if: matrix.test-suite != 'unit-tests' # unit tests don't need a container registry login
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Create Kubernetes KinD Cluster v${{ matrix.k8s-version }}
-        if: matrix.test-suite != 'unit-tests' # unit tests don't need a kind cluster
-        id: kind
-        uses: helm/kind-action@v1
-        with:
-          version: v0.31.0
-          node_image: kindest/node:v${{ matrix.k8s-version }}
-          config: ${{ matrix.kind-config || 'operator/config/local-dev/kind-config.yaml' }}
-          cluster_name: kind
       # Cache build tools and dependencies for faster builds
       - name: Restore cached Binaries
         id: cached-binaries
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
-          restore-keys: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-
+          key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
+          # Intentionally identical to key (NO prefix fallback): a looser prefix
+          # restore-keys hit stale tool caches that were not rebuilt when deps
+          # changed. Keep exact-match so a deps change forces a cold rebuild.
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
@@ -132,23 +186,62 @@ jobs:
       - name: Save cached Binaries
         id: save-cached-binaries
         if: steps.cached-binaries.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
-          key: ${{ env.GO_VERSION }}-${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/deps.mk') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-bin-${{ hashFiles('operator/go.mod', 'operator/deps.mk', 'operator/versions.yaml', 'operator/versions.sh') }}
           path: |
             ${{ github.workspace }}/operator/bin
             ~/.cache/go-build
-      # Run test suite
-      - name: Run ${{ matrix.test-suite }} tests
+      - name: Validate KinD node image v${{ matrix.k8s-version }}
+        if: matrix.test-suite != 'unit-tests' # unit tests don't need a cluster
+        env:
+          K8S_VERSION: ${{ matrix.k8s-version }}
         run: |
           cd operator
-          make ${{ matrix.make-targets }} merge-coverage
+          make validate-kind-node-image KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
+      # unit-tests need no cluster; helm-tests and migration build their own via
+      # ctlptl because they need its local image registry to serve the operator
+      # image under test.
+      - name: Create Kubernetes KinD Cluster v${{ matrix.k8s-version }}
+        if: matrix.test-suite != 'unit-tests' && !contains(fromJSON('["helm-tests","migration"]'), matrix.test-suite)
+        id: kind
+        uses: helm/kind-action@v1.14.0
+        with:
+          version: ${{ needs.k8s-test-versions.outputs.kind-binary-version }}
+          node_image: kindest/node:v${{ matrix.k8s-version }}
+          config: ${{ matrix.kind-config || 'operator/config/local-dev/kind-config.yaml' }}
+          cluster_name: kind
+      - name: Install kind
+        if: contains(fromJSON('["helm-tests","migration"]'), matrix.test-suite)
+        env:
+          KIND_BINARY_VERSION: ${{ needs.k8s-test-versions.outputs.kind-binary-version }}
+        run: |
+          curl -fsSL -o /tmp/kind-linux-amd64 "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64"
+          curl -fsSL -o /tmp/kind-linux-amd64.sha256sum "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64.sha256sum"
+          cd /tmp && sha256sum -c kind-linux-amd64.sha256sum
+          sudo install /tmp/kind-linux-amd64 /usr/local/bin/kind
+      - name: Create ctlptl KinD Cluster
+        if: contains(fromJSON('["helm-tests","migration"]'), matrix.test-suite)
+        env:
+          K8S_VERSION: ${{ matrix.k8s-version }}
+        run: |
+          cd operator
+          make create-kind-cluster KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
+      # Run test suite
+      - name: Run ${{ matrix.test-suite }} tests
+        env:
+          MAKE_TARGETS: ${{ matrix.make-targets }}
+          POOL: ${{ matrix.pool }}
+        run: |
+          cd operator
+          read -r -a MAKE_TARGETS_ARRAY <<< "$MAKE_TARGETS"
+          make "${MAKE_TARGETS_ARRAY[@]}" merge-coverage
       # Save coverage artifacts from any test suite that generates them
       - name: Upload coverage artifact
         if: hashFiles('operator/reporting/cover.out') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
-          name: coverage-${{ matrix.test-suite }}-k8s-${{ matrix.k8s-version }}
+          name: coverage-${{ matrix.test-suite }}${{ matrix.pool && format('-{0}', matrix.pool) || '' }}-k8s-${{ matrix.k8s-version }}
           path: operator/reporting/cover.out
           retention-days: 1
           if-no-files-found: ignore
@@ -160,13 +253,13 @@ jobs:
     # Only upload coverage for PRs and main branch pushes, not for tags
     if: success() && !startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: operator/go.mod
       - name: Download all coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: coverage-*
           path: coverage-artifacts
@@ -189,7 +282,7 @@ jobs:
           echo "📊 Total Combined Coverage:"
           go tool cover -func reporting/cover.out | grep total
       - name: Upload to Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@v2.3.8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: operator/reporting/cover.out
@@ -204,7 +297,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tags: ${{ steps.meta.outputs.tags }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Compute metadata
@@ -251,18 +344,18 @@ jobs:
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Fetch all tags
         run: git fetch --tags --force
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build and tag container image for single platform on native hardware
       - name: Build the operator container image (${{ matrix.platform }})
@@ -270,9 +363,11 @@ jobs:
         env:
           GIT_SHA: ${{ needs.compute-metadata.outputs.git-sha }}
           VERSION: ${{ needs.compute-metadata.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
           cd operator
-          PLATFORM_TAG=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          GO_VERSION=$(awk '/^go /{go=$2} /^toolchain /{tc=$2; sub(/^go/,"",tc)} END{print (tc!=""?tc:go)}' go.mod)
+          PLATFORM_TAG=$(echo "$PLATFORM" | tr '/' '-')
           
           # Lowercase for Docker compliance
           IMAGE_NAME=$(echo "${{env.IMAGE_NAME}}" | tr '[:upper:]' '[:lower:]')
@@ -283,16 +378,24 @@ jobs:
           for TAG in ${{ needs.compute-metadata.outputs.tags }}; do
             TAGS="$TAGS -t ${REGISTRY}/${IMAGE_NAME}/operator:${TAG}-${PLATFORM_TAG}"
           done
+
+          if [ "${PUSH_TO_REGISTRY}" = "true" ]; then
+            PUSH_OR_LOAD="--push"
+          else
+            PUSH_OR_LOAD="--load"
+            echo "Fork PR build: building image without pushing to registry"
+          fi
           
           set -x
           docker buildx build \
             --build-arg GIT_SHA=${GIT_SHA} \
             --build-arg VERSION=${VERSION} \
-            --build-arg GO_VERSION=${{ env.GO_VERSION }} \
+            --build-arg GO_VERSION="${GO_VERSION}" \
             --build-arg DEBIAN_VERSION=${{ env.DEBIAN_VERSION }} \
-            --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.go-version }} \
-            --push \
-            --platform ${{ matrix.platform }} \
+            --build-arg DISTROLESS_VERSION=${{ needs.fetch-distroless-versions.outputs.distroless-version }} \
+            --build-arg DISTROLESS_DIGEST_SUFFIX="@${{ needs.fetch-distroless-versions.outputs.distroless-digest }}" \
+            ${PUSH_OR_LOAD} \
+            --platform "$PLATFORM" \
             --provenance=false \
             ${TAGS@L} \
             --metadata-file=metadata.json \
@@ -302,20 +405,30 @@ jobs:
 
   # Create multi-platform manifest from individual architecture builds
   create-manifest:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     needs: [compute-metadata, build-operator]
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+      subject-name: ${{ steps.manifest.outputs.subject-name }}
     permissions:
       contents: read
       packages: write
       attestations: write
       id-token: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       
       # Create and push multi-platform manifests, then delete platform-specific tags
       - name: Create manifests and cleanup
@@ -337,22 +450,65 @@ jobs:
             docker manifest push $FULL_TAG
             echo "✅ Pushed $FULL_TAG"
           done
-          
-          # Get digest of the main tag (git sha) for attestation
-          MAIN_TAG="${REGISTRY}/${IMAGE_NAME}/operator:${{ needs.compute-metadata.outputs.git-sha }}"
-          DIGEST=$(docker manifest inspect $MAIN_TAG | jq -r '.manifests[0].digest')
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
           echo "subject-name=${REGISTRY}/${IMAGE_NAME}/operator" >> $GITHUB_OUTPUT
           
           # Note: Platform-specific tags (e.g., v1.0.0-linux-amd64) are left in registry
           # as intermediate artifacts. Users should pull the multi-platform manifest tags.
           # GitHub Container Registry doesn't easily support programmatic tag deletion.
           echo "✅ Multi-platform manifests created successfully"
+
+      - name: Resolve multi-platform manifest digest
+        id: digest
+        uses: ./.github/actions/resolve-oci-digest
+        with:
+          image: ${{ steps.manifest.outputs.subject-name }}
+          tag: ${{ needs.compute-metadata.outputs.git-sha }}
       
-      # Generate supply chain security attestation for the multi-platform manifest
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
+      - name: Sign GHCR operator image and attach SBOM
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/operator/')
+        uses: ./.github/actions/cosign-sign-sbom
         with:
           subject-name: ${{ steps.manifest.outputs.subject-name }}
-          subject-digest: ${{ steps.manifest.outputs.digest }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+
+      - name: Attest GHCR operator provenance
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/operator/')
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject-name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
+
+      - name: Verify GHCR operator signature and attestations
+        if: env.PUSH_TO_REGISTRY == 'true' && startsWith(github.ref, 'refs/tags/operator/')
+        uses: ./.github/actions/cosign-verify-release
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject-name }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          certificate-identity-regexp: ^https://github.com/${{ github.repository }}/\.github/workflows/operator-ci\.yaml@refs/tags/operator/.*$
+
+  # Single required check for branch protection. operator-ci, agent-ci,
+  # and lint-ci all publish a check named `ci-gate` — GitHub composes
+  # same-named required checks, so every ci-gate that posts must pass.
+  # lint-ci is the always-runs workflow (no path filter) so a ci-gate
+  # always appears on every PR; this workflow's ci-gate posts only when
+  # operator-ci's path filter triggers.
+  #
+  # The if: always() + jq result==success pattern is the standard fix
+  # for GitHub Actions' "skipped == green" pitfall.
+  #
+  # needs: only includes jobs that ALWAYS run. upload-coverage skips on
+  # tag builds and create-manifest skips on fork PRs — including either
+  # would make the gate fail red on legitimate skips.
+  ci-gate:
+    name: ci-gate
+    needs: [tests, build-operator]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          echo "$results" | jq -e 'to_entries | all(.value.result == "success")'

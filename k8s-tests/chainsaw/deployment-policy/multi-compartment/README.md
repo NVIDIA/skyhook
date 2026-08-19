@@ -8,12 +8,12 @@ Validates deployment policy with multiple compartments using exponential strateg
 
 1. Reset state and label nodes with compartment assignments
 2. Create a DeploymentPolicy with multiple compartments
-3. Apply a skyhook using the policy
+3. Apply a nodewright using the policy
 4. Verify:
    - Nodes are assigned to correct compartments based on labels
    - Each compartment follows exponential batch progression (1, 2, 4, 8...)
    - Budget is enforced per compartment
-5. Assert the skyhook completes with all compartments processed
+5. Assert the nodewright completes with all compartments processed
 
 ## Key Features Tested
 
@@ -27,7 +27,7 @@ Validates deployment policy with multiple compartments using exponential strateg
 
 - `chainsaw-test.yaml` - Main test configuration
 - `deployment-policy.yaml` - Policy with multiple compartments
-- `skyhook.yaml` - Skyhook using the policy
+- `nodewright.yaml` - NodeWright using the policy
 - `assert-compartments.yaml` - Compartment assignment assertions
 - `assert-batch-*.yaml` - Batch progression assertions
 - `assert-complete.yaml` - Final completion assertions

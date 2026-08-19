@@ -1,0 +1,97 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# `include: "scope"` makes Dependabot emit conventional-commit titles like
+# `chore(deps): bump ...`, which satisfy the commit-linting PR-title check.
+
+version: 2
+updates:
+  # Operator + CLI Go module (vendored; Dependabot re-runs `go mod vendor`).
+  - package-ecosystem: "gomod"
+    directory: "/operator"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "component/operator"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+        exclude-patterns:
+          # klog has independent versioning.
+          - "k8s.io/klog/v2"
+      golang-x:
+        patterns:
+          - "golang.org/x/*"
+
+  # Go rewrite of the agent.
+  - package-ecosystem: "gomod"
+    directory: "/agent/go"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "component/agent"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+        exclude-patterns:
+          - "k8s.io/klog/v2"
+      golang-x:
+        patterns:
+          - "golang.org/x/*"
+
+  # Python agent package.
+  - package-ecosystem: "pip"
+    directory: "/agent/skyhook-agent"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "component/agent"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # GitHub Actions used by the workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "component/ci"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Base images in the container Dockerfiles.
+  - package-ecosystem: "docker"
+    directories:
+      - "/containers/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "component/ci"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"

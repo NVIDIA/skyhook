@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/nodewright/operator/api/v1alpha1"
+	"github.com/NVIDIA/nodewright/operator/api/nodewright/v1alpha1"
 	"github.com/NVIDIA/nodewright/operator/internal/version"
 	"github.com/NVIDIA/nodewright/operator/internal/wrapper"
 	"github.com/go-logr/logr"
@@ -34,7 +34,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	k8staints "k8s.io/kubernetes/pkg/util/taints"
 )
 
 // tracks original objects
@@ -72,7 +71,7 @@ type clusterState struct {
 	skyhooks []SkyhookNodes
 }
 
-func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deploymentPolicies *v1alpha1.DeploymentPolicyList) (*clusterState, error) {
+func BuildState(skyhooks *v1alpha1.NodeWrightList, nodes *corev1.NodeList, deploymentPolicies *v1alpha1.DeploymentPolicyList) (*clusterState, error) {
 
 	ret := &clusterState{
 		tracker:  ObjectTracker{objects: make(map[string]client.Object)},
@@ -164,7 +163,7 @@ func BuildState(skyhooks *v1alpha1.SkyhookList, nodes *corev1.NodeList, deployme
 // initializeCompartmentsFromPolicy loads compartments from the specified DeploymentPolicy.
 // It handles finding the policy, loading persisted batch states, creating compartments,
 // and managing the DeploymentPolicyNotFound condition.
-func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1alpha1.Skyhook, deploymentPolicies *v1alpha1.DeploymentPolicyList) {
+func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1alpha1.NodeWright, deploymentPolicies *v1alpha1.DeploymentPolicyList) {
 	policyFound := false
 	for _, deploymentPolicy := range deploymentPolicies.Items {
 		if deploymentPolicy.Name == skyhook.Spec.DeploymentPolicy {
@@ -207,37 +206,32 @@ func (ret *clusterState) initializeCompartmentsFromPolicy(idx int, skyhook *v1al
 		// 1. A policy is deleted after a Skyhook references it
 		// 2. The webhook was bypassed or disabled
 		// This provides defense-in-depth validation.
-		ret.skyhooks[idx].GetSkyhook().AddCondition(metav1.Condition{
-			Type:               fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX),
+		wrapper.AddSkyhookConditionWithLegacy(ret.skyhooks[idx].GetSkyhook(), metav1.Condition{
+			Type:               wrapper.SkyhookConditionDeploymentPolicyNotFound,
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: skyhook.Generation,
 			LastTransitionTime: metav1.Now(),
 			Reason:             "DeploymentPolicyNotFound",
 			Message:            fmt.Sprintf("DeploymentPolicy %q not found", skyhook.Spec.DeploymentPolicy),
 		})
-		ret.skyhooks[idx].GetSkyhook().Updated = true
 	} else {
 		// Policy found - clear any previous error condition if it exists
-		if ret.skyhooks[idx].GetSkyhook().Status.Conditions != nil {
-			for i, cond := range ret.skyhooks[idx].GetSkyhook().Status.Conditions {
-				if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) {
-					// Remove the condition by creating a new slice without it
-					conditions := ret.skyhooks[idx].GetSkyhook().Status.Conditions
-					ret.skyhooks[idx].GetSkyhook().Status.Conditions = append(conditions[:i], conditions[i+1:]...)
-					ret.skyhooks[idx].GetSkyhook().Updated = true
-					break
-				}
-			}
-		}
+		wrapper.RemoveSkyhookConditionTypes(ret.skyhooks[idx].GetSkyhook(),
+			wrapper.SkyhookConditionDeploymentPolicyNotFound,
+			wrapper.LegacySkyhookConditionType(wrapper.SkyhookConditionDeploymentPolicyNotFound),
+		)
 	}
 }
 
 // getAutoTaintNodes returns nodes that should be auto-tainted with the runtime-required taint.
 // A node should be auto-tainted if:
 // 1. It matches a Skyhook with RuntimeRequired=true AND AutoTaintNewNodes=true
-// 2. It doesn't already have the runtime-required taint
+// 2. It doesn't already carry any recognised runtime-required taint (the configured one
+// or the legacy skyhook.nvidia.com one a provisioner may still be stamping) — a node
+// pre-tainted with the legacy key is already gated, so adding a second taint would only
+// make it harder to reason about
 // 3. It has no Skyhook annotations (it's a "new" node)
-func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
+func (cs *clusterState) getAutoTaintNodes(recognised []corev1.Taint) []*corev1.Node {
 	seen := make(map[types.UID]bool)
 	result := make([]*corev1.Node, 0)
 	for _, skyhook := range cs.skyhooks {
@@ -250,7 +244,7 @@ func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
 				continue
 			}
 			seen[node.UID] = true
-			if k8staints.TaintExists(node.Spec.Taints, &taint) {
+			if hasAnyTaint(node, recognised) {
 				continue
 			}
 			if nodeWrapper.HasSkyhookAnnotations() {
@@ -266,7 +260,7 @@ func (cs *clusterState) getAutoTaintNodes(taint corev1.Taint) []*corev1.Node {
 // createLegacyDefaultCompartment creates a synthetic default compartment for backwards compatibility
 // when no DeploymentPolicy is specified. It translates the legacy InterruptionBudget into a
 // FixedStrategy compartment that behaves the same way.
-func createLegacyDefaultCompartment(spec v1alpha1.SkyhookSpec, nodeCount int) *v1alpha1.Compartment {
+func createLegacyDefaultCompartment(spec v1alpha1.NodeWrightSpec, nodeCount int) *v1alpha1.Compartment {
 	// Create a synthetic budget from InterruptionBudget
 	// If InterruptionBudget is not set, default to 100% (all nodes at once)
 	var budget v1alpha1.DeploymentBudget
@@ -405,12 +399,16 @@ type SkyhookNodes interface {
 	IsComplete() bool
 	IsDisabled() bool
 	IsPaused() bool
+	HasUninstallWork() (bool, error)
+	UpdateBlockedCondition() error
+	UpdateUninstallConditions() error
+	UpdateNodeStateMalformedCondition()
 	NodeCount() int
 	SetStatus(status v1alpha1.Status)
 	Status() v1alpha1.Status
 	GetPriorStatus() v1alpha1.Status
 	// WasUpdated() bool
-	UpdateCondition() bool
+	UpdateCondition(logger logr.Logger) bool
 	ReportState()
 	Migrate(logger logr.Logger) error
 
@@ -472,6 +470,306 @@ func (s *skyhookNodes) IsDisabled() bool {
 
 func (s *skyhookNodes) IsPaused() bool {
 	return s.skyhook.IsPaused()
+}
+
+// HasUninstallWork returns true if the skyhook has any packages that need uninstall
+// processing:
+//   - explicitly requested (IsUninstalling), OR
+//   - already in progress on any node (StageUninstall in node annotations), OR
+//   - CR is being deleted and an enabled package is still in node state (finalizer-driven)
+//
+// An error is returned if any node's state annotation cannot be read. Callers
+// must surface the error — silently skipping would let this report "no work"
+// when there really is pending uninstall we just can't see, which would allow
+// a Skyhook to appear complete or a finalizer to drop prematurely.
+func (s *skyhookNodes) HasUninstallWork() (bool, error) {
+	beingDeleted := !s.skyhook.DeletionTimestamp.IsZero()
+	for _, pkg := range s.skyhook.Spec.Packages {
+		if pkg.IsUninstalling() {
+			return true, nil
+		}
+	}
+	for _, node := range s.nodes {
+		nodeState, err := node.State()
+		if err != nil {
+			return false, fmt.Errorf("node %s: reading state: %w", node.GetNode().Name, err)
+		}
+		for _, pkg := range s.skyhook.Spec.Packages {
+			if nodeState.IsUninstallCycleInProgress(pkg.GetUniqueName()) {
+				return true, nil
+			}
+			// Finalizer case: CR deleting, package enabled, still present on node
+			if beingDeleted && pkg.UninstallEnabled() && !nodeState.IsUninstalled(pkg.GetUniqueName()) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// UpdateBlockedCondition sets or clears the Blocked condition based on whether
+// any package's dependency has been (or is being) uninstalled AND the dependent
+// has outstanding work that the broken dependency prevents. The condition is
+// only raised when the Skyhook would otherwise be in_progress: if the
+// dependent is already complete on every node, the orphaned DependsOn does not
+// block anything in-flight and the Skyhook can go complete.
+//
+// Uses node annotations (StageUninstall / absent) as the source of truth, not
+// the spec's apply flag alone — so the condition persists after the dep's
+// uninstall pod completes, as long as the dependent still has pending work.
+//
+// Tolerant to per-node state-read errors: a node whose nodeState annotation
+// can't be parsed is silently skipped for this computation. The parse failure
+// is already surfaced by UpdateNodeStateMalformedCondition at the top of
+// Reconcile, so hiding it here too would be double-signalling — and returning
+// an error would short-circuit the per-Skyhook loop and starve downstream
+// handlers (HandleFinalizer has its own malformed-state branch that emits a
+// deletion-specific DeletionBlocked condition and Warning event).
+//
+// Returns nil in all ordinary cases; the error return is preserved for future
+// fatal conditions only.
+func (s *skyhookNodes) UpdateBlockedCondition() error {
+
+	// Collect readable states; track unreadable nodes separately so we stay
+	// conservative when deciding "terminal uninstalled" (absent-everywhere).
+	states := make([]v1alpha1.NodeState, 0, len(s.nodes))
+	hasUnreadableNode := false
+	for _, node := range s.nodes {
+		nodeState, err := node.State()
+		if err != nil {
+			hasUnreadableNode = true
+			continue
+		}
+		states = append(states, nodeState)
+	}
+
+	// A dependency is "gone" if either:
+	//   - it's actively in the uninstall cycle on any node (inCycle), OR
+	//   - the spec requests uninstall AND the package is absent from every
+	//     node (done — terminal "uninstalled" state per D2).
+	// We distinguish the two so the condition message tells the user whether
+	// the uninstall is still running or has already finished. "done" requires
+	// a complete view of every node — if any node's state is unreadable we
+	// can't rule out the package still being present somewhere, so we fall
+	// back to only reporting inCycle for that package.
+	type depState struct {
+		inCycle bool
+		done    bool
+	}
+	depStates := make(map[string]depState, len(s.skyhook.Spec.Packages))
+	for _, pkg := range s.skyhook.Spec.Packages {
+		var st depState
+		allAbsent := true
+		for _, state := range states {
+			if state.IsUninstallCycleInProgress(pkg.GetUniqueName()) {
+				st.inCycle = true
+			}
+			if _, ok := state[pkg.GetUniqueName()]; ok {
+				allAbsent = false
+			}
+		}
+		if !st.inCycle && pkg.IsUninstalling() && allAbsent && !hasUnreadableNode && len(states) > 0 {
+			st.done = true
+		}
+		depStates[pkg.Name] = st
+	}
+
+	var blockedMsgs []string
+	for bName, bPkg := range s.skyhook.Spec.Packages {
+		// A package being uninstalled isn't blocked — it's going away.
+		if bPkg.IsUninstalling() {
+			continue
+		}
+		// If the dependent is already complete on every node, the broken
+		// dependency doesn't block anything. Per the spec: Blocked is only
+		// raised when the Skyhook would otherwise be in_progress.
+		if s.isPackageCompleteOnAllNodes(bPkg) {
+			continue
+		}
+		for depName := range bPkg.DependsOn {
+			dep, ok := depStates[depName]
+			if !ok {
+				continue
+			}
+			switch {
+			case dep.inCycle:
+				blockedMsgs = append(blockedMsgs, fmt.Sprintf(
+					"package %s is blocked: dependency %s is being uninstalled", bName, depName))
+			case dep.done:
+				blockedMsgs = append(blockedMsgs, fmt.Sprintf(
+					"package %s is blocked: dependency %s has been uninstalled", bName, depName))
+			}
+		}
+	}
+
+	sort.Strings(blockedMsgs) // deterministic order to avoid unnecessary status writes
+
+	if len(blockedMsgs) > 0 {
+		wrapper.AddSkyhookCondition(s.skyhook, metav1.Condition{
+			Type:               wrapper.SkyhookConditionBlocked,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: s.skyhook.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "DependencyUninstalled",
+			Message:            strings.Join(blockedMsgs, "; "),
+		})
+	} else {
+		wrapper.RemoveSkyhookConditionTypes(s.skyhook, wrapper.SkyhookConditionBlocked)
+	}
+
+	return nil
+}
+
+// isPackageCompleteOnAllNodes reports whether the package has reached its
+// terminal-complete stage (per node.IsPackageComplete semantics) on every node
+// this Skyhook selects. Returns false when there are no selected nodes: with
+// zero nodes there's no "complete" state to assert.
+func (s *skyhookNodes) isPackageCompleteOnAllNodes(pkg v1alpha1.Package) bool {
+	if len(s.nodes) == 0 {
+		return false
+	}
+	for _, node := range s.nodes {
+		if !node.IsPackageComplete(pkg) {
+			return false
+		}
+	}
+	return true
+}
+
+// UpdateUninstallConditions sets or clears UninstallInProgress and UninstallFailed
+// conditions based on node annotations. Works for both explicit (apply=true) and
+// finalizer-driven (beingDeleted + enabled) uninstall.
+//
+// State-read errors (e.g. malformed JSON in the nodeState annotation) are
+// surfaced by UpdateNodeStateMalformedCondition, not here — they're
+// stage-agnostic and shouldn't be conflated under "UninstallFailed". This
+// function silently skips nodes with unreadable state so the uninstall
+// conditions reflect whatever readable nodes show.
+func (s *skyhookNodes) UpdateUninstallConditions() error {
+	beingDeleted := !s.skyhook.DeletionTimestamp.IsZero()
+	inProgress := false
+	hasErrors := false
+
+	for _, node := range s.nodes {
+		nodeState, err := node.State()
+		if err != nil {
+			continue
+		}
+		for _, pkg := range s.skyhook.Spec.Packages {
+			// nodeState is the source of truth: if a cycle is already in
+			// progress on this node we must surface it even when the spec no
+			// longer requests uninstall. For example, a user flipping
+			// apply=true → false while the package is at StageUninstallInterrupt
+			// cannot cancel the cycle (the interrupt has fired and must run to
+			// completion), so UninstallInProgress / UninstallFailed must track
+			// the node until the cycle actually exits.
+			cycleInProgress := nodeState.IsUninstallCycleInProgress(pkg.GetUniqueName())
+			if !cycleInProgress && !pkg.IsUninstalling() && (!beingDeleted || !pkg.UninstallEnabled()) {
+				continue
+			}
+			if cycleInProgress {
+				inProgress = true
+				status := nodeState[pkg.GetUniqueName()]
+				if status.State == v1alpha1.StateErroring {
+					hasErrors = true
+				}
+			}
+		}
+	}
+
+	if inProgress {
+		wrapper.AddSkyhookCondition(s.skyhook, metav1.Condition{
+			Type:               wrapper.SkyhookConditionUninstallInProgress,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: s.skyhook.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "UninstallInProgress",
+			Message:            "One or more packages are being uninstalled",
+		})
+	} else {
+		wrapper.RemoveSkyhookConditionTypes(s.skyhook, wrapper.SkyhookConditionUninstallInProgress)
+	}
+
+	if hasErrors {
+		wrapper.AddSkyhookCondition(s.skyhook, metav1.Condition{
+			Type:               wrapper.SkyhookConditionUninstallFailed,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: s.skyhook.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             "UninstallPodFailing",
+			Message:            "One or more uninstall pods are failing",
+		})
+	} else {
+		wrapper.RemoveSkyhookConditionTypes(s.skyhook, wrapper.SkyhookConditionUninstallFailed)
+	}
+
+	return nil
+}
+
+// maxMalformedNodesListed caps how many node names are inlined in the
+// NodeStateMalformed condition message. The full count is always reported;
+// names beyond this cap are summarised as "and N more" so the message stays
+// bounded on large clusters where many nodes may be malformed at once.
+const maxMalformedNodesListed = 5
+
+// UpdateNodeStateMalformedCondition sets or clears the bare-named
+// `NodeStateMalformed` condition listing the nodes whose
+// `nodeState_<name>` annotation cannot be parsed for this NodeWright. Unlike
+// UninstallFailed, this condition is stage-agnostic — malformed state
+// affects every lifecycle decision (install, upgrade, uninstall, finalizer)
+// so it deserves its own user-visible signal.
+//
+// The message reports the total affected count and inlines up to
+// maxMalformedNodesListed node names; any remainder is summarised as
+// "and N more". Each listed name is itself shortened by truncateNodeName.
+func (s *skyhookNodes) UpdateNodeStateMalformedCondition() {
+	var badNodes []string
+	for _, node := range s.nodes {
+		if _, err := node.State(); err != nil {
+			badNodes = append(badNodes, node.GetNode().Name)
+		}
+	}
+
+	if len(badNodes) == 0 {
+		wrapper.RemoveSkyhookConditionTypes(s.skyhook, wrapper.SkyhookConditionNodeStateMalformed)
+		return
+	}
+
+	sort.Strings(badNodes) // deterministic order so the condition doesn't churn
+
+	listed := badNodes
+	if len(listed) > maxMalformedNodesListed {
+		listed = listed[:maxMalformedNodesListed]
+	}
+	truncated := make([]string, len(listed))
+	for i, n := range listed {
+		truncated[i] = truncateNodeName(n)
+	}
+	nodeList := strings.Join(truncated, ", ")
+	if remainder := len(badNodes) - len(listed); remainder > 0 {
+		nodeList = fmt.Sprintf("%s and %d more", nodeList, remainder)
+	}
+
+	wrapper.AddSkyhookCondition(s.skyhook, metav1.Condition{
+		Type:               wrapper.SkyhookConditionNodeStateMalformed,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: s.skyhook.Generation,
+		LastTransitionTime: metav1.Now(),
+		Reason:             "ParseError",
+		Message: fmt.Sprintf("nodeState annotation cannot be parsed on %d node(s): %s",
+			len(badNodes), nodeList),
+	})
+}
+
+// truncateNodeName shortens node names longer than 10 characters to the
+// first 10 characters plus "..." so condition messages stay compact on
+// clusters with long DNS-style node names (e.g. ip-10-0-1-234.us-west-2...).
+func truncateNodeName(name string) string {
+	const maxLen = 10
+	if len(name) <= maxLen {
+		return name
+	}
+	return name[:maxLen] + "..."
 }
 
 func (s *skyhookNodes) Status() v1alpha1.Status {
@@ -574,12 +872,12 @@ func (s *skyhookNodes) GetDeploymentPolicy() *v1alpha1.DeploymentPolicy {
 // resetSkyhookBatchState resets all compartment batch states to fresh values if configured.
 // This is used when transitioning to Complete or when a version change is detected.
 func resetSkyhookBatchState(skyhook SkyhookNodes) {
-	if !skyhook.GetSkyhook().Skyhook.ShouldResetBatchStateOnCompletion(skyhook.GetDeploymentPolicy()) {
+	if !skyhook.GetSkyhook().NodeWright.ShouldResetBatchStateOnCompletion(skyhook.GetDeploymentPolicy()) {
 		return
 	}
 
 	// Reset persisted compartment statuses via the canonical API method
-	if skyhook.GetSkyhook().Skyhook.ResetCompartmentBatchStates() {
+	if skyhook.GetSkyhook().NodeWright.ResetCompartmentBatchStates() {
 		skyhook.GetSkyhook().Updated = true
 	}
 
@@ -591,73 +889,100 @@ func resetSkyhookBatchState(skyhook SkyhookNodes) {
 	}
 }
 
-func (s *skyhookNodes) UpdateCondition() bool { // TODO: might make sense to make this a ready, not what it is now
-
-	// don't do this there was no change
-	if s.skyhook.Updated && s.priorStatus != "" {
-		if s.skyhook.Status.Conditions == nil {
-			s.skyhook.Status.Conditions = make([]metav1.Condition, 0)
-		}
-
-		condType := fmt.Sprintf("%s/Transition", v1alpha1.METADATA_PREFIX)
-		status := metav1.ConditionFalse
-		if s.IsComplete() {
-			status = metav1.ConditionTrue
-		}
-		new := metav1.Condition{
-			Type:               condType,
-			Status:             status,
-			ObservedGeneration: s.skyhook.Generation,
-			LastTransitionTime: metav1.Now(),
-			Reason:             string(s.Status()),
-			Message:            fmt.Sprintf("Transitioned [%s] -> [%s]", s.priorStatus, s.Status()),
-		}
-
-		for i, condition := range s.skyhook.Status.Conditions {
-			if condition.Type == condType {
-				// found it
-				if condition.Reason == new.Reason && condition.Message == new.Message { // the reason is the same, then we are not
-					return false
-				}
-				s.skyhook.Status.Conditions[i] = new // update it with the new condition
-				s.skyhook.Updated = true
-				return true // done
-			}
-		}
-
-		s.skyhook.Updated = true
-		s.skyhook.Status.Conditions = append(s.skyhook.Status.Conditions, new)
-		return true
+func (s *skyhookNodes) UpdateCondition(logger logr.Logger) bool {
+	skyhookStatus := s.Status()
+	readyStatus := metav1.ConditionFalse
+	if s.IsComplete() {
+		readyStatus = metav1.ConditionTrue
 	}
-	return false
+
+	nodeStatuses := make(map[string]v1alpha1.Status, len(s.skyhook.Status.NodeStatus))
+	for nodeName, status := range s.skyhook.Status.NodeStatus {
+		nodeStatuses[nodeName] = status
+	}
+
+	nodeNames := make([]string, 0, len(s.nodes))
+	for _, node := range s.nodes {
+		nodeNames = append(nodeNames, node.GetNode().Name)
+	}
+	sort.Strings(nodeNames)
+	byStatus := wrapper.SkyhookReadyConditionStatusGroups(nodeStatuses, nodeNames)
+
+	if wrapper.SkyhookReadyConditionMessageTruncated(byStatus) {
+		logger.WithName("nodewright-ready-condition").Info(
+			"Ready condition message truncated; full per-status node lists",
+			"nodewright", s.skyhook.Name,
+			"complete", byStatus[v1alpha1.StatusComplete],
+			"inProgress", byStatus[v1alpha1.StatusInProgress],
+			"blocked", byStatus[v1alpha1.StatusBlocked],
+			"erroring", byStatus[v1alpha1.StatusErroring],
+			"waiting", byStatus[v1alpha1.StatusWaiting],
+			"paused", byStatus[v1alpha1.StatusPaused],
+			"disabled", byStatus[v1alpha1.StatusDisabled],
+			"unknown", byStatus[v1alpha1.StatusUnknown],
+		)
+	}
+
+	readyCondition := metav1.Condition{
+		Type:               wrapper.SkyhookConditionReady,
+		Status:             readyStatus,
+		ObservedGeneration: s.skyhook.Generation,
+		LastTransitionTime: metav1.Now(),
+		Reason:             wrapper.SkyhookReadyConditionReason(skyhookStatus),
+		Message:            wrapper.SkyhookReadyConditionMessage(nodeStatuses, nodeNames),
+	}
+
+	changed := wrapper.AddSkyhookConditionWithLegacy(s.skyhook, readyCondition)
+
+	legacyMessage := readyCondition.Message
+	if s.priorStatus != "" && s.priorStatus != skyhookStatus {
+		legacyMessage = fmt.Sprintf("Transitioned [%s] -> [%s]", s.priorStatus, skyhookStatus)
+	}
+	legacyTransitionCondition := readyCondition
+	legacyTransitionCondition.Type = wrapper.LegacySkyhookConditionTransition
+	legacyTransitionReason := string(skyhookStatus)
+	if legacyTransitionReason == "" {
+		legacyTransitionReason = string(v1alpha1.StatusUnknown)
+	}
+	legacyTransitionCondition.Reason = legacyTransitionReason
+	legacyTransitionCondition.Message = legacyMessage
+	changed = wrapper.AddSkyhookConditionRefreshingTransitionOnReasonOrMessage(s.skyhook, legacyTransitionCondition) || changed
+
+	return changed
 }
 
 type NodePicker struct {
-	logger                    logr.Logger
-	priorityNodes             map[string]time.Time
-	runtimeRequiredToleration corev1.Toleration
+	logger                     logr.Logger
+	priorityNodes              map[string]time.Time
+	runtimeRequiredTolerations []corev1.Toleration
 }
 
-func NewNodePicker(logger logr.Logger, runtimeRequiredToleration corev1.Toleration) *NodePicker {
+func NewNodePicker(logger logr.Logger, runtimeRequiredTolerations []corev1.Toleration) *NodePicker {
 	return &NodePicker{
-		logger:                    logger,
-		priorityNodes:             make(map[string]time.Time),
-		runtimeRequiredToleration: runtimeRequiredToleration,
+		logger:                     logger,
+		priorityNodes:              make(map[string]time.Time),
+		runtimeRequiredTolerations: runtimeRequiredTolerations,
 	}
 }
 
 // primeAndPruneNodes add current priority from skyhook status, and check time removing old ones
 func (s *NodePicker) primeAndPruneNodes(skyhook SkyhookNodes) {
 
+	pruneCompletedNodePriorities(skyhook)
 	for n, t := range skyhook.GetSkyhook().Status.NodePriority {
-		// prune
-		// if the node is complete, remove it from the priority list
+		s.priorityNodes[n] = t.Time
+	}
+}
+
+func pruneCompletedNodePriorities(skyhook SkyhookNodes) bool {
+	changed := false
+	for n := range skyhook.GetSkyhook().Status.NodePriority {
 		if nodeStatus, _ := skyhook.GetNode(n); nodeStatus == v1alpha1.StatusComplete {
 			skyhook.GetSkyhook().RemoveNodePriority(n)
-		} else {
-			s.priorityNodes[n] = t.Time
+			changed = true
 		}
 	}
+	return changed
 }
 
 // upsertPick updates or inserts the node priority for a given name in the Skyhook object.
@@ -716,7 +1041,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 	}, s.GetSkyhook().Spec.AdditionalTolerations...)
 
 	if s.GetSkyhook().Spec.RuntimeRequired {
-		tolerations = append(tolerations, np.runtimeRequiredToleration)
+		tolerations = append(tolerations, np.runtimeRequiredTolerations...)
 	}
 
 	// All skyhooks now use compartments (with a default 100% compartment if none specified)
@@ -727,7 +1052,7 @@ func (np *NodePicker) SelectNodes(s SkyhookNodes) []wrapper.SkyhookNode {
 // CheckNodeIgnoreLabel checks if a node has the ignore label set to true
 func CheckNodeIgnoreLabel(node wrapper.SkyhookNode) bool {
 	ignoreLabel := fmt.Sprintf("%s/ignore", v1alpha1.METADATA_PREFIX)
-	if val, ok := node.GetNode().Labels[ignoreLabel]; ok && val == "true" {
+	if val, ok := node.GetNode().Labels[ignoreLabel]; ok && val == annotationTrueValue {
 		return true
 	}
 	return false
@@ -773,8 +1098,10 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 	}
 
 	// Add condition about taint toleration issues
+	sort.Strings(nodesWithTaintTolerationIssue)
 	np.updateTaintToleranceCondition(s, nodesWithTaintTolerationIssue)
 	// Add condition about ignored nodes
+	sort.Strings(ignoredNodes)
 	np.updateIgnoredNodesCondition(s, ignoredNodes)
 
 	return selectedNodes
@@ -783,19 +1110,27 @@ func (np *NodePicker) selectNodesWithCompartments(s SkyhookNodes, compartments m
 // updateTaintToleranceCondition updates the taint tolerance condition on the skyhook
 func (np *NodePicker) updateTaintToleranceCondition(s SkyhookNodes, nodesWithTaintTolerationIssue []string) {
 	if len(nodesWithTaintTolerationIssue) > 0 {
-		s.GetSkyhook().AddCondition(metav1.Condition{
-			Type:               fmt.Sprintf("%s/TaintNotTolerable", v1alpha1.METADATA_PREFIX),
+		message := fmt.Sprintf("Node [%s] has taints that are not tolerable. Skipping.", strings.Join(nodesWithTaintTolerationIssue, ", "))
+		if len(nodesWithTaintTolerationIssue) > wrapper.ReadyConditionNodeListLimit {
+			np.logger.Info("Condition message truncated for nodes with taint toleration issues", "nodewright", s.GetSkyhook().Name, "nodes", nodesWithTaintTolerationIssue)
+			message = fmt.Sprintf("%d nodes have taints that are not tolerable. Skipping.", len(nodesWithTaintTolerationIssue))
+		}
+
+		wrapper.AddSkyhookConditionWithLegacy(s.GetSkyhook(), metav1.Condition{
+			Type:               wrapper.SkyhookConditionTaintNotTolerable,
 			Status:             metav1.ConditionTrue,
 			Reason:             "TaintNotTolerable",
-			Message:            fmt.Sprintf("Node [%s] has taints that are not tolerable. Skipping.", strings.Join(nodesWithTaintTolerationIssue, ", ")),
+			Message:            message,
+			ObservedGeneration: s.GetSkyhook().Generation,
 			LastTransitionTime: metav1.Now(),
 		})
 	} else {
-		s.GetSkyhook().AddCondition(metav1.Condition{
-			Type:               fmt.Sprintf("%s/TaintNotTolerable", v1alpha1.METADATA_PREFIX),
+		wrapper.AddSkyhookConditionWithLegacy(s.GetSkyhook(), metav1.Condition{
+			Type:               wrapper.SkyhookConditionTaintNotTolerable,
 			Status:             metav1.ConditionFalse,
 			Reason:             "TaintNotTolerable",
 			Message:            "All nodes have tolerable taints.",
+			ObservedGeneration: s.GetSkyhook().Generation,
 			LastTransitionTime: metav1.Now(),
 		})
 	}
@@ -804,19 +1139,27 @@ func (np *NodePicker) updateTaintToleranceCondition(s SkyhookNodes, nodesWithTai
 // updateIgnoredNodesCondition updates the ignored nodes condition on the skyhook
 func (np *NodePicker) updateIgnoredNodesCondition(s SkyhookNodes, ignoredNodes []string) {
 	if len(ignoredNodes) > 0 {
-		s.GetSkyhook().AddCondition(metav1.Condition{
-			Type:               fmt.Sprintf("%s/NodesIgnored", v1alpha1.METADATA_PREFIX),
+		message := fmt.Sprintf("Node [%s] has ignore label set. Skipping.", strings.Join(ignoredNodes, ", "))
+		if len(ignoredNodes) > wrapper.ReadyConditionNodeListLimit {
+			np.logger.Info("Condition message truncated for ignored nodes", "nodewright", s.GetSkyhook().Name, "nodes", ignoredNodes)
+			message = fmt.Sprintf("%d nodes have ignore label set. Skipping.", len(ignoredNodes))
+		}
+
+		wrapper.AddSkyhookConditionWithLegacy(s.GetSkyhook(), metav1.Condition{
+			Type:               wrapper.SkyhookConditionNodesIgnored,
 			Status:             metav1.ConditionTrue,
 			Reason:             "NodesIgnored",
-			Message:            fmt.Sprintf("Node [%s] has ignore label set. Skipping.", strings.Join(ignoredNodes, ", ")),
+			Message:            message,
+			ObservedGeneration: s.GetSkyhook().Generation,
 			LastTransitionTime: metav1.Now(),
 		})
 	} else {
-		s.GetSkyhook().AddCondition(metav1.Condition{
-			Type:               fmt.Sprintf("%s/NodesIgnored", v1alpha1.METADATA_PREFIX),
+		wrapper.AddSkyhookConditionWithLegacy(s.GetSkyhook(), metav1.Condition{
+			Type:               wrapper.SkyhookConditionNodesIgnored,
 			Status:             metav1.ConditionFalse,
 			Reason:             "NodesIgnored",
 			Message:            "No nodes have ignore label set.",
+			ObservedGeneration: s.GetSkyhook().Generation,
 			LastTransitionTime: metav1.Now(),
 		})
 	}
@@ -826,22 +1169,14 @@ func (np *NodePicker) updateIgnoredNodesCondition(s SkyhookNodes, ignoredNodes [
 // for SCR true, we need to look at all nodes and compare state to current SCR. This should be reflected in the SCR too.
 
 // IntrospectSkyhook checks the current state of nodes, and SCR if they are in a bad mix, update to be correct
-func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
+func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes, logger logr.Logger) bool {
 	change := false
 
 	scrStatus := skyhook.Status()
 	collectNodeStatus := skyhook.CollectNodeStatus()
 
 	// Check if deployment policy is missing - this should block the skyhook
-	hasMissingPolicy := false
-	if skyhook.GetSkyhook().Status.Conditions != nil {
-		for _, cond := range skyhook.GetSkyhook().Status.Conditions {
-			if cond.Type == fmt.Sprintf("%s/DeploymentPolicyNotFound", v1alpha1.METADATA_PREFIX) && cond.Status == metav1.ConditionTrue {
-				hasMissingPolicy = true
-				break
-			}
-		}
-	}
+	hasMissingPolicy := wrapper.HasTrueSkyhookCondition(skyhook.GetSkyhook(), wrapper.SkyhookConditionDeploymentPolicyNotFound)
 
 	// override the node status if the skyhook is in a skyhook controlled state. (e.g. disabled, paused, blocked)
 	// Note: Waiting status is now handled per-node in IntrospectNode using IsNodeReadyForSkyhook
@@ -878,12 +1213,16 @@ func IntrospectSkyhook(skyhook SkyhookNodes, allSkyhooks []SkyhookNodes) bool {
 		}
 	}
 
+	if pruneCompletedNodePriorities(skyhook) {
+		change = true
+	}
+
 	// Evaluate completed batches for compartments with deployment policies
 	if evaluateCompletedBatches(skyhook) {
 		change = true
 	}
 
-	skyhook.UpdateCondition()
+	skyhook.UpdateCondition(logger)
 	if skyhook.GetSkyhook().Updated {
 		change = true
 	}
@@ -1031,16 +1370,24 @@ func isSkyhookControlledNodeStatus(status v1alpha1.Status) bool {
 		status == v1alpha1.StatusWaiting
 }
 
-func UpdateSkyhookPauseStatus(skyhook SkyhookNodes) bool {
+func UpdateSkyhookPauseStatus(skyhook SkyhookNodes, logger logr.Logger) bool {
 	changed := false
-	if skyhook.IsPaused() && skyhook.Status() != v1alpha1.StatusPaused {
-		skyhook.SetStatus(v1alpha1.StatusPaused)
-
-		for _, node := range skyhook.GetNodes() {
-			node.SetStatus(v1alpha1.StatusPaused)
+	if skyhook.IsPaused() {
+		if skyhook.Status() != v1alpha1.StatusPaused {
+			skyhook.SetStatus(v1alpha1.StatusPaused)
+			changed = true
 		}
 
-		changed = true
+		for _, node := range skyhook.GetNodes() {
+			if node.Status() != v1alpha1.StatusPaused {
+				node.SetStatus(v1alpha1.StatusPaused)
+				changed = true
+			}
+		}
+
+		if skyhook.UpdateCondition(logger) {
+			changed = true
+		}
 	}
 
 	return changed
@@ -1216,7 +1563,7 @@ func (skyhook *skyhookNodes) Migrate(logger logr.Logger) error {
 	}
 
 	if err := skyhook.skyhook.Migrate(logger); err != nil {
-		return fmt.Errorf("error migrating skyhook [%s]: %w", skyhook.skyhook.Name, err)
+		return fmt.Errorf("error migrating nodewright [%s]: %w", skyhook.skyhook.Name, err)
 	}
 
 	if from == "" { // before this was a thing v0.4.0 and before
@@ -1240,7 +1587,7 @@ func (skyhook *skyhookNodes) AddCompartment(name string, compartment *wrapper.Co
 func (skyhook *skyhookNodes) AddCompartmentNode(name string, node wrapper.SkyhookNode) error {
 	compartment, ok := skyhook.compartments[name]
 	if !ok {
-		return fmt.Errorf("compartment %q not found for skyhook %q - missing deployment policy", name, skyhook.skyhook.Name)
+		return fmt.Errorf("compartment %q not found for nodewright %q - missing deployment policy", name, skyhook.skyhook.Name)
 	}
 	compartment.AddNode(node)
 	return nil
