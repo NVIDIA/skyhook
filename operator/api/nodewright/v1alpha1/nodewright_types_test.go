@@ -181,6 +181,14 @@ var _ = Describe("NodeWrightSpec BuildGraph", func() {
 		dependencyGraph, err := spec.BuildGraph()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(dependencyGraph).ToNot(BeNil())
+
+		ready, err := dependencyGraph.Next()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ready).To(Equal([]string{"base|1.0.0"}), "only the dependency-free package is ready first")
+
+		ready, err = dependencyGraph.Next("base|1.0.0")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ready).To(Equal([]string{"tuning|2.0.0"}), "tuning unblocks once base is done")
 	})
 
 	It("should reject a dependency pinned to an empty version", func() {

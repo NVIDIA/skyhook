@@ -651,7 +651,11 @@ var _ = Describe("CLI Utility Functions", func() {
 			It("should write headers and rule even with no rows", func() {
 				out := &bytes.Buffer{}
 				Expect(OutputTable(out, cfg, nil)).To(Succeed())
-				Expect(strings.Split(strings.TrimRight(out.String(), "\n"), "\n")).To(HaveLen(2))
+
+				lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+				Expect(lines).To(HaveLen(2))
+				Expect(lines[0]).To(MatchRegexp(`^NAME\s+STATE$`))
+				Expect(lines[1]).To(MatchRegexp(`^----\s+-----$`))
 			})
 		})
 
@@ -673,6 +677,11 @@ var _ = Describe("CLI Utility Functions", func() {
 
 				out := &bytes.Buffer{}
 				Expect(OutputWide(out, narrow, rows)).To(Succeed())
+
+				lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+				Expect(lines).To(HaveLen(4))
+				Expect(lines[0]).To(MatchRegexp(`^NAME\s+STATE$`))
+				Expect(lines[2]).To(MatchRegexp(`^tuning\s+complete$`))
 				Expect(out.String()).ToNot(ContainSubstring("node-1"))
 			})
 		})
