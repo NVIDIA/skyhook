@@ -21,6 +21,7 @@ package utils
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -585,6 +586,120 @@ var _ = Describe("CLI Utility Functions", func() {
 			namespace, found, _ := ResolveOperatorNamespace(context.Background(), nil)
 			Expect(namespace).To(Equal(DefaultNamespace))
 			Expect(found).To(BeFalse())
+		})
+	})
+
+	Describe("output helpers", func() {
+		type row struct {
+			Name  string `json:"name"`
+			State string `json:"state"`
+			Node  string `json:"node"`
+		}
+
+		cfg := TableConfig[row]{
+			Headers:     []string{"NAME", "STATE"},
+			Extract:     func(r row) []string { return []string{r.Name, r.State} },
+			WideHeaders: []string{"NODE"},
+			WideExtract: func(r row) []string { return []string{r.Node} },
+		}
+
+		rows := []row{
+			{Name: "tuning", State: "complete", Node: "node-1"},
+			{Name: "shellscript", State: "erroring", Node: "node-2"},
+		}
+
+		Describe("OutputJSON", func() {
+			It("should write indented JSON", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputJSON(out, rows)).To(Succeed())
+				Expect(out.String()).To(ContainSubstring(`"name": "tuning"`))
+			})
+
+			It("should report a value it cannot marshal", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputJSON(out, make(chan int))).To(MatchError(ContainSubstring("marshaling json")))
+			})
+		})
+
+		Describe("OutputYAML", func() {
+			It("should write YAML", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputYAML(out, rows)).To(Succeed())
+				Expect(out.String()).To(ContainSubstring("name: tuning"))
+				Expect(out.String()).To(ContainSubstring("state: erroring"))
+			})
+
+			It("should report a value it cannot marshal", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputYAML(out, make(chan int))).To(MatchError(ContainSubstring("marshaling yaml")))
+			})
+		})
+
+		Describe("OutputTable", func() {
+			It("should write the narrow headers, a rule and one line per row", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputTable(out, cfg, rows)).To(Succeed())
+
+				lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+				Expect(lines).To(HaveLen(4))
+				Expect(lines[0]).To(MatchRegexp(`^NAME\s+STATE$`))
+				Expect(lines[1]).To(MatchRegexp(`^----\s+-----$`))
+				Expect(lines[2]).To(MatchRegexp(`^tuning\s+complete$`))
+				Expect(lines[3]).To(MatchRegexp(`^shellscript\s+erroring$`))
+			})
+
+			It("should write headers and rule even with no rows", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputTable(out, cfg, nil)).To(Succeed())
+				Expect(strings.Split(strings.TrimRight(out.String(), "\n"), "\n")).To(HaveLen(2))
+			})
+		})
+
+		Describe("OutputWide", func() {
+			It("should append the wide columns", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputWide(out, cfg, rows)).To(Succeed())
+
+				lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+				Expect(lines[0]).To(MatchRegexp(`^NAME\s+STATE\s+NODE$`))
+				Expect(lines[2]).To(MatchRegexp(`^tuning\s+complete\s+node-1$`))
+			})
+
+			It("should fall back to the narrow row when no wide extractor is configured", func() {
+				narrow := TableConfig[row]{
+					Headers: []string{"NAME", "STATE"},
+					Extract: cfg.Extract,
+				}
+
+				out := &bytes.Buffer{}
+				Expect(OutputWide(out, narrow, rows)).To(Succeed())
+				Expect(out.String()).ToNot(ContainSubstring("node-1"))
+			})
+		})
+
+		Describe("OutputTableWithHeader", func() {
+			It("should print the header line and a blank line above the table", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputTableWithHeader(out, "NodeWright: demo", cfg, rows)).To(Succeed())
+
+				lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+				Expect(lines[0]).To(Equal("NodeWright: demo"))
+				Expect(lines[1]).To(BeEmpty())
+				Expect(lines[2]).To(MatchRegexp(`^NAME\s+STATE$`))
+				Expect(out.String()).ToNot(ContainSubstring("NODE"))
+			})
+		})
+
+		Describe("OutputWideWithHeader", func() {
+			It("should print the header line above the wide table", func() {
+				out := &bytes.Buffer{}
+				Expect(OutputWideWithHeader(out, "NodeWright: demo", cfg, rows)).To(Succeed())
+
+				lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+				Expect(lines[0]).To(Equal("NodeWright: demo"))
+				Expect(lines[1]).To(BeEmpty())
+				Expect(lines[2]).To(MatchRegexp(`^NAME\s+STATE\s+NODE$`))
+			})
 		})
 	})
 })
