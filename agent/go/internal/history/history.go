@@ -24,22 +24,20 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/NVIDIA/nodewright/agent/internal/config"
+	"github.com/NVIDIA/nodewright/agent/internal/flags"
+	"github.com/NVIDIA/nodewright/agent/internal/hostfs"
 	"github.com/NVIDIA/nodewright/agent/internal/stage"
 )
 
 const (
-	UnknownVersion       = "unknown"
-	UninstalledVersion   = "uninstalled"
-	CurrentVersionEnv    = "CURRENT_VERSION"
-	PreviousVersionEnv   = "PREVIOUS_VERSION"
-	historyDirectoryMode = 0o755
-	historyFileMode      = 0o600
-	historyEntryLimit    = 100
+	UnknownVersion     = "unknown"
+	UninstalledVersion = "uninstalled"
+	historyFileMode    = 0o600
+	historyEntryLimit  = 100
 )
 
 // LedgerEntry is one recorded version transition.
@@ -61,17 +59,6 @@ type Versions struct {
 	Previous string
 }
 
-func (v Versions) Environment() map[string]string {
-	return map[string]string{
-		CurrentVersionEnv:  v.Current,
-		PreviousVersionEnv: v.Previous,
-	}
-}
-
-func (v Versions) UpgradeArguments() []string {
-	return []string{v.Previous, v.Current}
-}
-
 // Store records completed version transitions for one package and reports the
 // versions a step should receive.
 type Store interface {
@@ -81,8 +68,8 @@ type Store interface {
 
 // NewStore returns the file-backed history store. The implementation is
 // unexported so downstream consumers depend on the Store interface.
-func NewStore(dir string, cfg config.Config, logger *slog.Logger) (Store, error) {
-	s, err := newFileStore(dir, cfg, logger)
+func NewStore(layout flags.Layout, cfg config.Config, logger *slog.Logger) (Store, error) {
+	s, err := newFileStore(layout, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +78,7 @@ func NewStore(dir string, cfg config.Config, logger *slog.Logger) (Store, error)
 
 // fileStore keeps one package's install history in a JSON ledger file.
 type fileStore struct {
+	rootMount   string
 	path        string
 	packageName string
 	version     string
@@ -100,9 +88,10 @@ type fileStore struct {
 var _ Store = (*fileStore)(nil)
 
 // newFileStore returns a store for the package described by cfg, keeping its
-// ledger under dir. Package identity is validated once here so later reads
-// and writes cannot escape dir or record an unusable version.
-func newFileStore(dir string, cfg config.Config, logger *slog.Logger) (*fileStore, error) {
+// ledger under the layout's history directory. Package identity is validated
+// once here so later reads and writes cannot escape that directory or record
+// an unusable version.
+func newFileStore(layout flags.Layout, cfg config.Config, logger *slog.Logger) (*fileStore, error) {
 	name := cfg.PackageName
 	if name == "" || !filepath.IsLocal(name) || filepath.Base(name) != name {
 		return nil, fmt.Errorf("package name %q must be a single path component", name)
@@ -114,7 +103,8 @@ func newFileStore(dir string, cfg config.Config, logger *slog.Logger) (*fileStor
 		logger = slog.Default()
 	}
 	return &fileStore{
-		path:        filepath.Join(dir, name+".json"),
+		rootMount:   layout.RootMount(),
+		path:        filepath.Join(layout.HistoryDir(), name+".json"),
 		packageName: name,
 		version:     cfg.PackageVersion,
 		logger:      logger,
@@ -161,22 +151,19 @@ func (s *fileStore) Record(completedStage stage.Stage, at time.Time) error {
 		ledger.Entries = ledger.Entries[:historyEntryLimit]
 	}
 
-	if err := os.MkdirAll(filepath.Dir(s.path), historyDirectoryMode); err != nil {
-		return fmt.Errorf("creating history directory %q: %w", filepath.Dir(s.path), err)
-	}
 	data, err := json.MarshalIndent(ledger, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encoding history for package %q: %w", s.packageName, err)
 	}
 	data = append(data, '\n')
-	if err := writeAtomic(s.path, data); err != nil {
+	if err := hostfs.WriteFile(s.rootMount, s.path, data, historyFileMode); err != nil {
 		return fmt.Errorf("writing history for package %q: %w", s.packageName, err)
 	}
 	return nil
 }
 
 func (s *fileStore) load() (Ledger, error) {
-	data, err := os.ReadFile(s.path)
+	data, err := hostfs.ReadFile(s.rootMount, s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		s.logger.Info("package history does not exist", "package", s.packageName, "path", s.path)
 		return Ledger{CurrentVersion: UnknownVersion, Entries: []LedgerEntry{}}, nil
@@ -190,7 +177,7 @@ func (s *fileStore) load() (Ledger, error) {
 		backup := s.path + ".backup"
 		// Preserve the damaged bytes and continue from an unknown version so a
 		// corrupt file cannot permanently block package execution on this node.
-		if renameErr := os.Rename(s.path, backup); renameErr != nil {
+		if renameErr := hostfs.RenameFile(s.rootMount, s.path, backup); renameErr != nil {
 			return Ledger{}, fmt.Errorf("moving corrupt history %q to %q: %w", s.path, backup, renameErr)
 		}
 		s.logger.Error(
@@ -209,52 +196,4 @@ func (s *fileStore) load() (Ledger, error) {
 		result.Entries = []LedgerEntry{}
 	}
 	return result, nil
-}
-
-func writeAtomic(path string, data []byte) (retErr error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("creating temporary history file: %w", err)
-	}
-
-	tmpPath := tmp.Name()
-	defer func() {
-		if err := tmp.Close(); err != nil && !errors.Is(err, os.ErrClosed) && retErr == nil {
-			retErr = fmt.Errorf("closing temporary history file %q: %w", tmpPath, err)
-		}
-		if err := os.Remove(tmpPath); err != nil && !errors.Is(err, fs.ErrNotExist) && retErr == nil {
-			retErr = fmt.Errorf("removing temporary history file %q: %w", tmpPath, err)
-		}
-	}()
-
-	if err := tmp.Chmod(historyFileMode); err != nil {
-		return fmt.Errorf("setting permissions on temporary history file %q: %w", tmpPath, err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		return fmt.Errorf("writing temporary history file %q: %w", tmpPath, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("syncing temporary history file %q: %w", tmpPath, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temporary history file %q: %w", tmpPath, err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("replacing history file %q: %w", path, err)
-	}
-	// The rename is only durable once the parent directory's metadata reaches
-	// disk; without this sync a crash after a successful Record could lose the
-	// ledger, and this file exists to survive reboots.
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return fmt.Errorf("opening history directory %q: %w", filepath.Dir(path), err)
-	}
-	if err := dir.Sync(); err != nil {
-		_ = dir.Close()
-		return fmt.Errorf("syncing history directory %q: %w", filepath.Dir(path), err)
-	}
-	if err := dir.Close(); err != nil {
-		return fmt.Errorf("closing history directory %q: %w", filepath.Dir(path), err)
-	}
-	return nil
 }
