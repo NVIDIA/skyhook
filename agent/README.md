@@ -20,10 +20,18 @@ A basic example of using a container overlay
 
 The Go rewrite under `agent/go` shares execution policy between steps and
 interrupts through `execution.Config`. A `Config` composes the host root mount,
-the child-visible step and package directories, and the stdout and stderr
-writers that receive raw command output. Operations report `execution.Status`:
+the package directories inside that host, and the stdout and stderr writers
+that receive raw command output. Non-host steps resolve those directories
+through the mounted host root before execution. Operations report
+`execution.Status`:
 `execution.StatusSuccess` means the operation satisfied its execution policy,
 while `execution.StatusFailed` means it did not.
+
+The agent reserves `STEP_ROOT` and `SKYHOOK_DIR` for every step and
+`PREVIOUS_VERSION` and `CURRENT_VERSION` for upgrade steps. Runtime values
+overwrite matching keys from a package's configured `env`. For host steps,
+`STEP_ROOT` and `SKYHOOK_DIR` are host-absolute paths. For non-host steps, they
+are paths inside the agent container, resolved through the mounted host root.
 
 Each Go interrupt owns its command construction and execution. The `Interrupt`
 contract exposes `Type` for the wire identity, `Run` for execution using an

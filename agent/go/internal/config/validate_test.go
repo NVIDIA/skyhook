@@ -31,7 +31,7 @@ import (
 	"github.com/NVIDIA/nodewright/agent/internal/step"
 )
 
-func mustUpgradeStep(path string, opts ...step.RegularStepOption) step.UpgradeStep {
+func mustUpgradeStep(path string, opts ...step.Option) step.UpgradeStep {
 	u, err := step.NewUpgradeStep(path, opts...)
 	Expect(err).NotTo(HaveOccurred())
 	return u
