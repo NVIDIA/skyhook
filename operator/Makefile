@@ -334,7 +334,11 @@ rollout-local: push-local-image ## push locally-built operator and restart the d
 delete-kind-cluster: ctlptl render-ctlptl-config ## delete the local ctlptl kind cluster and registry
 	$(CTLPTL) delete -f $(CTLPTL_CONFIG_RENDERED)
 
-operator-agent-tests: chainsaw install ## Run operator agent tests.
+## build-cli because the suite shells out to bin/nodewright to reset prior state, the same
+## reason e2e-tests declares it. Three of the four tests hide a missing binary behind
+## `|| true`, so without this only reap_old_logs fails, and it fails as exit 127 rather than
+## anything that points at the cause.
+operator-agent-tests: chainsaw install build-cli ## Run operator agent tests.
 	@if [ -z "$(AGENT_IMAGE)" ]; then \
 		echo "Error: AGENT_IMAGE is not set. Please set it to the agent image to test against."; \
 		echo "Example: AGENT_IMAGE=ghcr.io/nvidia/nodewright/agent:v6.4.2 make operator-agent-tests"; \
