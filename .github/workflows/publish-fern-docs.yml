@@ -101,11 +101,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
           set -eo pipefail
           if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
-            TAG="${{ github.event.release.tag_name }}"
-            IS_PRERELEASE="${{ github.event.release.prerelease }}"
+            TAG="${RELEASE_TAG}"
+            IS_PRERELEASE="${RELEASE_PRERELEASE}"
           elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             TAG="${GITHUB_REF#refs/tags/}"
           elif [ -n "${INPUT_TAG}" ]; then
@@ -148,6 +150,7 @@ jobs:
             exit 0
           fi
 
+          mkdir -p fern/versions
           echo "Generating fern/versions/${TAG_VERSION}.yml from tag $TAG_VERSION"
           git archive "refs/tags/${TAG_VERSION}" -- docs/index.yml | tar -xO docs/index.yml | \
             sed "s|path: |path: ${TAG_VERSION}-content/|g" > "fern/versions/${TAG_VERSION}.yml"
