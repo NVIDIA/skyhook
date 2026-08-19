@@ -19,7 +19,11 @@
 package step
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
@@ -67,16 +71,16 @@ var _ = Describe("NewUpgradeStep", func() {
 
 var _ = Describe("UpgradeStep.Validate", func() {
 	It("passes when arguments are empty", func() {
-		u := UpgradeStep{RegularStep: RegularStep{ScriptPath: "upgrade.sh"}}
+		u := UpgradeStep{ScriptPath: "upgrade.sh"}
 		Expect(u.Validate()).To(Succeed())
 	})
 
 	It("rejects directly-constructed values with non-empty arguments", func() {
-		u := UpgradeStep{RegularStep: RegularStep{
+		u := UpgradeStep{
 			Name:       "upgrade",
 			ScriptPath: "upgrade.sh",
 			Arguments:  []string{"x"},
-		}}
+		}
 		Expect(u.Validate()).To(MatchError(
 			"UpgradeStep upgrade can not have any arguments, but found: [x]",
 		))
@@ -85,11 +89,11 @@ var _ = Describe("UpgradeStep.Validate", func() {
 
 var _ = Describe("UpgradeStep.Run", func() {
 	It("rejects invalid arguments before running the regular step", func() {
-		u := UpgradeStep{RegularStep: RegularStep{
+		u := UpgradeStep{
 			Name:       "upgrade",
 			ScriptPath: "upgrade.sh",
 			Arguments:  []string{"x"},
-		}}
+		}
 
 		status, err := u.Run(context.Background(), execution.Config{})
 
@@ -98,11 +102,78 @@ var _ = Describe("UpgradeStep.Run", func() {
 			ContainSubstring("UpgradeStep upgrade can not have any arguments, but found: [x]"),
 		))
 	})
+
+	It("requires orchestration to provide package versions", func() {
+		u, err := NewUpgradeStep("upgrade.sh")
+		Expect(err).NotTo(HaveOccurred())
+
+		status, err := u.Run(context.Background(), execution.Config{})
+
+		Expect(status).To(Equal(execution.StatusFailed))
+		Expect(err).To(MatchError("running upgrade step: versions were not provided"))
+	})
+
+	DescribeTable(
+		"rejects empty package versions",
+		func(previous, current, message string) {
+			u, err := NewUpgradeStep("upgrade.sh")
+			Expect(err).NotTo(HaveOccurred())
+
+			status, err := u.WithVersions(previous, current).Run(
+				context.Background(),
+				execution.Config{},
+			)
+
+			Expect(status).To(Equal(execution.StatusFailed))
+			Expect(err).To(MatchError(message))
+		},
+		Entry("missing previous version", "", "current", "running upgrade step: previous version must not be empty"),
+		Entry("missing current version", "previous", "", "running upgrade step: current version must not be empty"),
+	)
+
+	It("runs package versions without treating them as configured arguments", func() {
+		stepRoot := GinkgoT().TempDir()
+		skyhookDir := GinkgoT().TempDir()
+		executable := filepath.Join(stepRoot, "upgrade.sh")
+		Expect(os.WriteFile(executable, []byte(`#!/bin/sh
+printf 'arguments=%s,%s\n' "$1" "$2"
+printf 'environment=%s,%s\n' "$PREVIOUS_VERSION" "$CURRENT_VERSION"
+`), 0o700)).To(Succeed())
+		stdout := &bytes.Buffer{}
+		u, err := NewUpgradeStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithEnv(map[string]string{
+				previousVersionEnv: "configured-previous",
+				currentVersionEnv:  "configured-current",
+			}),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		runnable := u.WithVersions("previous", "current")
+
+		status, err := runnable.Run(
+			context.Background(),
+			newStepRunConfig(stepRoot, skyhookDir, execution.WithRunOutput(stdout, io.Discard)),
+		)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+		Expect(stdout.String()).To(ContainSubstring("arguments=previous,current"))
+		Expect(stdout.String()).To(ContainSubstring("environment=previous,current"))
+		Expect(u.Validate()).To(Succeed())
+		dumped, err := runnable.Encode()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(dumped)).To(ContainSubstring(`"arguments":[]`))
+		Expect(string(dumped)).To(ContainSubstring(`"CURRENT_VERSION":"configured-current"`))
+		Expect(string(dumped)).To(ContainSubstring(`"PREVIOUS_VERSION":"configured-previous"`))
+		Expect(string(dumped)).NotTo(ContainSubstring(`"CURRENT_VERSION":"current"`))
+		Expect(string(dumped)).NotTo(ContainSubstring(`"PREVIOUS_VERSION":"previous"`))
+	})
 })
 
 var _ = Describe("UpgradeStep fields", func() {
-	It("promote field access from the embedded RegularStep", func() {
-		rs := RegularStep{
+	It("exposes the shared command fields", func() {
+		u := UpgradeStep{
 			Name:            "explicit",
 			ScriptPath:      "upgrade.sh",
 			Returncodes:     []command.ExitCode{command.SuccessExitCode},
@@ -110,7 +181,6 @@ var _ = Describe("UpgradeStep fields", func() {
 			OnHost:          true,
 			IdempotenceMode: Disabled,
 		}
-		u := UpgradeStep{RegularStep: rs}
 
 		Expect(u.Name).To(Equal("explicit"))
 		Expect(u.ScriptPath).To(Equal("upgrade.sh"))
@@ -132,32 +202,35 @@ var _ = Describe("UpgradeStep.Encode", func() {
 	})
 
 	It("forces upgrade_step:true for a directly-constructed value", func() {
-		u := UpgradeStep{RegularStep: RegularStep{ScriptPath: "upgrade.sh"}}
+		u := UpgradeStep{ScriptPath: "upgrade.sh"}
 		dumped, err := u.Encode()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(dumped)).To(ContainSubstring(`"upgrade_step":true`))
 	})
 
 	It("returns the invariant error before marshaling when arguments are set", func() {
-		u := UpgradeStep{RegularStep: RegularStep{
+		u := UpgradeStep{
 			Name:       "upgrade",
 			ScriptPath: "upgrade.sh",
 			Arguments:  []string{"x"},
-		}}
+		}
 		_, err := u.Encode()
 		Expect(err).To(MatchError(
 			ContainSubstring("UpgradeStep upgrade can not have any arguments, but found: [x]"),
 		))
 	})
 
-	// Pins the override against Go's embedding gotcha. If someone
-	// deletes UpgradeStep.Encode, embedding silently calls
-	// RegularStep.Encode; the invariant check would be skipped. This
-	// test keeps the override honest by asserting the only wire
-	// difference from a RegularStep is the upgrade_step discriminator.
 	It("produces wire bytes that differ from RegularStep only in upgrade_step", func() {
-		rs := NewRegularStep("shared.sh")
-		u, err := NewUpgradeStep("shared.sh")
+		options := []Option{
+			WithName("shared"),
+			WithReturncodes([]command.ExitCode{0, 2}),
+			WithOnHost(false),
+			WithIdempotence(Disabled),
+			WithEnv(map[string]string{"KEY": "value"}),
+			WithRequiresInterrupt(true),
+		}
+		rs := NewRegularStep("shared.sh", options...)
+		u, err := NewUpgradeStep("shared.sh", options...)
 		Expect(err).NotTo(HaveOccurred())
 
 		rsBytes, err := rs.Encode()

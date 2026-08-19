@@ -19,20 +19,23 @@
 package flags
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/NVIDIA/nodewright/agent/internal/config"
+	"github.com/NVIDIA/nodewright/agent/internal/hostfs"
 )
 
 const (
-	DefaultStateRoot = "/etc/skyhook"
-	DefaultLogRoot   = "/var/log/skyhook"
-	logTimeFormat    = "2006-01-02-150405"
-	directoryMode    = 0o755
+	DefaultStateRoot    = "/etc/skyhook"
+	DefaultLogRoot      = "/var/log/skyhook"
+	logTimeFormat       = "2006-01-02-150405.000000000"
+	legacyLogTimeFormat = "2006-01-02-150405"
 )
 
 // Layout resolves agent-owned paths beneath the mounted host root. StateRoot
@@ -78,6 +81,10 @@ func DefaultLayout(rootMount string) Layout {
 	}
 }
 
+func (l Layout) RootMount() string {
+	return l.rootMount
+}
+
 func (l Layout) StateDir() string {
 	return filepath.Join(l.rootMount, l.stateRoot)
 }
@@ -116,6 +123,7 @@ func (l Layout) LogFilePath(cfg config.Config, stepPath string, at time.Time) (s
 // LogFiles identifies prior logs for one step without interpreting the step
 // path as a glob expression.
 type LogFiles struct {
+	rootMount string
 	directory string
 	prefix    string
 	suffix    string
@@ -129,22 +137,73 @@ func (l Layout) LogFilePattern(cfg config.Config, stepPath string) (LogFiles, er
 		return LogFiles{}, fmt.Errorf("building log file pattern for step %q: resolving package log path: %w", stepPath, err)
 	}
 	return LogFiles{
+		rootMount: l.rootMount,
 		directory: filepath.Dir(logBase),
 		prefix:    filepath.Base(logBase) + "-",
 		suffix:    ".log",
 	}, nil
 }
 
-// PrepareLogFile returns the next log path and creates its parent directory.
-func (l Layout) PrepareLogFile(cfg config.Config, stepPath string, at time.Time) (string, error) {
-	path, err := l.LogFilePath(cfg, stepPath, at)
+// CreateLogFile creates and opens a unique log file beneath the mounted host
+// root. The caller owns the returned file and must close it.
+func (l Layout) CreateLogFile(
+	cfg config.Config,
+	stepPath string,
+	at time.Time,
+	mode fs.FileMode,
+) (string, *os.File, error) {
+	basePath, err := l.LogFilePath(cfg, stepPath, at)
 	if err != nil {
-		return "", fmt.Errorf("preparing log file for step %q: resolving log file path: %w", stepPath, err)
+		return "", nil, fmt.Errorf("creating log file for step %q: resolving log file path: %w", stepPath, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), directoryMode); err != nil {
-		return "", fmt.Errorf("creating log directory %q: %w", filepath.Dir(path), err)
+	collision, err := nextLogCollision(l.rootMount, basePath)
+	if err != nil {
+		return "", nil, fmt.Errorf("creating log file for step %q: finding next collision index: %w", stepPath, err)
 	}
-	return path, nil
+	for ; ; collision++ {
+		path := basePath
+		if collision > 0 {
+			path = strings.TrimSuffix(basePath, ".log") + fmt.Sprintf("-%d.log", collision)
+		}
+		file, err := hostfs.CreateFileWriter(l.rootMount, path, mode)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", nil, fmt.Errorf("creating log file %q: %w", path, err)
+		}
+		return path, file, nil
+	}
+}
+
+func nextLogCollision(rootMount, basePath string) (int, error) {
+	entries, err := hostfs.ReadDir(rootMount, filepath.Dir(basePath))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("reading log directory %q: %w", filepath.Dir(basePath), err)
+	}
+
+	baseName := filepath.Base(basePath)
+	prefix := strings.TrimSuffix(baseName, ".log") + "-"
+	next := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == baseName {
+			next = max(next, 1)
+			continue
+		}
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		value := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ".log")
+		index, ok := parsePositiveDecimal(value)
+		if ok {
+			next = max(next, index+1)
+		}
+	}
+	return next, nil
 }
 
 func (l Layout) packageLogDir(cfg config.Config, stepPath string) (string, error) {

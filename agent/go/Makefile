@@ -47,7 +47,7 @@ license-fmt: addlicense ## Add the Apache-2.0 header to any agent Go source file
 	$(license_files) | xargs $(ADDLICENSE) -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
 
 ## addlicense -check accepts any license marker, so verify the required SPDX
-## identifier separately while continuing to exempt generated source files.
+## identifier separately for every non-generated tracked source.
 .PHONY: license-header-check
 license-header-check: addlicense ## Fail if any agent Go source file is missing an Apache-2.0 header.
 	$(license_files) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE)
@@ -62,6 +62,11 @@ license-header-check: addlicense ## Fail if any agent Go source file is missing 
 .PHONY: fmt
 fmt: license-fmt ## Format go files and update license headers.
 	$(GO) fmt ./...
+
+.PHONY: generate-mocks
+generate-mocks: mockery ## Generate interface mocks.
+	$(MOCKERY) --config .mockery.yaml
+	$(MAKE) fmt
 
 .PHONY: vet
 vet: ## Run go vet against code.
