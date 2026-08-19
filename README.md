@@ -54,7 +54,7 @@ NodeWright works in any Kubernetes environment (self-managed, on-prem, cloud) an
 
 ## Pre-built Packages
 
-There are a few pre-built generalist packages available at [NVIDIA/skyhook-packages](https://github.com/NVIDIA/skyhook-packages)
+There are a few pre-built generalist packages available at [NVIDIA/nodewright-packages](https://github.com/NVIDIA/nodewright-packages)
 
 
 ## Installation via Helm

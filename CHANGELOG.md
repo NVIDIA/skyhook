@@ -6,7 +6,7 @@
 # Changelog
 
 Each Skyhook component is versioned and released independently.
-Full changelogs are maintained per component and published as [GitHub Releases](https://github.com/NVIDIA/skyhook/releases).
+Full changelogs are maintained per component and published as [GitHub Releases](https://github.com/NVIDIA/nodewright/releases).
 
 ## Components
 

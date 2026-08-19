@@ -9,9 +9,9 @@ Want to contribute to Skyhook (NodeWright)? We welcome bug reports, feature requ
 
 ## Filing Issues
 
-- **Bug reports**: Use the [bug report template](https://github.com/NVIDIA/skyhook/issues/new?template=bug_report_form.yml).
-- **Feature requests**: Use the [feature request template](https://github.com/NVIDIA/skyhook/issues/new?template=feature_request_form.yml).
-- **Questions**: Use [GitHub Discussions](https://github.com/NVIDIA/skyhook/discussions).
+- **Bug reports**: Use the [bug report template](https://github.com/NVIDIA/nodewright/issues/new?template=bug_report_form.yml).
+- **Feature requests**: Use the [feature request template](https://github.com/NVIDIA/nodewright/issues/new?template=feature_request_form.yml).
+- **Questions**: Use [GitHub Discussions](https://github.com/NVIDIA/nodewright/discussions).
 - **Security vulnerabilities**: Do **not** file a public issue. See [SECURITY.md](SECURITY.md).
 
 ## Pull Requests
