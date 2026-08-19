@@ -278,6 +278,12 @@ jobs:
           # Create final merged coverage file
           echo "mode: set" > reporting/cover.out
           tail -n +2 reporting/all-cover.out | sed '/mode: set/d' >> reporting/cover.out
+          # Re-apply the exclusions. The per-suite artifacts are already filtered
+          # by merge-coverage, so this is belt-and-braces for a suite that starts
+          # uploading a raw profile — Coveralls counts whatever it is handed and
+          # has no exclusion mechanism of its own. COVERAGE_EXCLUDE is defined
+          # once, in operator/Makefile.
+          make filter-coverage
           # Show total coverage
           echo "📊 Total Combined Coverage:"
           go tool cover -func reporting/cover.out | grep total

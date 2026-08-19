@@ -444,9 +444,24 @@ ifeq ($(PLATFORM),Darwin)
 	sedrp = sed -r -i ''
 endif
 
-.PHONY: merage-coverage
-merge-coverage:
-	## merge coverage file into one so we can run totals and html reporting
+# Paths whose statements are dropped before coverage totals are reported.
+# THIS IS THE ONLY DEFINITION — the Coveralls upload job calls filter-coverage
+# rather than repeating the pattern in YAML, because Coveralls itself has no
+# exclusion mechanism for Go profiles (no .coveralls.yml key, no action input),
+# so whatever is uploaded is what gets counted.
+#
+# Generated code only. controller-gen writes zz_generated.deepcopy.go and no one
+# should ever hand-write a test for DeepCopyInto, yet it is 916 statements —
+# a quarter of the repo's uncovered code — which drags the headline number down
+# by roughly 4 points and hides the coverage of code people actually write.
+#
+# Do not add hand-written code here to make a number look better. If something
+# is genuinely untestable, that is worth a comment at the call site, not a
+# silent exclusion.
+COVERAGE_EXCLUDE ?= zz_generated\.deepcopy\.go
+
+.PHONY: merge-coverage
+merge-coverage: ## Merge per-suite coverage profiles into reporting/cover.out.
 	@if ls $(REPORTING)/*.coverprofile 1> /dev/null 2>&1; then \
 		cat $(REPORTING)/*.coverprofile > reporting/temp-cover.out; \
 		echo "mode: set" > $(REPORTING)/cover.out; \
@@ -454,6 +469,17 @@ merge-coverage:
 		$(sedrp) 's|^/.*nodewright/operator/(.*)$$|github\.com/NVIDIA/nodewright/operator/\1|g' $(REPORTING)/cover.out; \
 	else \
 		echo "No coverage files found - skipping merge"; \
+	fi
+	@$(MAKE) --no-print-directory filter-coverage
+
+.PHONY: filter-coverage
+filter-coverage: ## Drop $(COVERAGE_EXCLUDE) paths from reporting/cover.out.
+	@if [ -f $(REPORTING)/cover.out ]; then \
+		before=$$(grep -c '' $(REPORTING)/cover.out); \
+		grep -v -E '$(COVERAGE_EXCLUDE)' $(REPORTING)/cover.out > $(REPORTING)/cover.filtered.out || true; \
+		mv $(REPORTING)/cover.filtered.out $(REPORTING)/cover.out; \
+		after=$$(grep -c '' $(REPORTING)/cover.out); \
+		echo "coverage: excluded $$((before - after)) of $$before profile blocks matching '$(COVERAGE_EXCLUDE)'"; \
 	fi
 
 .PHONY: lint
