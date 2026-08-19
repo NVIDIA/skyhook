@@ -19,7 +19,7 @@
 // Package execution defines runtime contracts shared by agent operations.
 //
 // Status records an operation outcome as StatusSuccess or StatusFailed. Config
-// composes the host root mount, child-visible step and package directories, and
+// composes the host root mount, step and package paths within that host, and
 // the stdout and stderr writers used to stream command output.
 package execution
 
@@ -51,10 +51,10 @@ type Config struct {
 // RootMount returns the absolute host root used by host operations.
 func (config Config) RootMount() string { return config.rootMount }
 
-// StepRoot returns the child-visible directory containing step scripts.
+// StepRoot returns the directory containing step scripts inside the target host.
 func (config Config) StepRoot() string { return config.stepRoot }
 
-// SkyhookDir returns the child-visible package working directory.
+// SkyhookDir returns the package working directory inside the target host.
 func (config Config) SkyhookDir() string { return config.skyhookDir }
 
 // Stdout returns the destination for command standard output.
@@ -108,14 +108,14 @@ func WithRootMount(rootMount string) Option {
 	}
 }
 
-// WithStepRoot sets the child-visible absolute path containing step scripts.
+// WithStepRoot sets the absolute path containing step scripts inside the target host.
 func WithStepRoot(stepRoot string) Option {
 	return func(config *Config) {
 		config.stepRoot = stepRoot
 	}
 }
 
-// WithSkyhookDir sets the child-visible absolute package working directory.
+// WithSkyhookDir sets the absolute package working directory inside the target host.
 func WithSkyhookDir(skyhookDir string) Option {
 	return func(config *Config) {
 		config.skyhookDir = skyhookDir

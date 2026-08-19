@@ -19,15 +19,12 @@
 package flags
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/NVIDIA/nodewright/agent/internal/config"
+	"github.com/NVIDIA/nodewright/agent/internal/hostfs"
 	"github.com/NVIDIA/nodewright/agent/internal/stage"
 	"github.com/NVIDIA/nodewright/agent/internal/step"
 )
@@ -65,6 +62,7 @@ type Decision struct {
 type Store interface {
 	Path(value step.Step) (string, error)
 	Mark(value step.Step, message string) (string, error)
+	Remove(value step.Step) error
 	Write(path string, data []byte) error
 	Check(value step.Step, alwaysRun bool, currentStage stage.Stage) (Decision, error)
 }
@@ -135,31 +133,35 @@ func (s *fileStore) Mark(value step.Step, message string) (string, error) {
 	return path, nil
 }
 
+// Remove deletes a step completion flag. A missing flag is already removed and
+// therefore succeeds.
+func (s *fileStore) Remove(value step.Step) error {
+	path, err := s.Path(value)
+	if err != nil {
+		return fmt.Errorf("removing step flag: resolving flag path: %w", err)
+	}
+	if err := s.validatePath(path); err != nil {
+		return fmt.Errorf("removing step flag: validating store path: %w", err)
+	}
+	if err := hostfs.RemoveFile(s.rootMount, path); err != nil {
+		return fmt.Errorf("removing step flag %q: %w", path, err)
+	}
+	return nil
+}
+
 // Write creates or replaces a flag file owned by this store. In addition to
 // per-step flags, callers can use it for control files such as START and
 // check_results without duplicating directory and permission handling.
-func (s *fileStore) Write(path string, data []byte) (retErr error) {
-	relative, err := s.rootRelativePath(path)
-	if err != nil {
+func (s *fileStore) Write(path string, data []byte) error {
+	if err := s.validatePath(path); err != nil {
 		return fmt.Errorf("validating flag store path %q: %w", path, err)
 	}
-	root, err := os.OpenRoot(s.rootMount)
-	if err != nil {
-		return fmt.Errorf("opening mounted host root %q: %w", s.rootMount, err)
-	}
-	defer closeStoreRoot(root, &retErr)
-
-	if err := ensureDirectoriesNoSymlinks(root, filepath.Dir(relative)); err != nil {
-		return fmt.Errorf("preparing flag directory for %q: %w", path, err)
-	}
-	info, exists, err := lstatNoSymlinks(root, relative)
-	if err != nil {
-		return fmt.Errorf("validating flag target %q: %w", path, err)
-	}
-	if exists && !info.Mode().IsRegular() {
-		return fmt.Errorf("flag path %q is not a regular file", path)
-	}
-	if err := writeFlagFile(root, relative, data, exists); err != nil {
+	if err := hostfs.WriteFile(
+		s.rootMount,
+		path,
+		data,
+		flagFileMode,
+	); err != nil {
 		return fmt.Errorf("writing flag %q: %w", path, err)
 	}
 	return nil
@@ -167,7 +169,7 @@ func (s *fileStore) Write(path string, data []byte) (retErr error) {
 
 // Check reports whether a step should run based on its completion flag and
 // current execution policy.
-func (s *fileStore) Check(value step.Step, alwaysRun bool, currentStage stage.Stage) (decision Decision, retErr error) {
+func (s *fileStore) Check(value step.Step, alwaysRun bool, currentStage stage.Stage) (Decision, error) {
 	if value == nil {
 		return Decision{}, errors.New("checking flag: step must not be nil")
 	}
@@ -181,25 +183,15 @@ func (s *fileStore) Check(value step.Step, alwaysRun bool, currentStage stage.St
 	if err != nil {
 		return Decision{}, fmt.Errorf("checking flag for step %q: resolving store path: %w", value.Path(), err)
 	}
-	relative, err := s.rootRelativePath(path)
-	if err != nil {
+	if err := s.validatePath(path); err != nil {
 		return Decision{}, fmt.Errorf("checking flag for step %q: validating store path: %w", value.Path(), err)
 	}
-	root, err := os.OpenRoot(s.rootMount)
-	if err != nil {
-		return Decision{}, fmt.Errorf("checking flag for step %q: opening mounted host root %q: %w", value.Path(), s.rootMount, err)
-	}
-	defer closeStoreRoot(root, &retErr)
-
-	info, exists, err := lstatNoSymlinks(root, relative)
+	exists, err := hostfs.RegularFileExists(s.rootMount, path)
 	if err != nil {
 		return Decision{}, fmt.Errorf("checking flag for step %q: inspecting store path: %w", value.Path(), err)
 	}
 	if !exists {
 		return Decide(false, alwaysRun, currentStage, value.Idempotence()), nil
-	}
-	if !info.Mode().IsRegular() {
-		return Decision{}, fmt.Errorf("checking flag for step %q: flag path %q is not a regular file", value.Path(), path)
 	}
 	return Decide(true, alwaysRun, currentStage, value.Idempotence()), nil
 }
@@ -222,111 +214,14 @@ func Decide(flagExists, alwaysRun bool, currentStage stage.Stage, idempotence st
 	return Decision{Run: false, Reason: ReasonAlreadyCompleted}
 }
 
-func (s *fileStore) rootRelativePath(path string) (string, error) {
+func (s *fileStore) validatePath(path string) error {
 	storePath := filepath.Join(s.rootMount, s.dir)
 	relative, err := filepath.Rel(storePath, path)
 	if err != nil {
-		return "", fmt.Errorf("resolving path relative to flag store: %w", err)
+		return fmt.Errorf("resolving path relative to flag store: %w", err)
 	}
 	if !filepath.IsLocal(relative) {
-		return "", fmt.Errorf("flag path %q must be contained within %q", path, storePath)
-	}
-	return filepath.Join(s.dir, relative), nil
-}
-
-func ensureDirectoriesNoSymlinks(root *os.Root, directory string) error {
-	current := ""
-	for _, component := range pathComponents(directory) {
-		current = filepath.Join(current, component)
-		info, err := root.Lstat(current)
-		if errors.Is(err, fs.ErrNotExist) {
-			if err := root.Mkdir(current, directoryMode); err != nil && !errors.Is(err, fs.ErrExist) {
-				return fmt.Errorf("creating directory %q: %w", current, err)
-			}
-			info, err = root.Lstat(current)
-		}
-		if err != nil {
-			return fmt.Errorf("inspecting directory %q: %w", current, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("path component %q is a symbolic link", current)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("path component %q is not a directory", current)
-		}
+		return fmt.Errorf("flag path %q must be contained within %q", path, storePath)
 	}
 	return nil
-}
-
-func lstatNoSymlinks(root *os.Root, path string) (os.FileInfo, bool, error) {
-	components := pathComponents(path)
-	current := ""
-	for i, component := range components {
-		current = filepath.Join(current, component)
-		info, err := root.Lstat(current)
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, false, nil
-		}
-		if err != nil {
-			return nil, false, fmt.Errorf("inspecting path component %q: %w", current, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return nil, false, fmt.Errorf("path component %q is a symbolic link", current)
-		}
-		if i < len(components)-1 && !info.IsDir() {
-			return nil, false, fmt.Errorf("path component %q is not a directory", current)
-		}
-		if i == len(components)-1 {
-			return info, true, nil
-		}
-	}
-	return nil, false, nil
-}
-
-func pathComponents(path string) []string {
-	clean := filepath.Clean(path)
-	if clean == "." {
-		return nil
-	}
-	return strings.Split(clean, string(filepath.Separator))
-}
-
-func writeFlagFile(root *os.Root, path string, data []byte, replace bool) (retErr error) {
-	writePath := path
-	if replace {
-		writePath = filepath.Join(filepath.Dir(path), ".flag-"+rand.Text()+".tmp")
-	}
-	file, err := root.OpenFile(writePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, flagFileMode)
-	if err != nil {
-		return fmt.Errorf("creating flag %q without following symlinks: %w", path, err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil && !errors.Is(err, os.ErrClosed) && retErr == nil {
-			retErr = fmt.Errorf("closing flag %q: %w", path, err)
-		}
-		if retErr != nil {
-			if err := root.Remove(writePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				retErr = errors.Join(retErr, fmt.Errorf("removing incomplete flag %q: %w", writePath, err))
-			}
-		}
-	}()
-
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("writing flag %q: %w", path, err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("closing flag %q: %w", path, err)
-	}
-	if replace {
-		if err := root.Rename(writePath, path); err != nil {
-			return fmt.Errorf("atomically replacing flag %q: %w", path, err)
-		}
-	}
-	return nil
-}
-
-func closeStoreRoot(root *os.Root, retErr *error) {
-	if err := root.Close(); err != nil && *retErr == nil {
-		*retErr = fmt.Errorf("closing mounted host root %q: %w", root.Name(), err)
-	}
 }

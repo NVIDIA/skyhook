@@ -31,6 +31,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/NVIDIA/nodewright/agent/internal/config"
+	"github.com/NVIDIA/nodewright/agent/internal/flags"
 	"github.com/NVIDIA/nodewright/agent/internal/stage"
 )
 
@@ -41,6 +42,7 @@ func TestHistory(t *testing.T) {
 
 var _ = Describe("history store", func() {
 	var (
+		root   string
 		dir    string
 		store  *fileStore
 		logger *slog.Logger
@@ -49,25 +51,29 @@ var _ = Describe("history store", func() {
 	)
 
 	BeforeEach(func() {
-		dir = filepath.Join(GinkgoT().TempDir(), "history")
+		root = GinkgoT().TempDir()
+		dir = filepath.Join(root, "history")
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 		cfg = config.Config{PackageName: "driver", PackageVersion: "1.2.3"}
 		now = time.Date(2026, time.June, 30, 12, 34, 56, 123456789, time.FixedZone("test", -7*60*60))
+		layout := flags.DefaultLayout(root)
+		dir = layout.HistoryDir()
 
 		var err error
-		store, err = newFileStore(dir, cfg, logger)
+		store, err = newFileStore(layout, cfg, logger)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("constructs the store behind its interface", func() {
-		s, err := NewStore(dir, cfg, logger)
+		layout := flags.DefaultLayout(root)
+		s, err := NewStore(layout, cfg, logger)
 		Expect(err).NotTo(HaveOccurred())
 		versions, err := s.Read()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(versions).To(Equal(Versions{Current: "1.2.3", Previous: UnknownVersion}))
 
 		cfg.PackageVersion = ""
-		s, err = NewStore(dir, cfg, logger)
+		s, err = NewStore(layout, cfg, logger)
 		Expect(err).To(MatchError("package version must not be empty"))
 		Expect(s).To(BeNil())
 	})
@@ -76,11 +82,6 @@ var _ = Describe("history store", func() {
 		versions, err := store.Read()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(versions).To(Equal(Versions{Current: "1.2.3", Previous: UnknownVersion}))
-		Expect(versions.Environment()).To(Equal(map[string]string{
-			CurrentVersionEnv:  "1.2.3",
-			PreviousVersionEnv: UnknownVersion,
-		}))
-		Expect(versions.UpgradeArguments()).To(Equal([]string{UnknownVersion, "1.2.3"}))
 		Expect(dir).NotTo(BeADirectory())
 	})
 
@@ -152,7 +153,7 @@ var _ = Describe("history store", func() {
 	It("prepends entries without losing prior history", func() {
 		oldConfig := cfg
 		oldConfig.PackageVersion = "1.1.0"
-		oldStore, err := newFileStore(dir, oldConfig, logger)
+		oldStore, err := newFileStore(flags.DefaultLayout(root), oldConfig, logger)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(oldStore.Record(stage.ApplyCheck, now.Add(-time.Hour))).To(Succeed())
 		Expect(store.Record(stage.UpgradeCheck, now)).To(Succeed())
@@ -210,16 +211,17 @@ var _ = Describe("history store", func() {
 	It("rejects invalid package identities at construction", func() {
 		invalid := cfg
 		invalid.PackageVersion = ""
-		_, err := newFileStore(dir, invalid, logger)
+		layout := flags.DefaultLayout(root)
+		_, err := newFileStore(layout, invalid, logger)
 		Expect(err).To(MatchError("package version must not be empty"))
 
 		invalid = cfg
 		invalid.PackageName = "../driver"
-		_, err = newFileStore(dir, invalid, logger)
+		_, err = newFileStore(layout, invalid, logger)
 		Expect(err).To(MatchError(ContainSubstring(`package name "../driver" must be a single path component`)))
 
 		invalid.PackageName = ""
-		_, err = newFileStore(dir, invalid, logger)
+		_, err = newFileStore(layout, invalid, logger)
 		Expect(err).To(MatchError(ContainSubstring("single path component")))
 		Expect(dir).NotTo(BeADirectory())
 	})
@@ -238,5 +240,15 @@ var _ = Describe("history store", func() {
 
 		_, err := store.Read()
 		Expect(err).To(MatchError(ContainSubstring("reading history")))
+	})
+
+	It("does not follow a symlinked history directory", func() {
+		outside := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Dir(dir), 0o755)).To(Succeed())
+		Expect(os.Symlink(outside, dir)).To(Succeed())
+
+		err := store.Record(stage.ApplyCheck, now)
+		Expect(err).To(MatchError(ContainSubstring("is a symbolic link")))
+		Expect(filepath.Join(outside, "driver.json")).NotTo(BeAnExistingFile())
 	})
 })
