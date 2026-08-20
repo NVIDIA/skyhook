@@ -146,6 +146,16 @@ jobs:
           - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
             test-suite: migration
             make-targets: "migration-test"
+          # Operator <-> agent contract. agent-ci runs this same suite when the AGENT
+          # changes, against a freshly built agent; nothing ran it when the OPERATOR
+          # changed, even though the operator is what builds the pod the agent runs in
+          # -- its args, mounts, copy dir and config.json. Every other suite here uses
+          # the agentless package image, which never reads that config, so a break in
+          # the contract could reach a release unnoticed. This row runs against the
+          # agent version the chart ships, which is what users pair the operator with.
+          - k8s-version: ${{ needs.k8s-test-versions.outputs.ci-primary-kind-node-image-version }}
+            test-suite: operator-agent
+            make-targets: "setup-kind-cluster operator-agent-tests"
       fail-fast: false  # Continue testing other versions if one fails
     name: ${{ matrix.test-suite }}${{ matrix.pool && format('/{0}', matrix.pool) || '' }} (k8s-${{ matrix.k8s-version }})
     steps:
@@ -227,6 +237,25 @@ jobs:
         run: |
           cd operator
           make create-kind-cluster KIND_NODE_IMAGE_VERSION="$K8S_VERSION"
+      # operator-agent-tests refuses to run without an explicit AGENT_IMAGE, because the
+      # Makefile's global default is the agentless image -- which would pass every case
+      # while executing nothing. Read the pin out of the chart rather than hardcoding a
+      # version here, so bumping the agent in one place cannot leave this row testing an
+      # older one.
+      - name: Resolve the chart's pinned agent image
+        if: matrix.test-suite == 'operator-agent'
+        run: |
+          ## operator/bin/yq, not the runner's: install-deps pins the version and the
+          ## binaries are already restored from cache by this point in the job.
+          YQ=operator/bin/yq
+          repo=$("$YQ" -r '.controllerManager.manager.agent.repository' chart/values.yaml)
+          tag=$("$YQ" -r '.controllerManager.manager.agent.tag' chart/values.yaml)
+          if [ -z "$repo" ] || [ -z "$tag" ] || [ "$repo" = "null" ] || [ "$tag" = "null" ]; then
+            echo "could not read the agent image from chart/values.yaml"
+            exit 1
+          fi
+          echo "AGENT_IMAGE=${repo}:${tag}" >> "$GITHUB_ENV"
+          echo "operator-agent tests will use ${repo}:${tag}"
       # Run test suite
       - name: Run ${{ matrix.test-suite }} tests
         env:
