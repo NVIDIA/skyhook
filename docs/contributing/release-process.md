@@ -65,9 +65,8 @@ git tag chart/v0.16.0-rc.1
 # Tag agent only if it changed since the last released agent version.
 git push origin operator/v0.16.0-rc.1 chart/v0.16.0-rc.1
 
-# 5. Validate the RC against docs/contributing/release-validation.md. If issues are found,
-#    cherry-pick more fixes from main, bump Chart.yaml to the next RC (-rc.2, then -rc.3, ...),
-#    and tag it in full: operator/v0.16.0-rc.N and chart/v0.16.0-rc.N. Repeat until clean.
+# 5. Validate the RC. If issues are found, cherry-pick more fixes from main,
+#    bump Chart.yaml to v0.16.0-rc.2, and tag -rc.2. Repeat until clean.
 
 # 6. Cut the final release on the same commit as the last good RC.
 #    Bump Chart.yaml to v0.16.0 (drop the -rc.N suffix) and commit.
@@ -281,7 +280,7 @@ Where possible, place a release tag on a commit that touches the component's own
 
 **Before the final release tag:**
 
-- [ ] The last RC validated successfully — [`release-validation.md`](release-validation.md), with the sign-off table filled in
+- [ ] The last RC validated successfully
 - [ ] `chart/Chart.yaml` bumped to the non-RC version on the same commit
 - [ ] No new commits between the validated RC and the release tag other than the `Chart.yaml` bump
 
