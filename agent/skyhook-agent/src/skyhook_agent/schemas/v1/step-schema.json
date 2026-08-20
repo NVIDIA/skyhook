@@ -35,7 +35,7 @@
             "type": "boolean"
         },
         "env": {
-            "description": "Environment variables to set for the step",
+            "description": "Environment variables to set for the step. STEP_ROOT and SKYHOOK_DIR are reserved for every step; PREVIOUS_VERSION and CURRENT_VERSION are also reserved for upgrade steps. Agent runtime values overwrite configured values for those keys.",
             "type": "object",
             "patternProperties": {
                 ".*": { "type": "string" }
@@ -47,6 +47,10 @@
         },
         "upgrade_step": {
             "description": "Whether the step is an upgrade step",
+            "type": "boolean"
+        },
+        "requires_interrupt": {
+            "description": "Whether completing this step requires an interrupt",
             "type": "boolean"
         }
     },
@@ -60,5 +64,3 @@
         "upgrade_step"
     ]
 }
-  
-  

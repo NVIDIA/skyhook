@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+navigation:
+  - section: Getting Started
+    contents:
+      - page: Overview
+        path: getting-started/overview.md
+      - page: Installation
+        path: getting-started/installation.md
+      - page: Migration from Skyhook
+        path: getting-started/migration.md
+
+  - section: Architecture
+    contents:
+      - page: Operator Status Definitions
+        path: architecture/operator-status.md
+      - page: Interrupt Flow
+        path: architecture/interrupt-flow.md
+      - page: Strict Ordering
+        path: architecture/ordering.md
+
+  - section: User Guide
+    contents:
+      - page: CLI Reference
+        path: user-guide/cli.md
+      - page: Deployment Policy
+        path: user-guide/deployment-policy.md
+      - page: Providing Secrets
+        path: user-guide/providing-secrets.md
+      - page: Runtime Required
+        path: user-guide/runtime-required.md
+      - page: Taints
+        path: user-guide/taints.md
+      - page: Uninstall
+        path: user-guide/uninstall.md
+
+  - section: Operations
+    contents:
+      - page: Kubernetes Support
+        path: operations/kubernetes-support.md
+      - page: Resource Management
+        path: operations/resource-management.md
+      - page: Resources at Scale
+        path: operations/resources-at-scale.md
+      - page: Versioning
+        path: operations/versioning.md
+
+  - section: Observability
+    contents:
+      - page: Metrics
+        path: observability/metrics.md
+
+  - section: Security
+    contents:
+      - page: Kyverno Policies
+        path: security/kyverno/README.md

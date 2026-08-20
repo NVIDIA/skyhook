@@ -26,12 +26,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	configmock "github.com/NVIDIA/nodewright/agent/internal/config/mock"
 	"github.com/NVIDIA/nodewright/agent/internal/schema"
 	"github.com/NVIDIA/nodewright/agent/internal/stage"
 	"github.com/NVIDIA/nodewright/agent/internal/step"
 )
 
-func mustUpgradeStep(path string, opts ...step.RegularStepOption) step.UpgradeStep {
+func mustUpgradeStep(path string, opts ...step.Option) step.UpgradeStep {
 	u, err := step.NewUpgradeStep(path, opts...)
 	Expect(err).NotTo(HaveOccurred())
 	return u
@@ -169,17 +170,14 @@ var _ = Describe("validateModes", func() {
 var _ = Describe("Loader schema-validation seam", func() {
 	It("surfaces the injected validator's error without parsing the document", func() {
 		sentinel := errors.New("boom from fake validator")
-		loader := &Loader{validator: fakeValidator{err: sentinel}}
+		validator := configmock.NewMockSchemaValidator(GinkgoT())
+		validator.EXPECT().
+			Validate([]byte(validConfigJSON), schema.V1).
+			Return(sentinel).
+			Once()
+		loader := &Loader{validator: validator}
 
 		_, err := loader.Load([]byte(validConfigJSON), GinkgoT().TempDir(), nil)
 		Expect(err).To(MatchError(sentinel))
 	})
 })
-
-// fakeValidator is a SchemaValidator stand-in that returns a fixed result,
-// proving Loader depends on the interface rather than the embedded schemas.
-type fakeValidator struct {
-	err error
-}
-
-func (f fakeValidator) Validate(_ []byte, _ schema.SchemaVersion) error { return f.err }

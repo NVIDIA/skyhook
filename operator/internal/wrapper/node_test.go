@@ -580,4 +580,97 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(status.State).To(Equal(v1alpha1.StateComplete))
 		})
 	})
+
+	Context("Taint and RemoveTaint", func() {
+		const taintKey = "nodewright.nvidia.com/runtime-required"
+
+		newNode := func(taints ...corev1.Taint) SkyhookNode {
+			GinkgoHelper()
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+				Spec:       corev1.NodeSpec{Taints: taints},
+			}
+			skyhook := v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: "test-skyhook"}}
+
+			sn, err := NewSkyhookNode(node, &skyhook)
+			Expect(err).NotTo(HaveOccurred())
+			return sn
+		}
+
+		It("should add a NoSchedule taint valued with the Skyhook name", func() {
+			sn := newNode()
+
+			sn.Taint(taintKey)
+
+			Expect(sn.GetNode().Spec.Taints).To(ConsistOf(corev1.Taint{
+				Key:    taintKey,
+				Value:  "test-skyhook",
+				Effect: corev1.TaintEffectNoSchedule,
+			}))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+
+		It("should keep taints set by others when adding", func() {
+			existing := corev1.Taint{Key: "other/taint", Value: "keep", Effect: corev1.TaintEffectNoExecute}
+			sn := newNode(existing)
+
+			sn.Taint(taintKey)
+
+			Expect(sn.GetNode().Spec.Taints).To(HaveLen(2))
+			Expect(sn.GetNode().Spec.Taints).To(ContainElement(existing))
+		})
+
+		// Re-tainting is not an error the operator can afford: reconcile is level-triggered
+		// and will call Taint on every pass, and a duplicate key is rejected by the apiserver.
+		It("should be a no-op when the taint key is already present", func() {
+			sn := newNode(corev1.Taint{Key: taintKey, Value: "someone-else", Effect: corev1.TaintEffectNoSchedule})
+
+			sn.Taint(taintKey)
+
+			Expect(sn.GetNode().Spec.Taints).To(HaveLen(1))
+			Expect(sn.GetNode().Spec.Taints[0].Value).To(Equal("someone-else"))
+			Expect(sn.Changed()).To(BeFalse())
+		})
+
+		It("should remove only the taint with the given key", func() {
+			other := corev1.Taint{Key: "other/taint", Value: "keep", Effect: corev1.TaintEffectNoExecute}
+			sn := newNode(
+				corev1.Taint{Key: taintKey, Value: "test-skyhook", Effect: corev1.TaintEffectNoSchedule},
+				other,
+			)
+
+			sn.RemoveTaint(taintKey)
+
+			Expect(sn.GetNode().Spec.Taints).To(ConsistOf(other))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+
+		It("should be a no-op when the node carries no taints", func() {
+			sn := newNode()
+
+			sn.RemoveTaint(taintKey)
+
+			Expect(sn.GetNode().Spec.Taints).To(BeEmpty())
+			Expect(sn.Changed()).To(BeFalse())
+		})
+
+		It("should be a no-op when the taint key is absent", func() {
+			other := corev1.Taint{Key: "other/taint", Value: "keep", Effect: corev1.TaintEffectNoExecute}
+			sn := newNode(other)
+
+			sn.RemoveTaint(taintKey)
+
+			Expect(sn.GetNode().Spec.Taints).To(ConsistOf(other))
+			Expect(sn.Changed()).To(BeFalse())
+		})
+
+		It("should round-trip an add followed by a remove", func() {
+			sn := newNode()
+
+			sn.Taint(taintKey)
+			sn.RemoveTaint(taintKey)
+
+			Expect(sn.GetNode().Spec.Taints).To(BeEmpty())
+		})
+	})
 })

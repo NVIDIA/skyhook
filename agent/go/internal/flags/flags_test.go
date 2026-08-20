@@ -127,6 +127,44 @@ var _ = Describe("flag store", func() {
 		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
 	})
 
+	It("removes a completion flag idempotently", func() {
+		path, err := store.Mark(value, "complete")
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(store.Remove(value)).To(Succeed())
+		Expect(path).NotTo(BeAnExistingFile())
+		Expect(store.Remove(value)).To(Succeed())
+	})
+
+	It("refuses to remove a non-regular flag path", func() {
+		path, err := store.Path(value)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.MkdirAll(path, 0o755)).To(Succeed())
+
+		Expect(store.Remove(value)).To(MatchError(ContainSubstring("is not a regular file")))
+		Expect(path).To(BeADirectory())
+	})
+
+	It("does not follow a symlinked flag when removing", func() {
+		path, err := store.Path(value)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.MkdirAll(filepath.Dir(path), 0o755)).To(Succeed())
+		target := filepath.Join(GinkgoT().TempDir(), "complete")
+		Expect(os.WriteFile(target, nil, 0o600)).To(Succeed())
+		Expect(os.Symlink(target, path)).To(Succeed())
+
+		Expect(store.Remove(value)).To(MatchError(ContainSubstring("is a symbolic link")))
+		Expect(target).To(BeAnExistingFile())
+	})
+
+	It("refuses to remove a flag for a step outside the package root", func() {
+		escaping := step.NewRegularStep("../escape.sh")
+
+		err := store.Remove(escaping)
+		Expect(err).To(MatchError(ContainSubstring("resolving flag path")))
+		Expect(err).To(MatchError(ContainSubstring("must be relative to the package root")))
+	})
+
 	It("writes control flags inside the store", func() {
 		path := filepath.Join(DefaultLayout(root).FlagDir(), "START")
 		Expect(store.Write(path, []byte("started"))).To(Succeed())
@@ -134,25 +172,6 @@ var _ = Describe("flag store", func() {
 		data, err := os.ReadFile(path)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(data)).To(Equal("restarted"))
-	})
-
-	It("keeps the existing path when an atomic replacement fails", func() {
-		rootPath := GinkgoT().TempDir()
-		Expect(os.Mkdir(filepath.Join(rootPath, "flag"), 0o755)).To(Succeed())
-		root, err := os.OpenRoot(rootPath)
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			Expect(root.Close()).To(Succeed())
-		})
-
-		err = writeFlagFile(root, "flag", []byte("replacement"), true)
-		Expect(err).To(MatchError(ContainSubstring("atomically replacing flag")))
-		info, err := os.Stat(filepath.Join(rootPath, "flag"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(info.IsDir()).To(BeTrue())
-		entries, err := os.ReadDir(rootPath)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(entries).To(HaveLen(1))
 	})
 
 	It("rejects a symlinked flag parent", func() {

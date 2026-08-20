@@ -438,4 +438,31 @@ var _ = Describe("Compartment", func() {
 			Expect(names).NotTo(ContainElement("node-4"))
 		})
 	})
+
+	Context("GetNode", func() {
+		var compartment *wrapper.Compartment
+
+		BeforeEach(func() {
+			skyhook := &wrapper.Skyhook{NodeWright: &v1alpha1.NodeWright{}}
+			compartment = &wrapper.Compartment{
+				Nodes: []wrapper.SkyhookNode{
+					newMockNode(GinkgoT(), "node-1", v1alpha1.StatusWaiting, false, skyhook),
+					newMockNode(GinkgoT(), "node-2", v1alpha1.StatusWaiting, false, skyhook),
+				},
+			}
+		})
+
+		It("should return the node with the given name", func() {
+			Expect(compartment.GetNode("node-2")).ToNot(BeNil())
+			Expect(compartment.GetNode("node-2").GetNode().Name).To(Equal("node-2"))
+		})
+
+		It("should return nil for a node outside the compartment", func() {
+			Expect(compartment.GetNode("node-9")).To(BeNil())
+		})
+
+		It("should return nil when the compartment holds no nodes", func() {
+			Expect((&wrapper.Compartment{}).GetNode("node-1")).To(BeNil())
+		})
+	})
 })

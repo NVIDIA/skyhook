@@ -448,9 +448,24 @@ ifeq ($(PLATFORM),Darwin)
 	sedrp = sed -r -i ''
 endif
 
-.PHONY: merage-coverage
-merge-coverage:
-	## merge coverage file into one so we can run totals and html reporting
+# Paths whose statements are dropped before coverage totals are reported.
+# THIS IS THE ONLY DEFINITION — the Coveralls upload job calls filter-coverage
+# rather than repeating the pattern in YAML, because Coveralls itself has no
+# exclusion mechanism for Go profiles (no .coveralls.yml key, no action input),
+# so whatever is uploaded is what gets counted.
+#
+# Generated code only. controller-gen writes zz_generated.deepcopy.go and no one
+# should ever hand-write a test for DeepCopyInto, yet it is 916 statements —
+# a quarter of the repo's uncovered code — which drags the headline number down
+# by roughly 4 points and hides the coverage of code people actually write.
+#
+# Do not add hand-written code here to make a number look better. If something
+# is genuinely untestable, that is worth a comment at the call site, not a
+# silent exclusion.
+COVERAGE_EXCLUDE ?= zz_generated\.deepcopy\.go
+
+.PHONY: merge-coverage
+merge-coverage: ## Merge per-suite coverage profiles into reporting/cover.out.
 	@if ls $(REPORTING)/*.coverprofile 1> /dev/null 2>&1; then \
 		cat $(REPORTING)/*.coverprofile > reporting/temp-cover.out; \
 		echo "mode: set" > $(REPORTING)/cover.out; \
@@ -459,6 +474,39 @@ merge-coverage:
 	else \
 		echo "No coverage files found - skipping merge"; \
 	fi
+	@$(MAKE) --no-print-directory filter-coverage
+
+# The guard below is deliberately paranoid, because every way this can go wrong
+# ends in the same place: an empty profile that replaces a good one and reports
+# 0% to Coveralls, with nothing in the log to say the pattern was at fault.
+#   - an empty COVERAGE_EXCLUDE makes `grep -v -E ''` match every line (exit 1)
+#   - a pattern that matches everything does the same (exit 1)
+#   - an invalid ERE truncates the redirect target *before* grep reports the
+#     error (exit 2), so the output file is already destroyed by then
+# Hence: refuse on any exit above 1, and refuse on an empty result whatever the
+# exit status, leaving cover.out untouched in both cases.
+.PHONY: filter-coverage
+filter-coverage: ## Drop $(COVERAGE_EXCLUDE) paths from reporting/cover.out.
+	@if [ ! -f $(REPORTING)/cover.out ]; then exit 0; fi; \
+	if [ -z '$(COVERAGE_EXCLUDE)' ]; then \
+		echo "coverage: COVERAGE_EXCLUDE is empty, reporting the unfiltered profile"; \
+		exit 0; \
+	fi; \
+	before=$$(wc -l < $(REPORTING)/cover.out | tr -d '[:space:]'); \
+	if grep -v -E '$(COVERAGE_EXCLUDE)' $(REPORTING)/cover.out > $(REPORTING)/cover.filtered.out; then \
+		status=0; \
+	else \
+		status=$$?; \
+	fi; \
+	if [ $$status -gt 1 ] || [ ! -s $(REPORTING)/cover.filtered.out ]; then \
+		rm -f $(REPORTING)/cover.filtered.out; \
+		echo "ERROR: COVERAGE_EXCLUDE='$(COVERAGE_EXCLUDE)' produced no usable profile (grep exit $$status)." >&2; \
+		echo "       $(REPORTING)/cover.out left unchanged." >&2; \
+		exit 1; \
+	fi; \
+	mv $(REPORTING)/cover.filtered.out $(REPORTING)/cover.out; \
+	after=$$(wc -l < $(REPORTING)/cover.out | tr -d '[:space:]'); \
+	echo "coverage: excluded $$((before - after)) of $$before profile blocks matching '$(COVERAGE_EXCLUDE)'"
 
 .PHONY: lint
 lint: golangci-lint license-header-check ## Run golangci-lint linter & yamllint

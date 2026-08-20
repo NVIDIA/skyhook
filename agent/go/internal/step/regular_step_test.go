@@ -75,7 +75,7 @@ var _ = Describe("RegularStep.applyDefaults", func() {
 		Expect(s.Idempotence()).To(Equal(Auto))
 	})
 
-	It("does not change OnHost (the constructor seeds it; the schema requires it)", func() {
+	It("does not change OnHost after the constructor or Decode seeds it", func() {
 		s := RegularStep{ScriptPath: "foo.sh", OnHost: true}
 		s.applyDefaults()
 		Expect(s.OnHost).To(BeTrue())
@@ -100,7 +100,10 @@ var _ = Describe("RegularStep.Encode", func() {
 	})
 
 	It("rejects an explicitly invalid idempotence value", func() {
-		s := RegularStep{ScriptPath: "foo.sh", IdempotenceMode: "bogus"}
+		s := RegularStep{
+			ScriptPath:      "foo.sh",
+			IdempotenceMode: "bogus",
+		}
 		_, err := s.Encode()
 		Expect(err).To(MatchError(ContainSubstring("bogus is not a valid idempotence value")))
 	})
@@ -174,7 +177,11 @@ var _ = Describe("RegularStep.Run", func() {
 			WithArguments([]string{
 				"-test.run=^TestStep$", "--", "inspect", "literal", "env:NODEWRIGHT_STEP_VALUE",
 			}),
-			WithEnv(map[string]string{"NODEWRIGHT_CUSTOM": "configured"}),
+			WithEnv(map[string]string{
+				"NODEWRIGHT_CUSTOM": "configured",
+				stepRootEnv:         "configured-step-root",
+				skyhookDirEnv:       "configured-skyhook-dir",
+			}),
 		)
 
 		status, err := value.Run(context.Background(), config)
@@ -188,6 +195,42 @@ var _ = Describe("RegularStep.Run", func() {
 			skyhookDir,
 		)))
 		Expect(stderr.String()).To(Equal("step-helper-stderr\n"))
+	})
+
+	It("resolves non-host paths through the mounted host root", func() {
+		rootMount := GinkgoT().TempDir()
+		stepRoot := "/package/steps"
+		skyhookDir := "/package"
+		mountedStepRoot := filepath.Join(rootMount, "package", "steps")
+		mountedSkyhookDir := filepath.Join(rootMount, "package")
+		Expect(os.MkdirAll(mountedStepRoot, 0o755)).To(Succeed())
+		testExecutable, err := filepath.Abs(os.Args[0])
+		Expect(err).NotTo(HaveOccurred())
+		data, err := os.ReadFile(testExecutable)
+		Expect(err).NotTo(HaveOccurred())
+		executable := filepath.Join(mountedStepRoot, "step-helper")
+		Expect(os.WriteFile(executable, data, 0o700)).To(Succeed())
+		stdout := &bytes.Buffer{}
+		config, err := execution.NewConfig(
+			execution.WithRootMount(rootMount),
+			execution.WithStepRoot(stepRoot),
+			execution.WithSkyhookDir(skyhookDir),
+			execution.WithRunOutput(stdout, io.Discard),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		value := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments([]string{"-test.run=^TestStep$", "--", "inspect"}),
+		)
+
+		status, err := value.Run(context.Background(), config)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+		Expect(stdout.String()).To(ContainSubstring("step-root=" + mountedStepRoot))
+		Expect(stdout.String()).To(ContainSubstring("skyhook-dir=" + mountedSkyhookDir))
+		Expect(stdout.String()).To(ContainSubstring("working-directory=" + mountedSkyhookDir))
 	})
 
 	It("uses the configured accepted return codes", func() {
@@ -275,6 +318,45 @@ var _ = Describe("RegularStep.Run", func() {
 	})
 })
 
+var _ = Describe("RegularStep.WithVersions", func() {
+	It("injects versions into the execution environment", func() {
+		stepRoot, skyhookDir, executable := prepareStepTestExecutable()
+		stdout := &bytes.Buffer{}
+		configured := NewRegularStep(
+			filepath.Base(executable),
+			WithOnHost(false),
+			WithArguments([]string{"-test.run=^TestStep$", "--", "versions"}),
+		)
+
+		status, err := configured.WithVersions("previous", "current").Run(
+			context.Background(),
+			newStepRunConfig(
+				stepRoot,
+				skyhookDir,
+				execution.WithRunOutput(stdout, io.Discard),
+			),
+		)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+		Expect(stdout.String()).To(Equal("versions=previous,current\n"))
+	})
+
+	It("keeps runtime versions out of serialized configuration", func() {
+		configured := NewRegularStep("upgrade.sh", WithEnv(map[string]string{"CUSTOM": "value"}))
+
+		prepared := configured.WithVersions("1.0.0", "2.0.0").(RegularStep)
+
+		Expect(configured.versions).To(BeNil())
+		Expect(prepared.versions).NotTo(BeNil())
+		Expect(prepared.Env).To(Equal(map[string]string{"CUSTOM": "value"}))
+		dumped, err := prepared.Encode()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(dumped)).NotTo(ContainSubstring(previousVersionEnv))
+		Expect(string(dumped)).NotTo(ContainSubstring(currentVersionEnv))
+	})
+})
+
 func newStepRunConfig(stepRoot, skyhookDir string, options ...execution.Option) execution.Config {
 	options = append([]execution.Option{
 		execution.WithRootMount("/"),
@@ -336,6 +418,14 @@ func runStepTestHelper() bool {
 		time.Sleep(time.Hour)
 	case "wait":
 		time.Sleep(time.Hour)
+	case "versions":
+		_, _ = fmt.Fprintf(
+			os.Stdout,
+			"versions=%s,%s\n",
+			os.Getenv(previousVersionEnv),
+			os.Getenv(currentVersionEnv),
+		)
+		os.Exit(0)
 	default:
 		os.Exit(2)
 	}
