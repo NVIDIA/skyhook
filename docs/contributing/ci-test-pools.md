@@ -86,6 +86,18 @@ Worst case if step 3 is forgotten: the new pool's tests run twice (once in their
 
 Per-row coverage artifacts are named `coverage-<test-suite>[-<pool>]-k8s-<version>`. The `upload-coverage` job globs `coverage-*` and concatenates the per-row `cover.out` files (Go covdata `mode: set` format auto-deduplicates lines), producing a single combined profile uploaded to Coveralls — equivalent to the pre-pool combined profile.
 
+### Excluded paths
+
+`COVERAGE_EXCLUDE` in `operator/Makefile` lists paths whose statements are dropped before the total is reported. It currently holds one entry: `zz_generated.deepcopy.go`.
+
+**Why exclude it:** controller-gen writes those files and nobody should hand-write a test for `DeepCopyInto`, but they are ~916 statements — about a quarter of all uncovered code in the repo — so counting them costs roughly 4 points and obscures the coverage of code people actually write. The legacy `api/v1alpha1` copy sits near 29% purely because that CRD is read-only.
+
+**Why it lives in the Makefile:** Coveralls has no exclusion mechanism for Go profiles. There is no `.coveralls.yml` key for it and the `coverallsapp/github-action` has no such input — it counts whatever profile it is handed. So the filtering has to happen before upload, and `COVERAGE_EXCLUDE` is the single definition. `make merge-coverage` applies it to each per-suite artifact, and the `upload-coverage` job calls `make filter-coverage` again on the combined profile so a suite that starts uploading a raw profile cannot quietly reintroduce the generated files.
+
+**What does not belong here:** hand-written code. An exclusion moves the number without changing what is tested. If a piece of code is genuinely not worth testing, say so in a comment where it lives; do not hide it from the total.
+
+**If you edit `COVERAGE_EXCLUDE`,** note that `filter-coverage` refuses any pattern that leaves nothing behind — an invalid expression, or one broad enough to match every line — and leaves `cover.out` untouched rather than uploading an empty profile that would report 0%. Setting it to empty is allowed and simply reports the unfiltered profile.
+
 ## Gate jobs
 
 Every workflow that gates merge publishes a check named **`ci-gate`**.
