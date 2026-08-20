@@ -276,7 +276,7 @@ jobs:
           yq '.products[0].versions[].display-name' fern/docs.yml
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
 
