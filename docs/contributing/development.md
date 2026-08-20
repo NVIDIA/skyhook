@@ -55,11 +55,26 @@ make validate-kind-node-image KIND_NODE_IMAGE_VERSION=1.35.0
 
 When updating supported test versions, edit `operator/versions.yaml` first, then run the validation target and the relevant tests.
 
+The check retries a failed registry read a few times before giving up (see [Retrying Registry Reads](#retrying-registry-reads)), so a tag that genuinely does not exist takes about fifteen seconds to report rather than failing instantly.
+
+## Retrying Registry Reads
+
+Docker Hub, ghcr.io and nvcr.io all reset connections often enough that an unretried read fails a whole CI job, and the error it prints usually blames the image ("is not published") rather than the network. `scripts/retry.sh` wraps those reads so only a sustained outage stops a run:
+
+```bash
+scripts/retry.sh -- docker manifest inspect kindest/node:v1.35.0
+scripts/retry.sh --attempts 5 --delay 10 -- oras repo tags nvcr.io/nvidia/distroless/static
+```
+
+It re-runs the command until it succeeds, doubling the delay between attempts, and exits with the command's own status once the attempts run out. Only the successful attempt's stdout is emitted, so wrapping a command whose output is captured or piped to `jq` stays safe. Use it for reads only — a push or a tag move is not safe to repeat. `make validate-kind-node-image` and `scripts/latest-distroless.sh` both call it already; override the path with `RETRY=` if you need to.
+
+Workflow steps that download a pinned binary pass curl's own `--retry ... --retry-all-errors` instead, and `.github/actions/resolve-oci-digest` retries by default.
+
 ## Distroless Base Images
 
 The operator and agent images build `FROM` NVIDIA's distroless bases (`nvcr.io/nvidia/distroless/static` and `nvcr.io/nvidia/distroless/python`). CI picks the version with `scripts/latest-distroless.sh`, which asks the registry directly instead of reading `https://developer.download.nvidia.com/distroless-oss/versions.json`. That file advertises a release days before the matching image is pushed, so a build that trusts it fails with a 404 on the base image for as long as the two are out of step; the registry's tag list cannot be ahead of the images it lists.
 
-The distroless repositories are public, so the script reads them with [`oras`](https://oras.land) anonymously and no NGC credentials are involved. CI installs `oras` through `.github/actions/setup-oras`; install it locally to run the script yourself.
+The distroless repositories are public, so the script reads them with [`oras`](https://oras.land) anonymously and no NGC credentials are involved. Each `oras` call goes through `scripts/retry.sh`, so a reset connection does not fail the build. CI installs `oras` through `.github/actions/setup-oras`; install it locally to run the script yourself.
 
 ```bash
 scripts/latest-distroless.sh --repo nvcr.io/nvidia/distroless/static --major 4
