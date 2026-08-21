@@ -88,8 +88,10 @@ _main() {
 	# Buffer stdout per attempt and only replay the winning one. Callers capture
 	# this in $(...) or pipe it to jq, and a failed attempt that already wrote a
 	# partial response would otherwise be concatenated with the retry that
-	# succeeded, producing malformed output instead of an error. stderr streams
-	# through untouched so progress and failures stay visible live.
+	# succeeded, producing malformed output instead of an error. Nothing reaches
+	# stdout unless an attempt succeeded, so a caller that misses the exit status
+	# reads nothing rather than a truncated response. stderr streams through
+	# untouched so progress and failures stay visible live.
 	local out
 	out="$(mktemp)" || _die "could not create a temporary file"
 	# shellcheck disable=SC2064 # expand out now; it is fixed for the run.
@@ -113,7 +115,6 @@ _main() {
 		[ "${wait}" -gt "${max_delay}" ] && wait="${max_delay}"
 	done
 
-	cat "${out}"
 	printf 'retry.sh: %s failed (exit %d) after %d attempts\n' \
 		"${label}" "${status}" "${attempts}" >&2
 	return "${status}"
