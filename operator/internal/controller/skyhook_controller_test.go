@@ -38,7 +38,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
@@ -4286,5 +4288,195 @@ var _ = Describe("HandleRuntimeRequired legacy taint removal", func() {
 	It("still removes the legacy taint when the operator is pinned to the legacy key", func() {
 		r := newReconciler(legacyRuntimeRequiredTaint)
 		expectRuntimeRequiredGone(removeTaintsFor(r, "pinned-legacy-node", []corev1.Taint{legacyTaint, unrelatedTaint}))
+	})
+})
+
+var _ = Describe("HandleFinalizer merge patch", func() {
+	It("preserves user-authored resource quantity formatting when adding finalizer", func() {
+		const name = "finalizer-format-test"
+		gvk := schema.GroupVersionKind{
+			Group:   v1alpha1.GroupVersion.Group,
+			Version: v1alpha1.GroupVersion.Version,
+			Kind:    "NodeWright",
+		}
+
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		u.SetName(name)
+		u.Object["spec"] = map[string]interface{}{
+			"nodeSelector": map[string]interface{}{
+				"matchLabels": map[string]interface{}{
+					"test-finalizer": name,
+				},
+			},
+			"packages": map[string]interface{}{
+				"pkg-a": map[string]interface{}{
+					"name":    "pkg-a",
+					"version": "1.0.0",
+					"image":   "ghcr.io/org/pkg-a",
+					"resources": map[string]interface{}{
+						"cpuLimit":      "4000m",
+						"cpuRequest":    "2000m",
+						"memoryLimit":   "8192Mi",
+						"memoryRequest": "4096Mi",
+					},
+				},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, u)).To(Succeed())
+		DeferCleanup(func() {
+			del := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			_ = k8sClient.Delete(ctx, del)
+		})
+
+		nw := &v1alpha1.NodeWright{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, nw)).To(Succeed())
+		Expect(nw.Finalizers).To(BeEmpty())
+
+		clusterState, err := BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{*nw}},
+			&corev1.NodeList{},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		handled, err := operator.HandleFinalizer(ctx, clusterState.skyhooks[0], clusterState)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(handled).To(BeFalse(), "HandleFinalizer returns false when adding finalizer")
+
+		live := &unstructured.Unstructured{}
+		live.SetGroupVersionKind(gvk)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, live)).To(Succeed())
+
+		Expect(live.GetFinalizers()).To(ContainElement(SkyhookFinalizer))
+
+		spec, ok := live.Object["spec"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		pkgs, ok := spec["packages"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		pkgA, ok := pkgs["pkg-a"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		res, ok := pkgA["resources"].(map[string]interface{})
+		Expect(ok).To(BeTrue())
+
+		Expect(res["cpuLimit"]).To(Equal("4000m"), "cpuLimit must not be canonicalized to '4'")
+		Expect(res["cpuRequest"]).To(Equal("2000m"), "cpuRequest must not be canonicalized to '2'")
+		Expect(res["memoryLimit"]).To(Equal("8192Mi"), "memoryLimit must not be canonicalized to '8Gi'")
+		Expect(res["memoryRequest"]).To(Equal("4096Mi"), "memoryRequest must not be canonicalized to '4Gi'")
+	})
+
+	It("removes the finalizer via merge patch without re-writing spec and reaps the deleted object", func() {
+		const name = "finalizer-delete-test"
+		gvk := schema.GroupVersionKind{
+			Group:   v1alpha1.GroupVersion.Group,
+			Version: v1alpha1.GroupVersion.Version,
+			Kind:    "NodeWright",
+		}
+
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		u.SetName(name)
+		u.SetFinalizers([]string{SkyhookFinalizer})
+		u.Object["spec"] = map[string]interface{}{
+			"nodeSelector": map[string]interface{}{
+				"matchLabels": map[string]interface{}{
+					"test-finalizer": name,
+				},
+			},
+			"packages": map[string]interface{}{
+				"pkg-a": map[string]interface{}{
+					"name":    "pkg-a",
+					"version": "1.0.0",
+					"image":   "ghcr.io/org/pkg-a",
+				},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, u)).To(Succeed())
+
+		del := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		Expect(k8sClient.Delete(ctx, del)).To(Succeed())
+
+		nw := &v1alpha1.NodeWright{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, nw)).To(Succeed())
+		Expect(nw.DeletionTimestamp.IsZero()).To(BeFalse())
+
+		clusterState, err := BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{*nw}},
+			&corev1.NodeList{},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(clusterState.skyhooks).To(HaveLen(1))
+
+		handled, err := operator.HandleFinalizer(ctx, clusterState.skyhooks[0], clusterState)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(handled).To(BeTrue(), "HandleFinalizer returns true when deletion cleanup completes")
+
+		live := &v1alpha1.NodeWright{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: name}, live)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "object should be reaped once finalizer is removed")
+	})
+
+	It("does not overwrite concurrent spec or metadata edits when adding finalizer", func() {
+		const name = "finalizer-concurrent-test"
+		gvk := schema.GroupVersionKind{
+			Group:   v1alpha1.GroupVersion.Group,
+			Version: v1alpha1.GroupVersion.Version,
+			Kind:    "NodeWright",
+		}
+
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		u.SetName(name)
+		u.Object["spec"] = map[string]interface{}{
+			"nodeSelector": map[string]interface{}{
+				"matchLabels": map[string]interface{}{
+					"test-finalizer": name,
+				},
+			},
+			"packages": map[string]interface{}{
+				"pkg-a": map[string]interface{}{
+					"name":    "pkg-a",
+					"version": "1.0.0",
+					"image":   "ghcr.io/org/pkg-a",
+				},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, u)).To(Succeed())
+		DeferCleanup(func() {
+			del := &v1alpha1.NodeWright{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			_ = k8sClient.Delete(ctx, del)
+		})
+
+		nw := &v1alpha1.NodeWright{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, nw)).To(Succeed())
+
+		// Simulate a concurrent edit on the live object
+		patch := client.MergeFrom(nw.DeepCopy())
+		nw.Labels = map[string]string{"concurrent-label": "applied"}
+		Expect(k8sClient.Patch(ctx, nw, patch)).To(Succeed())
+
+		// Reconcile on snapshot taken prior to concurrent label
+		snapshotNW := nw.DeepCopy()
+		delete(snapshotNW.Labels, "concurrent-label")
+		clusterState, err := BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{*snapshotNW}},
+			&corev1.NodeList{},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		handled, err := operator.HandleFinalizer(ctx, clusterState.skyhooks[0], clusterState)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(handled).To(BeFalse())
+
+		live := &v1alpha1.NodeWright{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, live)).To(Succeed())
+		Expect(live.Finalizers).To(ContainElement(SkyhookFinalizer))
+		Expect(live.Labels).To(HaveKeyWithValue("concurrent-label", "applied"))
 	})
 })

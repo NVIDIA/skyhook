@@ -2215,10 +2215,11 @@ func (r *SkyhookReconciler) IsDrained(ctx context.Context, skyhookNode wrapper.S
 func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook SkyhookNodes, clusterState *clusterState) (bool, error) {
 	if skyhook.GetSkyhook().DeletionTimestamp.IsZero() { // if not deleted, and does not have our finalizer, add it
 		if !controllerutil.ContainsFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer) {
+			patch := client.MergeFrom(skyhook.GetSkyhook().NodeWright.DeepCopy())
 			controllerutil.AddFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
 
-			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
-				return false, fmt.Errorf("error updating nodewright to add finalizer: %w", err)
+			if err := r.Patch(ctx, skyhook.GetSkyhook().NodeWright, patch); err != nil {
+				return false, fmt.Errorf("error patching nodewright to add finalizer: %w", err)
 			}
 		}
 	} else { // being deleted
@@ -2386,16 +2387,17 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 			// Bump ObservedGeneration and write status BEFORE removing the finalizer:
 			// removing the last finalizer lets the apiserver delete the object
 			// immediately, so a status update afterward would race that deletion into a
-			// spurious NotFound. (The bump keeps the finalizer-removal Update below from
+			// spurious NotFound. (The bump keeps the finalizer-removal Patch below from
 			// re-triggering add-finalizer logic.)
 			skyhook.GetSkyhook().Status.ObservedGeneration = skyhook.GetSkyhook().Status.ObservedGeneration + 1
 			if err := r.Status().Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
 				return false, fmt.Errorf("error updating nodewright status: %w", err)
 			}
 
+			patch := client.MergeFrom(skyhook.GetSkyhook().NodeWright.DeepCopy())
 			controllerutil.RemoveFinalizer(skyhook.GetSkyhook().NodeWright, SkyhookFinalizer)
-			if err := r.Update(ctx, skyhook.GetSkyhook().NodeWright); err != nil {
-				return false, fmt.Errorf("error updating nodewright removing finalizer: %w", err)
+			if err := r.Patch(ctx, skyhook.GetSkyhook().NodeWright, patch); err != nil {
+				return false, fmt.Errorf("error patching nodewright removing finalizer: %w", err)
 			}
 
 			return true, nil
