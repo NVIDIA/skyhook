@@ -49,9 +49,14 @@ jobs:
 
       - name: Install git-cliff
         run: |
-          GC_VERSION=$(curl -sSf https://api.github.com/repos/orhun/git-cliff/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
-          curl -sSL "https://github.com/orhun/git-cliff/releases/download/${GC_VERSION}/git-cliff-${GC_VERSION#v}-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar xz --wildcards "*/git-cliff" --strip-components=1
+          GC_VERSION=$(curl -sSf --retry 3 --retry-delay 5 --retry-all-errors https://api.github.com/repos/orhun/git-cliff/releases/latest | grep '"tag_name"' | cut -d '"' -f 4)
+          # Download to a file rather than piping into tar: a retried transfer
+          # restarts from byte 0, which would replay bytes into a tar already
+          # part-way through the stream.
+          curl -sSL --retry 3 --retry-delay 5 --retry-all-errors \
+            -o /tmp/git-cliff.tar.gz \
+            "https://github.com/orhun/git-cliff/releases/download/${GC_VERSION}/git-cliff-${GC_VERSION#v}-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf /tmp/git-cliff.tar.gz --wildcards --strip-components=1 "*/git-cliff"
           sudo mv git-cliff /usr/local/bin/
 
       - name: Generate release notes

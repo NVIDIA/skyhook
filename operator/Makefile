@@ -184,21 +184,25 @@ print-k8s-test-versions-github-output: ## Print Kubernetes test versions in GitH
 	@$(MAKE) --no-print-directory yq >/dev/null
 	@YQ="$(YQ)" $(VERSIONS) --print
 
+## Docker Hub resets connections often enough that an unretried inspect fails CI
+## with "not published" for an image that is published. RETRY only wraps reads.
+RETRY ?= ../scripts/retry.sh
+
 .PHONY: validate-kind-node-image
 validate-kind-node-image: yq ## Check that the configured kindest/node image tag exists before creating a cluster.
 	@echo "Validating kindest/node:v$(KIND_NODE_IMAGE_VERSION)"
 	@if command -v $(DOCKER_CMD) >/dev/null 2>&1; then \
 		if [ "$(DOCKER_CMD)" = "podman" ]; then \
-			$(DOCKER_CMD) manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+			$(RETRY) -- $(DOCKER_CMD) manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
 		else \
-			$(DOCKER_CMD) manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+			$(RETRY) -- $(DOCKER_CMD) manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
 		fi; \
 	elif command -v docker >/dev/null 2>&1; then \
-		docker manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+		$(RETRY) -- docker manifest inspect kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
 	elif command -v podman >/dev/null 2>&1; then \
-		podman manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+		$(RETRY) -- podman manifest inspect docker://kindest/node:v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
 	else \
-		curl -fsSL https://hub.docker.com/v2/repositories/kindest/node/tags/v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
+		curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors https://hub.docker.com/v2/repositories/kindest/node/tags/v$(KIND_NODE_IMAGE_VERSION) >/dev/null; \
 	fi || { \
 		echo "kindest/node:v$(KIND_NODE_IMAGE_VERSION) is not published or cannot be inspected."; \
 		echo "Update kind.nodeImage in versions.yaml, or override KIND_NODE_IMAGE_VERSION with a published kindest/node tag."; \

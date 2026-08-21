@@ -17,6 +17,9 @@
 set -euo pipefail
 
 ORAS="${ORAS:-oras}"
+# Registry reads flake often enough to fail CI on their own, and every call
+# below is a read that is safe to repeat.
+RETRY="${RETRY:-"$(dirname "$0")/retry.sh"}"
 
 _die() {
 	printf 'latest-distroless.sh: %s\n' "$*" >&2
@@ -108,14 +111,14 @@ _main() {
 
 	local tags version tag digest manifest platform missing=""
 
-	tags="$("${ORAS}" repo tags "${repo}")" || _die "could not list tags for ${repo}"
+	tags="$("${RETRY}" -- "${ORAS}" repo tags "${repo}")" || _die "could not list tags for ${repo}"
 	# A prefix like '3.13-' carries dots that would otherwise match any character.
 	version="$(printf '%s\n' "${tags}" | _latest_version "${prefix//./\\.}" "${major}")"
 	[ -n "${version}" ] || _die "no v${major}.x release tag found for ${repo} with prefix '${prefix}'"
 
 	tag="${prefix}v${version}"
 
-	digest="$("${ORAS}" manifest fetch --descriptor "${repo}:${tag}" | jq -r '.digest // empty')" ||
+	digest="$("${RETRY}" -- "${ORAS}" manifest fetch --descriptor "${repo}:${tag}" | jq -r '.digest // empty')" ||
 		_die "could not resolve a digest for ${repo}:${tag}"
 	[ -n "${digest}" ] || _die "${repo}:${tag} returned no digest"
 
@@ -124,7 +127,7 @@ _main() {
 	# Read it back by digest rather than by tag: the tag is mutable, and a re-push
 	# between the two requests would have this validate a manifest other than the
 	# one resolved above, which is the only one the build ever sees.
-	manifest="$("${ORAS}" manifest fetch "${repo}@${digest}")" ||
+	manifest="$("${RETRY}" -- "${ORAS}" manifest fetch "${repo}@${digest}")" ||
 		_die "could not read the manifest for ${repo}:${tag} (${digest})"
 	for platform in ${platforms//,/ }; do
 		printf '%s' "${manifest}" | jq -e --arg p "${platform}" \

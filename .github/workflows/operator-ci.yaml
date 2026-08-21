@@ -226,8 +226,8 @@ jobs:
         env:
           KIND_BINARY_VERSION: ${{ needs.k8s-test-versions.outputs.kind-binary-version }}
         run: |
-          curl -fsSL -o /tmp/kind-linux-amd64 "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64"
-          curl -fsSL -o /tmp/kind-linux-amd64.sha256sum "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64.sha256sum"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o /tmp/kind-linux-amd64 "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64"
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o /tmp/kind-linux-amd64.sha256sum "https://kind.sigs.k8s.io/dl/${KIND_BINARY_VERSION}/kind-linux-amd64.sha256sum"
           cd /tmp && sha256sum -c kind-linux-amd64.sha256sum
           sudo install /tmp/kind-linux-amd64 /usr/local/bin/kind
       - name: Create ctlptl KinD Cluster
