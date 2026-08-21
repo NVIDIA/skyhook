@@ -27,7 +27,10 @@ inputs:
   attempts:
     description: Number of attempts before failing.
     required: false
-    default: "1"
+    # Default to retrying: registry reads reset often enough that a single
+    # attempt fails release jobs on a blip. Callers that want a hard fail on the
+    # first error pass attempts: 1 explicitly.
+    default: "3"
   retry-delay-seconds:
     description: Delay between attempts.
     required: false

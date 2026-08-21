@@ -42,7 +42,7 @@ runs:
         tarball="${RUNNER_TEMP}/oras.tar.gz"
         bindir="${RUNNER_TEMP}/oras-bin"
 
-        curl -sSfL "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_${arch}.tar.gz" -o "${tarball}"
+        curl -sSfL --retry 3 --retry-delay 5 --retry-all-errors "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_${arch}.tar.gz" -o "${tarball}"
         echo "${sha}  ${tarball}" | sha256sum -c -
 
         # Onto PATH rather than into /usr/local/bin so the install needs no root.
