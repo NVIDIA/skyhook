@@ -32,6 +32,24 @@
 
   packageRules: [
     {
+      // Dependency notices are release artifacts. Refresh them once after all
+      // updates on a branch, and commit only the three generated outputs.
+      matchManagers: ["gomod", "pep621"],
+      postUpgradeTasks: {
+        commands: ["make notices"],
+        fileFilters: [
+          "THIRD_PARTY_NOTICES.md",
+          "operator/THIRD_PARTY_NOTICES.md",
+          "agent/THIRD_PARTY_NOTICES.md",
+        ],
+        executionMode: "branch",
+        installTools: {
+          golang: {},
+          python: {},
+        },
+      },
+    },
+    {
       // Both go.mod files are the toolchain source of truth for CI and release
       // builds. Updating them as one group prevents cross-component skew.
       groupName: "Go toolchain",

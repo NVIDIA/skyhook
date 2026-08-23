@@ -79,7 +79,7 @@ Prefer the Makefile over raw `go test` / `golangci-lint` invocations. The target
 
 Renovate owns Go module, Go toolchain, Python, and container dependency updates. Dependabot owns GitHub Actions updates because the token used by the self-hosted Renovate workflow cannot modify workflow files.
 
-The `go` directives in `operator/go.mod` and `agent/go/go.mod` are the source of truth for the toolchain used by CI and release builds. Renovate updates both directives in one standalone pull request, then runs `go mod tidy` and `go mod vendor` so vendored builds remain reproducible.
+The `go` directives in `operator/go.mod` and `agent/go/go.mod` are the source of truth for the toolchain used by CI and release builds. Renovate updates both directives in one standalone pull request, then runs `go mod tidy`, `go mod vendor`, and `make notices` so vendored builds and third-party notices remain reproducible.
 
 Before changing `.github/renovate.json5`, run `make renovate-config-check`. The Renovate workflow can also be dispatched manually with `dryRun` enabled to inspect proposed updates without creating branches or pull requests.
 
