@@ -3,7 +3,7 @@
 
 name: Merge Gate
 
-# Checks that block merges: license verification on Go dependency changes.
+# Checks that block merges: dependency licenses and Renovate configuration.
 # Modeled on NVIDIA/aicr's merge-gate.yaml.
 
 on:
@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 1
     outputs:
       deps: ${{ steps.filter.outputs.deps }}
+      renovate: ${{ steps.filter.outputs.renovate }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -34,6 +35,31 @@ jobs:
               - 'operator/go.mod'
               - 'operator/go.sum'
               - 'operator/vendor/**'
+            renovate:
+              - '.github/dependabot.yml'
+              - '.github/renovate.json5'
+              - '.github/workflows/renovate.yaml'
+              - 'Makefile'
+
+  # ---------------------------------------------------------------------------
+  # Renovate configuration — runs only when dependency automation changes.
+  # ---------------------------------------------------------------------------
+  validate-renovate:
+    needs: [check-paths]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        if: needs.check-paths.outputs.renovate == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate Renovate configuration
+        if: needs.check-paths.outputs.renovate == 'true'
+        run: make renovate-config-check
+      - name: Skip Renovate validation
+        if: needs.check-paths.outputs.renovate != 'true'
+        run: echo "No dependency automation changes — Renovate validation not required"
 
   # ---------------------------------------------------------------------------
   # License verification — runs only when dependency files change.
