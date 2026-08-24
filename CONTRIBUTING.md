@@ -75,6 +75,16 @@ make license-header-check   # the same gate CI runs
 
 Prefer the Makefile over raw `go test` / `golangci-lint` invocations. The targets encode `-mod=vendor`, license-header formatting, envtest setup, and CRD/deepcopy generation ordering; calling the tools directly skips some of that and produces drift. Run `make help` to see what is available.
 
+### Dependency updates
+
+Renovate owns Go module, Go toolchain, Python, and container dependency updates. Dependabot owns GitHub Actions updates because the token used by the self-hosted Renovate workflow cannot modify workflow files.
+
+The `go` directives in `operator/go.mod` and `agent/go/go.mod` are the source of truth for the toolchain used by CI and release builds. Renovate updates both directives in one standalone pull request, then runs `go mod tidy`, `go mod vendor`, and `make notices` so vendored builds and third-party notices remain reproducible.
+
+Before changing `.github/renovate.json5`, run `make renovate-config-check`. The Renovate workflow can also be dispatched manually with `dryRun` enabled to inspect proposed updates without creating branches or pull requests.
+
+Renovate uses the repository's `GITHUB_TOKEN`, not a PAT or GitHub App. GitHub therefore holds CI runs from Renovate-created pull requests for maintainer approval before they start.
+
 ### How your pull request gets reviewed
 
 - **Reviewers are assigned automatically** from [`.github/CODEOWNERS`](.github/CODEOWNERS) based on the paths you touched. You do not need to find a reviewer yourself.

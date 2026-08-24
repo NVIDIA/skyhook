@@ -484,9 +484,8 @@ make notices-agent      # agent Python deps
 make notices-rollup     # root rollup (run after the two above)
 ```
 
-Prerequisites:
+The operator notice targets install `go-licenses` into `operator/bin/` when needed. Other prerequisites:
 
-- `go-licenses` — installed via `make -C operator go-licenses` (writes `operator/bin/go-licenses`).
 - Python 3 — required for the generator script and the agent pass's pip-licenses venv.
 
 The agent pass caches a Python venv at `agent/.notices-venv`. First run installs `pip-licenses` and the agent's pinned deps (~30s). Subsequent runs reuse the venv (~2s).
@@ -500,6 +499,7 @@ Run `make notices` and commit the refreshed file(s) whenever you:
 
 ### CI behavior
 
+- **Renovate** (`.github/workflows/renovate.yaml`): Go and Python dependency branches run `make notices` after artifact updates and commit the refreshed notice files with the dependency change.
 - **Merge gate** (`.github/workflows/merge-gate.yaml`): when Go dependency files change in a PR, the `verify-licenses` job runs `make -C operator license-check` to confirm every dep's license is on the approved list. The job is required and a paired skip job satisfies the check when deps don't change.
 - **Release upload** (`.github/workflows/release.yml`): every operator/agent/chart release regenerates the notices files in CI and attaches the appropriate one as a release asset:
   - `operator/v*` → `operator/THIRD_PARTY_NOTICES.md`
