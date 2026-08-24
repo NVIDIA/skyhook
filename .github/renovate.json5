@@ -1,0 +1,111 @@
+{
+  // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  // SPDX-License-Identifier: Apache-2.0
+
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  extends: [
+    "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":semanticCommitScope(deps)",
+  ],
+
+  // Keep coverage aligned with the ecosystems previously owned by Dependabot.
+  // GitHub Actions remains enabled for extraction so the rule below can record
+  // the intentional handoff back to Dependabot in the validated config.
+  enabledManagers: ["dockerfile", "github-actions", "gomod", "pep621"],
+  dependencyDashboard: false,
+  prConcurrentLimit: 10,
+  prHourlyLimit: 10,
+  rebaseWhen: "behind-base-branch",
+  labels: ["dependencies"],
+
+  // Give newly published artifacts time to be withdrawn before proposing them.
+  minimumReleaseAge: "3 days",
+  internalChecksFilter: "strict",
+
+  // Both Go modules are vendored and all builds use -mod=vendor. Keep module
+  // metadata and vendor trees in the same commit as every dependency update.
+  postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths", "gomodVendor"],
+  ignorePaths: ["**/vendor/**"],
+
+  packageRules: [
+    {
+      // Dependency notices are release artifacts. Refresh them once after all
+      // updates on a branch, and commit only the three generated outputs.
+      matchManagers: ["gomod", "pep621"],
+      postUpgradeTasks: {
+        commands: ["make notices"],
+        fileFilters: [
+          "THIRD_PARTY_NOTICES.md",
+          "operator/THIRD_PARTY_NOTICES.md",
+          "agent/THIRD_PARTY_NOTICES.md",
+        ],
+        executionMode: "branch",
+        installTools: {
+          golang: {},
+          python: {},
+        },
+      },
+    },
+    {
+      // Both go.mod files are the toolchain source of truth for CI and release
+      // builds. Updating them as one group prevents cross-component skew.
+      groupName: "Go toolchain",
+      matchManagers: ["gomod"],
+      matchDepNames: ["go"],
+      matchDepTypes: ["golang"],
+      rangeStrategy: "bump",
+      addLabels: ["component/operator", "component/agent"],
+    },
+    {
+      // Do not let a module update raise the go directive as a side effect.
+      // Toolchain changes belong in the standalone group above.
+      matchManagers: ["gomod"],
+      constraintsFiltering: "strict",
+    },
+    {
+      groupName: "kubernetes",
+      matchManagers: ["gomod"],
+      matchPackageNames: ["k8s.io/**", "sigs.k8s.io/**", "!k8s.io/klog/v2"],
+    },
+    {
+      groupName: "golang-x",
+      matchManagers: ["gomod"],
+      matchPackageNames: ["golang.org/x/**"],
+    },
+    {
+      matchManagers: ["gomod"],
+      matchFileNames: ["operator/**"],
+      addLabels: ["component/operator"],
+    },
+    {
+      matchManagers: ["gomod"],
+      matchFileNames: ["agent/go/**"],
+      addLabels: ["component/agent"],
+    },
+    {
+      matchManagers: ["pep621"],
+      matchFileNames: ["agent/skyhook-agent/**"],
+      addLabels: ["component/agent"],
+    },
+    {
+      // The Python compatibility floor is a support decision, not a dependency.
+      matchManagers: ["pep621"],
+      matchDepTypes: ["requires-python"],
+      enabled: false,
+    },
+    {
+      matchManagers: ["dockerfile"],
+      matchFileNames: ["containers/**"],
+      addLabels: ["component/ci"],
+    },
+    {
+      // The workflow token cannot update .github/workflows without a PAT or
+      // GitHub App. Dependabot remains the owner of action-version updates.
+      matchManagers: ["github-actions"],
+      enabled: false,
+    },
+  ],
+}
