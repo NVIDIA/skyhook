@@ -239,6 +239,15 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
 ## https://kyverno.github.io/chainsaw/latest/reference/commands/chainsaw_test/
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
+# CHAINSAW_ARGS: --exec-timeout 30s is the fallback for any test that doesn't set
+# spec.timeouts.exec. metrics_test.py's own TIMEOUT env var (also 30s default) can
+# hit the same pod/container-startup cliff (#397) if a check races an in-flight
+# package transition. Decision (#496): don't export TIMEOUT globally here — every
+# metrics_test.py call outside simple-nodewright is already gated behind a native
+# chainsaw `assert:` that waits for the same transition first, so a global bump
+# would only slow down genuine failures across the whole suite for no benefit.
+# Bump TIMEOUT per-script only where a metrics_test.py call is the *first* thing
+# checking a transition (see nodewright/simple-nodewright for the pattern).
 CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 
 # POOL_NON_DEFAULT lists every pool except the default (core). Adding a new
