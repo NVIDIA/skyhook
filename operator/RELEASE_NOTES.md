@@ -144,6 +144,23 @@ For the full commit-level log see CHANGELOG.md.
 
 ### Bug Fixes
 
+- **Drain now completes when the evicted pods have terminated, not when their
+  evictions were accepted.** A pod carrying a `deletionTimestamp` was classified as
+  ignorable, so one pass evicted and the next — two seconds later — saw everything
+  terminating and reported the node drained. A workload with a 30s
+  `terminationGracePeriodSeconds` was roughly 2s into shutdown when the interrupt
+  fired. Terminating pods now block drain, matching `kubectl drain`. The exclusions
+  (DaemonSet, `kube-system`, mirror/static, unschedulable-tolerating, and the
+  operator's own package pods) still apply while a pod terminates, so drain only ever
+  waits on pods it selected for eviction or deletion.
+
+  **Expect interrupts to start later than they used to** — by roughly the longest
+  `terminationGracePeriodSeconds` among the pods on the node. `spec.drainConfig.timeout`
+  now measures time-to-drain rather than time-to-accept-evictions, and it still has no
+  default: a pod that can never finish terminating (stuck finalizer, unresponsive
+  kubelet) holds the node in `in_progress` until it is cleared. Set a `timeout` if you
+  need that wait bounded.
+
 - **The migration now touches only the keys the operator owns, not the whole
   `skyhook.nvidia.com/` prefix.** The metadata prefix is the product's domain name,
   so users legitimately carry their own node labels and annotations under it. The
