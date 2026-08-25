@@ -1394,7 +1394,7 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 
 			// process one package at a time
 			if skyhook.GetSkyhook().Spec.Serial {
-				return &ctrl.Result{Requeue: true}, nil
+				return &ctrl.Result{RequeueAfter: time.Second * 2}, nil
 			}
 		}
 	}

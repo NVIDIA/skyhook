@@ -78,6 +78,11 @@ type Command struct {
 	// starting it. Zero leaves its permissions unchanged. Executable must be
 	// absolute when Permissions is nonzero.
 	Permissions fs.FileMode
+
+	// RequiredPermissions are added to the resolved executable's existing
+	// permission bits before starting it. Executable must be absolute when this
+	// field is nonzero.
+	RequiredPermissions fs.FileMode
 }
 
 // CommandOption configures a Command created by NewCommand.
@@ -89,13 +94,14 @@ type CommandOption func(*Command)
 // directory as "/" instead of the caller's current working directory.
 func NewCommand(executable string, options ...CommandOption) Command {
 	command := Command{
-		Executable:       executable,
-		Arguments:        []string{},
-		WorkingDirectory: "",
-		Environment:      map[string]string{},
-		Stdout:           io.Discard,
-		Stderr:           io.Discard,
-		Permissions:      0,
+		Executable:          executable,
+		Arguments:           []string{},
+		WorkingDirectory:    "",
+		Environment:         map[string]string{},
+		Stdout:              io.Discard,
+		Stderr:              io.Discard,
+		Permissions:         0,
+		RequiredPermissions: 0,
 	}
 	for _, option := range options {
 		option(&command)
@@ -147,6 +153,14 @@ func WithPermissions(permissions fs.FileMode) CommandOption {
 	}
 }
 
+// WithRequiredPermissions adds permission bits without clearing the
+// executable's existing permissions.
+func WithRequiredPermissions(permissions fs.FileMode) CommandOption {
+	return func(command *Command) {
+		command.RequiredPermissions = permissions
+	}
+}
+
 func (command Command) validate() error {
 	if command.Executable == "" {
 		return errors.New("command executable is empty")
@@ -154,7 +168,13 @@ func (command Command) validate() error {
 	if command.Permissions != command.Permissions.Perm() {
 		return errors.New("command permissions contain non-permission mode bits")
 	}
-	if command.Permissions != 0 && !filepath.IsAbs(command.Executable) {
+	if command.RequiredPermissions != command.RequiredPermissions.Perm() {
+		return errors.New("command required permissions contain non-permission mode bits")
+	}
+	if command.Permissions != 0 && command.RequiredPermissions != 0 {
+		return errors.New("command permissions and required permissions are mutually exclusive")
+	}
+	if command.Permissions|command.RequiredPermissions != 0 && !filepath.IsAbs(command.Executable) {
 		return errors.New("command permissions require an absolute executable path")
 	}
 	if strings.ContainsRune(command.Executable, 0) {

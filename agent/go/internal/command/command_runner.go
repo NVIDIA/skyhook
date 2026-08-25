@@ -33,7 +33,7 @@ func (*commandRunner) Run(ctx context.Context, command Command) (Result, error) 
 	if err := validateRun(ctx, command); err != nil {
 		return Result{}, fmt.Errorf("validating command execution: %w", err)
 	}
-	if command.Permissions != 0 {
+	if command.Permissions != 0 || command.RequiredPermissions != 0 {
 		executableFile, err := os.Open(command.Executable)
 		if err != nil {
 			return Result{}, fmt.Errorf(

@@ -36,6 +36,16 @@ func TestHostFS(t *testing.T) {
 }
 
 var _ = Describe("mounted host filesystem", func() {
+	It("validates path components used below agent-owned directories", func() {
+		Expect(ValidatePathComponent("package name", "driver")).To(Succeed())
+		Expect(ValidatePathComponent("package name", ".")).To(MatchError(
+			`package name "." must be a single path component`,
+		))
+		Expect(ValidatePathComponent("package name", "../driver")).To(MatchError(
+			`package name "../driver" must be a single path component`,
+		))
+	})
+
 	It("resolves absolute host paths beneath the mounted root", func() {
 		root := GinkgoT().TempDir()
 
