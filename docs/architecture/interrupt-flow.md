@@ -146,7 +146,7 @@ The fields map to Kubernetes drain behavior:
 - `deleteEmptyDirData`: when `false`, pods with `emptyDir` volumes block drain. The default is `true`.
 - `force`: when `false`, pods without a managing controller block drain. The default is `true`.
 - `ignoreDaemonSets`: when `true`, DaemonSet-managed pods are skipped during drain. The default is `true`.
-- `timeout`: bounds how long a node may spend draining, measured from the first evict or delete until the node is drained. Unset or zero means no timeout, so a pod that never finishes terminating holds the node in `in_progress` indefinitely. When the timeout expires, the node is marked `erroring` and package stages do not proceed on that node.
+- `timeout`: bounds how long a node may spend draining, measured from drain start — the first pass that finds the node not yet drained, which is before any evict or delete is issued — until the node is drained. Unset or zero means no timeout, so a pod that never finishes terminating holds the node in `in_progress` indefinitely. When the timeout expires, the node is marked `erroring` and package stages do not proceed on that node.
 - `gracePeriod`: overrides the grace period used for eviction or direct deletion. Unset uses each pod's own `terminationGracePeriodSeconds`.
 
 The operator also skips pods that tolerate the `node.kubernetes.io/unschedulable`
@@ -175,10 +175,10 @@ the node stays in `in_progress`, no further evict or delete is issued for it,
 and the interrupt does not run until the pod object is gone. This matches
 `kubectl drain`, which waits for the pods it selected to disappear.
 
-Only pods the operator would have evicted itself are waited on. The exclusions
-above still apply while a pod is terminating, so a DaemonSet pod mid-rollout, a
-`kube-system` pod, or one of the operator's own package pods never holds up a
-drain.
+Only pods the operator selected for eviction or deletion are waited on. The
+exclusions above still apply while a pod is terminating, so a DaemonSet pod
+mid-rollout, a `kube-system` pod, or one of the operator's own package pods never
+holds up a drain.
 
 Because drain now waits out termination, a workload's
 `terminationGracePeriodSeconds` is on the critical path for every interrupt, and

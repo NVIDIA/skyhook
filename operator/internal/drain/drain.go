@@ -180,7 +180,8 @@ func DecidePod(pod *corev1.Pod, options Options) Decision {
 	// until the kubelet finishes killing it, so it blocks rather than being ignored:
 	// drain is done when the workloads are gone, not when the evictions were accepted.
 	// This sits below the exemptions above so that drain only ever waits on pods it
-	// would have evicted itself, which is what kubectl drain waits for.
+	// would have selected for eviction or deletion itself, which is what kubectl drain
+	// waits for.
 	if pod.DeletionTimestamp != nil {
 		return Decision{Action: ActionBlock, Reason: ReasonTerminating}
 	}

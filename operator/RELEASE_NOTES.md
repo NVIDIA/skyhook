@@ -152,7 +152,7 @@ For the full commit-level log see CHANGELOG.md.
   fired. Terminating pods now block drain, matching `kubectl drain`. The exclusions
   (DaemonSet, `kube-system`, mirror/static, unschedulable-tolerating, and the
   operator's own package pods) still apply while a pod terminates, so drain only ever
-  waits on pods it would have evicted itself.
+  waits on pods it selected for eviction or deletion.
 
   **Expect interrupts to start later than they used to** — by roughly the longest
   `terminationGracePeriodSeconds` among the pods on the node. `spec.drainConfig.timeout`
