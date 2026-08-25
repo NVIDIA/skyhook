@@ -127,12 +127,71 @@ var _ = Describe("flag store", func() {
 		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
 	})
 
+	It("writes the legacy completion marker alongside the Go-native marker", func() {
+		path, err := store.Mark(value, "complete")
+		Expect(err).NotTo(HaveOccurred())
+		legacyPath := filepath.Join(
+			root,
+			"etc", "skyhook", "flags", "driver", "1.2.3",
+			"scripts", "apply.sh_WyctLW1vZGUnLCAnZmFzdCddX1swLCAyXQ==",
+		)
+
+		Expect(path).To(BeAnExistingFile())
+		Expect(legacyPath).To(BeAnExistingFile())
+		data, err := os.ReadFile(legacyPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(Equal("complete"))
+	})
+
+	It("does not publish either completion marker when preflight fails", func() {
+		path, err := store.Path(value)
+		Expect(err).NotTo(HaveOccurred())
+		legacyPath, supported := store.legacyPath(value)
+		Expect(supported).To(BeTrue())
+		Expect(os.MkdirAll(path, 0o755)).To(Succeed())
+
+		_, err = store.Mark(value, "complete")
+
+		Expect(err).To(MatchError(ContainSubstring("is not a regular file")))
+		Expect(legacyPath).NotTo(BeAnExistingFile())
+		Expect(path).To(BeADirectory())
+	})
+
+	It("recognizes and removes a legacy completion marker", func() {
+		legacyPath, supported := store.legacyPath(value)
+		Expect(supported).To(BeTrue())
+		Expect(store.Write(legacyPath, []byte("complete"))).To(Succeed())
+
+		decision, err := store.Check(value, false, stage.Apply)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(decision).To(Equal(Decision{Run: false, Reason: ReasonAlreadyCompleted}))
+
+		Expect(store.Remove(value)).To(Succeed())
+		Expect(legacyPath).NotTo(BeAnExistingFile())
+	})
+
+	It("matches legacy string representations in completion fingerprints", func() {
+		value := step.NewRegularStep(
+			"apply.sh",
+			step.WithArguments([]string{"single'quote", "both'\"quotes", "line\nbreak"}),
+		)
+
+		legacyPath, supported := store.legacyPath(value)
+		Expect(supported).To(BeTrue())
+		Expect(filepath.Base(legacyPath)).To(Equal(
+			"apply.sh_WyJzaW5nbGUncXVvdGUiLCAnYm90aFwnInF1b3RlcycsICdsaW5lXG5icmVhayddX1swXQ==",
+		))
+	})
+
 	It("removes a completion flag idempotently", func() {
 		path, err := store.Mark(value, "complete")
 		Expect(err).NotTo(HaveOccurred())
+		legacyPath, supported := store.legacyPath(value)
+		Expect(supported).To(BeTrue())
 
 		Expect(store.Remove(value)).To(Succeed())
 		Expect(path).NotTo(BeAnExistingFile())
+		Expect(legacyPath).NotTo(BeAnExistingFile())
 		Expect(store.Remove(value)).To(Succeed())
 	})
 

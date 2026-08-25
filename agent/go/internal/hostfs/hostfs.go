@@ -34,6 +34,15 @@ import (
 
 const directoryMode = 0o755
 
+// ValidatePathComponent rejects values that could escape or add hierarchy to
+// an agent-owned path.
+func ValidatePathComponent(name, value string) error {
+	if value == "" || value == "." || !filepath.IsLocal(value) || filepath.Base(value) != value {
+		return fmt.Errorf("%s %q must be a single path component", name, value)
+	}
+	return nil
+}
+
 // HostPathToMounted maps an absolute host path beneath the mounted host root.
 func HostPathToMounted(rootMount, hostPath string) (string, error) {
 	if !filepath.IsAbs(rootMount) {

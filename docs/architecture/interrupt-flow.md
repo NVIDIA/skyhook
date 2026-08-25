@@ -16,8 +16,17 @@ When a package requires an interrupt (such as a reboot or service restart), Node
 4. **Drain** - Remaining workloads are gracefully evicted from the node
 5. **Apply** / **Upgrade** (if upgrading) - Package installation/upgrade operations are executed  
 6. **Config** - Configuration and setup operations are performed
-7. **Interrupt** - The actual interrupt operation (reboot, service restart, etc.) is executed
+7. **Interrupt** - The actual interrupt operation (reboot, service restart, etc.) is executed. A node restart is complete only after a later agent invocation observes that the host boot ID changed.
 8. **Post-Interrupt** - Any cleanup or verification operations after the interrupt
+
+Before requesting a node restart, the agent writes a pending marker containing
+the current host boot ID. If `reboot` exits successfully before shutdown reaches
+the agent, the agent waits for up to 10 seconds for shutdown to terminate the
+process. Remaining alive for the full window is reported as a failure because
+the reboot was enqueued but did not take effect. After the node returns, the
+next invocation compares the pending boot ID with the current value. A changed
+boot ID promotes the pending marker to complete and allows post-interrupt work;
+an unchanged boot ID removes the stale marker and retries the restart.
 
 ### For packages WITHOUT interrupts:
 

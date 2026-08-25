@@ -57,6 +57,19 @@ type Interrupt interface {
 	Serialize() ([]byte, error)
 }
 
+// ResumableInterrupt exposes command-level progress so the orchestrator can
+// preserve the legacy agent's indexed completion markers across retries.
+type ResumableInterrupt interface {
+	Interrupt
+	OperationCount() int
+	RunPending(
+		context.Context,
+		execution.Config,
+		[]bool,
+		func(int) error,
+	) (execution.Status, error)
+}
+
 func validateRun(ctx context.Context, config execution.Config, interruptType InterruptType) error {
 	if ctx == nil {
 		return errors.New("running interrupt: context is nil")
@@ -86,7 +99,7 @@ func Encode(i Interrupt) (string, error) {
 }
 
 // Decode parses a base64+JSON serialized interrupt produced by Encode
-// (or its Python counterpart skyhook_agent.interrupts.inflate).
+// (or its legacy counterpart skyhook_agent.interrupts.inflate).
 // Wire-shape errors return errInvalidSerializedInterrupt; unknown type
 // names return a descriptive error listing the supported types.
 func Decode(serializedValue string) (Interrupt, error) {

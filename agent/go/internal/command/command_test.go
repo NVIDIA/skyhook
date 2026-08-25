@@ -43,13 +43,14 @@ var _ = Describe("Command constructor", func() {
 		command := NewCommand("test")
 
 		Expect(command).To(Equal(Command{
-			Executable:       "test",
-			Arguments:        []string{},
-			WorkingDirectory: "",
-			Environment:      map[string]string{},
-			Stdout:           io.Discard,
-			Stderr:           io.Discard,
-			Permissions:      0,
+			Executable:          "test",
+			Arguments:           []string{},
+			WorkingDirectory:    "",
+			Environment:         map[string]string{},
+			Stdout:              io.Discard,
+			Stderr:              io.Discard,
+			Permissions:         0,
+			RequiredPermissions: 0,
 		}))
 	})
 
@@ -79,6 +80,9 @@ var _ = Describe("Command constructor", func() {
 		Expect(command.Stdout).To(BeIdenticalTo(stdout))
 		Expect(command.Stderr).To(BeIdenticalTo(stderr))
 		Expect(command.Permissions).To(Equal(fs.FileMode(0o700)))
+		Expect(NewCommand("/test", WithRequiredPermissions(0o111)).RequiredPermissions).To(
+			Equal(fs.FileMode(0o111)),
+		)
 
 		second := NewCommand("test", argumentOption, environmentOption)
 		command.Arguments[0] = "mutated"
@@ -98,6 +102,16 @@ var _ = Describe("Command validation", func() {
 			"non-permission mode bits",
 			Command{Executable: "/test", Permissions: fs.ModeDir | 0o755},
 			"permissions contain non-permission mode bits",
+		),
+		Entry(
+			"non-permission required mode bits",
+			Command{Executable: "/test", RequiredPermissions: fs.ModeDir | 0o111},
+			"required permissions contain non-permission mode bits",
+		),
+		Entry(
+			"conflicting permission policies",
+			Command{Executable: "/test", Permissions: 0o700, RequiredPermissions: 0o111},
+			"mutually exclusive",
 		),
 		Entry(
 			"relative executable with permissions",

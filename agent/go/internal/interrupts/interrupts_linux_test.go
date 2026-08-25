@@ -20,10 +20,12 @@ package interrupts
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/NVIDIA/nodewright/agent/internal/execution"
 
@@ -58,14 +60,22 @@ var _ = Describe("interrupt chroot execution", func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 
-		for _, interrupt := range []Interrupt{
-			NodeRestart{},
-			ServiceRestart{Services: []string{"containerd", "kubelet"}},
-			RestartAllServices{},
+		restartContext, cancelRestart := context.WithTimeout(context.Background(), time.Second)
+		status, err := NodeRestart{}.Run(restartContext, config)
+		cancelRestart()
+		Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
+		Expect(status).To(Equal(execution.StatusFailed))
+
+		for _, testCase := range []struct {
+			interrupt Interrupt
+			status    execution.Status
+		}{
+			{interrupt: ServiceRestart{Services: []string{"containerd", "kubelet"}}, status: execution.StatusSuccess},
+			{interrupt: RestartAllServices{}, status: execution.StatusSuccess},
 		} {
-			status, err := interrupt.Run(context.Background(), config)
-			Expect(err).NotTo(HaveOccurred(), string(interrupt.Type()))
-			Expect(status).To(Equal(execution.StatusSuccess), string(interrupt.Type()))
+			status, err := testCase.interrupt.Run(context.Background(), config)
+			Expect(err).NotTo(HaveOccurred(), string(testCase.interrupt.Type()))
+			Expect(status).To(Equal(testCase.status), string(testCase.interrupt.Type()))
 		}
 
 		calls, err := os.ReadFile(filepath.Join(root, "package", "interrupt-calls"))

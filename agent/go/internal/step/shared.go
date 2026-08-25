@@ -29,7 +29,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
 	"github.com/NVIDIA/nodewright/agent/internal/execution"
@@ -77,6 +79,73 @@ func newStepOptions(path string, opts ...Option) stepOptions {
 		&value.idempotence,
 	)
 	return value
+}
+
+func newExecutionMetadata(
+	arguments []string,
+	returnCodes []command.ExitCode,
+	onHost bool,
+) ExecutionMetadata {
+	return ExecutionMetadata{
+		Arguments:   slices.Clone(arguments),
+		ReturnCodes: slices.Clone(returnCodes),
+		OnHost:      onHost,
+	}
+}
+
+// FormatLegacyArguments formats arguments for legacy-agent-compatible state and output.
+func FormatLegacyArguments(values []string) string {
+	encoded := make([]string, len(values))
+	for index, value := range values {
+		encoded[index] = formatLegacyString(value)
+	}
+	return "[" + strings.Join(encoded, ", ") + "]"
+}
+
+// FormatLegacyReturnCodes formats return codes for legacy-agent-compatible state and output.
+func FormatLegacyReturnCodes(values []command.ExitCode) string {
+	encoded := make([]string, len(values))
+	for index, value := range values {
+		encoded[index] = strconv.Itoa(int(value))
+	}
+	return "[" + strings.Join(encoded, ", ") + "]"
+}
+
+func formatLegacyString(value string) string {
+	quote := '\''
+	if strings.ContainsRune(value, '\'') && !strings.ContainsRune(value, '"') {
+		quote = '"'
+	}
+	var encoded strings.Builder
+	encoded.WriteRune(quote)
+	for _, value := range value {
+		switch value {
+		case '\\':
+			encoded.WriteString(`\\`)
+		case quote:
+			encoded.WriteRune('\\')
+			encoded.WriteRune(value)
+		case '\t':
+			encoded.WriteString(`\t`)
+		case '\n':
+			encoded.WriteString(`\n`)
+		case '\r':
+			encoded.WriteString(`\r`)
+		default:
+			switch {
+			case unicode.IsPrint(value):
+				encoded.WriteRune(value)
+			case value <= 0xff:
+				_, _ = fmt.Fprintf(&encoded, `\x%02x`, value)
+			case value <= 0xffff:
+				_, _ = fmt.Fprintf(&encoded, `\u%04x`, value)
+			default:
+				_, _ = fmt.Fprintf(&encoded, `\U%08x`, value)
+			}
+		}
+	}
+	encoded.WriteRune(quote)
+	return encoded.String()
 }
 
 // WithName overrides the default name, which otherwise falls back to the script path.
@@ -192,6 +261,7 @@ func runStep(
 		command.WithEnvironment(environment),
 		command.WithStdout(config.Stdout()),
 		command.WithStderr(config.Stderr()),
+		command.WithRequiredPermissions(0o111),
 	)
 
 	result, err := runner.Run(ctx, cmd)

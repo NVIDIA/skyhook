@@ -79,7 +79,7 @@ var CheckToApply = map[Stage]Stage{
 	PostInterruptCheck: PostInterrupt,
 }
 
-// nonStepStages is the Go counterpart to Python's NON_STEP_MODES list.
+// nonStepStages is the Go counterpart to the legacy NON_STEP_MODES list.
 // A "non-step" stage is one the agent dispatches without an apply/check
 // companion: Interrupt today, possibly more in the future. Adding a
 // stage here is enough to exclude it from IsStepStage.
