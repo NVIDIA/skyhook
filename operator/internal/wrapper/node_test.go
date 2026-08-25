@@ -243,9 +243,53 @@ var _ = Describe("SkyhookNode", func() {
 			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
 			Expect(err).ToNot(HaveOccurred())
 
-			sn.Cordon()
+			Expect(sn.Cordon()).To(BeTrue())
 
 			Expect(node.Spec.Unschedulable).To(BeTrue())
+			Expect(node.Annotations).To(HaveKeyWithValue(myCordonKey, cordonAnnotationValue))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+
+		// The caller uses the return value to decide whether the cordon still needs to
+		// reach the API server before it is safe to start evicting.
+		It("should report no change when the cordon is already recorded", func() {
+			myCordonKey := cordonAnnotationKey("my-skyhook")
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						myCordonKey: cordonAnnotationValue,
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(sn.Cordon()).To(BeFalse())
+			Expect(sn.Changed()).To(BeFalse())
+		})
+
+		It("should report a change when another Skyhook already cordoned the node", func() {
+			myCordonKey := cordonAnnotationKey("my-skyhook")
+			otherCordonKey := cordonAnnotationKey("other-skyhook")
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						otherCordonKey: cordonAnnotationValue,
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			// Unschedulable is already set, but this Skyhook's ownership annotation is
+			// not persisted yet, and Uncordon keys off that annotation.
+			Expect(sn.Cordon()).To(BeTrue())
 			Expect(node.Annotations).To(HaveKeyWithValue(myCordonKey, cordonAnnotationValue))
 			Expect(sn.Changed()).To(BeTrue())
 		})

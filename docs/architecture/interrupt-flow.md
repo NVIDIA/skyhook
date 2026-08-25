@@ -81,6 +81,22 @@ The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyFo
 - Ensure the node is ready before proceeding with package operations
 - Handle the timing and sequencing of all stages
 
+### Cordon Is Durable Before Drain Starts
+
+The cordon and the drain are deliberately split across two reconcile passes. The
+operator applies the cordon in memory and writes it to the API server at the end
+of the pass, together with every other node it selected. Draining does not begin
+until a later pass observes `spec.unschedulable` already set on the node.
+
+This matters because eviction is what triggers a replacement pod. If the operator
+evicted in the same pass that first cordoned the node, `spec.unschedulable` would
+still be local to the controller, and the scheduler could place the replacement
+back onto a node that is about to be interrupted.
+
+The split costs one reconcile per drain cycle, not one per node: a single pass
+still cordons every node it selected, so a batch of nodes is cordoned together
+and then drained together on the following pass.
+
 ### Shared Cordon Ownership
 
 Each NodeWright that cordons a node records ownership with a `nodewright.nvidia.com/cordon_<nodewright-name>` annotation. When that NodeWright completes, it removes only its own cordon annotation. The node is marked schedulable only after no `nodewright.nvidia.com/cordon_*` annotations remain, so one NodeWright cannot uncordon a node that another NodeWright is still preparing for interrupt work.
