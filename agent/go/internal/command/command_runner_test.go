@@ -78,4 +78,51 @@ var _ = Describe("commandRunner", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o700)))
 	})
+
+	It("adds required executable permissions without clearing existing bits", func() {
+		executable := filepath.Join(GinkgoT().TempDir(), "helper")
+		data, err := os.ReadFile(commandTestExecutable())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(executable, data, 0o640)).To(Succeed())
+
+		cmd := NewCommand(
+			executable,
+			WithArguments("-test.run=^TestCommand$", "--", "exit", "0"),
+			WithRequiredPermissions(0o111),
+		)
+		result, err := NewRunner().Run(context.Background(), cmd)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ExitCode).To(Equal(SuccessExitCode))
+		info, err := os.Stat(executable)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o751)))
+	})
+
+	It("strips privilege bits when adding executable permissions", func() {
+		executable := filepath.Join(GinkgoT().TempDir(), "helper")
+		data, err := os.ReadFile(commandTestExecutable())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.WriteFile(executable, data, 0o640)).To(Succeed())
+		Expect(os.Chmod(executable, 0o640|os.ModeSetuid)).To(Succeed())
+		before, err := os.Stat(executable)
+		Expect(err).NotTo(HaveOccurred())
+		if before.Mode()&os.ModeSetuid == 0 {
+			Skip("test filesystem does not preserve setuid mode bits")
+		}
+
+		cmd := NewCommand(
+			executable,
+			WithArguments("-test.run=^TestCommand$", "--", "exit", "0"),
+			WithRequiredPermissions(0o111),
+		)
+		result, err := NewRunner().Run(context.Background(), cmd)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.ExitCode).To(Equal(SuccessExitCode))
+		after, err := os.Stat(executable)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(after.Mode() & os.ModeSetuid).To(BeZero())
+		Expect(after.Mode().Perm()).To(Equal(os.FileMode(0o751)))
+	})
 })

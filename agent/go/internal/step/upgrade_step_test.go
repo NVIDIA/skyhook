@@ -150,6 +150,8 @@ printf 'environment=%s,%s\n' "$PREVIOUS_VERSION" "$CURRENT_VERSION"
 		)
 		Expect(err).NotTo(HaveOccurred())
 		runnable := u.WithVersions("previous", "current")
+		Expect(runnable.ExecutionMetadata().Arguments).To(Equal([]string{"previous", "current"}))
+		Expect(u.ExecutionMetadata().Arguments).To(BeEmpty())
 
 		status, err := runnable.Run(
 			context.Background(),

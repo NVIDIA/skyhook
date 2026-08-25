@@ -44,7 +44,7 @@ import (
 // step can enforce on its own.
 
 // schemaFS holds the authoritative JSON Schemas the agent validates package
-// configs against. They are copied byte-for-byte from the Python agent's
+// configs against. They are copied byte-for-byte from the legacy agent's
 // schemas/ tree and embedded so the binary stays a single static artifact.
 //
 //go:embed schemas/v1/*.json

@@ -217,18 +217,11 @@ func (l Layout) packageLogDir(cfg config.Config, stepPath string) (string, error
 }
 
 func validatePackagePath(cfg config.Config) error {
-	if err := validatePathComponent("package name", cfg.PackageName); err != nil {
+	if err := hostfs.ValidatePathComponent("package name", cfg.PackageName); err != nil {
 		return err
 	}
-	if err := validatePathComponent("package version", cfg.PackageVersion); err != nil {
+	if err := hostfs.ValidatePathComponent("package version", cfg.PackageVersion); err != nil {
 		return err
-	}
-	return nil
-}
-
-func validatePathComponent(name, value string) error {
-	if value == "" || value == "." || !filepath.IsLocal(value) || filepath.Base(value) != value {
-		return fmt.Errorf("%s %q must be a single path component", name, value)
 	}
 	return nil
 }

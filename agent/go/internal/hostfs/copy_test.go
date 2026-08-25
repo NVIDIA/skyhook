@@ -148,6 +148,51 @@ var _ = Describe("filesystem copying", func() {
 		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o640)))
 	})
 
+	It("dereferences symbolic links in compatibility copy trees", func() {
+		root := GinkgoT().TempDir()
+		source := GinkgoT().TempDir()
+		linkedDirectory := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(linkedDirectory, "step"), []byte("contents"), 0o640)).To(Succeed())
+		Expect(os.Symlink(linkedDirectory, filepath.Join(source, "linked"))).To(Succeed())
+
+		Expect(CopyTreeFollowingSymlinks(root, source, filepath.Join(root, "destination"))).To(Succeed())
+
+		copied := filepath.Join(root, "destination", "linked", "step")
+		data, err := os.ReadFile(copied)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(Equal("contents"))
+		info, err := os.Lstat(filepath.Join(root, "destination", "linked"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.IsDir()).To(BeTrue())
+	})
+
+	It("follows contained relative links at compatibility copy destinations", func() {
+		root := GinkgoT().TempDir()
+		source := filepath.Join(GinkgoT().TempDir(), "source")
+		Expect(os.WriteFile(source, []byte("contents"), 0o640)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(root, "usr", "lib"), 0o755)).To(Succeed())
+		Expect(os.Symlink("usr/lib", filepath.Join(root, "lib"))).To(Succeed())
+
+		Expect(CopyFileFollowingSymlinks(root, source, filepath.Join(root, "lib", "package"))).To(Succeed())
+
+		data, err := os.ReadFile(filepath.Join(root, "usr", "lib", "package"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(Equal("contents"))
+	})
+
+	It("rejects destination links that escape compatibility copy roots", func() {
+		root := GinkgoT().TempDir()
+		source := filepath.Join(GinkgoT().TempDir(), "source")
+		outside := GinkgoT().TempDir()
+		Expect(os.WriteFile(source, []byte("contents"), 0o640)).To(Succeed())
+		Expect(os.Symlink(outside, filepath.Join(root, "linked"))).To(Succeed())
+
+		err := CopyFileFollowingSymlinks(root, source, filepath.Join(root, "linked", "package"))
+
+		Expect(err).To(HaveOccurred())
+		Expect(filepath.Join(outside, "package")).NotTo(BeAnExistingFile())
+	})
+
 	It("rejects a symbolic link as an optional copy source", func() {
 		root := GinkgoT().TempDir()
 		source := filepath.Join(root, "source")
