@@ -42,15 +42,15 @@ const (
 	defaultRootMount = "/root"
 	defaultDataDir   = "/skyhook-package"
 
-	copyResolverEnv    = "COPY_RESOLV"
-	alwaysRunEnv       = "OVERLAY_ALWAYS_RUN_STEP"
-	resourceIDEnv      = "SKYHOOK_RESOURCE_ID"
-	dataDirEnv         = "SKYHOOK_DATA_DIR"
-	stateRootEnv       = "SKYHOOK_ROOT_DIR"
-	logRootEnv         = "SKYHOOK_LOG_DIR"
-	bufferLimitEnv     = "SKYHOOK_AGENT_BUFFER_LIMIT"
-	writeLogsEnv       = "SKYHOOK_AGENT_WRITE_LOGS"
-	defaultBufferLimit = "8192"
+	copyResolverEnv          = "COPY_RESOLV"
+	alwaysRunEnv             = "OVERLAY_ALWAYS_RUN_STEP"
+	resourceIDEnv            = "SKYHOOK_RESOURCE_ID"
+	dataDirEnv               = "SKYHOOK_DATA_DIR"
+	stateRootEnv             = "SKYHOOK_ROOT_DIR"
+	logRootEnv               = "SKYHOOK_LOG_DIR"
+	legacyBufferLimitEnv     = "SKYHOOK_AGENT_BUFFER_LIMIT"
+	writeLogsEnv             = "SKYHOOK_AGENT_WRITE_LOGS"
+	defaultLegacyBufferLimit = "8192"
 )
 
 // ExitCode is the process result returned by Agent.Run.
@@ -73,7 +73,6 @@ type runtimeConfig struct {
 	dataDir       string
 	stateRoot     string
 	logRoot       string
-	bufferLimit   string
 	resourceID    string
 	alwaysRunStep bool
 	writeLogs     bool
@@ -209,14 +208,13 @@ func parseRequest(arguments []string) (request, error) {
 
 func runtimeFromEnvironment(stdout, stderr io.Writer, logger *slog.Logger) runtimeConfig {
 	runtime := normalizeRuntime(runtimeConfig{
-		dataDir:     envOrDefault(dataDirEnv, defaultDataDir),
-		stateRoot:   envOrDefault(stateRootEnv, flags.DefaultStateRoot),
-		logRoot:     envOrDefault(logRootEnv, flags.DefaultLogRoot),
-		bufferLimit: envOrDefault(bufferLimitEnv, defaultBufferLimit),
-		resourceID:  os.Getenv(resourceIDEnv),
-		stdout:      stdout,
-		stderr:      stderr,
-		logger:      logger,
+		dataDir:    envOrDefault(dataDirEnv, defaultDataDir),
+		stateRoot:  envOrDefault(stateRootEnv, flags.DefaultStateRoot),
+		logRoot:    envOrDefault(logRootEnv, flags.DefaultLogRoot),
+		resourceID: os.Getenv(resourceIDEnv),
+		stdout:     stdout,
+		stderr:     stderr,
+		logger:     logger,
 	})
 	runtime.alwaysRunStep = envBool(alwaysRunEnv, false, runtime.logger)
 	runtime.writeLogs = envBool(writeLogsEnv, true, runtime.logger)
@@ -251,7 +249,7 @@ func printStartupBanner(output io.Writer, req request, runtime runtimeConfig) er
 		"SKYHOOK_DATA_DIR: " + runtime.dataDir,
 		"SKYHOOK_ROOT_DIR: " + runtime.stateRoot,
 		"SKYHOOK_LOG_DIR: " + runtime.logRoot,
-		"SKYHOOK_AGENT_BUFFER_LIMIT: " + runtime.bufferLimit,
+		"SKYHOOK_AGENT_BUFFER_LIMIT: " + envOrDefault(legacyBufferLimitEnv, defaultLegacyBufferLimit),
 		"SKYHOOK_AGENT_WRITE_LOGS: " + formatLegacyBool(runtime.writeLogs),
 		"Directory CONFIGURATION",
 		"flag_dir: " + filepath.Join(runtime.stateRoot, "flags", cfg.PackageName, cfg.PackageVersion),
@@ -308,9 +306,6 @@ func normalizeRuntime(runtime runtimeConfig) runtimeConfig {
 	if runtime.logRoot == "" {
 		runtime.logRoot = flags.DefaultLogRoot
 	}
-	if runtime.bufferLimit == "" {
-		runtime.bufferLimit = defaultBufferLimit
-	}
 	if runtime.stdout == nil {
 		runtime.stdout = os.Stdout
 	}
@@ -337,7 +332,7 @@ func validateRun(ctx context.Context, req request, runtime runtimeConfig) error 
 		return fmt.Errorf("running agent: data directory %q is not absolute", runtime.dataDir)
 	}
 	if req.stage == stage.Interrupt {
-		if err := validatePathComponent("resource ID", runtime.resourceID); err != nil {
+		if err := hostfs.ValidatePathComponent("resource ID", runtime.resourceID); err != nil {
 			return fmt.Errorf("running agent: %w", err)
 		}
 	}
@@ -360,13 +355,6 @@ func validateRequest(req request) error {
 		}
 	} else if req.interruptData != "" {
 		return fmt.Errorf("stage %q does not accept interrupt data", req.stage)
-	}
-	return nil
-}
-
-func validatePathComponent(name, value string) error {
-	if value == "" || value == "." || !filepath.IsLocal(value) || filepath.Base(value) != value {
-		return fmt.Errorf("%s %q must be a single path component", name, value)
 	}
 	return nil
 }

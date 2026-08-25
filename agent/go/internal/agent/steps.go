@@ -39,7 +39,6 @@ import (
 const (
 	startFlagName        = "START"
 	checkResultsFlagName = "check_results"
-	logFileMode          = 0o600
 )
 
 func runSteps(
@@ -124,7 +123,7 @@ func runSteps(
 				continue
 			}
 		}
-		if err := writeStepHeader(runtime.stdout, req.stage, configuredStep); err != nil {
+		if err := writeStepHeader(runtime.stdout, req.stage, runnableStep); err != nil {
 			return execution.StatusFailed, fmt.Errorf(
 				"writing execution header for step %q: %w",
 				configuredStep.Path(),
@@ -132,7 +131,21 @@ func runSteps(
 			)
 		}
 
-		status, err := runStep(ctx, req, runtime, layout, cfg, runnableStep)
+		var markComplete func() error
+		if !isCheck {
+			markComplete = func() error {
+				message := fmt.Sprintf(
+					"last_run: %s\nstep_always_runs: %t",
+					time.Now().UTC().Format(time.RFC3339Nano),
+					configuredStep.Idempotence() == step.Disabled,
+				)
+				if _, err := flagStore.Mark(configuredStep, message); err != nil {
+					return fmt.Errorf("marking step %q complete: %w", configuredStep.Path(), err)
+				}
+				return nil
+			}
+		}
+		status, err := runStep(ctx, req, runtime, layout, cfg, runnableStep, markComplete)
 		if err != nil {
 			return execution.StatusFailed, err
 		}
@@ -145,18 +158,6 @@ func runSteps(
 		}
 		if status != execution.StatusSuccess {
 			return execution.StatusFailed, nil
-		}
-		message := fmt.Sprintf(
-			"last_run: %s\nstep_always_runs: %t",
-			time.Now().UTC().Format(time.RFC3339Nano),
-			configuredStep.Idempotence() == step.Disabled,
-		)
-		if _, err := flagStore.Mark(configuredStep, message); err != nil {
-			return execution.StatusFailed, fmt.Errorf(
-				"marking step %q complete: %w",
-				configuredStep.Path(),
-				err,
-			)
 		}
 	}
 
@@ -216,71 +217,43 @@ func runStep(
 	layout flags.Layout,
 	cfg config.Config,
 	value step.Step,
+	markComplete func() error,
 ) (execution.Status, error) {
-	stdout, stderr := runtime.stdout, runtime.stderr
-	closeLog := func() error { return nil }
-	var logFiles flags.LogFiles
-	if runtime.writeLogs {
-		_, file, err := layout.CreateLogFile(cfg, value.Path(), time.Now(), logFileMode)
-		if err != nil {
-			return execution.StatusFailed, fmt.Errorf("preparing log for step %q: %w", value.Path(), err)
-		}
-		stdout = io.MultiWriter(stdout, file)
-		stderr = io.MultiWriter(stderr, file)
-		closeLog = file.Close
-		logFiles, err = layout.LogFilePattern(cfg, value.Path())
-		if err != nil {
-			return execution.StatusFailed, errors.Join(
-				fmt.Errorf("resolving log retention for step %q: %w", value.Path(), err),
-				finalizeStepLog(false, closeLog, flags.LogFiles{}, value.Path()),
-			)
-		}
+	operation := fmt.Sprintf("step %q", value.Path())
+	operationLog, err := prepareOperationLog(runtime, layout, cfg, value.Path(), operation)
+	if err != nil {
+		return execution.StatusFailed, err
 	}
 
 	runConfig, err := execution.NewConfig(
 		execution.WithRootMount(req.rootMount),
 		execution.WithStepRoot(flags.StepsDir(req.copyDir)),
 		execution.WithSkyhookDir(req.copyDir),
-		execution.WithRunOutput(stdout, stderr),
+		execution.WithRunOutput(operationLog.stdout, operationLog.stderr),
 	)
 	if err != nil {
 		return execution.StatusFailed, errors.Join(
 			fmt.Errorf("configuring step %q execution: %w", value.Path(), err),
-			finalizeStepLog(runtime.writeLogs, closeLog, logFiles, value.Path()),
+			operationLog.finalize(),
 		)
 	}
 	status, runErr := value.Run(ctx, runConfig)
-	finalizeErr := finalizeStepLog(runtime.writeLogs, closeLog, logFiles, value.Path())
-	if runErr != nil || finalizeErr != nil {
+	var markErr error
+	if runErr == nil && status == execution.StatusSuccess && markComplete != nil {
+		markErr = markComplete()
+	}
+	finalizeErr := operationLog.finalize()
+	if runErr != nil || markErr != nil || finalizeErr != nil {
 		if runErr != nil {
 			runErr = fmt.Errorf("running step %q: %w", value.Path(), runErr)
 		}
 		return execution.StatusFailed, errors.Join(
 			runErr,
+			markErr,
 			finalizeErr,
 		)
 	}
 	return status, nil
-}
-
-func finalizeStepLog(
-	writeLogs bool,
-	closeLog func() error,
-	logFiles flags.LogFiles,
-	stepPath string,
-) error {
-	closeErr := closeLog()
-	if closeErr != nil {
-		closeErr = fmt.Errorf("closing log for step %q: %w", stepPath, closeErr)
-	}
-	var cleanupErr error
-	if writeLogs {
-		cleanupErr = flags.CleanupOldLogs(logFiles, flags.DefaultLogRetention)
-		if cleanupErr != nil {
-			cleanupErr = fmt.Errorf("cleaning old logs for step %q: %w", stepPath, cleanupErr)
-		}
-	}
-	return errors.Join(closeErr, cleanupErr)
 }
 
 type checkResult struct {

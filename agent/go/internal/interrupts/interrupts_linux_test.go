@@ -20,10 +20,12 @@ package interrupts
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/NVIDIA/nodewright/agent/internal/execution"
 
@@ -58,11 +60,16 @@ var _ = Describe("interrupt chroot execution", func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 
+		restartContext, cancelRestart := context.WithTimeout(context.Background(), time.Second)
+		status, err := NodeRestart{}.Run(restartContext, config)
+		cancelRestart()
+		Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
+		Expect(status).To(Equal(execution.StatusFailed))
+
 		for _, testCase := range []struct {
 			interrupt Interrupt
 			status    execution.Status
 		}{
-			{interrupt: NodeRestart{}, status: execution.StatusFailed},
 			{interrupt: ServiceRestart{Services: []string{"containerd", "kubelet"}}, status: execution.StatusSuccess},
 			{interrupt: RestartAllServices{}, status: execution.StatusSuccess},
 		} {

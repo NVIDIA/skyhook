@@ -77,7 +77,11 @@ func (s UpgradeStep) Idempotence() Idempotence {
 // ExecutionMetadata reports the upgrade step's configured command settings.
 func (s UpgradeStep) ExecutionMetadata() ExecutionMetadata {
 	s.applyDefaults()
-	return newExecutionMetadata(s.Arguments, s.Returncodes, s.OnHost)
+	arguments := s.Arguments
+	if s.versions != nil {
+		arguments = []string{s.versions.previous, s.versions.current}
+	}
+	return newExecutionMetadata(arguments, s.Returncodes, s.OnHost)
 }
 
 // WithVersions returns a copy prepared with version environment and arguments.

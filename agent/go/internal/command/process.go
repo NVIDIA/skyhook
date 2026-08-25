@@ -60,6 +60,8 @@ func applyExecutablePermissions(
 	}
 	permissions := command.Permissions
 	if command.RequiredPermissions != 0 {
+		// When chmod is needed, preserve ordinary access bits only rather than
+		// carrying set-ID or sticky privileges from a package-provided step file.
 		permissions = info.Mode().Perm() | command.RequiredPermissions
 	}
 	if info.Mode().Perm() == permissions {

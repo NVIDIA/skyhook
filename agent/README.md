@@ -85,13 +85,14 @@ There are a number of environment variables that can be used to control how the 
 1. `OVERLAY_ALWAYS_RUN_STEP` if set to `"true"` it will ignore any step flags and always run every step. A warning is logged if it sees a flag file.
 1. `SKYHOOK_AGENT_WRITE_LOGS` defaults to `"true"`. Step and interrupt output is streamed directly to stdout/stderr and also written under `SKYHOOK_LOG_DIR`. Set it to `"false"` to stream without retaining host log files.
 
-`SKYHOOK_AGENT_BUFFER_LIMIT` applies only to the legacy agent. The Go agent
-streams command output directly and does not buffer it.
+`SKYHOOK_AGENT_BUFFER_LIMIT` is printed in the startup banner for legacy output
+compatibility, but it has no effect in the Go agent. The Go agent streams
+command output directly and does not buffer it.
 
-The following environment variables are required and are expected to be set by either the build system or skyhook-operator. It is not recommended that they be changed manually.
+The following environment variable is required and is expected to be set by
+the NodeWright operator. It is not recommended that it be changed manually.
 
-1. `OVERLAY_FRAMEWORK_VERSION` is the version of the current overlay. It is expected that this gets set by the docker build system. It is required to be able to manage the history file. It must be in the format of `{package name}-{version}`.
-1. `SKYHOOK_RESOURCE_ID` is used to determine if an interrupt should be rerun. Interrupts are only run once per `SKYHOOK_RESOURCE_ID`. Skyhook operator should make this unique per configuration of the package.
+1. `SKYHOOK_RESOURCE_ID` is used to determine if an interrupt should be rerun. Interrupts are only run once per `SKYHOOK_RESOURCE_ID`. The NodeWright operator makes this unique per package configuration.
 
 The following environment variables are optional and use the documented defaults when unset:
 

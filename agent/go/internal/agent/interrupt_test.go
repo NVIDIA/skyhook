@@ -263,7 +263,7 @@ var _ = Describe("interrupt orchestration", func() {
 		status, err := runInterrupt(context.Background(), req, runtime, layout, value)
 
 		Expect(status).To(Equal(execution.StatusFailed))
-		Expect(err).To(MatchError(ContainSubstring("cleaning old interrupt logs")))
+		Expect(err).To(MatchError(ContainSubstring("cleaning old logs for interrupt")))
 		marker := filepath.Join(
 			layout.StateDir(), interruptsDirName, interruptFlagsDirName,
 			runtime.resourceID, "service_restart_0.complete",

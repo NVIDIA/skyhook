@@ -22,7 +22,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 	"time"
@@ -108,47 +107,35 @@ func runInterrupt(
 		}
 	}()
 
-	stdout, stderr := runtime.stdout, runtime.stderr
-	closeLog := func() error { return nil }
-	closeLogErr := func() error {
-		if err := closeLog(); err != nil {
-			return fmt.Errorf("closing interrupt log: %w", err)
-		}
-		return nil
-	}
-	var logFiles flags.LogFiles
+	logConfig := config.Config{}
 	if runtime.writeLogs {
-		logConfig, err := configFromResourceID(runtime.resourceID)
+		logConfig, err = configFromResourceID(runtime.resourceID)
 		if err != nil {
 			return execution.StatusFailed, fmt.Errorf("resolving interrupt log identity: %w", err)
 		}
-		logName := filepath.Join(interruptsDirName, string(interruptType))
-		_, file, err := layout.CreateLogFile(logConfig, logName, time.Now(), logFileMode)
-		if err != nil {
-			return execution.StatusFailed, fmt.Errorf("preparing log for interrupt %q: %w", interruptType, err)
-		}
-		stdout = io.MultiWriter(stdout, file)
-		stderr = io.MultiWriter(stderr, file)
-		closeLog = file.Close
-		logFiles, err = layout.LogFilePattern(logConfig, logName)
-		if err != nil {
-			return execution.StatusFailed, errors.Join(
-				fmt.Errorf("resolving log retention for interrupt %q: %w", interruptType, err),
-				closeLogErr(),
-			)
-		}
+	}
+	logName := filepath.Join(interruptsDirName, string(interruptType))
+	operationLog, err := prepareOperationLog(
+		runtime,
+		layout,
+		logConfig,
+		logName,
+		fmt.Sprintf("interrupt %q", interruptType),
+	)
+	if err != nil {
+		return execution.StatusFailed, err
 	}
 
 	runConfig, err := execution.NewConfig(
 		execution.WithRootMount(req.rootMount),
 		execution.WithStepRoot(flags.StepsDir(req.copyDir)),
 		execution.WithSkyhookDir(req.copyDir),
-		execution.WithRunOutput(stdout, stderr),
+		execution.WithRunOutput(operationLog.stdout, operationLog.stderr),
 	)
 	if err != nil {
 		return execution.StatusFailed, errors.Join(
 			fmt.Errorf("configuring interrupt %q execution: %w", interruptType, err),
-			closeLogErr(),
+			operationLog.finalize(),
 		)
 	}
 	if interruptType == interrupts.NodeRestartType {
@@ -165,22 +152,14 @@ func runInterrupt(
 		completedOperations,
 		completeMarkers,
 	)
-	closeErr := closeLogErr()
-	var cleanupErr error
-	if runtime.writeLogs {
-		cleanupErr = flags.CleanupOldLogs(logFiles, flags.DefaultLogRetention)
-	}
-	if runErr != nil || closeErr != nil || cleanupErr != nil {
+	finalizeErr := operationLog.finalize()
+	if runErr != nil || finalizeErr != nil {
 		if runErr != nil {
 			runErr = fmt.Errorf("running interrupt %q: %w", interruptType, runErr)
 		}
-		if cleanupErr != nil {
-			cleanupErr = fmt.Errorf("cleaning old interrupt logs: %w", cleanupErr)
-		}
 		return execution.StatusFailed, errors.Join(
 			runErr,
-			closeErr,
-			cleanupErr,
+			finalizeErr,
 		)
 	}
 	if status != execution.StatusSuccess {
@@ -364,10 +343,10 @@ func configFromResourceID(resourceID string) (config.Config, error) {
 	}
 	packageName := resourceID[packageSeparator+1 : versionSeparator]
 	packageVersion := resourceID[versionSeparator+1:]
-	if err := validatePathComponent("package name", packageName); err != nil {
+	if err := hostfs.ValidatePathComponent("package name", packageName); err != nil {
 		return config.Config{}, err
 	}
-	if err := validatePathComponent("package version", packageVersion); err != nil {
+	if err := hostfs.ValidatePathComponent("package version", packageVersion); err != nil {
 		return config.Config{}, err
 	}
 	return config.Config{PackageName: packageName, PackageVersion: packageVersion}, nil

@@ -21,14 +21,17 @@ import (
 	"errors"
 	"fmt"
 	"syscall"
+	"time"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
 	"github.com/NVIDIA/nodewright/agent/internal/execution"
 )
 
-// NodeRestart runs reboot inside the configured root mount. A SIGTERM from
-// userspace shutdown marks the reboot complete even when command execution
-// ends with context cancellation or a deadline.
+const nodeRestartConfirmationTimeout = 10 * time.Second
+
+// NodeRestart runs reboot inside the configured root mount. A SIGTERM that
+// terminates the reboot command proves shutdown began; an exit-zero command
+// waits briefly so an enqueued reboot is not reported as an immediate failure.
 type NodeRestart struct{}
 
 var _ Interrupt = NodeRestart{}
@@ -59,10 +62,19 @@ func (n NodeRestart) Run(ctx context.Context, config execution.Config) (executio
 	if result.Signal != nil || result.ExitCode != command.SuccessExitCode {
 		return execution.StatusFailed, nil
 	}
-	// An exit-zero reboot only proves shutdown was enqueued. Report failure so
-	// the interrupt pod retries after the node returns and the boot-ID marker can
-	// prove that a reboot actually occurred.
-	return execution.StatusFailed, nil
+	return execution.StatusFailed, waitForNodeRestart(ctx, nodeRestartConfirmationTimeout)
+}
+
+func waitForNodeRestart(ctx context.Context, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("waiting for host restart: %w", ctx.Err())
+	case <-timer.C:
+		return fmt.Errorf("reboot was enqueued but the host did not restart within %s", timeout)
+	}
 }
 
 func nodeRestartCompleted(result command.Result) bool {

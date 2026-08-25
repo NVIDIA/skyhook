@@ -29,10 +29,10 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
-	defer stop()
 
 	nodewrightAgent := agent.New()
 	exitCode := nodewrightAgent.Run(ctx, os.Args[1:], os.Stdout, os.Stderr)
 
+	stop()
 	os.Exit(int(exitCode))
 }

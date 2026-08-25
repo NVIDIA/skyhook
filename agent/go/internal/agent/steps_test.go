@@ -146,6 +146,34 @@ var _ = Describe("step orchestration", func() {
 		Expect(status).To(Equal(execution.StatusSuccess))
 	})
 
+	It("prints resolved package versions in an upgrade step header", func() {
+		req.stage = stage.Upgrade
+		versions := history.Versions{Previous: "1.0.0", Current: "1.2.3"}
+		historyStore.EXPECT().Read().Return(versions, nil).Once()
+		value, err := step.NewUpgradeStep("upgrade.sh", step.WithOnHost(false))
+		Expect(err).NotTo(HaveOccurred())
+		cfg.Modes[stage.Upgrade] = []step.Step{value}
+		stepDirectory := filepath.Join(root, "packages", "package", "skyhook_dir")
+		Expect(os.MkdirAll(stepDirectory, 0o755)).To(Succeed())
+		Expect(os.WriteFile(
+			filepath.Join(stepDirectory, value.Path()),
+			[]byte("#!/bin/sh\nexit 0\n"),
+			0o700,
+		)).To(Succeed())
+		output := &bytes.Buffer{}
+		runtime.stdout = output
+
+		status, err := runSteps(
+			context.Background(), req, runtime, layout, cfg, flagStore, historyStore,
+		)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+		Expect(output.String()).To(Equal(
+			"upgrade upgrade.sh ['1.0.0', '1.2.3'] [0] Idempotence.Auto False\n",
+		))
+	})
+
 	It("formats step headers like the legacy agent", func() {
 		value := step.NewRegularStep(
 			"apply.sh",
@@ -332,6 +360,39 @@ var _ = Describe("step orchestration", func() {
 		))
 	})
 
+	It("marks a successful step complete before log cleanup", func() {
+		runtime.writeLogs = true
+		logDirectory := filepath.Join(layout.LogDir(), cfg.PackageName, cfg.PackageVersion)
+		savedLogDirectory := logDirectory + "-saved"
+		outside := GinkgoT().TempDir()
+		value := newMockStep("apply.sh")
+		value.EXPECT().
+			Run(mock.Anything, mock.Anything).
+			Run(func(context.Context, execution.Config) {
+				Expect(os.Rename(logDirectory, savedLogDirectory)).To(Succeed())
+				Expect(os.Symlink(outside, logDirectory)).To(Succeed())
+			}).
+			Return(execution.StatusSuccess, nil).
+			Once()
+		cfg.Modes[stage.Apply] = []step.Step{value}
+
+		status, err := runSteps(
+			context.Background(), req, runtime, layout, cfg, flagStore, historyStore,
+		)
+
+		Expect(status).To(Equal(execution.StatusFailed))
+		Expect(err).To(MatchError(ContainSubstring("cleaning old logs for step")))
+		completionFlag, err := flagStore.Path(value)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(completionFlag).To(BeAnExistingFile())
+
+		status, err = runSteps(
+			context.Background(), req, runtime, layout, cfg, flagStore, historyStore,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+	})
+
 	It("cleans old retained logs after repeated runtime errors", func() {
 		runtime.writeLogs = true
 		value := newMockStep("apply.sh")
@@ -341,7 +402,7 @@ var _ = Describe("step orchestration", func() {
 			Times(flags.DefaultLogRetention + 2)
 
 		for range flags.DefaultLogRetention + 2 {
-			status, err := runStep(context.Background(), req, runtime, layout, cfg, value)
+			status, err := runStep(context.Background(), req, runtime, layout, cfg, value, nil)
 			Expect(status).To(Equal(execution.StatusFailed))
 			Expect(err).To(MatchError(ContainSubstring("run failed")))
 		}

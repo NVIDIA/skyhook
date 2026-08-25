@@ -120,7 +120,7 @@ var _ = Describe("runtime environment", func() {
 			dataDirEnv,
 			stateRootEnv,
 			logRootEnv,
-			bufferLimitEnv,
+			legacyBufferLimitEnv,
 			writeLogsEnv,
 		} {
 			unsetEnvironment(name)
@@ -131,7 +131,6 @@ var _ = Describe("runtime environment", func() {
 		Expect(runtime.dataDir).To(Equal(defaultDataDir))
 		Expect(runtime.stateRoot).To(Equal(flags.DefaultStateRoot))
 		Expect(runtime.logRoot).To(Equal(flags.DefaultLogRoot))
-		Expect(runtime.bufferLimit).To(Equal(defaultBufferLimit))
 		Expect(runtime.resourceID).To(BeEmpty())
 		Expect(runtime.alwaysRunStep).To(BeFalse())
 		Expect(runtime.writeLogs).To(BeTrue())
@@ -148,7 +147,6 @@ var _ = Describe("runtime environment", func() {
 		GinkgoT().Setenv(dataDirEnv, "/data")
 		GinkgoT().Setenv(stateRootEnv, "/state")
 		GinkgoT().Setenv(logRootEnv, "/logs")
-		GinkgoT().Setenv(bufferLimitEnv, "4096")
 		GinkgoT().Setenv(writeLogsEnv, "false")
 		stdout := &bytes.Buffer{}
 		stderr := &bytes.Buffer{}
@@ -159,7 +157,6 @@ var _ = Describe("runtime environment", func() {
 		Expect(runtime.dataDir).To(Equal("/data"))
 		Expect(runtime.stateRoot).To(Equal("/state"))
 		Expect(runtime.logRoot).To(Equal("/logs"))
-		Expect(runtime.bufferLimit).To(Equal("4096"))
 		Expect(runtime.resourceID).To(Equal("resource"))
 		Expect(runtime.alwaysRunStep).To(BeTrue())
 		Expect(runtime.writeLogs).To(BeFalse())
@@ -199,6 +196,7 @@ var _ = Describe("Agent.Run", func() {
 		GinkgoT().Setenv(stateRootEnv, "/state")
 		GinkgoT().Setenv(logRootEnv, "/logs")
 		GinkgoT().Setenv(writeLogsEnv, "false")
+		GinkgoT().Setenv(legacyBufferLimitEnv, "4096")
 	})
 
 	It("defines process exit codes", func() {
@@ -240,7 +238,7 @@ var _ = Describe("Agent.Run", func() {
 				"SKYHOOK_DATA_DIR: %s\n"+
 				"SKYHOOK_ROOT_DIR: /state\n"+
 				"SKYHOOK_LOG_DIR: /logs\n"+
-				"SKYHOOK_AGENT_BUFFER_LIMIT: 8192\n"+
+				"SKYHOOK_AGENT_BUFFER_LIMIT: 4096\n"+
 				"SKYHOOK_AGENT_WRITE_LOGS: False\n"+
 				"Directory CONFIGURATION\n"+
 				"flag_dir: /state/flags/package/1.0.0\n"+
