@@ -59,12 +59,15 @@
       rangeStrategy: "bump",
       addLabels: ["component/operator", "component/agent"],
     },
-    {
-      // Do not let a module update raise the go directive as a side effect.
-      // Toolchain changes belong in the standalone group above.
-      matchManagers: ["gomod"],
-      constraintsFiltering: "strict",
-    },
+    // Do not add constraintsFiltering: "strict" here. Most of these modules
+    // resolve through the GitHub tags datasource, which carries no Go directive
+    // metadata, and strict mode discards every release whose constraints it
+    // cannot confirm. That silently dropped 100% of the releases for k8s.io/api,
+    // k8s.io/apimachinery, k8s.io/cli-runtime, k8s.io/klog/v2, onsi/ginkgo/v2,
+    // sethvargo/go-envconfig, golang.org/x/mod and prometheus/client_model, so
+    // those packages stopped receiving updates at all rather than merely being
+    // held back. The "Go toolchain" group above is what keeps go directive
+    // changes in their own PR.
     {
       groupName: "kubernetes",
       matchManagers: ["gomod"],
