@@ -149,10 +149,6 @@ func DecidePod(pod *corev1.Pod, options Options) Decision {
 		return Decision{Action: ActionIgnore, Reason: ReasonPhase}
 	}
 
-	if pod.DeletionTimestamp != nil {
-		return Decision{Action: ActionIgnore, Reason: ReasonTerminating}
-	}
-
 	// Package pods normally dodge drain via toleratesUnschedulable below, but
 	// some admission controllers rewrite or strip pod tolerations, so the
 	// operator's own in-flight pods are also recognized by the labels stamped
@@ -178,6 +174,15 @@ func DecidePod(pod *corev1.Pod, options Options) Decision {
 
 	if isMirrorPod(pod) {
 		return Decision{Action: ActionIgnore, Reason: ReasonMirrorPod}
+	}
+
+	// A pod that has already accepted its eviction still holds the node's resources
+	// until the kubelet finishes killing it, so it blocks rather than being ignored:
+	// drain is done when the workloads are gone, not when the evictions were accepted.
+	// This sits below the exemptions above so that drain only ever waits on pods it
+	// would have evicted itself, which is what kubectl drain waits for.
+	if pod.DeletionTimestamp != nil {
+		return Decision{Action: ActionBlock, Reason: ReasonTerminating}
 	}
 
 	if controllerRef == nil && !options.Force {

@@ -616,6 +616,87 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(drained).To(BeTrue())
 		})
 
+		It("should not report drained while an evicted pod is still terminating", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "workload",
+					Namespace: "default",
+					// The finalizer stands in for a pod that has accepted its eviction but has
+					// not finished terminating, which is what drain now has to wait out.
+					Finalizers: []string{"nodewright.nvidia.com/test-hold"},
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind:       "ReplicaSet",
+							Name:       "workload-rs",
+							Controller: ptr(true),
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			deleteCount := 0
+			baseClient := fakeDrainClient(pod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteCount++
+					return c.Delete(ctx, obj, opts...)
+				},
+			})
+
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+			skyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-terminating"},
+				Spec: v1alpha1.NodeWrightSpec{
+					DrainConfig: &v1alpha1.DrainConfig{
+						DisableEviction: ptr(true),
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			_package := &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			}
+
+			drained, err := r.DrainNode(ctx, skyhookNode, _package)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(deleteCount).To(Equal(1))
+
+			terminating := &corev1.Pod{}
+			Expect(testClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "workload"}, terminating)).To(Succeed())
+			Expect(terminating.DeletionTimestamp).ToNot(BeNil())
+
+			isDrained, err := r.IsDrained(ctx, skyhookNode)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isDrained).To(BeFalse())
+
+			drained, err = r.DrainNode(ctx, skyhookNode, _package)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(deleteCount).To(Equal(1))
+
+			terminating.Finalizers = nil
+			Expect(testClient.Update(ctx, terminating)).To(Succeed())
+			Expect(apierrors.IsNotFound(testClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "workload"}, &corev1.Pod{}))).To(BeTrue())
+
+			drained, err = r.DrainNode(ctx, skyhookNode, _package)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeTrue())
+		})
+
 		It("should wait without deleting unmanaged pods when force is false", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
