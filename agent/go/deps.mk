@@ -18,7 +18,7 @@
 ## its included in the main makefile, but its a lot to look at these
 ## plus ci can watch this file to know to build a new build image
 
-GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_VERSION ?= v2.13.1
 GINKGO_VERSION ?= v2.32.0
 MOCKERY_VERSION ?= v3.7.0
 # Mockery interprets MOCKERY_VERSION as its boolean version configuration.
