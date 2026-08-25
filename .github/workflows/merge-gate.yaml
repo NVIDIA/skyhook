@@ -34,7 +34,8 @@ jobs:
               - 'operator/go.mod'
               - 'operator/go.sum'
               - 'operator/vendor/**'
-
+              - 'agent/go/go.mod'
+              - 'agent/go/go.sum'
   # ---------------------------------------------------------------------------
   # License verification — runs only when dependency files change.
   # ---------------------------------------------------------------------------
@@ -43,20 +44,28 @@ jobs:
     if: needs.check-paths.outputs.deps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: operator
+            goflags: -mod=vendor
+          - component: agent/go
+            goflags: ""
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version-file: operator/go.mod
+          go-version-file: ${{ matrix.component }}/go.mod
           cache: false
       - name: Install go-licenses
-        run: make -C operator go-licenses
+        run: make -C ${{ matrix.component }} go-licenses
       - name: Report licenses
         env:
-          GOFLAGS: -mod=vendor
-        working-directory: operator
+          GOFLAGS: ${{ matrix.goflags }}
+        working-directory: ${{ matrix.component }}
         run: |
           echo "=== Dependency Licenses ==="
           ./bin/go-licenses report ./... 2>/dev/null | sort -t',' -k3 | column -t -s','
@@ -65,8 +74,8 @@ jobs:
           ./bin/go-licenses report ./... 2>/dev/null | cut -d',' -f3 | sort | uniq -c | sort -rn
       - name: Check licenses
         env:
-          GOFLAGS: -mod=vendor
-        run: make -C operator license-check
+          GOFLAGS: ${{ matrix.goflags }}
+        run: make -C ${{ matrix.component }} license-check
 
   # Paired skip job so the required-check name 'verify-licenses' is always
   # satisfied even when deps haven't changed. The job name MUST match
