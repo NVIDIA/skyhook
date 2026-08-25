@@ -3240,8 +3240,17 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 }
 
 func (r *SkyhookReconciler) EnsureNodeIsReadyForInterrupt(ctx context.Context, skyhookNode wrapper.SkyhookNode, _package *v1alpha1.Package) (bool, error) {
-	// cordon node
-	skyhookNode.Cordon()
+	// Cordon is an in-memory mutation; SaveNodesAndSkyhook patches it at the end of this
+	// pass, after every selected node has been visited. Draining in the same pass that
+	// first cordons the node would evict while spec.unschedulable is still only local, so
+	// the scheduler could put the replacement pod straight back on a node we are about to
+	// interrupt. Defer the drain one reconcile, until the cordon is durable.
+	//
+	// This costs one pass per drain cycle, not one per node: the caller's loop keeps going
+	// after a false return, so a single pass still cordons every node it selected.
+	if skyhookNode.Cordon() {
+		return false, nil
+	}
 
 	hasWork, err := r.HasNonInterruptWork(ctx, skyhookNode)
 	if err != nil {
