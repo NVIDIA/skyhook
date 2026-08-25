@@ -456,7 +456,7 @@ var _ = Describe("SkyhookNode", func() {
 					Labels: map[string]string{
 						"nodewright.nvidia.com/status_my-skyhook":    "complete",
 						"nodewright.nvidia.com/status_other-skyhook": "in_progress", // different skyhook
-						"unrelated-label":                            "keep-me",
+						"unrelated-label": "keep-me",
 					},
 				},
 				Status: corev1.NodeStatus{
