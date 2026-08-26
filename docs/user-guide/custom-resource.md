@@ -663,7 +663,7 @@ To exclude a *node* rather than a NodeWright, use
 The admission webhook rejects a `NodeWright` that violates any of these. Most are
 worth knowing before you hit them:
 
-**Resource level**
+### Resource level
 
 - `deploymentPolicy` and `interruptionBudget` are both set.
 - `deploymentPolicy` names a policy that does not exist.
@@ -672,7 +672,7 @@ worth knowing before you hit them:
 - `nodeSelectors` or `podNonInterruptLabels` is not a valid label selector.
 - `priority` is less than 1, or `sequencing` is not `node` or `all`.
 
-**Package level**
+### Package level
 
 - `name` is set inside the package body (it comes from the map key).
 - A package name does not match `^[a-z][-a-z0-9]{0,41}[a-z]$`.
@@ -688,7 +688,7 @@ worth knowing before you hit them:
 - `uninstall.apply: true` with `uninstall.enabled: false`.
 - The `dependsOn` graph is not a valid DAG, or a `dependsOn` version is empty.
 
-**Update only**
+### Update only
 
 - A package with `uninstall.enabled: true` is removed from the spec before its
   uninstall completed.
