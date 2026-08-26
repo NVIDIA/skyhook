@@ -31,8 +31,8 @@ kind: NodeWright
 metadata:
   name: gpu-tuning
   annotations:
-    nodewright.nvidia.com/pause: "false"    # stop this and everything after it
-    nodewright.nvidia.com/disable: "false"  # skip this one, keep going
+    nodewright.nvidia.com/pause: "false"    # "true" stops this and everything after it
+    nodewright.nvidia.com/disable: "false"  # "true" skips this one and keeps going
 spec:
   # --- targeting: which nodes -------------------------------------------
   nodeSelectors:
@@ -97,13 +97,13 @@ spec:
       configMap:
         tuning.conf: |
           vm.swappiness=1
-        sysctl.d/99-net.conf: |
+        network.properties: |
           net.core.somaxconn=1024
       configInterrupts:
         tuning.conf:
           type: service
           services: [containerd]
-        "sysctl.d/*":                          # only '*' is supported
+        "*.properties":                        # only '*' is supported
           type: restartAllServices
       interrupt:
         type: reboot
@@ -466,20 +466,25 @@ parallel unless [`serial`](#specserial) says otherwise.
 
 ### `configMap` and `configInterrupts`
 
-`configMap` is the configuration handed to the package. Keys must consist of
-alphanumerics, `-`, `_`, or `.`, and values must be valid UTF-8.
+`configMap` is the configuration handed to the package. The operator copies this
+map verbatim into a Kubernetes ConfigMap, so the keys are **ConfigMap keys**:
+alphanumerics, `-`, `_`, and `.` only, with values that are valid UTF-8.
+
+**A key cannot contain `/`.** Keys are filenames, not paths — `sysctl.d/99.conf`
+is rejected by the apiserver when the operator creates the ConfigMap. Where the
+file lands on the host is the package's business, not the key's.
 
 ```yaml
 configMap:
   tuning.conf: |
     vm.swappiness=1
-  sysctl.d/99-net.conf: |
+  network.properties: |
     net.core.somaxconn=1024
 configInterrupts:
   tuning.conf:
     type: service
     services: [containerd]
-  "sysctl.d/*":
+  "*.properties":
     type: restartAllServices
 ```
 
