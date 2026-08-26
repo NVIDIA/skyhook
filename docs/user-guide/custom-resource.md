@@ -269,9 +269,14 @@ the same time on a given node. With `serial: true` it applies one package per
 node per reconcile pass instead, re-queuing to pick up the next.
 
 This is about packages **within** one node, not about how many nodes run at
-once — that is `interruptionBudget`. Reach for it when packages contend for the
-same host resource (a package manager lock, a device) in a way `dependsOn`
-cannot express, and accept that a node takes proportionally longer to converge.
+once. **`serial` will not roll out one node at a time** — for that, set
+`interruptionBudget.count: 1`, or give the NodeWright a `deploymentPolicy` whose
+strategy has a batch size of 1 (a `fixed` strategy with `initialBatch: 1`; the
+`linear` and `exponential` strategies grow the batch after a successful round).
+
+Reach for `serial` when packages contend for the same host resource — a package
+manager lock, a device — in a way `dependsOn` cannot express, and accept that a
+node takes proportionally longer to converge.
 
 ### `spec.priority` and `spec.sequencing`
 
