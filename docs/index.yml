@@ -24,6 +24,8 @@ navigation:
     contents:
       - page: CLI Reference
         path: user-guide/cli.md
+      - page: Custom Resource Reference
+        path: user-guide/custom-resource.md
       - page: Deployment Policy
         path: user-guide/deployment-policy.md
       - page: Providing Secrets
