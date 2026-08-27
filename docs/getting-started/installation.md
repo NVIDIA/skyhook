@@ -64,6 +64,45 @@ By default, the Helm chart includes a pre-delete hook that automatically cleans 
 helm uninstall nodewright --namespace nodewright
 ```
 
+The pre-delete hook will:
+
+- Delete all NodeWright resources
+- Delete all DeploymentPolicy resources
+- Complete quickly if no resources exist
+- Wait for finalizers to be processed if resources exist
+- Proceed with uninstall even if cleanup times out (job deadline: 2 minutes)
+
+### Cleanup options
+
+To disable automatic cleanup and manage resources manually:
+
+```bash
+helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+  --namespace nodewright --set cleanup.enabled=false
+```
+
+To adjust the cleanup job timeout:
+
+```bash
+helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+  --namespace nodewright --set cleanup.jobTimeoutSeconds=180
+```
+
+### Manual cleanup
+
+If you disabled automatic cleanup, or need to clean up by hand:
+
+```bash
+# Delete all NodeWright and DeploymentPolicy resources first
+kubectl delete nodewrights.nodewright.nvidia.com --all
+kubectl delete deploymentpolicies.nodewright.nvidia.com --all
+
+# Then uninstall the chart
+helm uninstall nodewright --namespace nodewright
+```
+
+**Why cleanup matters:** uninstalling while NodeWright CRs with finalizers still exist can leave resources in a broken state that causes problems on reinstall.
+
 For more details on explicit package uninstall, see [Uninstall](../user-guide/uninstall.md).
 
 ## Related

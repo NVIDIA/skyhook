@@ -21,9 +21,9 @@ kubectl apply -f demo/scr.yaml
 ```
 
 Wait for work to finish on the one node that doesn't have workload pods on it.
-Note how it DOES NOT taint/schedule skyhook work on nodes WITH workload pods.
+Note how it DOES NOT taint/schedule NodeWright work on nodes WITH workload pods.
 
-Show status in Skyhook SCR that it is complete on the one node but unkown on other two and overall state is unkown.
+Show status in NodeWright CR that it is complete on the one node but unkown on other two and overall state is unkown.
 
 Remove workload pods
 ```
