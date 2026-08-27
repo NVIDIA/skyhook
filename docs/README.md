@@ -17,6 +17,7 @@ This directory contains user and operator documentation for NodeWright. Here you
 ## User Guide
 
 - [CLI Reference](user-guide/cli.md): `kubectl nodewright` commands and usage.
+- [The NodeWright Custom Resource](user-guide/custom-resource.md): Field-by-field reference for the CR, plus targeting with node selectors, deployment policies, and the ignore label.
 - [Deployment Policy and Compartments](user-guide/deployment-policy.md): Fine-grained rollout control with compartments, budgets, and strategies.
 - [Providing Secrets to Packages](user-guide/providing-secrets.md): How to securely provide secrets to NodeWright-managed packages.
 - [Runtime Required](user-guide/runtime-required.md): How to use the runtime required taint and feature.
