@@ -11,6 +11,7 @@ This directory contains user and operator documentation for NodeWright. Here you
 ## Architecture
 
 - [Operator Status Definitions](architecture/operator-status.md): Definitions of Status, State, Stage, and Condition concepts used throughout the operator.
+- [Lifecycle of a NodeWright](architecture/lifecycle.md): How a NodeWright moves from apply to complete, including the check step paired with every work step in a package's stages.
 - [Interrupt Flow and Ordering](architecture/interrupt-flow.md): How NodeWright handles packages with interrupts, including the interrupt sequence.
 - [Strict Ordering](architecture/ordering.md): How and why the operator applies each NodeWright Custom Resource in a deterministic sequential order.
 
