@@ -135,9 +135,20 @@ func (_c *MockSkyhookNodeOnly_ClearDrainStart_Call) RunAndReturn(run func()) *Mo
 }
 
 // Cordon provides a mock function for the type MockSkyhookNodeOnly
-func (_mock *MockSkyhookNodeOnly) Cordon() {
-	_mock.Called()
-	return
+func (_mock *MockSkyhookNodeOnly) Cordon() bool {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Cordon")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func() bool); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
 }
 
 // MockSkyhookNodeOnly_Cordon_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Cordon'
@@ -157,13 +168,13 @@ func (_c *MockSkyhookNodeOnly_Cordon_Call) Run(run func()) *MockSkyhookNodeOnly_
 	return _c
 }
 
-func (_c *MockSkyhookNodeOnly_Cordon_Call) Return() *MockSkyhookNodeOnly_Cordon_Call {
-	_c.Call.Return()
+func (_c *MockSkyhookNodeOnly_Cordon_Call) Return(b bool) *MockSkyhookNodeOnly_Cordon_Call {
+	_c.Call.Return(b)
 	return _c
 }
 
-func (_c *MockSkyhookNodeOnly_Cordon_Call) RunAndReturn(run func()) *MockSkyhookNodeOnly_Cordon_Call {
-	_c.Run(run)
+func (_c *MockSkyhookNodeOnly_Cordon_Call) RunAndReturn(run func() bool) *MockSkyhookNodeOnly_Cordon_Call {
+	_c.Call.Return(run)
 	return _c
 }
 

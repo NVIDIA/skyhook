@@ -93,8 +93,8 @@ var _ Store = (*fileStore)(nil)
 // an unusable version.
 func newFileStore(layout flags.Layout, cfg config.Config, logger *slog.Logger) (*fileStore, error) {
 	name := cfg.PackageName
-	if name == "" || !filepath.IsLocal(name) || filepath.Base(name) != name {
-		return nil, fmt.Errorf("package name %q must be a single path component", name)
+	if err := hostfs.ValidatePathComponent("package name", name); err != nil {
+		return nil, err
 	}
 	if cfg.PackageVersion == "" {
 		return nil, errors.New("package version must not be empty")

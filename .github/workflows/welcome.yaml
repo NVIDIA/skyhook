@@ -87,7 +87,7 @@ jobs:
                   `Welcome to NodeWright, @${creator}! Thanks for your first pull request.`,
                   '',
                   'Before review, please ensure:',
-                  `- All commits are signed off per the [DCO](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md) (\`git commit -s\`)`,
+                  `- All commits are signed off **and** signed: \`git commit -s -S\` (see [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md#developer-certificate-of-origin-and-commit-signing))`,
                   '- Commits follow [Conventional Commits](https://www.conventionalcommits.org/)',
                   '- CI checks pass (tests, lint, security scan)',
                   '- The PR description explains the *why* behind your changes',

@@ -1,0 +1,217 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/main/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: runtime-required-cordon-after
+  labels:
+    pool: interrupt
+spec:
+  timeouts:
+    assert: 120s
+  catch:
+  - get:
+      apiVersion: v1
+      kind: Node
+      selector: nodewright.nvidia.com/runtime-required-cordon-after-test=true
+      format: yaml
+  - get:
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
+      name: runtime-required-cordon-after
+      format: yaml
+  - get:
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
+      name: runtime-required-no-cordon
+      format: yaml
+  - get:
+      apiVersion: nodewright.nvidia.com/v1alpha1
+      kind: NodeWright
+      name: runtime-required-cordon-after-interrupt
+      format: yaml
+  steps:
+  # Phase 1: Apply node label matching NodeWright selector and apply runtime-required taint to the matching node
+  - name: setup
+    try:
+    - script:
+        content: |
+          ../nodewright-cli reset runtime-required-cordon-after --confirm 2>/dev/null || true
+          ../nodewright-cli reset runtime-required-no-cordon --confirm 2>/dev/null || true
+          ../nodewright-cli reset runtime-required-cordon-after-interrupt --confirm 2>/dev/null || true
+          kubectl patch node kind-worker --type=merge \
+            -p '{"metadata":{"annotations":{"nodewright.nvidia.com/runtimeRequiredCordon":null}},"spec":{"unschedulable":false}}' \
+            2>/dev/null || true
+
+          kubectl label node kind-worker nodewright.nvidia.com/runtime-required-cordon-after-test=true --overwrite
+          ../nodes_add_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule nodewright.nvidia.com/runtime-required-cordon-after-test=true
+
+  # Phase 2: Create two NodeWrights targeting the same node where one sets runtimeRequiredCordonAfter to true
+  # and the other sets runtimeRequiredCordonAfter to false.
+  - name: apply-nodewrights
+    try:
+    - create:
+        resource:
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: skyhook-operator
+              app.kubernetes.io/created-by: skyhook-operator
+            name: runtime-required-cordon-after
+          spec:
+            runtimeRequired: true
+            runtimeRequiredCordonAfter: true
+            nodeSelectors:
+              matchLabels:
+                nodewright.nvidia.com/runtime-required-cordon-after-test: "true"
+            packages:
+              spencer:
+                version: "3.2.3"
+                image: ghcr.io/nvidia/skyhook/agentless
+                env:
+                  - name: SLEEP_LEN
+                    value: "2"
+    - create:
+        resource:
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: skyhook-operator
+              app.kubernetes.io/created-by: skyhook-operator
+            name: runtime-required-no-cordon
+          spec:
+            runtimeRequired: true
+            runtimeRequiredCordonAfter: false
+            nodeSelectors:
+              matchLabels:
+                nodewright.nvidia.com/runtime-required-cordon-after-test: "true"
+            packages:
+              casey:
+                version: "3.2.3"
+                image: ghcr.io/nvidia/skyhook/agentless
+                env:
+                  - name: SLEEP_LEN
+                    value: "2"
+
+  # Phase 3: Wait for both NodeWrights to complete on the targeted node
+  - name: assert-nodewrights-complete
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: kind-worker
+            labels:
+              nodewright.nvidia.com/status_runtime-required-cordon-after: complete
+              nodewright.nvidia.com/status_runtime-required-no-cordon: complete
+            annotations:
+              nodewright.nvidia.com/status_runtime-required-cordon-after: complete
+              nodewright.nvidia.com/status_runtime-required-no-cordon: complete
+
+  # Phase 4: Assert the runtime-required taint was removed and the cordon was applied
+  - name: assert-taint-removed-and-node-cordoned
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: kind-worker
+            annotations:
+              nodewright.nvidia.com/runtimeRequiredCordon: "true"
+          spec:
+            unschedulable: true
+            (!taints || length(taints[?key == 'skyhook.nvidia.com' && effect == 'NoSchedule' && value == 'runtime-required'])==`0`): true
+
+  # Phase 5: A later NodeWright with an interrupt package runs on the same node with the persistent cordon.
+  - name: apply-interrupting-nodewright
+    try:
+    - create:
+        resource:
+          apiVersion: nodewright.nvidia.com/v1alpha1
+          kind: NodeWright
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: skyhook-operator
+              app.kubernetes.io/created-by: skyhook-operator
+            name: runtime-required-cordon-after-interrupt
+          spec:
+            nodeSelectors:
+              matchLabels:
+                nodewright.nvidia.com/runtime-required-cordon-after-test: "true"
+            packages:
+              hank:
+                version: "1.2.3"
+                image: ghcr.io/nvidia/skyhook/agentless
+                interrupt:
+                  type: service
+                  services: [rsyslog]
+                env:
+                  - name: SLEEP_LEN
+                    value: "2"
+
+  # Phase 6: Wait for the interrupting NodeWright to complete and assert the persistent cordon
+  # exists after the interrupt sequence.
+  - name: assert-cordon-survives-interrupt
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: kind-worker
+            labels:
+              nodewright.nvidia.com/status_runtime-required-cordon-after-interrupt: complete
+            annotations:
+              nodewright.nvidia.com/status_runtime-required-cordon-after-interrupt: complete
+              nodewright.nvidia.com/runtimeRequiredCordon: "true"
+          spec:
+            unschedulable: true
+
+  # Phase 7: External actor releases the cordon but leaves the runtimeRequiredCordon annotation.
+  - name: release-cordon
+    try:
+    - script:
+        content: |
+          kubectl patch node kind-worker --type=merge -p '{"spec":{"unschedulable":false}}'
+
+  # Phase 8: The operator automatically removes the stale runtimeRequiredCordon annotation after the
+  # node is uncordoned.
+  - name: assert-annotation-removed
+    try:
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Node
+          metadata:
+            name: kind-worker
+            (annotations."nodewright.nvidia.com/runtimeRequiredCordon" == null): true
+          spec:
+            (!unschedulable): true
+
+    finally:
+    - script:
+        content: |
+          ../nodes_remove_taint.sh all skyhook.nvidia.com=runtime-required:NoSchedule nodewright.nvidia.com/runtime-required-cordon-after-test=true
+          kubectl patch node kind-worker --type=merge \
+            -p '{"metadata":{"annotations":{"nodewright.nvidia.com/runtimeRequiredCordon":null}},"spec":{"unschedulable":false}}' \
+            2>/dev/null || true
+          kubectl label node kind-worker nodewright.nvidia.com/runtime-required-cordon-after-test- 2>/dev/null || true

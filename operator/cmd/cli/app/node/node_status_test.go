@@ -58,7 +58,7 @@ var _ = Describe("Node Status Command", func() {
 	Describe("outputNodeStatusTable", func() {
 		It("should output table with headers", func() {
 			summaries := []nodeSkyhookSummary{
-				{NodeName: "node1", SkyhookName: "skyhook1", Status: "complete", PackagesComplete: 3, PackagesTotal: 3},
+				{NodeName: "node1", SkyhookName: "skyhook1", Status: "complete", PackagesComplete: 3, PackagesTotal: 3, Cordoned: true, RuntimeRequiredCordon: true},
 			}
 			output := &bytes.Buffer{}
 
@@ -70,6 +70,8 @@ var _ = Describe("Node Status Command", func() {
 			Expect(outputStr).To(ContainSubstring("SKYHOOK"))
 			Expect(outputStr).To(ContainSubstring("STATUS"))
 			Expect(outputStr).To(ContainSubstring("PACKAGES"))
+			Expect(outputStr).To(ContainSubstring("CORDONED"))
+			Expect(outputStr).To(ContainSubstring("RUNTIME-REQUIRED-CORDON"))
 			Expect(outputStr).To(ContainSubstring("node1"))
 			Expect(outputStr).To(ContainSubstring("skyhook1"))
 			Expect(outputStr).To(ContainSubstring("complete"))
@@ -339,6 +341,69 @@ var _ = Describe("Node Status Command", func() {
 			Expect(statusMap["complete-skyhook"]).To(Equal("complete"))
 			Expect(statusMap["error-skyhook"]).To(Equal("erroring"))
 			Expect(statusMap["inprogress-skyhook"]).To(Equal("in_progress"))
+		})
+
+		It("should display a node cordoned by runtimeRequiredCordonAfter", func() {
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker-1",
+					Annotations: map[string]string{
+						nodeStateAnnotationPrefix + "my-skyhook": string(nodeStateJSON),
+						v1alpha1.RuntimeRequiredCordonAnnotation: "true",
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			opts := &nodeStatusOptions{}
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+
+			var result []nodeSkyhookSummary
+			err = json.Unmarshal(output.Bytes(), &result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Cordoned).To(BeTrue())
+			Expect(result[0].RuntimeRequiredCordon).To(BeTrue())
+		})
+
+		It("should not report runtime-required-cordon when only manually cordoned", func() {
+			nodeState := v1alpha1.NodeState{
+				"pkg1|1.0": {Name: "pkg1", Version: "1.0", Stage: v1alpha1.StageApply, State: v1alpha1.StateComplete},
+			}
+			nodeStateJSON, _ := json.Marshal(nodeState)
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "worker-1",
+					Annotations: map[string]string{
+						nodeStateAnnotationPrefix + "my-skyhook": string(nodeStateJSON),
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+			_, err := mockKube.CoreV1().Nodes().Create(gocontext.Background(), node, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			opts := &nodeStatusOptions{}
+			cliCtx.GlobalFlags.OutputFormat = utils.OutputFormatJSON
+			err = runNodeStatus(gocontext.Background(), kubeClient, []string{"worker-1"}, opts, cliCtx)
+			Expect(err).NotTo(HaveOccurred())
+
+			var result []nodeSkyhookSummary
+			err = json.Unmarshal(output.Bytes(), &result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Cordoned).To(BeTrue())
+			Expect(result[0].RuntimeRequiredCordon).To(BeFalse())
 		})
 	})
 })

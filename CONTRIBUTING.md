@@ -49,7 +49,7 @@ Reference the issue in your PR description (`closes #1234`) so it closes on merg
 2. Make your changes and ensure tests pass (`make test` in the relevant component directory).
 3. Run `make fmt` to format code and add license headers.
 4. When you bump a Go or Python dependency, run `make notices` and commit the refreshed `THIRD_PARTY_NOTICES.md` files alongside your change. See [`docs/contributing/release-process.md`](docs/contributing/release-process.md) for the workflow.
-5. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message and sign off (see below).
+5. Commit with a [Conventional Commits](https://www.conventionalcommits.org/) message, signed and signed off: `git commit -s -S` (see [Developer Certificate of Origin and commit signing](#developer-certificate-of-origin-and-commit-signing)).
 6. Open a pull request against `main`. The PR template will guide you through the checklist.
 
 ### Running the CI checks locally
@@ -126,12 +126,100 @@ If you are changing NodeWright itself rather than writing a package:
 
 In every case, find the nearest existing example and match it. A new pattern that has no precedent in the target package should be called out explicitly in your PR description — what you introduced, why the existing patterns didn't fit, and why it should become the convention.
 
-## Developer Certificate of Origin (DCO)
+## Developer Certificate of Origin and commit signing
 
-The sign-off is a simple line at the end of the explanation for the patch. Your
-signature certifies that you wrote the patch or otherwise have the right to pass
-it on as an open-source patch. The rules are pretty simple: if you can certify
-the below (from [developercertificate.org](http://developercertificate.org/)):
+Every commit, from every contributor and maintainers included, must be both **signed off** and **cryptographically signed**:
+
+```bash
+git commit -s -S -m "your message"
+```
+
+- `-s` (lowercase) adds a `Signed-off-by` trailer, certifying the [Developer Certificate of Origin 1.1](#what-you-are-certifying) reproduced below.
+- `-S` (uppercase) attaches a GPG or SSH signature, proving the commit came from you.
+
+The two are independent, and neither implies the other. Use both, on every commit. A branch ruleset enforces **Require signed commits** on `main`, and the [Commit Requirements](.github/workflows/commit-requirements.yaml) workflow comments on any pull request carrying a commit that is missing either one.
+
+The `Signed-off-by` trailer should name the commit author, and must be a real name:
+
+```
+Signed-off-by: Joe Smith <joe.smith@email.com>
+```
+
+Sorry, no pseudonyms or anonymous contributions.
+
+What the automated check actually verifies is narrower than the rule above: for each commit not authored by a bot, that the signature verified, and that a `Signed-off-by` trailer is present unless the commit is a merge. Merge commits are exempt from sign-off because GitHub's "Update branch" and merge buttons author them with no trailer and no way to add one, and a merge introduces no new authorship to certify; they still have to be signed. It does not compare the trailer's address to the author's, because GitHub's `NNN+user@users.noreply.github.com` aliases make that mismatch common and harmless. Reviewers still enforce the rest.
+
+### One-time setup
+
+Do this once and `-S` becomes automatic, so the only flag you have to remember is `-s`.
+
+Your commit identity, which is what lands in the `Signed-off-by` trailer:
+
+```bash
+git config user.name "Your Name"
+git config user.email "your.email@example.com"
+```
+
+Use an address GitHub has verified on your account, otherwise GitHub will not mark the commit as verified. This is separate from your signing key and does not have to match it.
+
+Then a signing key, which GitHub must also know about. Follow GitHub's guide to [generate a GPG or SSH signing key and add it to your account](https://docs.github.com/en/authentication/managing-commit-signature-verification), then point git at it. For SSH:
+
+```bash
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519.pub   # the public key, not the private one
+```
+
+For GPG, leave `gpg.format` unset and use the key ID from `gpg --list-secret-keys --keyid-format=long`:
+
+```bash
+git config user.signingkey <key-id>
+```
+
+Finally, sign every commit without having to remember `-S`:
+
+```bash
+git config commit.gpgsign true
+```
+
+### Forgot to sign or sign off?
+
+Fix the most recent commit and re-push:
+
+```bash
+git commit --amend -s -S --no-edit
+git push --force-with-lease origin your-branch
+```
+
+Fix every commit on the branch at once. Check first whether the branch contains merge commits, because a plain rebase drops them and takes any merge-only content with them:
+
+```bash
+git log --oneline --merges origin/main..HEAD   # empty output means the branch is linear
+```
+
+For a linear branch:
+
+```bash
+git rebase --exec 'git commit --amend -s -S --no-edit' origin/main
+```
+
+For a branch with merge commits, preserve the topology:
+
+```bash
+git rebase --rebase-merges --exec 'git commit --amend -s -S --no-edit' origin/main
+```
+
+Either way, confirm the rewrite changed nothing but the signatures before you push:
+
+```bash
+git range-diff @{u}...HEAD
+git push --force-with-lease origin your-branch
+```
+
+Re-signing rewrites every commit, which outdates the inline comments reviewers have already left. If the pull request is already under review, say on it that you force-pushed.
+
+### What you are certifying
+
+By signing off you certify the following, from [developercertificate.org](https://developercertificate.org/):
 
 ```
 Developer Certificate of Origin
@@ -171,17 +259,6 @@ By making a contribution to this project, I certify that:
     maintained indefinitely and may be redistributed consistent with
     this project or the open source license(s) involved.
 ```
-
-Then you just add a line to every git commit message:
-
-```
-Signed-off-by: Joe Smith <joe.smith@email.com>
-```
-
-Use your real name (sorry, no pseudonyms or anonymous contributions.)
-
-If you set your `user.name` and `user.email` git configs, you can sign your
-commit automatically with `git commit -s`.
 
 ## Code Style
 

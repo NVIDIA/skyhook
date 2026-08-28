@@ -91,6 +91,39 @@ var _ = Describe("Step interface", func() {
 		Expect(sawRegular).To(BeTrue())
 		Expect(sawUpgrade).To(BeTrue())
 	})
+
+	It("exposes cloned execution metadata", func() {
+		value := NewRegularStep(
+			"foo.sh",
+			WithArguments([]string{"first"}),
+			WithReturncodes([]command.ExitCode{0, 2}),
+			WithOnHost(false),
+		)
+
+		metadata := value.ExecutionMetadata()
+
+		Expect(metadata).To(Equal(ExecutionMetadata{
+			Arguments:   []string{"first"},
+			ReturnCodes: []command.ExitCode{0, 2},
+			OnHost:      false,
+		}))
+		metadata.Arguments[0] = "changed"
+		metadata.ReturnCodes[0] = 9
+		Expect(value.Arguments).To(Equal([]string{"first"}))
+		Expect(value.Returncodes).To(Equal([]command.ExitCode{0, 2}))
+	})
+})
+
+var _ = Describe("legacy compatibility formatting", func() {
+	It("formats configured arguments with legacy quoting", func() {
+		Expect(FormatLegacyArguments([]string{"plain", "it's", "line\n"})).To(Equal(
+			`['plain', "it's", 'line\n']`,
+		))
+	})
+
+	It("formats configured return codes as a legacy list", func() {
+		Expect(FormatLegacyReturnCodes([]command.ExitCode{0, 2})).To(Equal("[0, 2]"))
+	})
 })
 
 var _ = Describe("Decode", func() {

@@ -17,17 +17,17 @@
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
-  name: skyhook-demo-non-workload
+  name: nodewright-demo-non-workload
   namespace: default
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: skyhook-demo-non-workload
+      app: nodewright-demo-non-workload
   template:
     metadata:
       labels:
-        app: skyhook-demo-non-workload
+        app: nodewright-demo-non-workload
     spec:
       nodeSelector:
         eks.amazonaws.com/nodegroup: demo

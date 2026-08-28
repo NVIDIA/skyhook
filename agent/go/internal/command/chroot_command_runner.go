@@ -51,7 +51,7 @@ func (runner *chrootCommandRunner) Run(
 			err = errors.Join(err, closeErr)
 		}
 	}()
-	if command.Permissions != 0 {
+	if command.Permissions != 0 || command.RequiredPermissions != 0 {
 		relative := strings.TrimPrefix(filepath.Clean(command.Executable), string(filepath.Separator))
 		executableFile, openErr := setup.root.Open(relative)
 		if openErr != nil {

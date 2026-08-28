@@ -169,15 +169,16 @@ var _ = Describe("validateModes", func() {
 
 var _ = Describe("Loader schema-validation seam", func() {
 	It("surfaces the injected validator's error without parsing the document", func() {
+		input := []byte(`{"schema_version":"v1"}`)
 		sentinel := errors.New("boom from fake validator")
 		validator := configmock.NewMockSchemaValidator(GinkgoT())
 		validator.EXPECT().
-			Validate([]byte(validConfigJSON), schema.V1).
+			Validate(input, schema.V1).
 			Return(sentinel).
 			Once()
 		loader := &Loader{validator: validator}
 
-		_, err := loader.Load([]byte(validConfigJSON), GinkgoT().TempDir(), nil)
+		_, err := loader.Load(input, GinkgoT().TempDir(), nil)
 		Expect(err).To(MatchError(sentinel))
 	})
 })

@@ -44,6 +44,7 @@ func int64Ptr(value int64) *int64 {
 var _ = Describe("DecidePod", func() {
 	controller := true
 	const daemonSetKind = "DaemonSet"
+	terminatingTimestamp := metav1.NewTime(time.Date(2026, time.June, 2, 12, 0, 0, 0, time.UTC))
 
 	basePod := func() *corev1.Pod {
 		return &corev1.Pod{
@@ -94,16 +95,77 @@ var _ = Describe("DecidePod", func() {
 		Expect(decision.BlocksDrain()).To(BeFalse())
 	})
 
-	It("should ignore pods that are already terminating", func() {
+	It("should block on evictable pods that are already terminating", func() {
 		pod := basePod()
-		deletionTimestamp := metav1.NewTime(time.Date(2026, time.June, 2, 12, 0, 0, 0, time.UTC))
-		pod.DeletionTimestamp = &deletionTimestamp
+		pod.DeletionTimestamp = &terminatingTimestamp
 
 		decision := DecidePod(pod, DefaultOptions())
 
-		Expect(decision).To(Equal(Decision{Action: ActionIgnore, Reason: ReasonTerminating}))
-		Expect(decision.BlocksDrain()).To(BeFalse())
+		Expect(decision).To(Equal(Decision{Action: ActionBlock, Reason: ReasonTerminating}))
+		Expect(decision.BlocksDrain()).To(BeTrue())
+		Expect(decision.RequiresAction()).To(BeFalse())
 	})
+
+	It("should report terminating ahead of the other blocking reasons", func() {
+		pod := basePod()
+		pod.DeletionTimestamp = &terminatingTimestamp
+		pod.OwnerReferences = nil
+		options := DefaultOptions()
+		options.Force = false
+
+		decision := DecidePod(pod, options)
+
+		Expect(decision).To(Equal(Decision{Action: ActionBlock, Reason: ReasonTerminating}))
+	})
+
+	DescribeTable("should keep exempt pods ignored while they terminate",
+		func(mutate func(*corev1.Pod), expectedDecision Decision) {
+			pod := basePod()
+			pod.DeletionTimestamp = &terminatingTimestamp
+			mutate(pod)
+			options := DefaultOptions()
+			options.PackageNamespace = "skyhook"
+
+			decision := DecidePod(pod, options)
+
+			Expect(decision).To(Equal(expectedDecision))
+			Expect(decision.BlocksDrain()).To(BeFalse())
+		},
+		Entry("finished pods",
+			func(pod *corev1.Pod) { pod.Status.Phase = corev1.PodSucceeded },
+			Decision{Action: ActionIgnore, Reason: ReasonPhase},
+		),
+		Entry("the operator's own package pods",
+			func(pod *corev1.Pod) {
+				pod.Namespace = "skyhook"
+				pod.Labels = map[string]string{
+					"nodewright.nvidia.com/name":    "my-skyhook",
+					"nodewright.nvidia.com/package": "pkg-1.0.0",
+				}
+			},
+			Decision{Action: ActionIgnore, Reason: ReasonSkyhookPackage},
+		),
+		Entry("pods tolerating the unschedulable taint",
+			func(pod *corev1.Pod) {
+				pod.Spec.Tolerations = []corev1.Toleration{{Key: corev1.TaintNodeUnschedulable}}
+			},
+			Decision{Action: ActionIgnore, Reason: ReasonUnschedulableToleration},
+		),
+		Entry("daemonset pods",
+			func(pod *corev1.Pod) { pod.OwnerReferences[0].Kind = daemonSetKind },
+			Decision{Action: ActionIgnore, Reason: ReasonDaemonSet},
+		),
+		Entry("kube-system pods",
+			func(pod *corev1.Pod) { pod.Namespace = "kube-system" },
+			Decision{Action: ActionIgnore, Reason: ReasonKubeSystem},
+		),
+		Entry("mirror pods",
+			func(pod *corev1.Pod) {
+				pod.Annotations = map[string]string{MirrorPodAnnotationKey: "mirror-id"}
+			},
+			Decision{Action: ActionIgnore, Reason: ReasonMirrorPod},
+		),
+	)
 
 	It("should never drain pods that tolerate the unschedulable taint", func() {
 		pod := basePod()

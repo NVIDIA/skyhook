@@ -14,22 +14,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+# The hello-world example used by docs/getting-started/quickstart.md.
+#
+# The node selector below matches nothing until you label a node, which keeps
+# the blast radius at one node:
+#
+#   kubectl label node <node> nodewright.nvidia.com/quickstart=true
+
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
-    app.kubernetes.io/part-of: skyhook-operator
-    app.kubernetes.io/created-by: skyhook-operator
+    app.kubernetes.io/part-of: nodewright-operator
+    app.kubernetes.io/created-by: nodewright-operator
   name: demo
   annotations:
-    skyhook.nvidia.com/pause: "false"
-    skyhook.nvidia.com/disable: "false"
+    nodewright.nvidia.com/pause: "false"
+    nodewright.nvidia.com/disable: "false"
 spec:
   nodeSelectors:
     matchLabels:
-      skyhook.nvidia.com/test-node: skyhooke2e
+      nodewright.nvidia.com/quickstart: "true"
   packages:
-    baz:
+    hello-world:
       version: 1.1.0
       image: ghcr.io/nvidia/skyhook-packages/shellscript
       configMap:

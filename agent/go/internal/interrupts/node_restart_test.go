@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"syscall"
+	"time"
 
 	"github.com/NVIDIA/nodewright/agent/internal/command"
 	"github.com/NVIDIA/nodewright/agent/internal/execution"
@@ -45,6 +46,7 @@ var _ = Describe("NodeRestart", func() {
 			Signal:   syscall.SIGKILL,
 		})).To(BeFalse())
 		Expect(nodeRestartCompleted(command.Result{ExitCode: 15})).To(BeFalse())
+		Expect(nodeRestartCompleted(command.Result{ExitCode: command.SuccessExitCode})).To(BeFalse())
 	})
 
 	It("validates context and execution configuration", func() {
@@ -62,5 +64,22 @@ var _ = Describe("NodeRestart", func() {
 		status, err = NodeRestart{}.Run(context.Background(), execution.Config{})
 		Expect(status).To(Equal(execution.StatusFailed))
 		Expect(err).To(MatchError(ContainSubstring("invalid run config")))
+	})
+
+	It("reports when an enqueued reboot does not restart the host", func() {
+		err := waitForNodeRestart(context.Background(), time.Millisecond)
+
+		Expect(err).To(MatchError(
+			"reboot was enqueued but the host did not restart within 1ms",
+		))
+	})
+
+	It("stops waiting for a host restart when execution is canceled", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := waitForNodeRestart(ctx, time.Hour)
+
+		Expect(errors.Is(err, context.Canceled)).To(BeTrue())
 	})
 })

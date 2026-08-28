@@ -6,6 +6,8 @@ navigation:
     contents:
       - page: Overview
         path: getting-started/overview.md
+      - page: Quickstart
+        path: getting-started/quickstart.md
       - page: Installation
         path: getting-started/installation.md
       - page: Migration from Skyhook
@@ -15,6 +17,8 @@ navigation:
     contents:
       - page: Operator Status Definitions
         path: architecture/operator-status.md
+      - page: Lifecycle of a NodeWright
+        path: architecture/lifecycle.md
       - page: Interrupt Flow
         path: architecture/interrupt-flow.md
       - page: Strict Ordering
@@ -24,6 +28,8 @@ navigation:
     contents:
       - page: CLI Reference
         path: user-guide/cli.md
+      - page: Custom Resource Reference
+        path: user-guide/custom-resource.md
       - page: Deployment Policy
         path: user-guide/deployment-policy.md
       - page: Providing Secrets

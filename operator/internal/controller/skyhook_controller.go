@@ -555,7 +555,7 @@ func (r *SkyhookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		errs = append(errs, err)
 	}
 
-	err = r.HandleRuntimeRequired(ctx, clusterState)
+	err = r.HandleRuntimeRequired(ctx, clusterState, nodes)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -1394,7 +1394,7 @@ func (r *SkyhookReconciler) RunSkyhookPackages(ctx context.Context, clusterState
 
 			// process one package at a time
 			if skyhook.GetSkyhook().Spec.Serial {
-				return &ctrl.Result{Requeue: true}, nil
+				return &ctrl.Result{RequeueAfter: time.Second * 2}, nil
 			}
 		}
 	}
@@ -3240,8 +3240,17 @@ func (r *SkyhookReconciler) ProcessInterrupt(ctx context.Context, skyhookNode wr
 }
 
 func (r *SkyhookReconciler) EnsureNodeIsReadyForInterrupt(ctx context.Context, skyhookNode wrapper.SkyhookNode, _package *v1alpha1.Package) (bool, error) {
-	// cordon node
-	skyhookNode.Cordon()
+	// Cordon is an in-memory mutation; SaveNodesAndSkyhook patches it at the end of this
+	// pass, after every selected node has been visited. Draining in the same pass that
+	// first cordons the node would evict while spec.unschedulable is still only local, so
+	// the scheduler could put the replacement pod straight back on a node we are about to
+	// interrupt. Defer the drain one reconcile, until the cordon is durable.
+	//
+	// This costs one pass per drain cycle, not one per node: the caller's loop keeps going
+	// after a false return, so a single pass still cordons every node it selected.
+	if skyhookNode.Cordon() {
+		return false, nil
+	}
 
 	hasWork, err := r.HasNonInterruptWork(ctx, skyhookNode)
 	if err != nil {
@@ -3383,7 +3392,7 @@ func (r *SkyhookReconciler) ApplyPackage(ctx context.Context, logger logr.Logger
 
 // HandleRuntimeRequired finds any nodes for which all runtime required Skyhooks are complete and remove their runtime required taint
 // Will return an error if the patching of the nodes is not possible
-func (r *SkyhookReconciler) HandleRuntimeRequired(ctx context.Context, clusterState *clusterState) error {
+func (r *SkyhookReconciler) HandleRuntimeRequired(ctx context.Context, clusterState *clusterState, nodes *corev1.NodeList) error {
 	node_to_skyhooks, skyhook_node_map := groupSkyhooksByNode(clusterState)
 	to_remove := getRuntimeRequiredTaintCompleteNodes(node_to_skyhooks, skyhook_node_map)
 	// Remove every recognised runtime-required taint, not just the configured one: a node
@@ -3401,16 +3410,53 @@ func (r *SkyhookReconciler) HandleRuntimeRequired(ctx context.Context, clusterSt
 			}
 		}
 		if changed {
-			err := r.Patch(ctx, current, client.MergeFrom(node))
-			if err != nil {
+			// If any runtime-required Skyhook sets runtimeRequiredCordonAfter to true, the cordon and
+			// runtimeRequiredCordon annotation are only applied if the runtime-required taint exists. This means that a
+			// runtime-required Skyhook with runtimeRequiredCordonAfter true will not apply the persistent cordon if the
+			// runtime-required taint was already removed. Removing the taint and applying the node cordon in the same patch
+			// request ensures a scheduling gate is always applied to the targeted node.
+			if runtimeRequiredCordonAfterEnabled(node_to_skyhooks[node.UID]) {
+				if current.Annotations == nil {
+					current.Annotations = make(map[string]string)
+				}
+				current.Annotations[v1alpha1.RuntimeRequiredCordonAnnotation] = annotationTrueValue
+				current.Spec.Unschedulable = true
+			}
+			if err := r.Patch(ctx, current, client.MergeFrom(node)); err != nil {
 				errs = append(errs, err)
 			}
 		}
 	}
+
+	// Remove any stale runtimeRequiredCordon annotation from nodes which were originally cordoned via a
+	// runtimeRequiredCordonAfter NodeWright but were externally uncordoned without removing the corresponding
+	// annotation.
+	for i := range nodes.Items {
+		node := &nodes.Items[i]
+		_, annotated := node.Annotations[v1alpha1.RuntimeRequiredCordonAnnotation]
+		if !node.Spec.Unschedulable && annotated {
+			new_node := node.DeepCopy()
+			delete(new_node.Annotations, v1alpha1.RuntimeRequiredCordonAnnotation)
+			if err := r.Patch(ctx, new_node, client.MergeFromWithOptions(node, client.MergeFromWithOptimisticLock{})); err != nil {
+				errs = append(errs, fmt.Errorf("removing runtime-required cordon annotation from node %s: %w", node.Name, err))
+			}
+		}
+	}
+
 	if len(errs) > 0 {
 		return utilerrors.NewAggregate(errs)
 	}
 	return nil
+}
+
+func runtimeRequiredCordonAfterEnabled(skyhooks []SkyhookNodes) bool {
+	for _, skyhook := range skyhooks {
+		spec := skyhook.GetSkyhook().Spec
+		if spec.RuntimeRequired && spec.RuntimeRequiredCordonAfter {
+			return true
+		}
+	}
+	return false
 }
 
 // Group Skyhooks by what node they target
