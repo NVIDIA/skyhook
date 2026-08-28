@@ -38,7 +38,14 @@ helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
 Omit `--set imagePullSecret=node-init-secret` if you're pulling from public registries only.
 
 > **Where things live:** chart at `oci://ghcr.io/nvidia/nodewright/charts/nodewright`, operator image at `ghcr.io/nvidia/nodewright/operator`, agent image at `ghcr.io/nvidia/nodewright/agent`.
-> **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook` and use the OCI install above. If you want to keep the existing in-cluster release name (e.g. `skyhook`), substitute it for `nodewright` in the `helm install` command — the chart works either way.
+> **Migrating from `helm repo add skyhook https://helm.ngc.nvidia.com/...`?** Run `helm repo remove skyhook`, then point your existing release at the OCI chart. Because the release already exists, this is an **upgrade, not an install** — `helm install` fails on a name that is already in use:
+>
+> ```bash
+> helm upgrade <release-name> oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+>   --version v0.18.0 --namespace <existing-namespace>
+> ```
+>
+> Keeping the old release name (e.g. `skyhook`) is fine — the chart works either way.
 >
 > **Already installed in the `skyhook` namespace?** Stay there. The documented namespace for **new** installs moved from `skyhook` to `nodewright`, but Kubernetes namespaces cannot be renamed in place and Helm cannot move a release between namespaces, so there is nothing to migrate and no deadline. `kubectl nodewright` finds the operator in either namespace automatically. See [Install namespace](migration.md#install-namespace-skyhook---nodewright).
 
@@ -68,25 +75,32 @@ helm uninstall nodewright --namespace nodewright
 
 The pre-delete hook will:
 
-- Delete all NodeWright resources
-- Delete all DeploymentPolicy resources
+- Delete all NodeWright resources, and legacy Skyhook resources if any remain
+- Delete DeploymentPolicy resources in both API groups
 - Complete quickly if no resources exist
 - Wait for finalizers to be processed if resources exist
-- Proceed with uninstall even if cleanup times out (job deadline: 2 minutes)
+
+Each delete is best-effort — a failing one does not fail the hook. The **job as a
+whole** is bounded by `cleanup.jobTimeoutSeconds` (default 120), and that bound is
+a hard deadline: if a finalizer keeps the job waiting past it, the job is killed
+and marked `Failed`, which fails the pre-delete hook and so fails
+`helm uninstall`. If that happens, clean up by hand using the commands below and
+re-run the uninstall with `--no-hooks`.
 
 ### Cleanup options
 
-To disable automatic cleanup and manage resources manually:
+Set these at install time with `helm install`, or on an existing release with
+`helm upgrade`. To disable automatic cleanup and manage resources manually:
 
 ```bash
-helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+helm upgrade nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
   --namespace nodewright --set cleanup.enabled=false
 ```
 
 To adjust the cleanup job timeout:
 
 ```bash
-helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+helm upgrade nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
   --namespace nodewright --set cleanup.jobTimeoutSeconds=180
 ```
 
@@ -95,9 +109,13 @@ helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
 If you disabled automatic cleanup, or need to clean up by hand:
 
 ```bash
-# Delete all NodeWright and DeploymentPolicy resources first
-kubectl delete nodewrights.nodewright.nvidia.com --all
-kubectl delete deploymentpolicies.nodewright.nvidia.com --all
+# Delete all NodeWright and DeploymentPolicy resources first. This mirrors what
+# the pre-delete hook does: a migrated cluster can still hold legacy resources,
+# and their finalizers block uninstall just as the current ones do.
+kubectl delete nodewrights --all --ignore-not-found
+kubectl delete skyhooks --all --ignore-not-found
+kubectl delete deploymentpolicies.nodewright.nvidia.com --all --ignore-not-found
+kubectl delete deploymentpolicies.skyhook.nvidia.com --all --ignore-not-found
 
 # Then uninstall the chart
 helm uninstall nodewright --namespace nodewright

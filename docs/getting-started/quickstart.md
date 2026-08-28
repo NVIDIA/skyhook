@@ -11,8 +11,19 @@ image pull secrets, and uninstall in full.
 - A Kubernetes cluster you can `kubectl` into (v1.30+)
 - Helm 3.8+ (needed for native OCI support)
 - A node you are willing to have NodeWright touch
+- A clone of this repository, for the example manifest in step 3:
+
+```bash
+git clone https://github.com/NVIDIA/nodewright.git
+cd nodewright
+```
 
 ## 1. Install the operator
+
+Pulling from a **private registry?** Create the image pull secret first, then add
+`--set imagePullSecret=node-init-secret` to the command below — otherwise the
+operator pod cannot pull and the wait in the next step times out. See
+[Installation](installation.md#configure-image-pull-secrets-if-needed).
 
 ```bash
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
@@ -27,9 +38,6 @@ Wait for it to come up:
 kubectl wait --for=condition=Available deployment \
   -l control-plane=controller-manager -n nodewright --timeout=300s
 ```
-
-If you pull from a private registry, you need an image pull secret first — see
-[Installation](installation.md#configure-image-pull-secrets-if-needed).
 
 ## 2. Pick one node
 

@@ -56,8 +56,17 @@ kubectl apply -f examples/interrupt-wait-for-pod/workload.yaml
 kubectl apply -f examples/interrupt-wait-for-pod/non-workload.yaml
 ```
 
-The DaemonSet lands only on the two labelled nodes. The ReplicaSet spreads across
-all three.
+The DaemonSet lands one pod on each of the two labelled nodes — that placement is
+guaranteed, and it is what the demo depends on. The ReplicaSet is only there as a
+contrast; the scheduler may not give it one pod per node, which does not matter
+because its pods never block. Check where things landed before continuing:
+
+```bash
+kubectl get pods -o wide -l app=nodewright-demo-workload
+kubectl get pods -o wide -l app=nodewright-demo-non-workload
+```
+
+You want one node with no `nodewright-demo-workload` pod on it.
 
 ### 2. Apply the NCR
 
@@ -99,8 +108,9 @@ kubectl get pods -n nodewright -o wide -l nodewright.nvidia.com/name=demo
 kubectl delete -f examples/interrupt-wait-for-pod/workload.yaml
 ```
 
-Once those pods are gone, the barrier lifts. NodeWright now cordons, drains and
-interrupts the remaining two nodes, and the NCR reaches `complete` on all three.
+Once those pods are gone, the barrier lifts. NodeWright drains and interrupts the
+remaining two nodes — they were already cordoned — and the NCR reaches
+`complete` on all three.
 
 ```bash
 kubectl get nodewright demo -o jsonpath='{.status.status}'
