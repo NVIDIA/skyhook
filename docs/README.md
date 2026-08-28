@@ -5,6 +5,7 @@ This directory contains user and operator documentation for NodeWright. Here you
 ## Getting Started
 
 - [Overview](getting-started/overview.md): What NodeWright is and how it works.
+- [Quickstart](getting-started/quickstart.md): Install NodeWright and run a hello-world package on one node.
 - [Installation](getting-started/installation.md): Install NodeWright via Helm.
 - [Migration from Skyhook](getting-started/migration.md): Transition guide from Skyhook to NodeWright.
 

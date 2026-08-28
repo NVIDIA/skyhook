@@ -6,6 +6,8 @@ navigation:
     contents:
       - page: Overview
         path: getting-started/overview.md
+      - page: Quickstart
+        path: getting-started/quickstart.md
       - page: Installation
         path: getting-started/installation.md
       - page: Migration from Skyhook
