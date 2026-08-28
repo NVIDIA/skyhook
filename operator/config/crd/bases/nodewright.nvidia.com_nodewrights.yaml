@@ -648,6 +648,15 @@ spec:
                 description: This NodeWright is required to have been completed before
                   any workloads can start
                 type: boolean
+              runtimeRequiredCordonAfter:
+                default: false
+                description: |-
+                  RuntimeRequiredCordonAfter will result in the operator applying a persistent node cordon
+                  after all runtime-required NodeWrights complete against a given node if the node currently
+                  has the runtime-required taint applied. The operator will apply a runtimeRequiredCordon
+                  annotation and mark the given node as unschedulable. This setting is only respected if
+                  RuntimeRequired is also true.
+                type: boolean
               sequencing:
                 default: node
                 description: |-

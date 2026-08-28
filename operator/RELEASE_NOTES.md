@@ -226,6 +226,16 @@ For the full commit-level log see CHANGELOG.md.
 
 ### New Features
 
+- **New `spec.runtimeRequiredCordonAfter`** applies a persistent cordon at the
+  same time the runtime-required taint is removed, for any NodeWright that sets
+  both `runtimeRequired: true` and `runtimeRequiredCordonAfter: true`. The node
+  is marked with a `runtimeRequiredCordon` annotation so the cordon survives
+  later NodeWright interrupts. Releasing it requires removing the annotation
+  and setting `unschedulable` to false in the same patch. If the node is
+  uncordoned externally without removing the annotation, the operator removes
+  it automatically. `kubectl nodewright node status` reports the cordon via new
+  `CORDONED` and `RUNTIME-REQUIRED-CORDON` columns. See
+  [docs/user-guide/runtime-required.md](../docs/user-guide/runtime-required.md#what-happens-when-the-taint-is-removed).
 - **Package stages now execute as `batch/v1` Jobs**, one per (NodeWright,
   package, stage, node), instead of operator-managed raw pods. The lifecycle
   state machine is unchanged — stages, Status/State derivation, interrupt /

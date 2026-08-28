@@ -112,12 +112,21 @@ Node names can be exact matches or regex patterns.`,
 
 // nodeSkyhookSummary represents a summary of NodeWright activity on a node
 type nodeSkyhookSummary struct {
-	NodeName         string                 `json:"nodeName"`
-	SkyhookName      string                 `json:"skyhookName"`
-	Status           string                 `json:"status"`
-	PackagesComplete int                    `json:"packagesComplete"`
-	PackagesTotal    int                    `json:"packagesTotal"`
-	Packages         []nodeSkyhookPkgStatus `json:"packages,omitempty"`
+	NodeName              string                 `json:"nodeName"`
+	SkyhookName           string                 `json:"skyhookName"`
+	Status                string                 `json:"status"`
+	PackagesComplete      int                    `json:"packagesComplete"`
+	PackagesTotal         int                    `json:"packagesTotal"`
+	Cordoned              bool                   `json:"cordoned"`
+	RuntimeRequiredCordon bool                   `json:"runtimeRequiredCordon"`
+	Packages              []nodeSkyhookPkgStatus `json:"packages,omitempty"`
+}
+
+// hasRuntimeRequiredCordonAnnotation reports whether the node carries the persistent
+// runtime-required cordon annotation.
+func hasRuntimeRequiredCordonAnnotation(annotations map[string]string) bool {
+	_, ok := annotations[v1alpha1.RuntimeRequiredCordonAnnotation]
+	return ok
 }
 
 // nodeSkyhookPkgStatus represents the status of a single package
@@ -234,12 +243,14 @@ func runNodeStatus(ctx context.Context, kubeClient *client.Client, nodePatterns 
 			})
 
 			summaries = append(summaries, nodeSkyhookSummary{
-				NodeName:         node.Name,
-				SkyhookName:      skyhookName,
-				Status:           status,
-				PackagesComplete: completeCount,
-				PackagesTotal:    len(packages),
-				Packages:         packages,
+				NodeName:              node.Name,
+				SkyhookName:           skyhookName,
+				Status:                status,
+				PackagesComplete:      completeCount,
+				PackagesTotal:         len(packages),
+				Cordoned:              node.Spec.Unschedulable,
+				RuntimeRequiredCordon: hasRuntimeRequiredCordonAnnotation(node.Annotations),
+				Packages:              packages,
 			})
 		}
 	}
@@ -273,13 +284,15 @@ func runNodeStatus(ctx context.Context, kubeClient *client.Client, nodePatterns 
 // nodeStatusTableConfig returns the table configuration for node status output
 func nodeStatusTableConfig() utils.TableConfig[nodeSkyhookSummary] {
 	return utils.TableConfig[nodeSkyhookSummary]{
-		Headers: []string{"NODE", "SKYHOOK", "STATUS", "PACKAGES"}, //nolint:goconst
+		Headers: []string{"NODE", "SKYHOOK", "STATUS", "PACKAGES", "CORDONED", "RUNTIME-REQUIRED-CORDON"}, //nolint:goconst
 		Extract: func(s nodeSkyhookSummary) []string {
 			return []string{
 				s.NodeName,
 				s.SkyhookName,
 				s.Status,
 				fmt.Sprintf("%d/%d", s.PackagesComplete, s.PackagesTotal),
+				fmt.Sprintf("%t", s.Cordoned),
+				fmt.Sprintf("%t", s.RuntimeRequiredCordon),
 			}
 		},
 	}
@@ -291,9 +304,11 @@ func outputNodeStatusTable(out io.Writer, summaries []nodeSkyhookSummary) error 
 
 // nodeStatusWideEntry represents a flattened entry for wide output (one row per package)
 type nodeStatusWideEntry struct {
-	NodeName    string
-	SkyhookName string
-	Package     nodeSkyhookPkgStatus
+	NodeName              string
+	SkyhookName           string
+	Cordoned              bool
+	RuntimeRequiredCordon bool
+	Package               nodeSkyhookPkgStatus
 }
 
 func outputNodeStatusWide(out io.Writer, summaries []nodeSkyhookSummary) error {
@@ -310,9 +325,14 @@ func outputNodeStatusWide(out io.Writer, summaries []nodeSkyhookSummary) error {
 				e.Package.State,
 			}
 		},
-		WideHeaders: []string{"RESTARTS", "IMAGE"},
+		WideHeaders: []string{"RESTARTS", "IMAGE", "CORDONED", "RUNTIME-REQUIRED-CORDON"},
 		WideExtract: func(e nodeStatusWideEntry) []string {
-			return []string{fmt.Sprintf("%d", e.Package.Restarts), e.Package.Image}
+			return []string{
+				fmt.Sprintf("%d", e.Package.Restarts),
+				e.Package.Image,
+				fmt.Sprintf("%t", e.Cordoned),
+				fmt.Sprintf("%t", e.RuntimeRequiredCordon),
+			}
 		},
 	}
 
@@ -321,9 +341,11 @@ func outputNodeStatusWide(out io.Writer, summaries []nodeSkyhookSummary) error {
 	for _, s := range summaries {
 		for _, pkg := range s.Packages {
 			entries = append(entries, nodeStatusWideEntry{
-				NodeName:    s.NodeName,
-				SkyhookName: s.SkyhookName,
-				Package:     pkg,
+				NodeName:              s.NodeName,
+				SkyhookName:           s.SkyhookName,
+				Cordoned:              s.Cordoned,
+				RuntimeRequiredCordon: s.RuntimeRequiredCordon,
+				Package:               pkg,
 			})
 		}
 	}
