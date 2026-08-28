@@ -5,6 +5,8 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+## cli/v0.3.0 - 2026-08-17
+
 ### Breaking Changes
 
 - The plugin is now invoked as `kubectl nodewright` (binary `kubectl-nodewright`)

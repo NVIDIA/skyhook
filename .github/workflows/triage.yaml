@@ -153,7 +153,7 @@ jobs:
                 { pattern: /\b(controller-manager|reconcile|the operator)\b/, label: 'component/operator' },
                 { pattern: /\b(skyhook-agent|package executor|agent)\b/, label: 'component/agent' },
                 { pattern: /\b(helm chart|helm|chart)\b/, label: 'component/chart' },
-                { pattern: /\b(kubectl[- ]skyhook|kubectl skyhook|cli plugin|cli)\b/, label: 'component/cli' },
+                { pattern: /\b(kubectl[- ](skyhook|nodewright)|cli plugin|cli)\b/, label: 'component/cli' },
                 { pattern: /\b(docs?|documentation|readme|examples)\b/, label: 'doc' },
                 { pattern: /\b(chainsaw|e2e|k8s-tests|tests?)\b/, label: 'component/tests' },
                 { pattern: /(?:\.github\/|github actions|\bworkflows?\b|\bci\b|tooling)/, label: 'component/ci' },

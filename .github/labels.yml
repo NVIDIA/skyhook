@@ -75,7 +75,7 @@
 
 - name: "component/cli"
   color: "bc4c00"
-  description: "kubectl-skyhook CLI plugin"
+  description: "kubectl-nodewright CLI plugin"
 
 - name: "component/ci"
   color: "bf3989"
