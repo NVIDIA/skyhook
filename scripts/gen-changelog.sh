@@ -174,8 +174,11 @@ if [[ ${#TAGS[@]} -eq 0 ]]; then
 fi
 
 # Common git-cliff flags. --offline disables the GitHub API enrichment, which
-# otherwise panics on an unauthenticated 403 and adds `by [@user]` links we don't
-# keep in committed changelogs.
+# otherwise panics on an unauthenticated 403 and adds `by [@user] in [#N]` links
+# we don't keep in committed changelogs. Keep it: the release workflows render
+# the SAME cliff.toml online precisely so release notes carry that credit, and
+# dropping --offline here would make every regeneration churn the committed
+# files against live API data. See docs/contributing/release-process.md.
 CLIFF_COMMON=(--offline --include-path "${INCLUDE_PATH}/**" --tag-pattern "$TAG_PATTERN" --strip all)
 
 # Render one released section. git-cliff can't see a tag whose commit was
