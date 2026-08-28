@@ -44,6 +44,10 @@
 # If [next-version] (e.g. v0.2.0) is given, commits since the latest tag are
 # rendered as that version instead of [Unreleased] -- use this when cutting a
 # release. Otherwise unreleased commits go under [Unreleased].
+#
+# Cutting a release also promotes the `## Unreleased` heading in the sibling
+# RELEASE_NOTES.md to `## <component>/vX.Y.Z - <date>`, which is the heading the
+# release workflows extract the human-authored release body from.
 
 set -euo pipefail
 
@@ -139,10 +143,12 @@ case "$COMPONENT" in
     cli)
         INCLUDE_PATH="operator/cmd/cli"
         OUTPUT="operator/cmd/cli/CHANGELOG.md"
+        NOTES="operator/cmd/cli/RELEASE_NOTES.md"
         ;;
     operator | agent | chart)
         INCLUDE_PATH="$COMPONENT"
         OUTPUT="$COMPONENT/CHANGELOG.md"
+        NOTES="$COMPONENT/RELEASE_NOTES.md"
         ;;
     *)
         echo "ERROR: unknown component '$COMPONENT' (want operator|agent|chart|cli)" >&2
@@ -194,6 +200,54 @@ released_section() {
     printf '\n'
 }
 
+# Promote RELEASE_NOTES.md's `## Unreleased` block to the version being cut and
+# open a fresh empty `## Unreleased` above it.
+#
+# The heading shape is a contract, not a preference: .github/workflows/release.yml
+# and cli-release.yaml lift the human-authored release body by matching a heading
+# that is exactly `## <tag>` or `## <tag> <suffix>`. `## Unreleased` never matches,
+# which is why notes written but never promoted reach no reader (#495).
+promote_release_notes() {
+    local tag="$1" heading_date="$2" body tmp
+
+    if [[ ! -f "$NOTES" ]]; then
+        echo "${C_YELLOW}WARNING: ${NOTES} not found; nothing to promote${C_RESET}" >&2
+        return 0
+    fi
+    if ! grep -qE '^## Unreleased[[:space:]]*$' "$NOTES"; then
+        echo "${C_YELLOW}WARNING: ${NOTES} has no '## Unreleased' heading; nothing to promote${C_RESET}" >&2
+        return 0
+    fi
+
+    body=$(awk '/^## / { f = ($0 ~ /^## Unreleased[[:space:]]*$/); next } f' "$NOTES")
+    # Most releases carry no hand-authored notes. Promoting an empty block would
+    # leave a stub heading that makes the release page look like it has notes.
+    if [[ -z "${body//[[:space:]]/}" ]]; then
+        return 0
+    fi
+
+    if grep -qE "^## ${tag//./\\.}([[:space:]]|$)" "$NOTES"; then
+        echo "${C_YELLOW}WARNING: ${NOTES} already has a '## ${tag}' section; left it and Unreleased alone${C_RESET}" >&2
+        return 0
+    fi
+
+    # Sibling temp rather than mktemp: same filesystem, so the rename is atomic,
+    # and it does not depend on TMPDIR being writable.
+    tmp="${NOTES}.promote.$$"
+    awk -v heading="## ${tag} - ${heading_date}" '
+        !done && /^## Unreleased[[:space:]]*$/ {
+            print "## Unreleased"
+            print ""
+            print heading
+            done = 1
+            next
+        }
+        { print }
+    ' "$NOTES" >"$tmp"
+    mv "$tmp" "$NOTES"
+    echo "${C_GREEN}Promoted ${NOTES}${C_RESET} ('## Unreleased' -> '## ${tag} - ${heading_date}')"
+}
+
 # Oldest tag has no predecessor; bound its range at the repo root so git-cliff
 # emits a closed range (an open-ended single ref emits nothing when the tag's own
 # commit is path-filtered out).
@@ -212,6 +266,7 @@ ROOT="$(git rev-list --max-parents=0 HEAD | tail -1)"
 # normal "commits after the latest tag, walked from HEAD" behaviour.
 CUT_RANGE=""
 CUT_REF=""
+NOTES_SKIP_REASON=""
 if [[ -n "$NEXT_VERSION" ]]; then
     next_mm="${NEXT_VERSION%.*}" # v0.17.1 -> v0.17
     prev_same_line=$(printf '%s\n' "${TAGS[@]}" |
@@ -231,8 +286,24 @@ if [[ -n "$NEXT_VERSION" ]]; then
             exit 1
         fi
         CUT_RANGE="${prev_same_line}..${CUT_REF}"
+        # CHANGELOG.md is sourced from CUT_RANGE, so it is right from any branch.
+        # RELEASE_NOTES.md is not: its `## Unreleased` block is whatever is in the
+        # working tree. On release/vX.Y.x that is exactly the cherry-picks the patch
+        # ships; on main it is the *next minor's* notes, and promoting it here would
+        # file them under a patch. Skip rather than mis-attribute.
+        if [[ "$(git rev-parse --abbrev-ref HEAD)" != "release/${next_mm}.x" ]]; then
+            NOTES_SKIP_REASON="HEAD is $(git rev-parse --abbrev-ref HEAD), not release/${next_mm}.x"
+        fi
         echo "${C_DIM}Patch cut: sourcing ${COMPONENT}/${NEXT_VERSION} from ${CUT_REF} (${CUT_RANGE})${C_RESET}" >&2
     fi
+fi
+
+# Date stamped on the promoted RELEASE_NOTES.md heading. Mirrors the CHANGELOG:
+# a patch is dated by its release branch tip, a minor/major by today.
+if [[ -n "$CUT_REF" ]]; then
+    NOTES_DATE=$(git log -1 --format=%cs "${CUT_REF}^{commit}")
+else
+    NOTES_DATE=$(date +%F)
 fi
 
 {
@@ -280,3 +351,14 @@ fi
 } >"$OUTPUT"
 
 echo "${C_GREEN}Updated ${OUTPUT}${C_RESET} (${#TAGS[@]} releases${NEXT_VERSION:+ + ${NEXT_VERSION}})"
+
+if [[ -n "$NEXT_VERSION" ]]; then
+    if [[ -n "$NOTES_SKIP_REASON" ]]; then
+        echo "${C_YELLOW}WARNING: left ${NOTES} alone (${NOTES_SKIP_REASON}).${C_RESET}" >&2
+        echo "${C_YELLOW}         A patch's hand-authored notes live under '## Unreleased' on its release" >&2
+        echo "         branch. Re-run this from ${CUT_REF} to promote them, or write the" >&2
+        echo "         '## ${COMPONENT}/${NEXT_VERSION}' section there by hand.${C_RESET}" >&2
+    else
+        promote_release_notes "${COMPONENT}/${NEXT_VERSION}" "$NOTES_DATE"
+    fi
+fi

@@ -5,6 +5,8 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+## chart/v0.18.0 - 2026-08-17
+
 ### Breaking Changes
 
 - **In-cluster resource names are now templated off the chart name and render
