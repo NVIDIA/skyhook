@@ -31,6 +31,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Required to create releases
+      # git-cliff resolves each commit's author and PR number through the
+      # GitHub API; listing pull requests needs this scope, and declaring
+      # `contents` above would otherwise narrow GITHUB_TOKEN to just that.
+      pull-requests: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -79,14 +83,37 @@ jobs:
 
       - name: Generate release notes
         id: release_notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Release notes are rendered WITHOUT --offline, unlike the committed
+          # changelogs that scripts/gen-changelog.sh produces. git-cliff's GitHub
+          # integration is the only thing that populates commit.remote.username
+          # and commit.remote.pr_number, and those are what turn a bare subject
+          # line into "... by [@user] in [#472]". See #492.
+          #
+          # git-cliff aborts rather than degrading when that API is unavailable
+          # (rate limit, revoked token, GitHub outage), and it puts no bound on
+          # the call, so wrap it: a release must not fail or hang over missing
+          # credit. The fallback is the offline render, i.e. exactly the
+          # uncredited notes this repo produced before #492.
+          render_notes() {
+            local out
+            if out=$(timeout 300 git cliff "$@"); then
+              printf '%s\n' "$out"
+              return 0
+            fi
+            echo "::warning::git-cliff could not reach the GitHub API; release notes will carry no author or PR attribution" >&2
+            git cliff --offline "$@"
+          }
+
           TAG="${GITHUB_REF_NAME}"          # e.g. cli/v0.2.0 or cli/v0.2.0-rc.1
           VERSION="${TAG#cli/}"
           # Asymmetric scoping (see #246): an RC shows the delta since the prior
           # tag; a stable release covers everything since the previous STABLE so
           # its notes are not truncated to the last-rc delta.
           if [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
-            BODY=$(git cliff --offline --include-path "operator/cmd/cli/**" \
+            BODY=$(render_notes --include-path "operator/cmd/cli/**" \
               --tag-pattern "cli/.*" --latest --strip all)
           elif [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             PREV=$(git tag -l 'cli/v*' --sort=-v:refname \
@@ -101,7 +128,7 @@ jobs:
               ROOT=$(git rev-list --max-parents=0 HEAD | tail -1)
               RANGE="${ROOT}..${TAG}"
             fi
-            BODY=$(git cliff --offline --include-path "operator/cmd/cli/**" \
+            BODY=$(render_notes --include-path "operator/cmd/cli/**" \
               --tag-pattern 'cli/v[0-9]+\.[0-9]+\.[0-9]+$' \
               --tag "${TAG}" "${RANGE}" --strip all)
           else

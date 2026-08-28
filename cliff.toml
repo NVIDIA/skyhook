@@ -26,6 +26,13 @@ All notable changes to this project will be documented in this file.
 # parses as one; with filter_unconventional = false everything else keeps its full
 # raw message, body included. Hence `split | first`: one changelog bullet is one
 # subject line, never a commit body.
+#
+# The `commit.remote.*` fields are only populated when git-cliff's GitHub
+# integration runs, which `--offline` disables. Committed changelogs are rendered
+# offline (scripts/gen-changelog.sh) so the attribution clauses collapse to
+# nothing there; release notes are rendered online (the release workflows) so
+# they carry author credit and a link back to the PR. One template, two
+# renderings -- do not "fix" this by hardcoding either half.
 body = """
 {% if version %}\
     ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
@@ -37,7 +44,8 @@ body = """
     {% for commit in commits %}
         - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
             {{ commit.message | split(pat="\n") | first | trim | upper_first }}\
-            {% if commit.remote.username %} by [@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}){%- endif %}\
+            {% if commit.remote.username %} by {% if commit.remote.username is ending_with("[bot]") %}@{{ commit.remote.username }}{% else %}[@{{ commit.remote.username }}](https://github.com/{{ commit.remote.username }}){% endif %}{%- endif %}\
+            {% if commit.remote.pr_number %} in [#{{ commit.remote.pr_number }}](https://github.com/NVIDIA/nodewright/pull/{{ commit.remote.pr_number }}){%- endif %}\
     {% endfor %}
 {% endfor %}\n
 """
@@ -57,6 +65,9 @@ commit_preprocessors = [
     # grouped normally. On release branches this commit is often the only one the
     # path filter keeps, so without this the whole release section renders empty.
     { pattern = '^Merge pull request #[0-9]+ from \S+[ \t]*\r?\n\s*\r?\n', replace = "" },
+    # Strip the trailing `(#472)` GitHub appends to a squash-merge subject. It is
+    # bare text, not a link, and it duplicates the linked `in [#472](...)` the
+    # template adds from commit.remote.pr_number on online (release-notes) runs.
     { pattern = '\((\w+\s)?#([0-9]+)\)', replace = "" },
 ]
 commit_parsers = [
@@ -86,3 +97,12 @@ skip_tags = ""
 ignore_tags = ""
 topo_order = false
 sort_commits = "oldest"
+
+# Pin the repo git-cliff resolves authors and PR numbers against, rather than
+# letting it infer one from the runner's `origin` remote: a fork's checkout, or a
+# clone via a different URL spelling, would otherwise silently enrich against the
+# wrong repo or not at all. Only consulted on online runs -- `--offline` skips
+# the GitHub API entirely, which is what committed changelogs use.
+[remote.github]
+owner = "NVIDIA"
+repo = "nodewright"
