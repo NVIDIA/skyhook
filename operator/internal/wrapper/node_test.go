@@ -370,6 +370,29 @@ var _ = Describe("SkyhookNode", func() {
 			Expect(sn.Changed()).To(BeTrue())
 		})
 
+		It("should keep the node cordoned if the runtimeRequiredCordon annotation is present", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						myCordonKey:                              cordonAnnotationValue,
+						v1alpha1.RuntimeRequiredCordonAnnotation: cordonAnnotationValue,
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+
+			sn, err := NewSkyhookNodeOnly(node, "my-skyhook")
+			Expect(err).ToNot(HaveOccurred())
+
+			sn.Uncordon()
+
+			Expect(node.Spec.Unschedulable).To(BeTrue())
+			Expect(node.Annotations).ToNot(HaveKey(myCordonKey))
+			Expect(node.Annotations).To(HaveKeyWithValue(v1alpha1.RuntimeRequiredCordonAnnotation, cordonAnnotationValue))
+			Expect(sn.Changed()).To(BeTrue())
+		})
+
 		It("should not change the node if this Skyhook does not own a cordon", func() {
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
