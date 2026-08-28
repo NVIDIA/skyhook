@@ -69,6 +69,13 @@ jobs:
             // runs Renovate here both resolve to `author.type === 'Bot'`.
             const isBot = (c) => c.author?.type === 'Bot';
 
+            // Merge commits are exempt from sign-off, not from signing. GitHub's
+            // "Update branch" and merge buttons author them with no `Signed-off-by`
+            // and give the clicker no way to add one, and a merge introduces no new
+            // authorship for the DCO to certify. They are still GitHub-signed, so
+            // the signature requirement below still applies to them.
+            const isMerge = (c) => (c.parents?.length ?? 0) > 1;
+
             // Only the trailer block counts, matching `git interpret-trailers`:
             // the last paragraph, and never a single-paragraph message. Scanning
             // every line would accept a `Signed-off-by:` quoted in prose while git
@@ -99,7 +106,7 @@ jobs:
 
               const problems = [];
 
-              if (!hasSignOff(c.commit.message)) {
+              if (!isMerge(c) && !hasSignOff(c.commit.message)) {
                 problems.push('no `Signed-off-by` trailer (`git commit -s`)');
               }
 
