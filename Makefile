@@ -93,6 +93,7 @@ license-header-check: ## Check license headers for all code.
 .PHONY: notices
 notices: ## Regenerate operator/, agent/, and root THIRD_PARTY_NOTICES.md files.
 	$(MAKE) -C operator go-licenses
+	$(MAKE) -C agent/go go-licenses
 	@python3 scripts/generate-notices.py all
 
 .PHONY: notices-operator
@@ -102,6 +103,7 @@ notices-operator: ## Regenerate only operator/THIRD_PARTY_NOTICES.md.
 
 .PHONY: notices-agent
 notices-agent: ## Regenerate only agent/THIRD_PARTY_NOTICES.md.
+	$(MAKE) -C agent/go go-licenses
 	@python3 scripts/generate-notices.py agent
 
 .PHONY: notices-rollup

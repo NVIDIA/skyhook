@@ -180,7 +180,7 @@ def operator_notices():
     )
 
 
-def agent_notices():
+def _agent_python_section():
     deps = []
     if AGENT_VENDOR.exists():
         for d in sorted(AGENT_VENDOR.iterdir()):
@@ -188,19 +188,7 @@ def agent_notices():
                 name, _, version = d.name.rpartition("-")
                 deps.append((name, version))
     if not deps:
-        AGENT_FILE.write_text(
-            _collapse_blanks(
-                f"# Third-Party Notices — Skyhook Agent\n\n"
-                f"Generated: {now_utc()}\n"
-                f"Agent tag: `{tag('agent')}`\n\n"
-                f"_No vendored Python dependencies found._\n"
-            )
-        )
-        print(
-            f"Wrote {AGENT_FILE.relative_to(REPO_ROOT)} (0 Python deps)",
-            file=sys.stderr,
-        )
-        return
+        return ["_No vendored Python dependencies found._", ""], 0
 
     if not (NOTICES_VENV / "bin" / "pip").exists():
         subprocess.run(["python3", "-m", "venv", str(NOTICES_VENV)], check=True)
@@ -231,25 +219,15 @@ def agent_notices():
         u = e.get("URL") or ""
         return u if u and u != "UNKNOWN" else "n/a"
 
-    out = [
-        "# Third-Party Notices — Skyhook Agent",
-        "",
-        f"Generated: {now_utc()}",
-        f"Agent tag: `{tag('agent')}`",
-        "",
-        "## Index",
-        "",
-        "| Package | Version | License | Source |",
-        "|---|---|---|---|",
-    ]
+    out = ["| Package | Version | License | Source |", "|---|---|---|---|"]
     for e in entries:
         out.append(
             f"| `{e['Name']}` | {e['Version']} | {e.get('License') or 'Unknown'} | {src(e)} |"
         )
-    out += ["", "## License Texts", ""]
+    out += ["", "### License Texts", ""]
     for e in entries:
         out += [
-            f"### {e['Name']} {e['Version']}",
+            f"#### {e['Name']} {e['Version']}",
             "",
             f"* License: {e.get('License') or 'Unknown'}",
             f"* Source: {src(e)}",
@@ -263,9 +241,68 @@ def agent_notices():
                 "License text unavailable. See upstream source for the full license.",
                 "",
             ]
+    return out, len(entries)
+
+
+def _agent_go_section():
+    go_cache = LICENSES_CACHE / "agent-go"
+    rows = _go_license_rows(AGENT_GO_DIR, go_cache)
+    out = ["| Package | License | Source |", "|---|---|---|"]
+    for pkg, url, lic in rows:
+        out.append(f"| `{pkg}` | {lic or 'Unknown'} | {url or 'n/a'} |")
+    out += ["", "### License Texts", ""]
+    for pkg, url, lic in rows:
+        out += [
+            f"#### {pkg}",
+            "",
+            f"* License: {lic or 'Unknown'}",
+            f"* Source: {url or 'n/a'}",
+            "",
+        ]
+        pkg_dir = go_cache / pkg
+        files = (
+            sorted(p for p in pkg_dir.iterdir() if p.is_file())
+            if pkg_dir.exists()
+            else []
+        )
+        for f in files:
+            out += [
+                f"##### {f.name}",
+                "",
+                "```text",
+                f.read_text(errors="replace").rstrip(),
+                "```",
+                "",
+            ]
+        if not files:
+            out += [
+                "License text unavailable. See upstream source for the full license.",
+                "",
+            ]
+    return out, len(rows)
+
+
+def agent_notices():
+    py_section, py_count = _agent_python_section()
+    go_section, go_count = _agent_go_section()
+
+    out = [
+        "# Third-Party Notices — Skyhook Agent",
+        "",
+        f"Generated: {now_utc()}",
+        f"Agent tag: `{tag('agent')}`",
+        "",
+        "## Python Dependencies",
+        "",
+        *py_section,
+        "## Go Dependencies",
+        "",
+        *go_section,
+    ]
     AGENT_FILE.write_text(_collapse_blanks("\n".join(out)) + "\n")
     print(
-        f"Wrote {AGENT_FILE.relative_to(REPO_ROOT)} ({len(entries)} Python deps)",
+        f"Wrote {AGENT_FILE.relative_to(REPO_ROOT)} "
+        f"({py_count} Python deps, {go_count} Go deps)",
         file=sys.stderr,
     )
 

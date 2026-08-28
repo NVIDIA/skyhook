@@ -42,7 +42,9 @@ install-deps: golangci-lint ginkgo mockery addlicense go-licenses ## Install all
 
 .PHONY: go-licenses
 go-licenses: $(LOCALBIN) ## Download go-licenses locally if necessary.
-	test -s $(GO_LICENSES) || GOBIN=$(LOCALBIN) go install github.com/google/go-licenses@$(GO_LICENSES_VERSION)
+	@test -x $(GO_LICENSES) \
+		&& go version -m $(GO_LICENSES) | awk '$$1 == "mod" && $$2 == "github.com/google/go-licenses" && $$3 == "$(GO_LICENSES_VERSION)" { found = 1 } END { exit !found }' \
+		|| GOBIN=$(LOCALBIN) go install github.com/google/go-licenses@$(GO_LICENSES_VERSION)
 
 .PHONY: golangci-lint
 golangci-lint: $(LOCALBIN) ## Download golangci-lint locally if necessary.
