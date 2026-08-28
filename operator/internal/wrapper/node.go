@@ -103,8 +103,10 @@ type SkyhookNodeOnly interface {
 	Taint(key string)
 	// RemoveTaint removes the taint with the given key from the node.
 	RemoveTaint(key string)
-	// Cordon marks the node unschedulable and records the cordon in annotations for this Skyhook.
-	Cordon()
+	// Cordon marks the node unschedulable and records the cordon in annotations for this
+	// Skyhook. It reports whether this call changed the node, which means the cordon has
+	// not reached the API server yet.
+	Cordon() bool
 	// StartDrain records when draining started for this Skyhook on this node.
 	StartDrain(startedAt metav1.Time)
 	// DrainStartedAt returns when draining started for this Skyhook on this node.
@@ -533,7 +535,9 @@ func (node *skyhookNode) HasSkyhookAnnotations() bool {
 }
 
 // Cordon marks the node unschedulable and records the cordon in annotations for this Skyhook.
-func (node *skyhookNode) Cordon() {
+// It reports whether this call changed the node, which means the cordon is still only in
+// memory and has not reached the API server yet.
+func (node *skyhookNode) Cordon() bool {
 	if node.Annotations == nil {
 		node.Annotations = make(map[string]string)
 	}
@@ -543,7 +547,9 @@ func (node *skyhookNode) Cordon() {
 		node.Spec.Unschedulable = true
 		node.Annotations[cordonAnnotationKey(node.skyhookName)] = cordonAnnotationValue
 		node.updated = true
+		return true
 	}
+	return false
 }
 
 // StartDrain records when draining started for this Skyhook on this node.

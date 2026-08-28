@@ -90,6 +90,22 @@ The interrupt flow is managed by the `ProcessInterrupt` and `EnsureNodeIsReadyFo
 - Ensure the node is ready before proceeding with package operations
 - Handle the timing and sequencing of all stages
 
+### Cordon Is Durable Before Drain Starts
+
+The cordon and the drain are deliberately split across two reconcile passes. The
+operator applies the cordon in memory and writes it to the API server at the end
+of the pass, together with every other node it selected. Draining does not begin
+until a later pass observes `spec.unschedulable` already set on the node.
+
+This matters because eviction is what triggers a replacement pod. If the operator
+evicted in the same pass that first cordoned the node, `spec.unschedulable` would
+still be local to the controller, and the scheduler could place the replacement
+back onto a node that is about to be interrupted.
+
+The split costs one reconcile per drain cycle, not one per node: a single pass
+still cordons every node it selected, so a batch of nodes is cordoned together
+and then drained together on the following pass.
+
 ### Shared Cordon Ownership
 
 Each NodeWright that cordons a node records ownership with a `nodewright.nvidia.com/cordon_<nodewright-name>` annotation. When that NodeWright completes, it removes only its own cordon annotation. The node is marked schedulable only after no `nodewright.nvidia.com/cordon_*` annotations remain, so one NodeWright cannot uncordon a node that another NodeWright is still preparing for interrupt work.
@@ -130,25 +146,45 @@ The fields map to Kubernetes drain behavior:
 - `deleteEmptyDirData`: when `false`, pods with `emptyDir` volumes block drain. The default is `true`.
 - `force`: when `false`, pods without a managing controller block drain. The default is `true`.
 - `ignoreDaemonSets`: when `true`, DaemonSet-managed pods are skipped during drain. The default is `true`.
-- `timeout`: bounds how long a node may spend draining. Unset or zero means no timeout. When the timeout expires, the node is marked `erroring` and package stages do not proceed on that node.
+- `timeout`: bounds how long a node may spend draining, measured from drain start — the first pass that finds the node not yet drained, which is before any evict or delete is issued — until the node is drained. Unset or zero means no timeout, so a pod that never finishes terminating holds the node in `in_progress` indefinitely. When the timeout expires, the node is marked `erroring` and package stages do not proceed on that node.
 - `gracePeriod`: overrides the grace period used for eviction or direct deletion. Unset uses each pod's own `terminationGracePeriodSeconds`.
 
-The operator also skips pods that are already terminating, pods that tolerate
-the `node.kubernetes.io/unschedulable` taint, mirror/static pods, pods in
-`kube-system`, and its own package pods — identified by the
-`nodewright.nvidia.com/name` and `nodewright.nvidia.com/package` labels stamped on
-every package pod, so they remain exempt even if an admission controller
-rewrites or strips their tolerations. The label exemption only applies to
-pods in the operator's own namespace, so workloads elsewhere cannot opt out
+The operator also skips pods that tolerate the `node.kubernetes.io/unschedulable`
+taint, mirror/static pods, pods in `kube-system`, and its own package pods —
+identified by the `nodewright.nvidia.com/name` and `nodewright.nvidia.com/package`
+labels stamped on every package pod, so they remain exempt even if an admission
+controller rewrites or strips their tolerations. The label exemption only applies
+to pods in the operator's own namespace, so workloads elsewhere cannot opt out
 of drain by copying the labels. These exclusions are not user-configurable.
 
 Compared to earlier releases, the default drain filter now follows Kubernetes
 matching more closely: the unschedulable toleration check uses Kubernetes
 `ToleratesTaint` semantics, DaemonSet pods are identified from the controller
-owner reference, and already-terminating or mirror/static pods are ignored.
+owner reference, and mirror/static pods are ignored.
 
 `podNonInterruptLabels` remains a pre-drain barrier. Matching pods must finish
 or move away before the operator starts the configurable drain step.
+
+### When Drain Is Complete
+
+Drain is complete once the pods it selected have actually left the node, not
+once their evictions were accepted. A pod that has an eviction or delete in
+flight keeps a `deletionTimestamp` while the kubelet works through its
+`terminationGracePeriodSeconds`, and the operator treats it as still present:
+the node stays in `in_progress`, no further evict or delete is issued for it,
+and the interrupt does not run until the pod object is gone. This matches
+`kubectl drain`, which waits for the pods it selected to disappear.
+
+Only pods the operator selected for eviction or deletion are waited on. The
+exclusions above still apply while a pod is terminating, so a DaemonSet pod
+mid-rollout, a `kube-system` pod, or one of the operator's own package pods never
+holds up a drain.
+
+Because drain now waits out termination, a workload's
+`terminationGracePeriodSeconds` is on the critical path for every interrupt, and
+a pod that cannot finish terminating — a stuck finalizer, an unresponsive
+kubelet — blocks the node's interrupt until it is cleared. Set
+`spec.drainConfig.timeout` to bound that wait; there is no default.
 
 ### Recovering From a Drain Timeout
 

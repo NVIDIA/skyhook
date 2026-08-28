@@ -88,6 +88,12 @@ license-header-check: ## Check license headers for all code.
 	fi
 	$(MAKE) -C agent license-header-check
 
+##@ Docs
+
+.PHONY: diagrams
+diagrams: ## Regenerate the architecture diagram PNGs from docs/architecture/images/src.
+	@bash docs/architecture/images/src/generate.sh
+
 ##@ Licenses
 
 .PHONY: notices
