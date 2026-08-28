@@ -147,7 +147,7 @@ Signed-off-by: Joe Smith <joe.smith@email.com>
 
 Sorry, no pseudonyms or anonymous contributions.
 
-What the automated check actually verifies is narrower than the rule above: for each commit not authored by a bot, that a `Signed-off-by` trailer is present and that the signature verified. It does not compare the trailer's address to the author's, because GitHub's `NNN+user@users.noreply.github.com` aliases make that mismatch common and harmless. Reviewers still enforce the rest.
+What the automated check actually verifies is narrower than the rule above: for each commit not authored by a bot, that the signature verified, and that a `Signed-off-by` trailer is present unless the commit is a merge. Merge commits are exempt from sign-off because GitHub's "Update branch" and merge buttons author them with no trailer and no way to add one, and a merge introduces no new authorship to certify; they still have to be signed. It does not compare the trailer's address to the author's, because GitHub's `NNN+user@users.noreply.github.com` aliases make that mismatch common and harmless. Reviewers still enforce the rest.
 
 ### One-time setup
 
