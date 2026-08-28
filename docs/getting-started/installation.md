@@ -90,17 +90,27 @@ re-run the uninstall with `--no-hooks`.
 ### Cleanup options
 
 Set these at install time with `helm install`, or on an existing release with
-`helm upgrade`. To disable automatic cleanup and manage resources manually:
+`helm upgrade`. When changing a setting on a release you already have, pass
+**both** of these or you will change more than you meant to:
+
+- `--version` pinned to the chart version you are already running. Without it,
+  `helm upgrade` against an OCI chart resolves to the newest published version,
+  so flipping a cleanup flag would also upgrade the operator.
+- `--reuse-values`, so the values you set at install time (an
+  `imagePullSecret`, say) survive. Without it Helm starts from the chart
+  defaults and applies only your `--set` flags.
 
 ```bash
+# Disable automatic cleanup and manage resources manually
 helm upgrade nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+  --version v0.18.0 --reuse-values \
   --namespace nodewright --set cleanup.enabled=false
 ```
 
-To adjust the cleanup job timeout:
-
 ```bash
+# Adjust the cleanup job timeout
 helm upgrade nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
+  --version v0.18.0 --reuse-values \
   --namespace nodewright --set cleanup.jobTimeoutSeconds=180
 ```
 

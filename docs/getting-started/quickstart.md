@@ -27,10 +27,14 @@ operator pod cannot pull and the wait in the next step times out. See
 
 ```bash
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.18.0 \
   --namespace nodewright \
   --create-namespace
 ```
+
+This installs the **latest** chart, which is what you want here: the examples you
+just cloned track the main branch, so both come from the same place. For a real
+deployment, pin `--version` — see
+[Installation](installation.md#install-nodewright).
 
 Wait for it to come up:
 
