@@ -21,7 +21,7 @@ NodeWright uses three roles. Code ownership maps directly to [`.github/CODEOWNER
 
 ### Contributors
 
-Anyone who opens an issue, pull request, or discussion. Contributors follow the [Code of Conduct](CODE_OF_CONDUCT.md) and sign off their commits under the DCO (see [CONTRIBUTING.md](CONTRIBUTING.md)). No special access is required to contribute.
+Anyone who opens an issue, pull request, or discussion. Contributors follow the [Code of Conduct](CODE_OF_CONDUCT.md) and both sign off and sign their commits, `git commit -s -S` (see [CONTRIBUTING.md](CONTRIBUTING.md#developer-certificate-of-origin-and-commit-signing)). No special access is required to contribute.
 
 ### Code Owners
 

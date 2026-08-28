@@ -14,9 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Configuration for the DCO bot (https://github.com/probot/dco), which enforces
-# the Developer Certificate of Origin sign-off documented in CONTRIBUTING.md.
+# Configuration for the DCO bot (https://github.com/probot/dco), kept in case the
+# app is installed on this repository. It is currently not reporting any checks,
+# so the sign-off requirement documented in CONTRIBUTING.md is enforced by
+# .github/workflows/commit-requirements.yaml instead, which also checks the
+# cryptographic signature the app does not look at.
 
-# Require all commits to be signed off, except organization members and bots.
+# Require every commit to be signed off, organization members included. Setting
+# this to false exempts members, which is where most of the missing sign-offs on
+# this repository have come from.
 require:
-  members: false
+  members: true
