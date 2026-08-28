@@ -77,6 +77,93 @@ jobs:
         working-directory: operator
         run: make cli-release-build CLI_VERSION=${{ steps.version.outputs.version }}
 
+      - name: Resolve published asset names
+        id: assets
+        working-directory: operator
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The install snippet in the release body has to name the exact
+          # archives and binary that cli-release-build just produced. Deriving
+          # both from dist/ instead of hard-coding them is what stops the
+          # published curl commands from 404-ing the next time the naming
+          # changes (they did, through the whole Skyhook -> NodeWright rename).
+          # Every archive that gets uploaded is checked, not just the two the
+          # notes document, and the platform list is read from dist/ rather than
+          # restated here so adding a platform cannot quietly skip validation.
+          shopt -s nullglob
+
+          archives=(dist/*.tar.gz dist/*.zip)
+          if [[ ${#archives[@]} -eq 0 ]]; then
+            echo "::error::cli-release-build produced no archives in operator/dist/"
+            exit 1
+          fi
+          if [[ ! -f dist/checksums.txt ]]; then
+            echo "::error::cli-release-build produced no dist/checksums.txt"
+            exit 1
+          fi
+
+          binary=""
+          for archive in "${archives[@]}"; do
+            case "${archive}" in
+              *.tar.gz) mapfile -t entries < <(tar -tzf "${archive}") ;;
+              *.zip)    mapfile -t entries < <(unzip -Z1 "${archive}") ;;
+            esac
+            if [[ ${#entries[@]} -ne 1 ]]; then
+              echo "::error::${archive} should hold exactly one binary, found ${#entries[@]}: ${entries[*]-}"
+              exit 1
+            fi
+            # Windows ships the same binary with a .exe suffix.
+            name="${entries[0]%.exe}"
+            if [[ -z "${binary}" ]]; then
+              binary="${name}"
+            elif [[ "${binary}" != "${name}" ]]; then
+              echo "::error::archives disagree on the binary name: '${binary}' vs '${name}' in ${archive}"
+              exit 1
+            fi
+            # An archive missing from checksums.txt is one the build did not
+            # finish making; the release would upload it unverifiable.
+            if ! awk '{print $2}' dist/checksums.txt | grep -qxF "$(basename "${archive}")"; then
+              echo "::error::$(basename "${archive}") is missing from dist/checksums.txt"
+              exit 1
+            fi
+          done
+
+          # Membership in checksums.txt is not the same as a correct digest, and
+          # the digests are what a user runs `shasum -c` against after
+          # downloading. Verify them here so a release cannot publish checksum
+          # data that fails against its own assets.
+          ( cd dist && shasum -a 256 -c --strict -q checksums.txt )
+
+          # cli-release-build leaves the raw per-platform binaries beside the
+          # archives, so they are the build's own list of platforms. Checking
+          # against them catches an archive step that skipped one, without
+          # restating the platform matrix here where it could drift.
+          for built in dist/*_"${VERSION}"_*; do
+            case "${built}" in
+              *.tar.gz|*.zip) continue ;;
+              *.exe) want="${built%.exe}.zip" ;;
+              *)     want="${built}.tar.gz" ;;
+            esac
+            if [[ ! -f "${want}" ]]; then
+              echo "::error::cli-release-build made $(basename "${built}") but no $(basename "${want}")"
+              exit 1
+            fi
+          done
+
+          # Resolve the two platforms the install snippet actually documents.
+          for platform in linux_amd64 darwin_arm64; do
+            matches=(dist/*_"${VERSION}"_"${platform}".tar.gz)
+            if [[ ${#matches[@]} -ne 1 ]]; then
+              echo "::error::cli-release-build should produce exactly one dist/*_${VERSION}_${platform}.tar.gz, found ${#matches[@]}: ${matches[*]-}"
+              exit 1
+            fi
+            echo "${platform}_archive=$(basename "${matches[0]}")" >> "$GITHUB_OUTPUT"
+          done
+          echo "binary=${binary}" >> "$GITHUB_OUTPUT"
+          echo "Validated ${#archives[@]} archives, each holding '${binary}'"
+
       - name: Generate release notes
         id: release_notes
         run: |
@@ -135,39 +222,39 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          name: "Skyhook CLI ${{ steps.version.outputs.version }}"
+          name: "NodeWright CLI ${{ steps.version.outputs.version }}"
           prerelease: ${{ steps.version.outputs.prerelease }}
           files: |
             operator/dist/*.tar.gz
             operator/dist/*.zip
             operator/dist/checksums.txt
           body: |
-            ## Skyhook CLI ${{ steps.version.outputs.version }}
+            ## NodeWright CLI ${{ steps.version.outputs.version }}
 
             ${{ steps.release_notes.outputs.notes }}
 
             ### Installation
 
             Download and extract the appropriate archive for your platform.
-            The binary must be named `kubectl-skyhook` for kubectl to discover it as a plugin.
-            Alternatively, it can be used directly as `skyhook` without kubectl.
+            The binary must be named `kubectl-${{ steps.assets.outputs.binary }}` for kubectl to discover it as a plugin.
+            Alternatively, it can be used directly as `${{ steps.assets.outputs.binary }}` without kubectl.
 
             ```bash
             # Linux (amd64)
-            curl -LO https://github.com/NVIDIA/skyhook/releases/download/${{ github.ref_name }}/skyhook_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
-            tar -xzf skyhook_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
-            sudo mv skyhook /usr/local/bin/kubectl-skyhook
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.assets.outputs.linux_amd64_archive }}
+            tar -xzf ${{ steps.assets.outputs.linux_amd64_archive }}
+            sudo mv ${{ steps.assets.outputs.binary }} /usr/local/bin/kubectl-${{ steps.assets.outputs.binary }}
 
             # macOS (Apple Silicon)
-            curl -LO https://github.com/NVIDIA/skyhook/releases/download/${{ github.ref_name }}/skyhook_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
-            tar -xzf skyhook_${{ steps.version.outputs.version }}_darwin_arm64.tar.gz
-            sudo mv skyhook /usr/local/bin/kubectl-skyhook
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.assets.outputs.darwin_arm64_archive }}
+            tar -xzf ${{ steps.assets.outputs.darwin_arm64_archive }}
+            sudo mv ${{ steps.assets.outputs.binary }} /usr/local/bin/kubectl-${{ steps.assets.outputs.binary }}
             ```
 
             ### Verify installation
 
             ```bash
-            kubectl skyhook version --client-only
-            # Or if installed as 'skyhook':
-            skyhook version --client-only
+            kubectl ${{ steps.assets.outputs.binary }} version --client-only
+            # Or if installed as '${{ steps.assets.outputs.binary }}':
+            ${{ steps.assets.outputs.binary }} version --client-only
             ```

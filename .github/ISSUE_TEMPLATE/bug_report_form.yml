@@ -66,7 +66,7 @@ body:
         - Operator (controller-manager)
         - Agent (package executor)
         - Helm chart
-        - CLI (kubectl-skyhook)
+        - CLI (kubectl-nodewright)
         - CI / tooling
         - Tests (e2e / chainsaw)
         - Docs / examples

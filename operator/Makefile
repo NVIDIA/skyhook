@@ -568,16 +568,21 @@ cli-release-build: ## Build CLI binaries for all platforms (used by CI release w
 	done
 	@# Create archives (rename binary to just "nodewright" inside archive)
 	@echo "Creating archives..."
+	@# Keep these as ';'-separated commands. Chaining them with '&&' looks
+	@# equivalent but defeats .SHELLFLAGS=-ec: set -e exempts every command in
+	@# an && list except the last, so a failed cp or a tar that dies on a full
+	@# disk would let the loop run on and the recipe exit 0, publishing a
+	@# release with a missing or truncated archive.
 	@cd $(CLI_DIST_DIR) && for os in linux darwin; do \
 		for arch in amd64 arm64; do \
-			cp nodewright_$(CLI_VERSION)_$${os}_$${arch} nodewright && \
-			tar -czf nodewright_$(CLI_VERSION)_$${os}_$${arch}.tar.gz nodewright && \
+			cp nodewright_$(CLI_VERSION)_$${os}_$${arch} nodewright; \
+			tar -czf nodewright_$(CLI_VERSION)_$${os}_$${arch}.tar.gz nodewright; \
 			rm nodewright; \
 		done; \
 	done
 	@cd $(CLI_DIST_DIR) && for arch in amd64 arm64; do \
-		cp nodewright_$(CLI_VERSION)_windows_$${arch}.exe nodewright.exe && \
-		zip -q nodewright_$(CLI_VERSION)_windows_$${arch}.zip nodewright.exe && \
+		cp nodewright_$(CLI_VERSION)_windows_$${arch}.exe nodewright.exe; \
+		zip -q nodewright_$(CLI_VERSION)_windows_$${arch}.zip nodewright.exe; \
 		rm nodewright.exe; \
 	done
 	@# Generate checksums
