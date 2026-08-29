@@ -116,6 +116,15 @@ notices-agent: ## Regenerate only agent/THIRD_PARTY_NOTICES.md.
 notices-rollup: ## Regenerate only the root THIRD_PARTY_NOTICES.md from component files.
 	@python3 scripts/generate-notices.py rollup
 
+.PHONY: notices-check
+notices-check: notices ## Fail if the committed THIRD_PARTY_NOTICES.md files are stale.
+	@git diff --exit-code -- THIRD_PARTY_NOTICES.md operator/THIRD_PARTY_NOTICES.md agent/THIRD_PARTY_NOTICES.md \
+		|| { echo "ERROR: THIRD_PARTY_NOTICES.md is out of date. Run 'make notices' and commit the result."; exit 1; }
+
+.PHONY: notices-test
+notices-test: ## Run the unit tests for the notices generator's license completeness gate.
+	@python3 scripts/generate-notices_test.py
+
 ##@ Changelog
 
 # Changelogs are generated from git history by scripts/gen-changelog.sh, which
