@@ -25,7 +25,6 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -38,28 +37,28 @@ OPERATOR_FILE = REPO_ROOT / "operator" / "THIRD_PARTY_NOTICES.md"
 AGENT_FILE = REPO_ROOT / "agent" / "THIRD_PARTY_NOTICES.md"
 ROOT_FILE = REPO_ROOT / "THIRD_PARTY_NOTICES.md"
 
+# Platforms the released Go binaries are built for. The operator image is
+# linux-only, but the CLI ships linux/darwin/windows x amd64/arm64 (see
+# `cli-release-build` in operator/Makefile), and build-tagged sources pull
+# different transitive dependencies per platform: github.com/Azure/go-ansiterm
+# and github.com/inconshreveable/mousetrap are linked only on windows. Notices
+# are therefore collected per platform and unioned.
+GO_PLATFORMS = (
+    ("linux", "amd64"),
+    ("linux", "arm64"),
+    ("darwin", "amd64"),
+    ("darwin", "arm64"),
+    ("windows", "amd64"),
+    ("windows", "arm64"),
+)
+
 
 def tag(prefix: str) -> str:
     r = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(REPO_ROOT),
-            "describe",
-            "--tags",
-            "--abbrev=0",
-            "--match",
-            f"{prefix}/v*",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+        ["git", "-C", str(REPO_ROOT), "describe", "--tags", "--abbrev=0", "--match", f"{prefix}/v*"],
+        capture_output=True, text=True, check=False,
     )
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unreleased"
-
-
-def now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _collapse_blanks(text: str) -> str:
@@ -67,120 +66,174 @@ def _collapse_blanks(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
-def _go_license_rows(
-    component_dir: Path, cache_dir: Path, extra_env: dict | None = None
-):
-    """Run go-licenses against a Go module and return sorted (pkg, url, license) rows.
+def go_env(goos: str = "", goarch: str = "") -> dict:
+    env = {**os.environ, "GOFLAGS": "-mod=vendor"}
+    if goos:
+        env["GOOS"] = goos
+    if goarch:
+        env["GOARCH"] = goarch
+    return env
 
-    License text files for each package are saved under cache_dir/<pkg>/.
+
+def go_out(args: list[str], goos: str = "", goarch: str = "") -> str:
+    return subprocess.check_output(["go", *args], cwd=OPERATOR_DIR, env=go_env(goos, goarch), text=True)
+
+
+def license_files(pkg: str, cache_dirs) -> list:
+    """License files saved for `pkg`, merged across the per-platform caches.
+
+    A package present on only some platforms is saved only under those
+    platforms' caches, so every cache has to be consulted. Files are keyed by
+    name and the first cache that has one wins: all platforms copy the same
+    file out of the same vendor tree, so a later duplicate carries no new
+    information.
     """
-    gl = component_dir / "bin" / "go-licenses"
-    gl_path = str(gl) if gl.exists() else (shutil.which("go-licenses") or "")
-    if not gl_path:
-        sys.exit(
-            f"ERROR: go-licenses not found. Run 'make -C {component_dir.relative_to(REPO_ROOT)} go-licenses'."
-        )
-    env = {**os.environ, **(extra_env or {})}
-    stdlib = subprocess.check_output(
-        ["go", "list", "std"], cwd=component_dir, env=env, text=True
-    )
-    stdlib_ignore = ",".join(
-        sorted({line.split("/")[0] for line in stdlib.splitlines() if line})
-    )
-    local = subprocess.check_output(
-        ["go", "list", "-m"], cwd=component_dir, env=env, text=True
-    ).strip()
-    ignore = f"{stdlib_ignore},{local}"
-
-    if cache_dir.is_dir():
-        shutil.rmtree(cache_dir)
-    elif cache_dir.exists():
-        cache_dir.unlink()
-    subprocess.run(
-        [
-            gl_path,
-            "save",
-            "./...",
-            f"--save_path={cache_dir}",
-            "--force",
-            f"--ignore={ignore}",
-        ],
-        cwd=component_dir,
-        env=env,
-        check=True,
-    )
-    csv = subprocess.check_output(
-        [gl_path, "csv", "./...", f"--ignore={ignore}"],
-        cwd=component_dir,
-        env=env,
-        text=True,
-    )
-    rows = sorted(
-        {tuple(line.split(",", 2)) for line in csv.splitlines() if line.strip()}
-    )
-    if not rows:
-        sys.exit(
-            f"ERROR: go-licenses produced no entries for {component_dir.relative_to(REPO_ROOT)}."
-        )
-    return rows
+    by_name = {}
+    for d in cache_dirs:
+        pkg_dir = d / pkg
+        if not pkg_dir.is_dir():
+            continue
+        for f in sorted(p for p in pkg_dir.iterdir() if p.is_file()):
+            by_name.setdefault(f.name, f)
+    return [by_name[n] for n in sorted(by_name)]
 
 
-def _render_go_section(heading: str, rows, cache_dir: Path) -> list[str]:
-    out = [heading, "", "| Package | License | Source |", "|---|---|---|"]
-    for pkg, url, lic in rows:
-        out.append(f"| `{pkg}` | {lic or 'Unknown'} | {url or 'n/a'} |")
-    out += ["", "## License Texts", ""]
-    for pkg, url, lic in rows:
-        out += [
-            f"### {pkg}",
-            "",
-            f"* License: {lic or 'Unknown'}",
-            f"* Source: {url or 'n/a'}",
-            "",
-        ]
-        pkg_dir = cache_dir / pkg
-        files = (
-            sorted(p for p in pkg_dir.iterdir() if p.is_file())
-            if pkg_dir.exists()
-            else []
-        )
-        for f in files:
-            out += [
-                f"#### {f.name}",
-                "",
-                "```text",
-                f.read_text(errors="replace").rstrip(),
-                "```",
-                "",
-            ]
-        if not files:
-            out += [
-                "License text unavailable. See upstream source for the full license.",
-                "",
-            ]
-    return out
+def uncovered_modules(index_keys, pkg_to_module, linked_modules, local_module):
+    """Linked modules that no index entry vouches for.
+
+    Coverage is compared on module identity, never on path prefixes. Prefix
+    matching lets an ancestor entry vouch for a nested submodule, and a nested
+    submodule is a separate module whose license may differ from, or be missing
+    in, its parent's. It also lets the bare `github.com` row that go-licenses
+    emits when it cannot resolve a package match everything under that host,
+    which would make this check vacuous.
+    """
+    known_modules = set(pkg_to_module.values())
+    covered = set()
+    for key in index_keys:
+        # go-licenses keys a row on the directory a license covers, which is
+        # often a roll-up prefix ("k8s.io/apimachinery/pkg") rather than a real
+        # import path, so an exact lookup is not enough. Walking up finds the
+        # longest known module containing the key, which is its owning module:
+        # a key inside a nested submodule resolves to that submodule and never
+        # to its parent. A key under no known module resolves to nothing.
+        p = key
+        while True:
+            if p in pkg_to_module:
+                covered.add(pkg_to_module[p])
+                break
+            if p in known_modules:
+                covered.add(p)
+                break
+            if "/" not in p:
+                break
+            p = p.rsplit("/", 1)[0]
+    return sorted(
+        m for m in linked_modules
+        if m
+        and m != local_module
+        and not m.startswith(f"{local_module}/")
+        and m not in covered
+    )
 
 
 def operator_notices():
-    rows = _go_license_rows(
-        OPERATOR_DIR, LICENSES_CACHE / "operator", {"GOFLAGS": "-mod=vendor"}
-    )
+    gl = OPERATOR_DIR / "bin" / "go-licenses"
+    gl_path = str(gl) if gl.exists() else (shutil.which("go-licenses") or "")
+    if not gl_path:
+        sys.exit("ERROR: go-licenses not found. Run 'make -C operator go-licenses'.")
+    local = go_out(["list", "-m"]).strip()
+
+    if LICENSES_CACHE.is_dir():
+        shutil.rmtree(LICENSES_CACHE)
+    elif LICENSES_CACHE.exists():
+        LICENSES_CACHE.unlink()
+
+    rows_set: set[tuple[str, str, str]] = set()
+    cache_dirs: list[Path] = []
+    linked: set[str] = set()
+    pkg_to_module: dict[str, str] = {}
+    for goos, goarch in GO_PLATFORMS:
+        stdlib = go_out(["list", "std"], goos, goarch)
+        ignore = ",".join([*sorted(line for line in stdlib.splitlines() if line), local])
+        env = go_env(goos, goarch)
+        cache_dir = LICENSES_CACHE / f"{goos}_{goarch}"
+        cache_dirs.append(cache_dir)
+        subprocess.run(
+            [gl_path, "save", "./...", f"--save_path={cache_dir}", "--force", f"--ignore={ignore}"],
+            cwd=OPERATOR_DIR, env=env, check=True,
+        )
+        csv = subprocess.check_output(
+            [gl_path, "csv", "./...", f"--ignore={ignore}"], cwd=OPERATOR_DIR, env=env, text=True
+        )
+        rows_set |= {tuple(line.split(",", 2)) for line in csv.splitlines() if line.strip()}
+
+        linked.update(
+            m for m in go_out(
+                ["list", "-deps", "-f", "{{if .Module}}{{.Module.Path}}{{end}}", "./cmd/..."],
+                goos, goarch,
+            ).split()
+        )
+        for line in go_out(
+            ["list", "-deps", "-f", "{{.ImportPath}} {{if .Module}}{{.Module.Path}}{{end}}", "./..."],
+            goos, goarch,
+        ).splitlines():
+            parts = line.split()
+            if len(parts) == 2:
+                pkg_to_module[parts[0]] = parts[1]
+
+    rows = sorted(rows_set)
+    if not rows:
+        sys.exit("ERROR: go-licenses produced no entries.")
+    if not linked:
+        sys.exit("ERROR: 'go list -deps ./cmd/...' resolved no modules; cannot verify license coverage.")
+    if not pkg_to_module:
+        sys.exit("ERROR: 'go list -deps ./...' produced no package-to-module map; cannot verify license coverage.")
+
+    missing = uncovered_modules({pkg for pkg, _, _ in rows}, pkg_to_module, linked, local)
+    if missing:
+        sys.exit(
+            "ERROR: module(s) linked into the released binaries have no license entry:\n"
+            + "\n".join(f"  {m}" for m in missing)
+            + "\n\nThese are redistributed, so their licenses must be disclosed in "
+            + f"{OPERATOR_FILE.relative_to(REPO_ROOT)}.\n"
+            + "Do not silence this by widening --ignore: that is what hid them previously."
+        )
+
     out = [
         "# Third-Party Notices — Skyhook Operator + CLI",
         "",
-        f"Generated: {now_utc()}",
         f"Operator tag: `{tag('operator')}`",
         "",
+        "## Index",
+        "",
+        "| Package | License | Source |",
+        "|---|---|---|",
     ]
-    out += _render_go_section("## Index", rows, LICENSES_CACHE / "operator")
+    for pkg, url, lic in rows:
+        out.append(f"| `{pkg}` | {lic or 'Unknown'} | {url or 'n/a'} |")
+    out += ["", "## License Texts", ""]
+    textless: list[str] = []
+    for pkg, url, lic in rows:
+        out += [f"### {pkg}", "", f"* License: {lic or 'Unknown'}", f"* Source: {url or 'n/a'}", ""]
+        files = license_files(pkg, cache_dirs)
+        if not files:
+            textless.append(pkg)
+        for f in files:
+            out += [f"#### {f.name}", "", "```text", f.read_text(errors="replace").rstrip(), "```", ""]
+    if textless:
+        sys.exit(
+            "ERROR: go-licenses reported a license for these packages but saved no license text:\n"
+            + "\n".join(f"  {t}" for t in textless)
+            + "\n\nAn index row without the text it names discloses nothing. This usually means\n"
+            + "the per-platform license caches were not merged, so a package present on only\n"
+            + "some platforms lost its text."
+        )
     OPERATOR_FILE.write_text(_collapse_blanks("\n".join(out)) + "\n")
-    print(
-        f"Wrote {OPERATOR_FILE.relative_to(REPO_ROOT)} ({len(rows)} Go deps)",
-        file=sys.stderr,
-    )
+    print(f"Wrote {OPERATOR_FILE.relative_to(REPO_ROOT)} ({len(rows)} Go deps)", file=sys.stderr)
 
 
-def _agent_python_section():
+def _agent_python_notices():
     deps = []
     if AGENT_VENDOR.exists():
         for d in sorted(AGENT_VENDOR.iterdir()):
@@ -194,23 +247,14 @@ def _agent_python_section():
         subprocess.run(["python3", "-m", "venv", str(NOTICES_VENV)], check=True)
     pip = str(NOTICES_VENV / "bin" / "pip")
     pip_licenses = str(NOTICES_VENV / "bin" / "pip-licenses")
-    subprocess.run(
-        [pip, "install", "--quiet", "--upgrade", "pip", "pip-licenses"], check=True
-    )
+    subprocess.run([pip, "install", "--quiet", "--upgrade", "pip", "pip-licenses"], check=True)
     subprocess.run(
         [pip, "install", "--quiet", "--upgrade", *[f"{n}=={v}" for n, v in deps]],
         check=True,
     )
     raw = subprocess.check_output(
-        [
-            pip_licenses,
-            "--packages",
-            *[n for n, _ in deps],
-            "--with-license-file",
-            "--with-urls",
-            "--format=json",
-            "--no-license-path",
-        ],
+        [pip_licenses, "--packages", *[n for n, _ in deps],
+         "--with-license-file", "--with-urls", "--format=json", "--no-license-path"],
         text=True,
     )
     entries = sorted(json.loads(raw), key=lambda e: e["Name"].lower())
@@ -221,75 +265,113 @@ def _agent_python_section():
 
     out = ["| Package | Version | License | Source |", "|---|---|---|---|"]
     for e in entries:
-        out.append(
-            f"| `{e['Name']}` | {e['Version']} | {e.get('License') or 'Unknown'} | {src(e)} |"
-        )
+        out.append(f"| `{e['Name']}` | {e['Version']} | {e.get('License') or 'Unknown'} | {src(e)} |")
     out += ["", "### License Texts", ""]
     for e in entries:
         out += [
-            f"#### {e['Name']} {e['Version']}",
-            "",
+            f"#### {e['Name']} {e['Version']}", "",
             f"* License: {e.get('License') or 'Unknown'}",
-            f"* Source: {src(e)}",
-            "",
+            f"* Source: {src(e)}", "",
         ]
         text = (e.get("LicenseText") or "").strip()
         if text:
             out += ["```text", text, "```", ""]
         else:
-            out += [
-                "License text unavailable. See upstream source for the full license.",
-                "",
-            ]
+            out += ["License text unavailable. See upstream source for the full license.", ""]
     return out, len(entries)
 
 
-def _agent_go_section():
-    go_cache = LICENSES_CACHE / "agent-go"
-    rows = _go_license_rows(AGENT_GO_DIR, go_cache)
+def _agent_go_notices():
+    gl = AGENT_GO_DIR / "bin" / "go-licenses"
+    gl_path = str(gl) if gl.exists() else (shutil.which("go-licenses") or "")
+    if not gl_path:
+        sys.exit("ERROR: go-licenses not found. Run 'make -C agent/go go-licenses'.")
+
+    def go_out(args: list[str]) -> str:
+        return subprocess.check_output(["go", *args], cwd=AGENT_GO_DIR, env=os.environ, text=True)
+
+    local = go_out(["list", "-m"]).strip()
+    stdlib = go_out(["list", "std"])
+    ignore = ",".join([*sorted(line for line in stdlib.splitlines() if line), local])
+
+    cache_dir = LICENSES_CACHE / "agent-go"
+    if cache_dir.is_dir():
+        shutil.rmtree(cache_dir)
+    elif cache_dir.exists():
+        cache_dir.unlink()
+    subprocess.run(
+        [gl_path, "save", "./...", f"--save_path={cache_dir}", "--force", f"--ignore={ignore}"],
+        cwd=AGENT_GO_DIR, env=os.environ, check=True,
+    )
+    csv = subprocess.check_output(
+        [gl_path, "csv", "./...", f"--ignore={ignore}"], cwd=AGENT_GO_DIR, env=os.environ, text=True
+    )
+    rows = sorted({tuple(line.split(",", 2)) for line in csv.splitlines() if line.strip()})
+    if not rows:
+        sys.exit("ERROR: go-licenses produced no entries for agent/go.")
+
+    linked = set(
+        m for m in go_out(
+            ["list", "-deps", "-f", "{{if .Module}}{{.Module.Path}}{{end}}", "./cmd/..."]
+        ).split()
+    )
+    if not linked:
+        sys.exit(
+            "ERROR: 'go list -deps ./cmd/...' resolved no modules for agent/go; "
+            "cannot verify license coverage."
+        )
+
+    pkg_to_module: dict[str, str] = {}
+    for line in go_out(
+        ["list", "-deps", "-f", "{{.ImportPath}} {{if .Module}}{{.Module.Path}}{{end}}", "./..."]
+    ).splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            pkg_to_module[parts[0]] = parts[1]
+    if not pkg_to_module:
+        sys.exit(
+            "ERROR: 'go list -deps ./...' produced no package-to-module map for agent/go; "
+            "cannot verify license coverage."
+        )
+
+    missing = uncovered_modules({pkg for pkg, _, _ in rows}, pkg_to_module, linked, local)
+    if missing:
+        sys.exit(
+            "ERROR: module(s) linked into the released agent binary have no license entry:\n"
+            + "\n".join(f"  {m}" for m in missing)
+            + "\n\nThese are redistributed, so their licenses must be disclosed in "
+            + f"{AGENT_FILE.relative_to(REPO_ROOT)}.\n"
+            + "Do not silence this by widening --ignore: that is what hid them previously."
+        )
+
     out = ["| Package | License | Source |", "|---|---|---|"]
     for pkg, url, lic in rows:
         out.append(f"| `{pkg}` | {lic or 'Unknown'} | {url or 'n/a'} |")
     out += ["", "### License Texts", ""]
+    textless: list[str] = []
     for pkg, url, lic in rows:
-        out += [
-            f"#### {pkg}",
-            "",
-            f"* License: {lic or 'Unknown'}",
-            f"* Source: {url or 'n/a'}",
-            "",
-        ]
-        pkg_dir = go_cache / pkg
-        files = (
-            sorted(p for p in pkg_dir.iterdir() if p.is_file())
-            if pkg_dir.exists()
-            else []
-        )
-        for f in files:
-            out += [
-                f"##### {f.name}",
-                "",
-                "```text",
-                f.read_text(errors="replace").rstrip(),
-                "```",
-                "",
-            ]
+        out += [f"#### {pkg}", "", f"* License: {lic or 'Unknown'}", f"* Source: {url or 'n/a'}", ""]
+        pkg_dir = cache_dir / pkg
+        files = sorted(p for p in pkg_dir.iterdir() if p.is_file()) if pkg_dir.exists() else []
         if not files:
-            out += [
-                "License text unavailable. See upstream source for the full license.",
-                "",
-            ]
+            textless.append(pkg)
+        for f in files:
+            out += [f"##### {f.name}", "", "```text", f.read_text(errors="replace").rstrip(), "```", ""]
+    if textless:
+        sys.exit(
+            "ERROR: go-licenses reported a license for these agent/go packages but saved no license text:\n"
+            + "\n".join(f"  {t}" for t in textless)
+        )
     return out, len(rows)
 
 
 def agent_notices():
-    py_section, py_count = _agent_python_section()
-    go_section, go_count = _agent_go_section()
+    py_section, py_count = _agent_python_notices()
+    go_section, go_count = _agent_go_notices()
 
     out = [
         "# Third-Party Notices — Skyhook Agent",
         "",
-        f"Generated: {now_utc()}",
         f"Agent tag: `{tag('agent')}`",
         "",
         "## Python Dependencies",
@@ -331,9 +413,7 @@ def demote_and_strip_h1(text: str) -> str:
 def rollup():
     for f, hint in ((OPERATOR_FILE, "operator"), (AGENT_FILE, "agent")):
         if not f.exists():
-            sys.exit(
-                f"ERROR: {f.relative_to(REPO_ROOT)} does not exist. Run 'make notices-{hint}' first."
-            )
+            sys.exit(f"ERROR: {f.relative_to(REPO_ROOT)} does not exist. Run 'make notices-{hint}' first.")
     op = demote_and_strip_h1(OPERATOR_FILE.read_text())
     ag = demote_and_strip_h1(AGENT_FILE.read_text())
     out = [
@@ -341,7 +421,6 @@ def rollup():
         "",
         "Combined third-party notices for Skyhook (operator, CLI, agent).",
         "",
-        f"Generated: {now_utc()}",
         f"Operator tag: `{tag('operator')}`",
         f"Agent tag: `{tag('agent')}`",
         f"Chart tag: `{tag('chart')}`",
