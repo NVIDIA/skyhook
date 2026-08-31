@@ -19,6 +19,7 @@
 package flags
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -127,8 +128,40 @@ func (s *fileStore) Mark(value step.Step, message string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marking step: resolving flag path: %w", err)
 	}
-	if err := s.Write(path, []byte(message)); err != nil {
-		return "", fmt.Errorf("marking step %q: %w", value.Path(), err)
+	legacyPath, hasLegacyPath := s.legacyPath(value)
+	paths := []string{path}
+	if hasLegacyPath {
+		paths = append([]string{legacyPath}, paths...)
+	}
+	existed := make([]bool, len(paths))
+	for index, markerPath := range paths {
+		if err := s.validatePath(markerPath); err != nil {
+			return "", fmt.Errorf("marking step %q: validating flag path: %w", value.Path(), err)
+		}
+		existed[index], err = hostfs.RegularFileExists(s.rootMount, markerPath)
+		if err != nil {
+			return "", fmt.Errorf("marking step %q: inspecting flag path %q: %w", value.Path(), markerPath, err)
+		}
+	}
+	for index, markerPath := range paths {
+		if err := s.Write(markerPath, []byte(message)); err != nil {
+			var rollbackErr error
+			for rollbackIndex, writtenPath := range paths[:index+1] {
+				if existed[rollbackIndex] {
+					continue
+				}
+				if removeErr := hostfs.RemoveFile(s.rootMount, writtenPath); removeErr != nil {
+					rollbackErr = errors.Join(
+						rollbackErr,
+						fmt.Errorf("removing incomplete flag %q: %w", writtenPath, removeErr),
+					)
+				}
+			}
+			return "", errors.Join(
+				fmt.Errorf("marking step %q: %w", value.Path(), err),
+				rollbackErr,
+			)
+		}
 	}
 	return path, nil
 }
@@ -140,13 +173,28 @@ func (s *fileStore) Remove(value step.Step) error {
 	if err != nil {
 		return fmt.Errorf("removing step flag: resolving flag path: %w", err)
 	}
-	if err := s.validatePath(path); err != nil {
-		return fmt.Errorf("removing step flag: validating store path: %w", err)
+	legacyPath, hasLegacyPath := s.legacyPath(value)
+	paths := []string{path}
+	if hasLegacyPath {
+		paths = append(paths, legacyPath)
 	}
-	if err := hostfs.RemoveFile(s.rootMount, path); err != nil {
-		return fmt.Errorf("removing step flag %q: %w", path, err)
+	var removeErr error
+	for _, flagPath := range paths {
+		if err := s.validatePath(flagPath); err != nil {
+			removeErr = errors.Join(
+				removeErr,
+				fmt.Errorf("removing step flag: validating store path: %w", err),
+			)
+			continue
+		}
+		if err := hostfs.RemoveFile(s.rootMount, flagPath); err != nil {
+			removeErr = errors.Join(
+				removeErr,
+				fmt.Errorf("removing step flag %q: %w", flagPath, err),
+			)
+		}
 	}
-	return nil
+	return removeErr
 }
 
 // Write creates or replaces a flag file owned by this store. In addition to
@@ -191,9 +239,35 @@ func (s *fileStore) Check(value step.Step, alwaysRun bool, currentStage stage.St
 		return Decision{}, fmt.Errorf("checking flag for step %q: inspecting store path: %w", value.Path(), err)
 	}
 	if !exists {
-		return Decide(false, alwaysRun, currentStage, value.Idempotence()), nil
+		legacyPath, hasLegacyPath := s.legacyPath(value)
+		if hasLegacyPath {
+			exists, err = hostfs.RegularFileExists(s.rootMount, legacyPath)
+			if err != nil {
+				return Decision{}, fmt.Errorf("checking flag for step %q: inspecting legacy store path: %w", value.Path(), err)
+			}
+		}
+		if !exists {
+			return Decide(false, alwaysRun, currentStage, value.Idempotence()), nil
+		}
 	}
 	return Decide(true, alwaysRun, currentStage, value.Idempotence()), nil
+}
+
+func (s *fileStore) legacyPath(value step.Step) (string, bool) {
+	if value == nil || !filepath.IsLocal(value.Path()) {
+		return "", false
+	}
+	metadata := value.ExecutionMetadata()
+	payload := step.FormatLegacyArguments(metadata.Arguments) + "_" +
+		step.FormatLegacyReturnCodes(metadata.ReturnCodes)
+	marker := base64.StdEncoding.EncodeToString([]byte(payload))
+	return filepath.Join(
+		s.rootMount,
+		s.dir,
+		s.packageName,
+		s.packageVersion,
+		value.Path()+"_"+marker,
+	), true
 }
 
 // Decide applies flag policy without filesystem access.

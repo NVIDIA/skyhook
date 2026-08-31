@@ -14,6 +14,11 @@
 
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+DOCKER_CMD ?= docker
+
+# Keep this digest in lockstep with renovate-version in the workflow so local
+# and CI validation run the same Renovate build that creates update PRs.
+RENOVATE_IMAGE := ghcr.io/renovatebot/renovate:44@sha256:e6b93e709ca64495ab9307350b260064276ee02d15c6886387fd2d42c926623b
 
 
 .PHONY: help
@@ -42,6 +47,14 @@ build: ## Build operator and agent.
 test: ## Run tests for operator and agent.
 	$(MAKE) -C operator test
 	$(MAKE) -C agent test
+
+.PHONY: renovate-config-check
+renovate-config-check: ## Validate the Renovate configuration with the pinned runner image.
+	$(DOCKER_CMD) run --rm \
+		-v "$(CURDIR):/repo:ro" \
+		-w /repo \
+		$(RENOVATE_IMAGE) \
+		renovate-config-validator .github/renovate.json5
 
 ##@ Formatting
 
@@ -75,14 +88,22 @@ license-header-check: ## Check license headers for all code.
 	fi
 	$(MAKE) -C agent license-header-check
 
+##@ Docs
+
+.PHONY: diagrams
+diagrams: ## Regenerate the architecture diagram PNGs from docs/architecture/images/src.
+	@bash docs/architecture/images/src/generate.sh
+
 ##@ Licenses
 
 .PHONY: notices
 notices: ## Regenerate operator/, agent/, and root THIRD_PARTY_NOTICES.md files.
+	$(MAKE) -C operator go-licenses
 	@python3 scripts/generate-notices.py all
 
 .PHONY: notices-operator
 notices-operator: ## Regenerate only operator/THIRD_PARTY_NOTICES.md.
+	$(MAKE) -C operator go-licenses
 	@python3 scripts/generate-notices.py operator
 
 .PHONY: notices-agent
@@ -92,6 +113,15 @@ notices-agent: ## Regenerate only agent/THIRD_PARTY_NOTICES.md.
 .PHONY: notices-rollup
 notices-rollup: ## Regenerate only the root THIRD_PARTY_NOTICES.md from component files.
 	@python3 scripts/generate-notices.py rollup
+
+.PHONY: notices-check
+notices-check: notices ## Fail if the committed THIRD_PARTY_NOTICES.md files are stale.
+	@git diff --exit-code -- THIRD_PARTY_NOTICES.md operator/THIRD_PARTY_NOTICES.md agent/THIRD_PARTY_NOTICES.md \
+		|| { echo "ERROR: THIRD_PARTY_NOTICES.md is out of date. Run 'make notices' and commit the result."; exit 1; }
+
+.PHONY: notices-test
+notices-test: ## Run the unit tests for the notices generator's license completeness gate.
+	@python3 scripts/generate-notices_test.py
 
 ##@ Changelog
 

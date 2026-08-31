@@ -14,16 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: skyhook.nvidia.com/v1alpha1
-kind: Skyhook
+apiVersion: nodewright.nvidia.com/v1alpha1
+kind: NodeWright
 metadata:
   labels:
-    app.kubernetes.io/part-of: skyhook-operator
-    app.kubernetes.io/created-by: skyhook-operator
+    app.kubernetes.io/part-of: nodewright-operator
+    app.kubernetes.io/created-by: nodewright-operator
   name: demo
   annotations:
-    skyhook.nvidia.com/pause: "false"
-    skyhook.nvidia.com/disable: "false"
+    nodewright.nvidia.com/pause: "false"
+    nodewright.nvidia.com/disable: "false"
 spec:
   nodeSelectors:
     matchLabels:
@@ -32,7 +32,7 @@ spec:
     percent: 100
   podNonInterruptLabels:
     matchLabels:
-      app: skyhook-demo-workload
+      app: nodewright-demo-workload
   packages:
     baz:
       version: 1.1.0

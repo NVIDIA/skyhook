@@ -75,7 +75,7 @@
 
 - name: "component/cli"
   color: "bc4c00"
-  description: "kubectl-skyhook CLI plugin"
+  description: "kubectl-nodewright CLI plugin"
 
 - name: "component/ci"
   color: "bf3989"
@@ -128,4 +128,4 @@
 
 - name: "dependencies"
   color: "0366d6"
-  description: "Dependency update (Dependabot)"
+  description: "Dependency update (Dependabot or Renovate)"

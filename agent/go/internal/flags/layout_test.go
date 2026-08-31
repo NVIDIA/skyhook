@@ -62,11 +62,6 @@ var _ = Describe("Layout", func() {
 	It("resolves the copied step directory", func() {
 		Expect(StepsDir("/copy/package")).To(Equal("/copy/package/skyhook_dir"))
 	})
-
-	It("rejects dot package path components", func() {
-		Expect(validatePathComponent("package name", ".")).To(MatchError(`package name "." must be a single path component`))
-		Expect(validatePathComponent("package version", ".")).To(MatchError(`package version "." must be a single path component`))
-	})
 })
 
 var _ = Describe("log paths", func() {

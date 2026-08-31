@@ -77,6 +77,14 @@ type NodeWrightSpec struct {
 	//+kubebuilder:default=false
 	RuntimeRequired bool `json:"runtimeRequired,omitempty"`
 
+	// RuntimeRequiredCordonAfter will result in the operator applying a persistent node cordon
+	// after all runtime-required NodeWrights complete against a given node if the node currently
+	// has the runtime-required taint applied. The operator will apply a runtimeRequiredCordon
+	// annotation and mark the given node as unschedulable. This setting is only respected if
+	// RuntimeRequired is also true.
+	//+kubebuilder:default=false
+	RuntimeRequiredCordonAfter bool `json:"runtimeRequiredCordonAfter,omitempty"`
+
 	// AutoTaintNewNodes enables the operator to automatically apply the runtime-required taint
 	// to new nodes that match this NodeWright's node selector. Only meaningful when RuntimeRequired is true.
 	// A node is considered "new" if it has no nodewright.nvidia.com/* annotations.
@@ -882,6 +890,10 @@ type State string
 
 const (
 	METADATA_PREFIX string = "nodewright.nvidia.com"
+
+	// The RuntimeRequiredCordonAnnotation annotation and cordon are applied to a node when RuntimeRequiredCordonAfter
+	// is true, a node completes all runtime-required NodeWrights, and the runtime-required taint is present.
+	RuntimeRequiredCordonAnnotation = METADATA_PREFIX + "/runtimeRequiredCordon"
 
 	StateComplete   State = "complete"
 	StateInProgress State = "in_progress" // this means its actually running, pod started

@@ -3,7 +3,7 @@
 
 name: Merge Gate
 
-# Checks that block merges: license verification on Go dependency changes.
+# Checks that block merges: dependency licenses and Renovate configuration.
 # Modeled on NVIDIA/aicr's merge-gate.yaml.
 
 on:
@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 1
     outputs:
       deps: ${{ steps.filter.outputs.deps }}
+      renovate: ${{ steps.filter.outputs.renovate }}
+      notices: ${{ steps.filter.outputs.notices }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -34,6 +36,51 @@ jobs:
               - 'operator/go.mod'
               - 'operator/go.sum'
               - 'operator/vendor/**'
+            renovate:
+              - '.github/dependabot.yml'
+              - '.github/renovate.json5'
+              - '.github/workflows/renovate.yaml'
+              - 'Makefile'
+            # Dependency inputs, the generator, the notices themselves, and
+            # everything that defines how they are produced or verified. A
+            # change to the Makefile targets, the pinned go-licenses version,
+            # or this workflow must re-run the gate, or a change to the gate
+            # could merge without the gate ever running against it.
+            notices:
+              - 'operator/go.mod'
+              - 'operator/go.sum'
+              - 'operator/vendor/**'
+              - 'operator/deps.mk'
+              - 'operator/Makefile'
+              - 'agent/vendor/**'
+              - 'agent/skyhook-agent/pyproject.toml'
+              - 'scripts/generate-notices.py'
+              - 'scripts/generate-notices_test.py'
+              - 'Makefile'
+              - '.github/workflows/merge-gate.yaml'
+              - 'THIRD_PARTY_NOTICES.md'
+              - 'operator/THIRD_PARTY_NOTICES.md'
+              - 'agent/THIRD_PARTY_NOTICES.md'
+
+  # ---------------------------------------------------------------------------
+  # Renovate configuration — runs only when dependency automation changes.
+  # ---------------------------------------------------------------------------
+  validate-renovate:
+    needs: [check-paths]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        if: needs.check-paths.outputs.renovate == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate Renovate configuration
+        if: needs.check-paths.outputs.renovate == 'true'
+        run: make renovate-config-check
+      - name: Skip Renovate validation
+        if: needs.check-paths.outputs.renovate != 'true'
+        run: echo "No dependency automation changes — Renovate validation not required"
 
   # ---------------------------------------------------------------------------
   # License verification — runs only when dependency files change.
@@ -67,6 +114,48 @@ jobs:
         env:
           GOFLAGS: -mod=vendor
         run: make -C operator license-check
+
+  # ---------------------------------------------------------------------------
+  # Third-party notices: the committed files must be a pure function of the
+  # dependency set, so a dependency change that was not accompanied by a
+  # regeneration is a disclosure gap, not a formatting nit.
+  # ---------------------------------------------------------------------------
+  verify-notices:
+    needs: [check-paths]
+    if: needs.check-paths.outputs.notices == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The generator stamps the latest component tags into the notices, so
+          # a shallow clone would produce 'unreleased' and diff against main.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: operator/go.mod
+          cache: false
+      - uses: actions/setup-python@v7
+        with:
+          # Pinned to match agent-ci.yaml PYTHON_VERSION and release.yml so
+          # notices generation uses the same interpreter everywhere.
+          python-version: '3.13'
+      - name: Test the license completeness gate
+        run: make notices-test
+      # 'make notices' installs go-licenses itself; no separate step needed.
+      - name: Verify notices are up to date
+        run: make notices-check
+
+  # Paired skip job so the required-check name 'verify-notices' is always
+  # satisfied even when nothing relevant changed.
+  verify-notices-skip:
+    needs: [check-paths]
+    if: needs.check-paths.outputs.notices != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - run: echo "No dependency or notices changes; notices verification not required"
 
   # Paired skip job so the required-check name 'verify-licenses' is always
   # satisfied even when deps haven't changed. The job name MUST match

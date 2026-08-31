@@ -73,12 +73,26 @@ if [[ -z "$LATEST_FINAL" ]]; then
 fi
 echo "${C_DIM}Latest final tag:${C_RESET} ${C_BOLD}${COMPONENT}/${LATEST_FINAL}${C_RESET}"
 
+MAJOR_NEXT=$(bump_version "$LATEST_FINAL" major)
+MINOR_NEXT=$(bump_version "$LATEST_FINAL" minor)
+PATCH_NEXT=$(bump_version "$LATEST_FINAL" patch)
+
+# Menu text is colorized, so dispatch on the numeric $REPLY rather than the
+# captured (escape-laden) $BUMP string.
 PS3="${C_BOLD}${C_CYAN}Select bump: ${C_RESET}"
-select BUMP in major minor patch; do
+select BUMP in \
+    "Major (${LATEST_FINAL} ${C_DIM}->${C_RESET} ${C_GREEN}${MAJOR_NEXT}${C_RESET})" \
+    "Minor (${LATEST_FINAL} ${C_DIM}->${C_RESET} ${C_GREEN}${MINOR_NEXT}${C_RESET})" \
+    "Patch (${LATEST_FINAL} ${C_DIM}->${C_RESET} ${C_GREEN}${PATCH_NEXT}${C_RESET})"; do
     [[ -n "$BUMP" ]] && break
     echo "${C_RED}invalid selection${C_RESET}" >&2
 done
-BASE=$(bump_version "$LATEST_FINAL" "$BUMP")
+
+case "$REPLY" in
+    1) BASE="$MAJOR_NEXT" ;;
+    2) BASE="$MINOR_NEXT" ;;
+    3) BASE="$PATCH_NEXT" ;;
+esac
 
 read -r -p "${C_YELLOW}Release candidate?${C_RESET} [y/N] " is_rc
 if [[ "$is_rc" =~ ^[yY]$ ]]; then
@@ -92,6 +106,34 @@ TAG="${COMPONENT}/${VERSION}"
 if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
     echo "${C_RED}ERROR: tag ${TAG} already exists${C_RESET}" >&2
     exit 1
+fi
+
+# Warn when RELEASE_NOTES.md still holds unpromoted notes. `make changelog`'s
+# release cut promotes `## Unreleased` to the version heading the release
+# workflows extract; tagging without having run it strands those notes on a
+# heading nothing matches, and the workflow treats "no entry" as normal, so the
+# miss is otherwise invisible until someone reads the release page (#495).
+# The path mapping is duplicated from gen-changelog.sh because the CLI's is
+# irregular (operator/cmd/cli, not cli/) -- as bump_version() already is between
+# these two siblings.
+case "$COMPONENT" in
+    cli) NOTES="operator/cmd/cli/RELEASE_NOTES.md" ;;
+    *) NOTES="${COMPONENT}/RELEASE_NOTES.md" ;;
+esac
+
+# Finals only. An RC is tagged mid-stabilization, before the release cut that
+# promotes the heading, so `## Unreleased` is legitimately non-empty then and
+# warning on every RC would just train people to ignore this.
+if [[ "$VERSION" == "$BASE" && -f "$NOTES" ]]; then
+    UNPROMOTED=$(awk '/^## / { f = ($0 ~ /^## Unreleased[[:space:]]*$/); next } f' "$NOTES")
+    if [[ -n "${UNPROMOTED//[[:space:]]/}" ]] &&
+        ! grep -qE "^## ${TAG//./\\.}([[:space:]]|$)" "$NOTES"; then
+        echo
+        echo "${C_YELLOW}WARNING: ${NOTES} has content under '## Unreleased' and no '## ${TAG}' section.${C_RESET}"
+        echo "${C_YELLOW}         Those notes will NOT appear on the ${TAG} release page.${C_RESET}"
+        echo "${C_DIM}         Cut the release with 'make changelog' (which promotes the heading),${C_RESET}"
+        echo "${C_DIM}         commit, then re-run this.${C_RESET}"
+    fi
 fi
 
 HEAD_REF="$(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEAD)"

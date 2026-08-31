@@ -60,4 +60,39 @@ var _ = Describe("shared step execution in a chroot", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(status).To(Equal(execution.StatusSuccess))
 	})
+
+	It("adds execute bits without clearing package-provided permissions", func() {
+		if os.Geteuid() != 0 {
+			Fail("chroot execution requires root privileges")
+		}
+
+		root := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(root, "steps"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(root, "package"), 0o755)).To(Succeed())
+		testExecutable, err := filepath.Abs(os.Args[0])
+		Expect(err).NotTo(HaveOccurred())
+		data, err := os.ReadFile(testExecutable)
+		Expect(err).NotTo(HaveOccurred())
+		executable := filepath.Join(root, "steps", "step-helper")
+		Expect(os.WriteFile(executable, data, 0o640)).To(Succeed())
+		config, err := execution.NewConfig(
+			execution.WithRootMount(root),
+			execution.WithStepRoot("/steps"),
+			execution.WithSkyhookDir("/package"),
+			execution.WithRunOutput(io.Discard, io.Discard),
+		)
+		Expect(err).NotTo(HaveOccurred())
+		value := NewRegularStep(
+			"step-helper",
+			WithArguments([]string{"-test.run=^TestStep$", "--", "exit", "0"}),
+		)
+
+		status, err := value.Run(context.Background(), config)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status).To(Equal(execution.StatusSuccess))
+		info, err := os.Stat(executable)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o751)))
+	})
 })

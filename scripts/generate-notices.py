@@ -25,7 +25,6 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -37,6 +36,21 @@ OPERATOR_FILE = REPO_ROOT / "operator" / "THIRD_PARTY_NOTICES.md"
 AGENT_FILE = REPO_ROOT / "agent" / "THIRD_PARTY_NOTICES.md"
 ROOT_FILE = REPO_ROOT / "THIRD_PARTY_NOTICES.md"
 
+# Platforms the released Go binaries are built for. The operator image is
+# linux-only, but the CLI ships linux/darwin/windows x amd64/arm64 (see
+# `cli-release-build` in operator/Makefile), and build-tagged sources pull
+# different transitive dependencies per platform: github.com/Azure/go-ansiterm
+# and github.com/inconshreveable/mousetrap are linked only on windows. Notices
+# are therefore collected per platform and unioned.
+GO_PLATFORMS = (
+    ("linux", "amd64"),
+    ("linux", "arm64"),
+    ("darwin", "amd64"),
+    ("darwin", "arm64"),
+    ("windows", "amd64"),
+    ("windows", "arm64"),
+)
+
 
 def tag(prefix: str) -> str:
     r = subprocess.run(
@@ -46,13 +60,80 @@ def tag(prefix: str) -> str:
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else "unreleased"
 
 
-def now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def _collapse_blanks(text: str) -> str:
     """Collapse runs of 3+ newlines to exactly 2 (one blank line)."""
     return re.sub(r"\n{3,}", "\n\n", text)
+
+
+def go_env(goos: str = "", goarch: str = "") -> dict:
+    env = {**os.environ, "GOFLAGS": "-mod=vendor"}
+    if goos:
+        env["GOOS"] = goos
+    if goarch:
+        env["GOARCH"] = goarch
+    return env
+
+
+def go_out(args: list[str], goos: str = "", goarch: str = "") -> str:
+    return subprocess.check_output(["go", *args], cwd=OPERATOR_DIR, env=go_env(goos, goarch), text=True)
+
+
+def license_files(pkg: str, cache_dirs) -> list:
+    """License files saved for `pkg`, merged across the per-platform caches.
+
+    A package present on only some platforms is saved only under those
+    platforms' caches, so every cache has to be consulted. Files are keyed by
+    name and the first cache that has one wins: all platforms copy the same
+    file out of the same vendor tree, so a later duplicate carries no new
+    information.
+    """
+    by_name = {}
+    for d in cache_dirs:
+        pkg_dir = d / pkg
+        if not pkg_dir.is_dir():
+            continue
+        for f in sorted(p for p in pkg_dir.iterdir() if p.is_file()):
+            by_name.setdefault(f.name, f)
+    return [by_name[n] for n in sorted(by_name)]
+
+
+def uncovered_modules(index_keys, pkg_to_module, linked_modules, local_module):
+    """Linked modules that no index entry vouches for.
+
+    Coverage is compared on module identity, never on path prefixes. Prefix
+    matching lets an ancestor entry vouch for a nested submodule, and a nested
+    submodule is a separate module whose license may differ from, or be missing
+    in, its parent's. It also lets the bare `github.com` row that go-licenses
+    emits when it cannot resolve a package match everything under that host,
+    which would make this check vacuous.
+    """
+    known_modules = set(pkg_to_module.values())
+    covered = set()
+    for key in index_keys:
+        # go-licenses keys a row on the directory a license covers, which is
+        # often a roll-up prefix ("k8s.io/apimachinery/pkg") rather than a real
+        # import path, so an exact lookup is not enough. Walking up finds the
+        # longest known module containing the key, which is its owning module:
+        # a key inside a nested submodule resolves to that submodule and never
+        # to its parent. A key under no known module resolves to nothing.
+        p = key
+        while True:
+            if p in pkg_to_module:
+                covered.add(pkg_to_module[p])
+                break
+            if p in known_modules:
+                covered.add(p)
+                break
+            if "/" not in p:
+                break
+            p = p.rsplit("/", 1)[0]
+    return sorted(
+        m for m in linked_modules
+        if m
+        and m != local_module
+        and not m.startswith(f"{local_module}/")
+        and m not in covered
+    )
 
 
 def operator_notices():
@@ -60,31 +141,89 @@ def operator_notices():
     gl_path = str(gl) if gl.exists() else (shutil.which("go-licenses") or "")
     if not gl_path:
         sys.exit("ERROR: go-licenses not found. Run 'make -C operator go-licenses'.")
-    env = {**os.environ, "GOFLAGS": "-mod=vendor"}
-    stdlib = subprocess.check_output(["go", "list", "std"], cwd=OPERATOR_DIR, env=env, text=True)
-    stdlib_ignore = ",".join(sorted({line.split("/")[0] for line in stdlib.splitlines() if line}))
-    local = subprocess.check_output(["go", "list", "-m"], cwd=OPERATOR_DIR, env=env, text=True).strip()
-    ignore = f"{stdlib_ignore},{local}"
+    local = go_out(["list", "-m"]).strip()
 
     if LICENSES_CACHE.is_dir():
         shutil.rmtree(LICENSES_CACHE)
     elif LICENSES_CACHE.exists():
         LICENSES_CACHE.unlink()
-    subprocess.run(
-        [gl_path, "save", "./...", f"--save_path={LICENSES_CACHE}", "--force", f"--ignore={ignore}"],
-        cwd=OPERATOR_DIR, env=env, check=True,
-    )
-    csv = subprocess.check_output(
-        [gl_path, "csv", "./...", f"--ignore={ignore}"], cwd=OPERATOR_DIR, env=env, text=True
-    )
-    rows = sorted({tuple(line.split(",", 2)) for line in csv.splitlines() if line.strip()})
+
+    rows_set: set[tuple[str, str, str]] = set()
+    cache_dirs: list[Path] = []
+    linked: set[str] = set()
+    pkg_to_module: dict[str, str] = {}
+    for goos, goarch in GO_PLATFORMS:
+        # --ignore matches by PREFIX, so it must be given full stdlib package
+        # paths. Reducing them to first path segments yields the bare token
+        # "go" (from go/ast, go/build), which then also matches every module
+        # under go.opentelemetry.io, go.uber.org, golang.org/x, google.golang.org
+        # and gopkg.in, silently dropping every one of them from the notices
+        # with no error raised. The set is recomputed per platform because
+        # platform-specific stdlib packages, such as internal/syscall/windows,
+        # exist only under their own GOOS.
+        stdlib = go_out(["list", "std"], goos, goarch)
+        ignore = ",".join([*sorted(line for line in stdlib.splitlines() if line), local])
+        env = go_env(goos, goarch)
+        # Each platform saves into its own directory. `go-licenses save --force`
+        # does an os.RemoveAll on --save_path first, so pointing every platform
+        # at one directory leaves only the last platform's artifacts: a package
+        # that exists on linux but not windows (golang.org/x/sys/unix,
+        # github.com/prometheus/procfs) would keep its index row but lose its
+        # license text entirely.
+        cache_dir = LICENSES_CACHE / f"{goos}_{goarch}"
+        cache_dirs.append(cache_dir)
+        subprocess.run(
+            [gl_path, "save", "./...", f"--save_path={cache_dir}", "--force", f"--ignore={ignore}"],
+            cwd=OPERATOR_DIR, env=env, check=True,
+        )
+        csv = subprocess.check_output(
+            [gl_path, "csv", "./...", f"--ignore={ignore}"], cwd=OPERATOR_DIR, env=env, text=True
+        )
+        rows_set |= {tuple(line.split(",", 2)) for line in csv.splitlines() if line.strip()}
+
+        # Modules actually linked into the released binaries. Scoped to
+        # ./cmd/... rather than ./... so test-only dependencies are not
+        # demanded; go-licenses runs over ./... and may therefore key a row on
+        # a package no released binary contains, which is fine: extra coverage,
+        # never missing coverage.
+        linked.update(
+            m for m in go_out(
+                ["list", "-deps", "-f", "{{if .Module}}{{.Module.Path}}{{end}}", "./cmd/..."],
+                goos, goarch,
+            ).split()
+        )
+        # Package -> owning module, built from ./... so every index key
+        # go-licenses can emit is resolvable. Stdlib packages have no .Module
+        # and contribute nothing.
+        for line in go_out(
+            ["list", "-deps", "-f", "{{.ImportPath}} {{if .Module}}{{.Module.Path}}{{end}}", "./..."],
+            goos, goarch,
+        ).splitlines():
+            parts = line.split()
+            if len(parts) == 2:
+                pkg_to_module[parts[0]] = parts[1]
+
+    rows = sorted(rows_set)
     if not rows:
         sys.exit("ERROR: go-licenses produced no entries.")
+    if not linked:
+        sys.exit("ERROR: 'go list -deps ./cmd/...' resolved no modules; cannot verify license coverage.")
+    if not pkg_to_module:
+        sys.exit("ERROR: 'go list -deps ./...' produced no package-to-module map; cannot verify license coverage.")
+
+    missing = uncovered_modules({pkg for pkg, _, _ in rows}, pkg_to_module, linked, local)
+    if missing:
+        sys.exit(
+            "ERROR: module(s) linked into the released binaries have no license entry:\n"
+            + "\n".join(f"  {m}" for m in missing)
+            + "\n\nThese are redistributed, so their licenses must be disclosed in "
+            + f"{OPERATOR_FILE.relative_to(REPO_ROOT)}.\n"
+            + "Do not silence this by widening --ignore: that is what hid them previously."
+        )
 
     out = [
         "# Third-Party Notices — Skyhook Operator + CLI",
         "",
-        f"Generated: {now_utc()}",
         f"Operator tag: `{tag('operator')}`",
         "",
         "## Index",
@@ -95,14 +234,22 @@ def operator_notices():
     for pkg, url, lic in rows:
         out.append(f"| `{pkg}` | {lic or 'Unknown'} | {url or 'n/a'} |")
     out += ["", "## License Texts", ""]
+    textless: list[str] = []
     for pkg, url, lic in rows:
         out += [f"### {pkg}", "", f"* License: {lic or 'Unknown'}", f"* Source: {url or 'n/a'}", ""]
-        pkg_dir = LICENSES_CACHE / pkg
-        files = sorted(p for p in pkg_dir.iterdir() if p.is_file()) if pkg_dir.exists() else []
+        files = license_files(pkg, cache_dirs)
+        if not files:
+            textless.append(pkg)
         for f in files:
             out += [f"#### {f.name}", "", "```text", f.read_text(errors="replace").rstrip(), "```", ""]
-        if not files:
-            out += ["License text unavailable. See upstream source for the full license.", ""]
+    if textless:
+        sys.exit(
+            "ERROR: go-licenses reported a license for these packages but saved no license text:\n"
+            + "\n".join(f"  {t}" for t in textless)
+            + "\n\nAn index row without the text it names discloses nothing. This usually means\n"
+            + "the per-platform license caches were not merged, so a package present on only\n"
+            + "some platforms lost its text."
+        )
     OPERATOR_FILE.write_text(_collapse_blanks("\n".join(out)) + "\n")
     print(f"Wrote {OPERATOR_FILE.relative_to(REPO_ROOT)} ({len(rows)} Go deps)", file=sys.stderr)
 
@@ -117,7 +264,6 @@ def agent_notices():
     if not deps:
         AGENT_FILE.write_text(_collapse_blanks(
             f"# Third-Party Notices — Skyhook Agent\n\n"
-            f"Generated: {now_utc()}\n"
             f"Agent tag: `{tag('agent')}`\n\n"
             f"_No vendored Python dependencies found._\n"
         ))
@@ -147,7 +293,6 @@ def agent_notices():
     out = [
         "# Third-Party Notices — Skyhook Agent",
         "",
-        f"Generated: {now_utc()}",
         f"Agent tag: `{tag('agent')}`",
         "",
         "## Index",
@@ -205,7 +350,6 @@ def rollup():
         "",
         "Combined third-party notices for Skyhook (operator, CLI, agent).",
         "",
-        f"Generated: {now_utc()}",
         f"Operator tag: `{tag('operator')}`",
         f"Agent tag: `{tag('agent')}`",
         f"Chart tag: `{tag('chart')}`",

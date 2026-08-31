@@ -1,6 +1,6 @@
-# Skyhook Examples
+# NodeWright Examples
 
-This directory contains sample manifests and usage patterns for Skyhook. Use these examples to learn how to configure, test, and extend Skyhook in your own clusters.
+This directory contains sample manifests and usage patterns for NodeWright. Use these examples to learn how to configure, test, and extend NodeWright in your own clusters.
 
 ## Included Examples
 
@@ -10,7 +10,7 @@ This directory contains sample manifests and usage patterns for Skyhook. Use the
     - Once launched do `kubectl exec -ti debug-pod sh -c 'chroot /host bash'`
     - You will then be on the host as root
     - Once done, exit and run `kubectl delete po/debug-pod` to remove the pod
-- `simple/`: Minimal working examples of Skyhook Custom Resources and package configurations.
-- `interrupt-wait-for-pod/`: Example showing how to use interrupts and wait-for-pod logic with Skyhook.
+- `simple/`: The hello-world NodeWright used by the [quickstart](../docs/getting-started/quickstart.md).
+- `interrupt-wait-for-pod/`: Example showing how to use interrupts and wait-for-pod logic with NodeWright.
 
 Feel free to use, modify, or extend these examples for your own use cases! 

@@ -618,6 +618,87 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(drained).To(BeTrue())
 		})
 
+		It("should not report drained while an evicted pod is still terminating", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "workload",
+					Namespace: "default",
+					// The finalizer stands in for a pod that has accepted its eviction but has
+					// not finished terminating, which is what drain now has to wait out.
+					Finalizers: []string{"nodewright.nvidia.com/test-hold"},
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind:       "ReplicaSet",
+							Name:       "workload-rs",
+							Controller: ptr(true),
+						},
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			deleteCount := 0
+			baseClient := fakeDrainClient(pod)
+			testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					deleteCount++
+					return c.Delete(ctx, obj, opts...)
+				},
+			})
+
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+			skyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-terminating"},
+				Spec: v1alpha1.NodeWrightSpec{
+					DrainConfig: &v1alpha1.DrainConfig{
+						DisableEviction: ptr(true),
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			_package := &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			}
+
+			drained, err := r.DrainNode(ctx, skyhookNode, _package)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(deleteCount).To(Equal(1))
+
+			terminating := &corev1.Pod{}
+			Expect(testClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "workload"}, terminating)).To(Succeed())
+			Expect(terminating.DeletionTimestamp).ToNot(BeNil())
+
+			isDrained, err := r.IsDrained(ctx, skyhookNode)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(isDrained).To(BeFalse())
+
+			drained, err = r.DrainNode(ctx, skyhookNode, _package)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeFalse())
+			Expect(deleteCount).To(Equal(1))
+
+			terminating.Finalizers = nil
+			Expect(testClient.Update(ctx, terminating)).To(Succeed())
+			Expect(apierrors.IsNotFound(testClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "workload"}, &corev1.Pod{}))).To(BeTrue())
+
+			drained, err = r.DrainNode(ctx, skyhookNode, _package)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(drained).To(BeTrue())
+		})
+
 		It("should wait without deleting unmanaged pods when force is false", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -722,7 +803,17 @@ var _ = Describe("skyhook controller tests", func() {
 			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
 			Expect(err).ToNot(HaveOccurred())
 
-			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
+			// Already cordoned in the API, so this spec exercises the podNonInterruptLabels
+			// barrier rather than stopping at the earlier cordon-durability gate.
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-a",
+					Annotations: map[string]string{
+						fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, "drain-golden"): "true",
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
 			skyhook := &v1alpha1.NodeWright{
 				ObjectMeta: metav1.ObjectMeta{Name: "drain-golden"},
 				Spec: v1alpha1.NodeWrightSpec{
@@ -884,6 +975,127 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(skyhookNode.Status()).To(Equal(v1alpha1.StatusErroring))
 			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0] from [nodewright:drain-timeout]")))
 			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain timed out after [1s] for node [node-a] package [pkg:1.0.0]")))
+		})
+
+		// The cordon is only an in-memory mutation until SaveNodesAndSkyhook patches it
+		// at the end of the pass. Evicting before that patch lands lets the replacement
+		// pod schedule straight back onto a node that is not yet unschedulable.
+		Context("cordon barrier", func() {
+			evictablePod := func(nodeName string) *corev1.Pod {
+				return &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("workload-%s", nodeName),
+						Namespace: "default",
+						OwnerReferences: []metav1.OwnerReference{
+							{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs", Controller: ptr(true)},
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName:   nodeName,
+						Containers: []corev1.Container{{Name: "workload", Image: "busybox"}},
+					},
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
+				}
+			}
+
+			reconcilerRecordingEvictions := func(evicted *bool, objects ...client.Object) *SkyhookReconciler {
+				testClient := interceptor.NewClient(fakeDrainClient(objects...), interceptor.Funcs{
+					SubResourceCreate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+						*evicted = true
+						return nil
+					},
+				})
+				r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+				Expect(err).ToNot(HaveOccurred())
+				return r
+			}
+
+			It("should not evict until the cordon is durable in the API", func() {
+				evicted := false
+				r := reconcilerRecordingEvictions(&evicted, evictablePod("node-a"))
+
+				skyhook := &v1alpha1.NodeWright{
+					ObjectMeta: metav1.ObjectMeta{Name: "cordon-gate"},
+					Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
+				}
+				skyhookNode, err := wrapper.NewSkyhookNode(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}, skyhook)
+				Expect(err).ToNot(HaveOccurred())
+
+				ready, err := r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, &v1alpha1.Package{
+					PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ready).To(BeFalse())
+				Expect(evicted).To(BeFalse())
+
+				// Cordoned in memory and left dirty so the end-of-pass save persists it.
+				Expect(skyhookNode.GetNode().Spec.Unschedulable).To(BeTrue())
+				Expect(skyhookNode.Changed()).To(BeTrue())
+
+				drainStartedAt, err := skyhookNode.DrainStartedAt()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drainStartedAt).To(BeNil())
+			})
+
+			It("should evict once the cordon is already durable in the API", func() {
+				evicted := false
+				r := reconcilerRecordingEvictions(&evicted, evictablePod("node-a"))
+
+				skyhook := &v1alpha1.NodeWright{
+					ObjectMeta: metav1.ObjectMeta{Name: "cordon-gate"},
+					Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
+				}
+				// A node as it comes back from the API on the pass after the cordon was saved.
+				cordoned := &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-a",
+						Annotations: map[string]string{
+							fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, "cordon-gate"): "true",
+						},
+					},
+					Spec: corev1.NodeSpec{Unschedulable: true},
+				}
+				skyhookNode, err := wrapper.NewSkyhookNode(cordoned, skyhook)
+				Expect(err).ToNot(HaveOccurred())
+
+				ready, err := r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, &v1alpha1.Package{
+					PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+				})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ready).To(BeFalse()) // still waiting on the evicted pod
+				Expect(evicted).To(BeTrue())
+			})
+
+			// The barrier must not cost one reconcile per node: a single pass has to
+			// cordon every node it knows about, so the next pass can drain them all.
+			It("should cordon every node it is given in a single pass", func() {
+				evicted := false
+				nodeNames := []string{"node-a", "node-b", "node-c"}
+				pods := make([]client.Object, 0, len(nodeNames))
+				for _, name := range nodeNames {
+					pods = append(pods, evictablePod(name))
+				}
+				r := reconcilerRecordingEvictions(&evicted, pods...)
+
+				skyhook := &v1alpha1.NodeWright{
+					ObjectMeta: metav1.ObjectMeta{Name: "cordon-gate"},
+					Spec:       v1alpha1.NodeWrightSpec{Packages: v1alpha1.Packages{}},
+				}
+
+				for _, name := range nodeNames {
+					skyhookNode, err := wrapper.NewSkyhookNode(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}}, skyhook)
+					Expect(err).ToNot(HaveOccurred())
+
+					ready, err := r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, &v1alpha1.Package{
+						PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+					})
+					Expect(err).ToNot(HaveOccurred())
+					Expect(ready).To(BeFalse())
+					Expect(skyhookNode.GetNode().Spec.Unschedulable).To(BeTrue(), "node %s should be cordoned in this pass", name)
+				}
+
+				Expect(evicted).To(BeFalse())
+			})
 		})
 	})
 
@@ -1330,6 +1542,171 @@ var _ = Describe("skyhook controller tests", func() {
 		Expect(to_remove).To(HaveLen(1))
 		Expect(to_remove[0].UID).To(BeEquivalentTo(nodeA.UID))
 	})
+	It("runtimeRequiredCordonAfterEnabled should return false for no skyhooks", func() {
+		Expect(runtimeRequiredCordonAfterEnabled(nil)).To(BeFalse())
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{})).To(BeFalse())
+	})
+	It("runtimeRequiredCordonAfterEnabled should return false when no skyhook has it enabled", func() {
+		sh := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, RuntimeRequiredCordonAfter: false},
+		})}
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{sh})).To(BeFalse())
+	})
+	It("runtimeRequiredCordonAfterEnabled should return false when RuntimeRequiredCordonAfter is true but RuntimeRequired is false", func() {
+		sh := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: false, RuntimeRequiredCordonAfter: true},
+		})}
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{sh})).To(BeFalse())
+	})
+	It("runtimeRequiredCordonAfterEnabled should return true when any skyhook has it enabled", func() {
+		sh1 := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, RuntimeRequiredCordonAfter: false},
+		})}
+		sh2 := &skyhookNodes{skyhook: wrapper.NewSkyhookWrapper(&v1alpha1.NodeWright{
+			Spec: v1alpha1.NodeWrightSpec{RuntimeRequired: true, RuntimeRequiredCordonAfter: true},
+		})}
+		Expect(runtimeRequiredCordonAfterEnabled([]SkyhookNodes{sh1, sh2})).To(BeTrue())
+	})
+	Context("HandleRuntimeRequired with runtimeRequiredCordonAfter", func() {
+		It("should cordon the node and remove the taint when runtimeRequiredCordonAfter is true", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "rr-cordon-after-node",
+					Labels: map[string]string{"nodewright.nvidia.com/rr-cordon-after-test": "true"},
+				},
+				Spec: corev1.NodeSpec{Taints: []corev1.Taint{opts.GetRuntimeRequiredTaint()}},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-cordon-after"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: true,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-cordon-after-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			for _, t := range updated.Spec.Taints {
+				Expect(t.Key).ToNot(Equal(opts.GetRuntimeRequiredTaint().Key), "runtime-required taint should have been removed")
+			}
+			Expect(updated.Spec.Unschedulable).To(BeTrue())
+			Expect(updated.Annotations).To(HaveKeyWithValue(v1alpha1.RuntimeRequiredCordonAnnotation, "true"))
+		})
+
+		It("should remove the taint without cordoning when runtimeRequiredCordonAfter is false", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "rr-no-cordon-node",
+					Labels: map[string]string{"nodewright.nvidia.com/rr-no-cordon-test": "true"},
+				},
+				Spec: corev1.NodeSpec{Taints: []corev1.Taint{opts.GetRuntimeRequiredTaint()}},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-no-cordon"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: false,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-no-cordon-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			for _, t := range updated.Spec.Taints {
+				Expect(t.Key).ToNot(Equal(opts.GetRuntimeRequiredTaint().Key), "runtime-required taint should have been removed")
+			}
+			Expect(updated.Spec.Unschedulable).To(BeFalse())
+			Expect(updated.Annotations).ToNot(HaveKey(v1alpha1.RuntimeRequiredCordonAnnotation))
+		})
+
+		It("should not cordon a node that does not have the runtime-required taint", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "rr-no-taint-node",
+					Labels: map[string]string{"nodewright.nvidia.com/rr-no-taint-test": "true"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-no-taint"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: true,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-no-taint-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			Expect(updated.Spec.Unschedulable).To(BeFalse())
+			Expect(updated.Annotations).ToNot(HaveKey(v1alpha1.RuntimeRequiredCordonAnnotation))
+		})
+
+		It("should remove the runtimeRequiredCordon annotation without re-cordoning when the node has been manually uncordoned", func() {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "rr-manual-uncordon-node",
+					Labels:      map[string]string{"nodewright.nvidia.com/rr-manual-uncordon-test": "true"},
+					Annotations: map[string]string{v1alpha1.RuntimeRequiredCordonAnnotation: "true"},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: false},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+			nodeWright := v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "rr-manual-uncordon"},
+				Spec: v1alpha1.NodeWrightSpec{
+					RuntimeRequired:            true,
+					RuntimeRequiredCordonAfter: true,
+					NodeSelector:               metav1.LabelSelector{MatchLabels: map[string]string{"nodewright.nvidia.com/rr-manual-uncordon-test": "true"}},
+				},
+			}
+			cs, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{nodeWright}},
+				&corev1.NodeList{Items: []corev1.Node{*node}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(operator.HandleRuntimeRequired(ctx, cs, &corev1.NodeList{Items: []corev1.Node{*node}})).To(Succeed())
+
+			updated := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: node.Name}, updated)).To(Succeed())
+			Expect(updated.Spec.Unschedulable).To(BeFalse(), "manual uncordon should not be undone")
+			Expect(updated.Annotations).ToNot(HaveKey(v1alpha1.RuntimeRequiredCordonAnnotation))
+		})
+	})
+
 	It("CreateTolerationForTaint should tolerate both the configured and the legacy taint", func() {
 		tolerations := opts.GetRuntimeRequiredTolerations()
 
@@ -4255,7 +4632,7 @@ var _ = Describe("HandleRuntimeRequired legacy taint removal", func() {
 		pkg := skyhook.Spec.Packages[pkgRef.Name]
 		Expect(nodeWrapper.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, v1alpha1.StageConfig, int32(0), "")).To(Succeed())
 
-		Expect(r.HandleRuntimeRequired(ctx, clusterState)).To(Succeed())
+		Expect(r.HandleRuntimeRequired(ctx, clusterState, &corev1.NodeList{Items: []corev1.Node{*node.DeepCopy()}})).To(Succeed())
 
 		live := &corev1.Node{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, live)).To(Succeed())

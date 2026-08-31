@@ -67,6 +67,12 @@ func (s RegularStep) Idempotence() Idempotence {
 	return s.IdempotenceMode
 }
 
+// ExecutionMetadata reports the regular step's configured command settings.
+func (s RegularStep) ExecutionMetadata() ExecutionMetadata {
+	s.applyDefaults()
+	return newExecutionMetadata(s.Arguments, s.Returncodes, s.OnHost)
+}
+
 // WithVersions returns a copy with the package versions in its command environment.
 func (s RegularStep) WithVersions(previous, current string) Step {
 	s.versions = &stepVersions{previous: previous, current: current}

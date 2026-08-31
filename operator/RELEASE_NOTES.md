@@ -5,6 +5,40 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+### Bug Fixes
+
+- **Drain now completes when the evicted pods have terminated, not when their
+  evictions were accepted.** A pod carrying a `deletionTimestamp` was classified as
+  ignorable, so one pass evicted and the next — two seconds later — saw everything
+  terminating and reported the node drained. A workload with a 30s
+  `terminationGracePeriodSeconds` was roughly 2s into shutdown when the interrupt
+  fired. Terminating pods now block drain, matching `kubectl drain`. The exclusions
+  (DaemonSet, `kube-system`, mirror/static, unschedulable-tolerating, and the
+  operator's own package pods) still apply while a pod terminates, so drain only ever
+  waits on pods it selected for eviction or deletion.
+
+  **Expect interrupts to start later than they used to** — by roughly the longest
+  `terminationGracePeriodSeconds` among the pods on the node. `spec.drainConfig.timeout`
+  now measures time-to-drain rather than time-to-accept-evictions, and it still has no
+  default: a pod that can never finish terminating (stuck finalizer, unresponsive
+  kubelet) holds the node in `in_progress` until it is cleared. Set a `timeout` if you
+  need that wait bounded.
+
+### New Features
+
+- **New `spec.runtimeRequiredCordonAfter`** applies a persistent cordon at the
+  same time the runtime-required taint is removed, for any NodeWright that sets
+  both `runtimeRequired: true` and `runtimeRequiredCordonAfter: true`. The node
+  is marked with a `runtimeRequiredCordon` annotation so the cordon survives
+  later NodeWright interrupts. Releasing it requires removing the annotation
+  and setting `unschedulable` to false in the same patch. If the node is
+  uncordoned externally without removing the annotation, the operator removes
+  it automatically. `kubectl nodewright node status` reports the cordon via new
+  `CORDONED` and `RUNTIME-REQUIRED-CORDON` columns. See
+  [docs/user-guide/runtime-required.md](../docs/user-guide/runtime-required.md#what-happens-when-the-taint-is-removed).
+
+## operator/v0.18.0 - 2026-08-17
+
 ### Other Changes
 
 - **The operator finds its webhook configurations by label, not by name.** It now
@@ -195,18 +229,6 @@ For the full commit-level log see CHANGELOG.md.
     non-empty with no whitespace, and `containerSHA`, when set, must be a
     well-formed digest (`sha256:` followed by 64 lowercase hex characters).
 
-- **Reapply-on-reboot dropped on busy nodes.** With `REAPPLY_ON_REBOOT=true`, a
-  reboot of a node under heavy controller churn (frequent pod/label/annotation
-  updates) could be detected and then silently lost: the per-node state reset
-  was persisted with a full `Update` that lost an optimistic-concurrency race,
-  yet the node's boot id was advanced anyway, marking the reboot handled. The
-  node kept its stale `complete` state and the package was never reapplied
-  (`unknown -> complete`, no pod). The reset now persists via a strategic-merge
-  `Patch` (not resourceVersion-gated, like the rest of the reconcile), and the
-  boot id is advanced only after that write succeeds, so a failed reset leaves
-  the reboot pending to be retried. Also fixes `Reset()` deleting the cordon
-  annotation with a key missing the Skyhook name.
-
 ### New Features
 
 - **Package stages now execute as `batch/v1` Jobs**, one per (NodeWright,
@@ -312,6 +334,22 @@ For the full commit-level log see CHANGELOG.md.
     `copyDir`; the agent's flag files make re-execution idempotent but are not a
     lock, so that sequence is documented as unsupported rather than guarded.
     Leaving the object paused or disabled is safe indefinitely.
+
+## operator/v0.17.0 - 2026-06-12
+
+### Bug Fixes
+
+- **Reapply-on-reboot dropped on busy nodes.** With `REAPPLY_ON_REBOOT=true`, a
+  reboot of a node under heavy controller churn (frequent pod/label/annotation
+  updates) could be detected and then silently lost: the per-node state reset
+  was persisted with a full `Update` that lost an optimistic-concurrency race,
+  yet the node's boot id was advanced anyway, marking the reboot handled. The
+  node kept its stale `complete` state and the package was never reapplied
+  (`unknown -> complete`, no pod). The reset now persists via a strategic-merge
+  `Patch` (not resourceVersion-gated, like the rest of the reconcile), and the
+  boot id is advanced only after that write succeeds, so a failed reset leaves
+  the reboot pending to be retried. Also fixes `Reset()` deleting the cordon
+  annotation with a key missing the Skyhook name.
 
 ## operator/v0.16.1 - 2026-05-22
 

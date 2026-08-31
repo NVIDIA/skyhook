@@ -15,7 +15,7 @@ Managing and updating Kubernetes clusters is challenging. While Kubernetes advoc
 NodeWright functions like a package manager but for your entire Kubernetes cluster, with three main components:
 
 1. **NodeWright Operator** — Manages installing, updating, and removing packages.
-2. **NodeWright Custom Resource** — Declarative definitions of changes to apply.
+2. **[NodeWright Custom Resource](../user-guide/custom-resource.md)** — Declarative definitions of changes to apply.
 3. **Packages** — The actual modifications you want to implement.
 
 NodeWright works in any Kubernetes environment (self-managed, on-prem, cloud) and shines when you need:
@@ -49,4 +49,5 @@ There are pre-built generalist packages available at [NVIDIA/skyhook-packages](h
 
 - [Installation](installation.md) — Install NodeWright via Helm
 - [Migration from Skyhook](migration.md) — Transition guide from Skyhook to NodeWright
+- [Custom Resource Reference](../user-guide/custom-resource.md) — Every field on the NodeWright CR
 - [CLI Reference](../user-guide/cli.md) — `kubectl nodewright` commands

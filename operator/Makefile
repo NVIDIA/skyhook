@@ -120,13 +120,21 @@ generate-mocks: mockery ## Generate code for interface mocking
 	$(MOCKERY) --config .mockery.yaml
 	$(MAKE) fmt ## fix up license headers
 
+# go-licenses v2 refuses to resolve standard-library packages ("does not have
+# module info") instead of skipping them as v1 did, so both targets below have
+# to ignore them explicitly. --ignore matches by PREFIX, so this passes full
+# stdlib package paths: reducing them to first path segments yields the bare
+# token `go` (from go/ast), which then also matches every module under
+# go.opentelemetry.io, golang.org/x, google.golang.org and gopkg.in.
+GO_LICENSES_IGNORE = $$(go list std | paste -sd, -),$$(go list -m)
+
 license-report: go-licenses ## Run run license report
-	$(LOCALBIN)/go-licenses report ./... > $(REPORTING)/licenses.csv
+	$(LOCALBIN)/go-licenses report ./... --ignore=$(GO_LICENSES_IGNORE) > $(REPORTING)/licenses.csv
 	@echo "report at $(REPORTING)/licenses.csv"
 
 .PHONY: license-check
 license-check: go-licenses ## Run go-licenses check against code.
-	$(LOCALBIN)/go-licenses check --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib ./...
+	$(LOCALBIN)/go-licenses check --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib --ignore=$(GO_LICENSES_IGNORE) ./...
 
 .PHONY: vulncheck
 vulncheck: govulncheck ## Run govulncheck against code; fails on any reachable vulnerability.
@@ -239,6 +247,15 @@ unit-tests: reporting manifests generate envtest ginkgo kill ## Run unit tests.
 ## exec time is for things like scripts and commands, if we new more of these, might want to switch to a config file
 ## https://kyverno.github.io/chainsaw/latest/reference/commands/chainsaw_test/
 ## https://kyverno.github.io/chainsaw/latest/configuration/file/
+# CHAINSAW_ARGS: --exec-timeout 30s is the fallback for any test that doesn't set
+# spec.timeouts.exec. metrics_test.py's own TIMEOUT env var (also 30s default) can
+# hit the same pod/container-startup cliff (#397) if a check races an in-flight
+# package transition. Decision (#496): don't export TIMEOUT globally here — every
+# metrics_test.py call outside simple-nodewright is already gated behind a native
+# chainsaw `assert:` that waits for the same transition first, so a global bump
+# would only slow down genuine failures across the whole suite for no benefit.
+# Bump TIMEOUT per-script only where a metrics_test.py call is the *first* thing
+# checking a transition (see nodewright/simple-nodewright for the pattern).
 CHAINSAW_ARGS:=--exec-timeout 30s --parallel 1
 
 # POOL_NON_DEFAULT lists every pool except the default (core). Adding a new
@@ -559,16 +576,21 @@ cli-release-build: ## Build CLI binaries for all platforms (used by CI release w
 	done
 	@# Create archives (rename binary to just "nodewright" inside archive)
 	@echo "Creating archives..."
+	@# Keep these as ';'-separated commands. Chaining them with '&&' looks
+	@# equivalent but defeats .SHELLFLAGS=-ec: set -e exempts every command in
+	@# an && list except the last, so a failed cp or a tar that dies on a full
+	@# disk would let the loop run on and the recipe exit 0, publishing a
+	@# release with a missing or truncated archive.
 	@cd $(CLI_DIST_DIR) && for os in linux darwin; do \
 		for arch in amd64 arm64; do \
-			cp nodewright_$(CLI_VERSION)_$${os}_$${arch} nodewright && \
-			tar -czf nodewright_$(CLI_VERSION)_$${os}_$${arch}.tar.gz nodewright && \
+			cp nodewright_$(CLI_VERSION)_$${os}_$${arch} nodewright; \
+			tar -czf nodewright_$(CLI_VERSION)_$${os}_$${arch}.tar.gz nodewright; \
 			rm nodewright; \
 		done; \
 	done
 	@cd $(CLI_DIST_DIR) && for arch in amd64 arm64; do \
-		cp nodewright_$(CLI_VERSION)_windows_$${arch}.exe nodewright.exe && \
-		zip -q nodewright_$(CLI_VERSION)_windows_$${arch}.zip nodewright.exe && \
+		cp nodewright_$(CLI_VERSION)_windows_$${arch}.exe nodewright.exe; \
+		zip -q nodewright_$(CLI_VERSION)_windows_$${arch}.zip nodewright.exe; \
 		rm nodewright.exe; \
 	done
 	@# Generate checksums

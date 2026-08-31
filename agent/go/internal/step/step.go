@@ -23,8 +23,17 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/NVIDIA/nodewright/agent/internal/command"
 	"github.com/NVIDIA/nodewright/agent/internal/execution"
 )
+
+// ExecutionMetadata contains the configured values orchestration needs without
+// depending on a concrete step type.
+type ExecutionMetadata struct {
+	Arguments   []string
+	ReturnCodes []command.ExitCode
+	OnHost      bool
+}
 
 // Step is the interface satisfied by every concrete step type the
 // agent recognises (RegularStep, UpgradeStep). Callers that must
@@ -53,6 +62,9 @@ type Step interface {
 
 	// Idempotence reports how the agent treats re-runs of the step.
 	Idempotence() Idempotence
+
+	// ExecutionMetadata reports the command settings shared by every step type.
+	ExecutionMetadata() ExecutionMetadata
 }
 
 // Decode parses a JSON step payload, returning either a RegularStep or an
