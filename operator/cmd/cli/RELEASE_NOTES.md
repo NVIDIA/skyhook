@@ -5,6 +5,8 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+## cli/v0.4.0 - 2026-08-31
+
 ### Changed
 
 - **`node status` now reports two cordon columns, `CORDONED` and
