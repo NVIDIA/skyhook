@@ -5,6 +5,8 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
+## operator/v0.19.0 - 2026-08-31
+
 ### Bug Fixes
 
 - **Drain now completes when the evicted pods have terminated, not when their
