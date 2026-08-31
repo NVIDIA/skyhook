@@ -36,16 +36,13 @@ jobs:
               - 'operator/go.mod'
               - 'operator/go.sum'
               - 'operator/vendor/**'
+              - 'agent/go/go.mod'
+              - 'agent/go/go.sum'
             renovate:
               - '.github/dependabot.yml'
               - '.github/renovate.json5'
               - '.github/workflows/renovate.yaml'
               - 'Makefile'
-            # Dependency inputs, the generator, the notices themselves, and
-            # everything that defines how they are produced or verified. A
-            # change to the Makefile targets, the pinned go-licenses version,
-            # or this workflow must re-run the gate, or a change to the gate
-            # could merge without the gate ever running against it.
             notices:
               - 'operator/go.mod'
               - 'operator/go.sum'
@@ -54,6 +51,11 @@ jobs:
               - 'operator/Makefile'
               - 'agent/vendor/**'
               - 'agent/skyhook-agent/pyproject.toml'
+              - 'agent/go/go.mod'
+              - 'agent/go/go.sum'
+              - 'agent/go/deps.mk'
+              - 'agent/go/Makefile'
+              - 'agent/go/LICENSE'
               - 'scripts/generate-notices.py'
               - 'scripts/generate-notices_test.py'
               - 'Makefile'
@@ -62,9 +64,6 @@ jobs:
               - 'operator/THIRD_PARTY_NOTICES.md'
               - 'agent/THIRD_PARTY_NOTICES.md'
 
-  # ---------------------------------------------------------------------------
-  # Renovate configuration — runs only when dependency automation changes.
-  # ---------------------------------------------------------------------------
   validate-renovate:
     needs: [check-paths]
     runs-on: ubuntu-latest
@@ -82,9 +81,6 @@ jobs:
         if: needs.check-paths.outputs.renovate != 'true'
         run: echo "No dependency automation changes — Renovate validation not required"
 
-  # ---------------------------------------------------------------------------
-  # License verification — runs only when dependency files change.
-  # ---------------------------------------------------------------------------
   verify-licenses:
     needs: [check-paths]
     if: needs.check-paths.outputs.deps == 'true'
@@ -98,9 +94,9 @@ jobs:
         with:
           go-version-file: operator/go.mod
           cache: false
-      - name: Install go-licenses
+      - name: Install go-licenses (operator)
         run: make -C operator go-licenses
-      - name: Report licenses
+      - name: Report licenses (operator)
         env:
           GOFLAGS: -mod=vendor
         working-directory: operator
@@ -110,16 +106,27 @@ jobs:
           echo ""
           echo "=== License Summary ==="
           ./bin/go-licenses report ./... 2>/dev/null | cut -d',' -f3 | sort | uniq -c | sort -rn
-      - name: Check licenses
+      - name: Check licenses (operator)
         env:
           GOFLAGS: -mod=vendor
         run: make -C operator license-check
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: agent/go/go.mod
+          cache: false
+      - name: Install go-licenses (agent/go)
+        run: make -C agent/go go-licenses
+      - name: Report licenses (agent/go)
+        working-directory: agent/go
+        run: |
+          echo "=== Dependency Licenses ==="
+          ./bin/go-licenses report ./... 2>/dev/null | sort -t',' -k3 | column -t -s','
+          echo ""
+          echo "=== License Summary ==="
+          ./bin/go-licenses report ./... 2>/dev/null | cut -d',' -f3 | sort | uniq -c | sort -rn
+      - name: Check licenses (agent/go)
+        run: make -C agent/go license-check
 
-  # ---------------------------------------------------------------------------
-  # Third-party notices: the committed files must be a pure function of the
-  # dependency set, so a dependency change that was not accompanied by a
-  # regeneration is a disclosure gap, not a formatting nit.
-  # ---------------------------------------------------------------------------
   verify-notices:
     needs: [check-paths]
     if: needs.check-paths.outputs.notices == 'true'
@@ -128,8 +135,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The generator stamps the latest component tags into the notices, so
-          # a shallow clone would produce 'unreleased' and diff against main.
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@v7
@@ -138,17 +143,12 @@ jobs:
           cache: false
       - uses: actions/setup-python@v7
         with:
-          # Pinned to match agent-ci.yaml PYTHON_VERSION and release.yml so
-          # notices generation uses the same interpreter everywhere.
           python-version: '3.13'
       - name: Test the license completeness gate
         run: make notices-test
-      # 'make notices' installs go-licenses itself; no separate step needed.
       - name: Verify notices are up to date
         run: make notices-check
 
-  # Paired skip job so the required-check name 'verify-notices' is always
-  # satisfied even when nothing relevant changed.
   verify-notices-skip:
     needs: [check-paths]
     if: needs.check-paths.outputs.notices != 'true'
@@ -157,10 +157,6 @@ jobs:
     steps:
       - run: echo "No dependency or notices changes; notices verification not required"
 
-  # Paired skip job so the required-check name 'verify-licenses' is always
-  # satisfied even when deps haven't changed. The job name MUST match
-  # 'verify-licenses' if you wire this into branch protection — otherwise GH
-  # waits forever on the real job that never ran.
   verify-licenses-skip:
     needs: [check-paths]
     if: needs.check-paths.outputs.deps != 'true'
@@ -168,3 +164,15 @@ jobs:
     timeout-minutes: 1
     steps:
       - run: echo "No dependency changes — license check not required"
+
+  ci-gate:
+    name: ci-gate
+    needs: [validate-renovate, verify-licenses, verify-licenses-skip, verify-notices, verify-notices-skip]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          echo "$results" | jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")'
