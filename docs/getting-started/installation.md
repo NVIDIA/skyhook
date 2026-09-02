@@ -29,7 +29,7 @@ NodeWright currently uses a single shared image pull secret for all packages, an
 # The chart is distributed as an OCI artifact on GitHub Container Registry.
 # Helm 3.8+ supports OCI natively — no `helm repo add` needed.
 helm install nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.18.0 \
+  --version v0.19.0 \
   --namespace nodewright \
   --create-namespace \
   --set imagePullSecret=node-init-secret
@@ -42,7 +42,7 @@ Omit `--set imagePullSecret=node-init-secret` if you're pulling from public regi
 >
 > ```bash
 > helm upgrade <release-name> oci://ghcr.io/nvidia/nodewright/charts/nodewright \
->   --version v0.18.0 --namespace <existing-namespace>
+>   --version v0.19.0 --namespace <existing-namespace>
 > ```
 >
 > Keeping the old release name (e.g. `skyhook`) is fine — the chart works either way.
@@ -103,14 +103,14 @@ Set these at install time with `helm install`, or on an existing release with
 ```bash
 # Disable automatic cleanup and manage resources manually
 helm upgrade nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.18.0 --reuse-values \
+  --version v0.19.0 --reuse-values \
   --namespace nodewright --set cleanup.enabled=false
 ```
 
 ```bash
 # Adjust the cleanup job timeout
 helm upgrade nodewright oci://ghcr.io/nvidia/nodewright/charts/nodewright \
-  --version v0.18.0 --reuse-values \
+  --version v0.19.0 --reuse-values \
   --namespace nodewright --set cleanup.jobTimeoutSeconds=180
 ```
 
