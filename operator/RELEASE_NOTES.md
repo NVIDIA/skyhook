@@ -5,8 +5,6 @@ For the full commit-level log see CHANGELOG.md.
 
 ## Unreleased
 
-## operator/v0.19.0 - 2026-08-31
-
 ### Bug Fixes
 
 - **Adding and removing the finalizer from a natively authored NodeWright no
