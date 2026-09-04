@@ -47,6 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -4591,6 +4592,8 @@ var _ = Describe("HandleRuntimeRequired legacy taint removal", func() {
 	newReconciler := func(configured string) *SkyhookReconciler {
 		return &SkyhookReconciler{
 			Client:   k8sClient,
+			uncached: k8sClient,
+			dal:      dal.New(k8sClient, nil),
 			recorder: operator.recorder,
 			opts: SkyhookOperatorOptions{
 				RuntimeRequiredTaint: configured,
@@ -4665,6 +4668,82 @@ var _ = Describe("HandleRuntimeRequired legacy taint removal", func() {
 	It("still removes the legacy taint when the operator is pinned to the legacy key", func() {
 		r := newReconciler(legacyRuntimeRequiredTaint)
 		expectRuntimeRequiredGone(removeTaintsFor(r, "pinned-legacy-node", []corev1.Taint{legacyTaint, unrelatedTaint}))
+	})
+
+	It("retries a conflict in place and preserves a concurrently added taint", func() {
+		const nodeName = "concurrent-taint-node"
+		nodeLabel := map[string]string{"runtime-required-removal-test": nodeName}
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName, Labels: nodeLabel},
+			Spec:       corev1.NodeSpec{Taints: []corev1.Taint{newTaint}},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, node) })
+
+		stored := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, stored)).To(Succeed())
+		snapshot := stored.DeepCopy()
+
+		pkgRef := v1alpha1.PackageRef{Name: "pkg1", Version: "1.0.0"}
+		skyhook := v1alpha1.NodeWright{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName + "-sh"},
+			Spec: v1alpha1.NodeWrightSpec{
+				NodeSelector:    metav1.LabelSelector{MatchLabels: nodeLabel},
+				RuntimeRequired: true,
+				Packages: v1alpha1.Packages{
+					pkgRef.Name: {PackageRef: pkgRef, Image: "ghcr.io/org/pkg1"},
+				},
+			},
+		}
+
+		buildCompleteState := func(node *corev1.Node) *clusterState {
+			state, err := BuildState(
+				&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{skyhook}},
+				&corev1.NodeList{Items: []corev1.Node{*node.DeepCopy()}},
+				&v1alpha1.DeploymentPolicyList{},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			_, nodeWrapper := state.skyhooks[0].GetNode(nodeName)
+			Expect(nodeWrapper).ToNot(BeNil())
+			pkg := skyhook.Spec.Packages[pkgRef.Name]
+			Expect(nodeWrapper.Upsert(pkg.PackageRef, pkg.Image, v1alpha1.StateComplete, v1alpha1.StageConfig, int32(0), "")).To(Succeed())
+			return state
+		}
+
+		concurrentTaint := corev1.Taint{Key: "example.com/concurrent", Effect: corev1.TaintEffectNoSchedule}
+		live := stored.DeepCopy()
+		live.Spec.Taints = append(live.Spec.Taints, concurrentTaint)
+		Expect(k8sClient.Patch(ctx, live, client.MergeFrom(stored.DeepCopy()))).To(Succeed())
+
+		patches := 0
+		withWatchClient, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
+		Expect(err).NotTo(HaveOccurred())
+		conflictClient := interceptor.NewClient(withWatchClient, interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				patches++
+				if patches == 1 {
+					return apierrors.NewConflict(schema.GroupResource{Resource: "nodes"}, nodeName,
+						fmt.Errorf("simulated concurrent write"))
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		})
+		r := &SkyhookReconciler{
+			Client:   conflictClient,
+			uncached: k8sClient,
+			dal:      dal.New(conflictClient, nil),
+			recorder: operator.recorder,
+			opts: SkyhookOperatorOptions{
+				RuntimeRequiredTaint: "nodewright.nvidia.com=runtime-required:NoSchedule",
+			},
+		}
+		Expect(r.HandleRuntimeRequired(ctx, buildCompleteState(snapshot), &corev1.NodeList{Items: []corev1.Node{*snapshot}})).To(Succeed())
+		Expect(patches).To(Equal(2), "the conflict must be retried within the same reconcile pass")
+
+		fresh := &corev1.Node{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, fresh)).To(Succeed())
+		Expect(fresh.Spec.Taints).ToNot(ContainElement(newTaint))
+		Expect(fresh.Spec.Taints).To(ContainElement(concurrentTaint))
 	})
 })
 
@@ -4797,8 +4876,9 @@ var _ = Describe("HandleFinalizer merge patch", func() {
 		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "object should be reaped once finalizer is removed")
 	})
 
-	It("does not overwrite concurrent spec or metadata edits when adding finalizer", func() {
+	It("retries after concurrent metadata edits and preserves every finalizer", func() {
 		const name = "finalizer-concurrent-test"
+		const concurrentFinalizer = "example.com/concurrent-cleanup"
 		gvk := schema.GroupVersionKind{
 			Group:   v1alpha1.GroupVersion.Group,
 			Version: v1alpha1.GroupVersion.Version,
@@ -4831,15 +4911,13 @@ var _ = Describe("HandleFinalizer merge patch", func() {
 
 		nw := &v1alpha1.NodeWright{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, nw)).To(Succeed())
-
-		// Simulate a concurrent edit on the live object
-		patch := client.MergeFrom(nw.DeepCopy())
-		nw.Labels = map[string]string{"concurrent-label": "applied"}
-		Expect(k8sClient.Patch(ctx, nw, patch)).To(Succeed())
-
-		// Reconcile on snapshot taken prior to concurrent label
 		snapshotNW := nw.DeepCopy()
-		delete(snapshotNW.Labels, "concurrent-label")
+
+		liveEdit := nw.DeepCopy()
+		liveEdit.Labels = map[string]string{"concurrent-label": "applied"}
+		controllerutil.AddFinalizer(liveEdit, concurrentFinalizer)
+		Expect(k8sClient.Patch(ctx, liveEdit, client.MergeFrom(nw.DeepCopy()))).To(Succeed())
+
 		clusterState, err := BuildState(
 			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{*snapshotNW}},
 			&corev1.NodeList{},
@@ -4848,12 +4926,27 @@ var _ = Describe("HandleFinalizer merge patch", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		handled, err := operator.HandleFinalizer(ctx, clusterState.skyhooks[0], clusterState)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(apierrors.IsConflict(err)).To(BeTrue())
 		Expect(handled).To(BeFalse())
 
 		live := &v1alpha1.NodeWright{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, live)).To(Succeed())
+		Expect(live.Finalizers).To(ConsistOf(concurrentFinalizer))
+
+		clusterState, err = BuildState(
+			&v1alpha1.NodeWrightList{Items: []v1alpha1.NodeWright{*live}},
+			&corev1.NodeList{},
+			&v1alpha1.DeploymentPolicyList{},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		handled, err = operator.HandleFinalizer(ctx, clusterState.skyhooks[0], clusterState)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(handled).To(BeFalse())
+
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name}, live)).To(Succeed())
 		Expect(live.Finalizers).To(ContainElement(SkyhookFinalizer))
+		Expect(live.Finalizers).To(ContainElement(concurrentFinalizer))
 		Expect(live.Labels).To(HaveKeyWithValue("concurrent-label", "applied"))
 	})
 })
