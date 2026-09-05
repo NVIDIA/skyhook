@@ -163,7 +163,10 @@ matching more closely: the unschedulable toleration check uses Kubernetes
 owner reference, and mirror/static pods are ignored.
 
 `podNonInterruptLabels` remains a pre-drain barrier. Matching pods must finish
-or move away before the operator starts the configurable drain step.
+or move away before the operator starts the configurable drain step. This wait
+is unbounded and drain timeout does not apply. While this barrier holds,
+administrators will see a `Blocked` condition with reason `NonInterruptPodsRunning`
+reporting which pods are causing the hold.
 
 ### When Drain Is Complete
 
