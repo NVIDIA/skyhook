@@ -801,7 +801,8 @@ var _ = Describe("skyhook controller tests", func() {
 				},
 			})
 
-			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), events.NewFakeRecorder(10), opts)
+			recorder := events.NewFakeRecorder(10)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), recorder, opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Already cordoned in the API, so this spec exercises the podNonInterruptLabels
@@ -844,6 +845,39 @@ var _ = Describe("skyhook controller tests", func() {
 			drainStartedAt, err := skyhookNode.DrainStartedAt()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drainStartedAt).To(BeNil())
+
+			cond := wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(cond.Reason).To(Equal(wrapper.SkyhookReasonNonInterruptPodsRunning))
+			Expect(cond.Message).To(Equal("Pod [golden] is running. Waiting."))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain blocked by non-interrupt pods for node [node-a] package [pkg:1.0.0]")))
+
+			Expect(testClient.Delete(ctx, goldenPod)).To(Succeed())
+
+			_, err = r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			cond = wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+			Expect(cond).To(BeNil())
+
+			// Verify that an unrelated Blocked condition (e.g. DependencyUninstalled) is preserved
+			wrapper.AddSkyhookCondition(skyhookNode.GetSkyhook(), metav1.Condition{
+				Type:               wrapper.SkyhookConditionBlocked,
+				Status:             metav1.ConditionTrue,
+				Reason:             "DependencyUninstalled",
+				Message:            "package pkg is blocked: dependency dep has been uninstalled",
+				ObservedGeneration: skyhookNode.GetSkyhook().Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+			_, err = r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			cond = wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Reason).To(Equal("DependencyUninstalled"))
 		})
 
 		It("should mark the node erroring when drain timeout expires", func() {

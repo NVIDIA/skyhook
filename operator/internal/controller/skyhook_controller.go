@@ -2412,16 +2412,16 @@ func (r *SkyhookReconciler) HandleFinalizer(ctx context.Context, skyhook Skyhook
 	return false, nil
 }
 
-// HasNonInterruptWork returns true if pods are running on the node that are either packages, or matches the SCR selector
-func (r *SkyhookReconciler) HasNonInterruptWork(ctx context.Context, skyhookNode wrapper.SkyhookNode) (bool, error) {
+// HasNonInterruptWork returns true and the list of running or pending pod names if pods are running on the node that match the SCR selector
+func (r *SkyhookReconciler) HasNonInterruptWork(ctx context.Context, skyhookNode wrapper.SkyhookNode) (bool, []string, error) {
 
 	selector, err := metav1.LabelSelectorAsSelector(&skyhookNode.GetSkyhook().Spec.PodNonInterruptLabels)
 	if err != nil {
-		return false, fmt.Errorf("error creating selector: %w", err)
+		return false, nil, fmt.Errorf("error creating selector: %w", err)
 	}
 
 	if selector.Empty() { // when selector is empty it does not do any selecting, ie will return all pods on node.
-		return false, nil
+		return false, nil, nil
 	}
 
 	pods, err := r.dal.GetPods(ctx,
@@ -2431,21 +2431,27 @@ func (r *SkyhookReconciler) HasNonInterruptWork(ctx context.Context, skyhookNode
 		},
 	)
 	if err != nil {
-		return false, fmt.Errorf("error getting pods: %w", err)
+		return false, nil, fmt.Errorf("error getting pods: %w", err)
 	}
 
 	if pods == nil || len(pods.Items) == 0 {
-		return false, nil
+		return false, nil, nil
 	}
 
+	var podNames []string
 	for _, pod := range pods.Items {
 		switch pod.Status.Phase {
 		case corev1.PodRunning, corev1.PodPending:
-			return true, nil
+			podNames = append(podNames, pod.Name)
 		}
 	}
 
-	return false, nil
+	if len(podNames) > 0 {
+		sort.Strings(podNames)
+		return true, podNames, nil
+	}
+
+	return false, nil, nil
 }
 
 func (r *SkyhookReconciler) HasRunningPackages(ctx context.Context, skyhookNode wrapper.SkyhookNode) (bool, error) {
@@ -3260,13 +3266,55 @@ func (r *SkyhookReconciler) EnsureNodeIsReadyForInterrupt(ctx context.Context, s
 		return false, nil
 	}
 
-	hasWork, err := r.HasNonInterruptWork(ctx, skyhookNode)
+	hasWork, podNames, err := r.HasNonInterruptWork(ctx, skyhookNode)
 	if err != nil {
 		return false, err
 	}
 	if hasWork { // keep waiting...
+		logger := log.FromContext(ctx)
+		podLabel := "Pod"
+		podVerb := "is"
+		if len(podNames) > 1 {
+			podLabel = "Pods"
+			podVerb = "are"
+		}
+		message := fmt.Sprintf("%s [%s] %s running. Waiting.", podLabel, strings.Join(podNames, ", "), podVerb)
+		if len(podNames) > wrapper.ReadyConditionNodeListLimit {
+			logger.Info("Condition message truncated for non-interrupt pods", "nodewright", skyhookNode.GetSkyhook().Name, "pods", podNames)
+			message = fmt.Sprintf("%d pods are running. Waiting.", len(podNames))
+		}
+
+		existing := wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+		if existing == nil || existing.Reason != wrapper.SkyhookReasonNonInterruptPodsRunning {
+			pkgName := ""
+			pkgVersion := ""
+			if _package != nil {
+				pkgName = _package.Name
+				pkgVersion = _package.Version
+			}
+			r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, wrapper.SkyhookReasonNonInterruptPodsRunning,
+				"drain blocked by non-interrupt pods for node [%s] package [%s:%s]",
+				skyhookNode.GetNode().Name,
+				pkgName,
+				pkgVersion,
+			)
+		}
+
+		if existing == nil || existing.Reason == wrapper.SkyhookReasonNonInterruptPodsRunning {
+			wrapper.AddSkyhookCondition(skyhookNode.GetSkyhook(), metav1.Condition{
+				Type:               wrapper.SkyhookConditionBlocked,
+				Status:             metav1.ConditionTrue,
+				Reason:             wrapper.SkyhookReasonNonInterruptPodsRunning,
+				Message:            message,
+				ObservedGeneration: skyhookNode.GetSkyhook().Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+
 		return false, nil
 	}
+
+	wrapper.RemoveSkyhookConditionTypeAndReason(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked, wrapper.SkyhookReasonNonInterruptPodsRunning)
 
 	ready, err := r.DrainNode(ctx, skyhookNode, _package)
 	if err != nil {

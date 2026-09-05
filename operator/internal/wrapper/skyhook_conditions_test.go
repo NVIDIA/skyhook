@@ -194,6 +194,62 @@ var _ = Describe("Skyhook condition helpers", func() {
 		}, []string{SkyhookConditionNodesIgnored, SkyhookConditionApplyPackage}, []string{SkyhookConditionReady, SkyhookConditionTaintNotTolerable}, true),
 	)
 
+	DescribeTable("removeSkyhookConditionTypeAndReason", func(existing []metav1.Condition, conditionType, reason string, expectedConditions []metav1.Condition, changed bool) {
+		skyhook := &Skyhook{
+			NodeWright: &v1alpha1.NodeWright{
+				Status: v1alpha1.NodeWrightStatus{
+					Conditions: existing,
+				},
+			},
+		}
+
+		Expect(RemoveSkyhookConditionTypeAndReason(skyhook, conditionType, reason)).To(Equal(changed))
+		if expectedConditions == nil {
+			Expect(skyhook.Status.Conditions).To(BeEmpty())
+		} else {
+			Expect(skyhook.Status.Conditions).To(Equal(expectedConditions))
+		}
+		Expect(skyhook.Updated).To(Equal(changed))
+	},
+		Entry("returns false when there are no conditions", nil, SkyhookConditionBlocked, SkyhookReasonNonInterruptPodsRunning, nil, false),
+		Entry("removes condition when type and reason match", []metav1.Condition{
+			{Type: SkyhookConditionBlocked, Reason: SkyhookReasonNonInterruptPodsRunning},
+			{Type: SkyhookConditionReady, Reason: "NodesConverged"},
+		}, SkyhookConditionBlocked, SkyhookReasonNonInterruptPodsRunning, []metav1.Condition{
+			{Type: SkyhookConditionReady, Reason: "NodesConverged"},
+		}, true),
+		Entry("preserves condition when type matches but reason differs", []metav1.Condition{
+			{Type: SkyhookConditionBlocked, Reason: "DependencyUninstalled"},
+		}, SkyhookConditionBlocked, SkyhookReasonNonInterruptPodsRunning, []metav1.Condition{
+			{Type: SkyhookConditionBlocked, Reason: "DependencyUninstalled"},
+		}, false),
+		Entry("preserves condition when reason matches but type differs", []metav1.Condition{
+			{Type: SkyhookConditionReady, Reason: SkyhookReasonNonInterruptPodsRunning},
+		}, SkyhookConditionBlocked, SkyhookReasonNonInterruptPodsRunning, []metav1.Condition{
+			{Type: SkyhookConditionReady, Reason: SkyhookReasonNonInterruptPodsRunning},
+		}, false),
+	)
+
+	Describe("FindSkyhookCondition", func() {
+		It("finds an existing condition and returns nil when not found", func() {
+			skyhook := &Skyhook{
+				NodeWright: &v1alpha1.NodeWright{
+					Status: v1alpha1.NodeWrightStatus{
+						Conditions: []metav1.Condition{
+							{Type: SkyhookConditionBlocked, Reason: SkyhookReasonNonInterruptPodsRunning},
+						},
+					},
+				},
+			}
+
+			cond := FindSkyhookCondition(skyhook, SkyhookConditionBlocked)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Reason).To(Equal(SkyhookReasonNonInterruptPodsRunning))
+
+			Expect(FindSkyhookCondition(skyhook, SkyhookConditionReady)).To(BeNil())
+		})
+	})
+
 	DescribeTable("hasTrueSkyhookCondition", func(conditions []metav1.Condition, conditionTypes []string, expected bool) {
 		skyhook := &Skyhook{
 			NodeWright: &v1alpha1.NodeWright{

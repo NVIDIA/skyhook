@@ -41,6 +41,8 @@ const (
 	SkyhookConditionNodeStateMalformed       = "NodeStateMalformed"
 	SkyhookConditionDeletionBlocked          = "DeletionBlocked"
 
+	SkyhookReasonNonInterruptPodsRunning = "NonInterruptPodsRunning"
+
 	skyhookReadyReasonNodesConverged = "NodesConverged"
 	skyhookReadyReasonProgressing    = "Progressing"
 	skyhookReadyReasonBlocked        = "Blocked"
@@ -219,6 +221,42 @@ func RemoveSkyhookConditionTypes(skyhook *Skyhook, conditionTypes ...string) boo
 	}
 
 	return changed
+}
+
+// RemoveSkyhookConditionTypeAndReason removes any condition matching both conditionType and reason.
+// Returns true if the condition slice was modified.
+func RemoveSkyhookConditionTypeAndReason(skyhook *Skyhook, conditionType, reason string) bool {
+	if len(skyhook.Status.Conditions) == 0 {
+		return false
+	}
+
+	conditions := skyhook.Status.Conditions[:0]
+	changed := false
+	for _, condition := range skyhook.Status.Conditions {
+		if condition.Type == conditionType && condition.Reason == reason {
+			changed = true
+			continue
+		}
+		conditions = append(conditions, condition)
+	}
+
+	if changed {
+		skyhook.Status.Conditions = conditions
+		skyhook.Updated = true
+	}
+
+	return changed
+}
+
+// FindSkyhookCondition searches skyhook.Status.Conditions for a condition with the given conditionType.
+// Returns a pointer to the matching condition if present, or nil otherwise.
+func FindSkyhookCondition(skyhook *Skyhook, conditionType string) *metav1.Condition {
+	for i := range skyhook.Status.Conditions {
+		if skyhook.Status.Conditions[i].Type == conditionType {
+			return &skyhook.Status.Conditions[i]
+		}
+	}
+	return nil
 }
 
 func HasTrueSkyhookCondition(skyhook *Skyhook, conditionTypes ...string) bool {

@@ -614,7 +614,10 @@ func (s *skyhookNodes) UpdateBlockedCondition() error {
 			Message:            strings.Join(blockedMsgs, "; "),
 		})
 	} else {
-		wrapper.RemoveSkyhookConditionTypes(s.skyhook, wrapper.SkyhookConditionBlocked)
+		existing := wrapper.FindSkyhookCondition(s.skyhook, wrapper.SkyhookConditionBlocked)
+		if existing != nil && existing.Reason != wrapper.SkyhookReasonNonInterruptPodsRunning {
+			wrapper.RemoveSkyhookConditionTypes(s.skyhook, wrapper.SkyhookConditionBlocked)
+		}
 	}
 
 	return nil
