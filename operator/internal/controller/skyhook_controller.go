@@ -3285,22 +3285,22 @@ func (r *SkyhookReconciler) EnsureNodeIsReadyForInterrupt(ctx context.Context, s
 		}
 
 		existing := wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
-		if existing == nil || existing.Reason != wrapper.SkyhookReasonNonInterruptPodsRunning {
-			pkgName := ""
-			pkgVersion := ""
-			if _package != nil {
-				pkgName = _package.Name
-				pkgVersion = _package.Version
-			}
-			r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, wrapper.SkyhookReasonNonInterruptPodsRunning,
-				"drain blocked by non-interrupt pods for node [%s] package [%s:%s]",
-				skyhookNode.GetNode().Name,
-				pkgName,
-				pkgVersion,
-			)
-		}
-
 		if existing == nil || existing.Reason == wrapper.SkyhookReasonNonInterruptPodsRunning {
+			if existing == nil {
+				pkgName := ""
+				pkgVersion := ""
+				if _package != nil {
+					pkgName = _package.Name
+					pkgVersion = _package.Version
+				}
+				r.recorder.Eventf(skyhookNode.GetSkyhook().NodeWright, nil, corev1.EventTypeWarning, EventsReasonSkyhookDrain, wrapper.SkyhookReasonNonInterruptPodsRunning,
+					"drain blocked by non-interrupt pods for node [%s] package [%s:%s]",
+					skyhookNode.GetNode().Name,
+					pkgName,
+					pkgVersion,
+				)
+			}
+
 			wrapper.AddSkyhookCondition(skyhookNode.GetSkyhook(), metav1.Condition{
 				Type:               wrapper.SkyhookConditionBlocked,
 				Status:             metav1.ConditionTrue,

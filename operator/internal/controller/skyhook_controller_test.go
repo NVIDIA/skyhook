@@ -880,6 +880,111 @@ var _ = Describe("skyhook controller tests", func() {
 			Expect(cond.Reason).To(Equal("DependencyUninstalled"))
 		})
 
+		It("suppresses drain warning events and preserves condition while DependencyUninstalled is active, then emits exactly once when cleared", func() {
+			goldenPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "golden",
+					Namespace: "default",
+					Labels: map[string]string{
+						"workload": "golden",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "node-a",
+					Containers: []corev1.Container{
+						{Name: "workload", Image: "busybox"},
+					},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+
+			testClient := fakeDrainClient(goldenPod)
+			recorder := events.NewFakeRecorder(10)
+			r, err := NewSkyhookReconciler(testClient.Scheme(), testClient, testClient, k8sfake.NewClientset(), recorder, opts)
+			Expect(err).ToNot(HaveOccurred())
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node-a",
+					Annotations: map[string]string{
+						fmt.Sprintf("%s/cordon_%s", v1alpha1.METADATA_PREFIX, "drain-dep"): "true",
+					},
+				},
+				Spec: corev1.NodeSpec{Unschedulable: true},
+			}
+			skyhook := &v1alpha1.NodeWright{
+				ObjectMeta: metav1.ObjectMeta{Name: "drain-dep"},
+				Spec: v1alpha1.NodeWrightSpec{
+					PodNonInterruptLabels: metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"workload": "golden",
+						},
+					},
+					DrainConfig: &v1alpha1.DrainConfig{
+						DisableEviction: ptr(true),
+					},
+					Packages: v1alpha1.Packages{},
+				},
+			}
+			skyhookNode, err := wrapper.NewSkyhookNode(node, skyhook)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Pre-seed unrelated Blocked condition
+			wrapper.AddSkyhookCondition(skyhookNode.GetSkyhook(), metav1.Condition{
+				Type:               wrapper.SkyhookConditionBlocked,
+				Status:             metav1.ConditionTrue,
+				Reason:             "DependencyUninstalled",
+				Message:            "package pkg is blocked: dependency dep has been uninstalled",
+				ObservedGeneration: skyhookNode.GetSkyhook().Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+
+			pkg := &v1alpha1.Package{
+				PackageRef: v1alpha1.PackageRef{Name: "pkg", Version: "1.0.0"},
+			}
+
+			// (a) Reconcile 1: non-interrupt pods present, but DependencyUninstalled owns the Blocked slot
+			ready, err := r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, pkg)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ready).To(BeFalse())
+			cond := wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Reason).To(Equal("DependencyUninstalled"))
+			Expect(cond.Message).To(Equal("package pkg is blocked: dependency dep has been uninstalled"))
+			Expect(recorder.Events).To(BeEmpty())
+
+			// (a) Reconcile 2: second pass with DependencyUninstalled still active
+			ready, err = r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, pkg)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ready).To(BeFalse())
+			cond = wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Reason).To(Equal("DependencyUninstalled"))
+			Expect(recorder.Events).To(BeEmpty())
+
+			// (b) DependencyUninstalled is cleared, non-interrupt pods still present
+			wrapper.RemoveSkyhookConditionTypes(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+
+			// Reconcile 3: immediately takes ownership of the Blocked slot and emits exactly one event
+			ready, err = r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, pkg)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ready).To(BeFalse())
+			cond = wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Reason).To(Equal(wrapper.SkyhookReasonNonInterruptPodsRunning))
+			Expect(cond.Message).To(Equal("Pod [golden] is running. Waiting."))
+			Eventually(recorder.Events).Should(Receive(ContainSubstring("Warning Drain drain blocked by non-interrupt pods for node [node-a] package [pkg:1.0.0]")))
+
+			// Reconcile 4: subsequent pass with non-interrupt pods still present emits no duplicate event
+			ready, err = r.EnsureNodeIsReadyForInterrupt(ctx, skyhookNode, pkg)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ready).To(BeFalse())
+			cond = wrapper.FindSkyhookCondition(skyhookNode.GetSkyhook(), wrapper.SkyhookConditionBlocked)
+			Expect(cond).ToNot(BeNil())
+			Expect(cond.Reason).To(Equal(wrapper.SkyhookReasonNonInterruptPodsRunning))
+			Expect(recorder.Events).To(BeEmpty())
+		})
+
 		It("should mark the node erroring when drain timeout expires", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{

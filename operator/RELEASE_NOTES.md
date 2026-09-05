@@ -21,9 +21,11 @@ For the full commit-level log see CHANGELOG.md.
   - A Warning event with reason `Drain` (`EventsReasonSkyhookDrain`) is emitted on the NodeWright
     object when this barrier is first entered, reporting the node and package being held
     (`drain blocked by non-interrupt pods for node [<node>] package [<pkg>:<version>]`).
-  - Once all matching non-interrupt pods finish or terminate on the node, the
-    `NonInterruptPodsRunning` condition is removed and drain proceeds, preserving any unrelated
-    `Blocked` condition that may also be active (such as `DependencyUninstalled`).
+  - If another `Blocked` reason is already active (such as `DependencyUninstalled`), the
+    `NonInterruptPodsRunning` condition and Warning event are deferred and will only appear
+    once that other condition clears. Once all matching non-interrupt pods finish or
+    terminate on the node, the `NonInterruptPodsRunning` condition is removed and drain proceeds,
+    preserving any unrelated `Blocked` condition that may also be active.
 
 - **Adding and removing the finalizer from a natively authored NodeWright no
   longer rewrites its spec.** Both paths now use optimistic, metadata-only merge
